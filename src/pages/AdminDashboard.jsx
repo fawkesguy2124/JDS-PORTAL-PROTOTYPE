@@ -313,9 +313,18 @@ function JobCard({ job, profiles, onOpen, onEdit, onDelete }) {
     <div
       role="button"
       tabIndex={0}
-      onClick={onOpen}
+      onClick={(e) => {
+        const tag = e.target?.tagName?.toLowerCase?.() || ''
+        if (['input', 'select', 'textarea', 'button'].includes(tag)) return
+        onOpen()
+      }}
       onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') onOpen()
+        const tag = e.target?.tagName?.toLowerCase?.() || ''
+        if (['input', 'select', 'textarea', 'button'].includes(tag)) return
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          onOpen()
+        }
       }}
       className={classNames(
         'bg-white border border-slate-200 rounded-xl shadow-sm p-4 mb-3 cursor-pointer transition-all',
