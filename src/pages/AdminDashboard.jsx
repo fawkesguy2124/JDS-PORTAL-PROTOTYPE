@@ -1353,7 +1353,7 @@ export default function AdminDashboard() {
   }, [jobs, search, filterStage, filterPriority, filterMode])
 
   const handleLogout = async () => { await supabase.auth.signOut(); window.location.replace('/login') }
-  const handleNavClick = (id) => { setActiveNav(id); setSelectedJob(null) }
+  const handleNavClick = (id) => { setActiveNav(id); setSelectedJob(null); setSearch(''); setFilterStage(''); setFilterPriority(''); setFilterMode('') }
 
   const handleDeleteJob = async (job) => {
     if (!window.confirm(`Delete job ${job.job_no || ''}?`)) return
@@ -1381,16 +1381,13 @@ export default function AdminDashboard() {
     <>
       {!selectedJob && (
         <div className="bg-white border border-slate-200 rounded-xl shadow-sm mb-2">
-          <div className="px-4 py-1.5 border-b border-slate-200 flex items-center justify-between">
-            <div className="text-sm font-semibold text-slate-900">All Jobs</div>
-            <div className="text-xs text-slate-400">{filteredJobs.length} shown</div>
-          </div>
           <div className="p-2 flex flex-wrap gap-1 items-center">
             <div className="flex items-center h-6 px-2 bg-slate-50 border border-slate-200 rounded-lg flex-1 min-w-[180px] max-w-[240px]">
               <input value={search} onChange={(e) => setSearch(e.target.value)}
                 placeholder="Search by job number..."
                 className="w-full bg-transparent outline-none text-xs text-slate-900 placeholder:text-slate-400" />
             </div>
+            <span className="text-[10px] text-slate-400 whitespace-nowrap">{filteredJobs.length} shown</span>
             <select value={filterStage} onChange={(e) => setFilterStage(e.target.value)} className="h-6 px-2 text-xs bg-slate-50 border border-slate-200 rounded-lg text-slate-700 outline-none">
               {STAGE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
