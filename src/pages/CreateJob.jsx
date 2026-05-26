@@ -66,6 +66,34 @@ export default function CreateJob({ isModal = false, onCancel, onCreated }) {
   const [profiles, setProfiles] = useState([])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [stagedDocs, setStagedDocs] = useState([])
+  const [addDocType, setAddDocType] = useState('')
+  const [addDocFile, setAddDocFile] = useState(null)
+  const [addDocError, setAddDocError] = useState('')
+  const [uploadingDocs, setUploadingDocs] = useState(false)
+
+  const DOC_TYPES = ['BL', 'Invoice', 'Packing List', 'COO', 'Insurance', 'BE', 'Examination Order', 'OOC', 'E-Way Bill', 'POD', 'Other']
+
+  const DOC_TYPE_COLORS = {
+    BL: 'bg-blue-100 text-blue-800',
+    Invoice: 'bg-green-100 text-green-800',
+    'Packing List': 'bg-teal-100 text-teal-800',
+    COO: 'bg-purple-100 text-purple-800',
+    Insurance: 'bg-amber-100 text-amber-800',
+    BE: 'bg-red-100 text-red-800',
+    'Examination Order': 'bg-orange-100 text-orange-800',
+    OOC: 'bg-emerald-100 text-emerald-800',
+    'E-Way Bill': 'bg-indigo-100 text-indigo-800',
+    POD: 'bg-gray-100 text-gray-800',
+    Other: 'bg-slate-100 text-slate-800',
+  }
+
+  const formatFileSize = (bytes) => {
+    if (!bytes && bytes !== 0) return ''
+    if (bytes < 1024) return bytes + ' B'
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
+    return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
+  }
 
   useEffect(() => {
     async function loadProfiles() {
@@ -91,6 +119,29 @@ export default function CreateJob({ isModal = false, onCancel, onCreated }) {
       return
     }
     navigate('/admin')
+  }
+
+  const handleAddDocFile = (e) => {
+    const file = e.target.files?.[0]
+    setAddDocError('')
+    if (!file) return
+    if (file.size > 10 * 1024 * 1024) {
+      setAddDocError('File size must be under 10MB.')
+      e.target.value = ''
+      return
+    }
+    setAddDocFile(file)
+  }
+
+  const handleAddDoc = () => {
+    setAddDocError('')
+    if (!addDocType) { setAddDocError('Select a document type.'); return }
+    if (!addDocFile) { setAddDocError('Select a file.'); return }
+    setStagedDocs((prev) => [...prev, { file: addDocFile, docType: addDocType, id: Date.now() }])
+    setAddDocType('')
+    setAddDocFile(null)
+    const fileInput = document.getElementById('doc-file-input')
+    if (fileInput) fileInput.value = ''
   }
 
   const handleSubmit = async (e) => {
@@ -130,14 +181,56 @@ export default function CreateJob({ isModal = false, onCancel, onCreated }) {
       created_by: user.id,
     }
 
-    const { error: insertError } = await supabase.from('jobs').insert(payload)
-
-    setSaving(false)
+    const { data: insertedJob, error: insertError } = await supabase
+      .from('jobs')
+      .insert(payload)
+      .select()
+      .single()
 
     if (insertError) {
+      setSaving(false)
       setError(insertError.message || 'Failed to create job. Please try again.')
       return
     }
+
+    const jobId = insertedJob.id
+    const jobNo = payload.job_no
+
+    if (stagedDocs.length > 0) {
+      setUploadingDocs(true)
+      await Promise.allSettled(stagedDocs.map(async (item) => {
+        try {
+          const sanitized = item.file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
+          const filePath = `${jobId}/${Date.now()}_${sanitized}`
+          const { error: upErr } = await supabase.storage
+            .from('job-documents')
+            .upload(filePath, item.file, { cacheControl: '3600', upsert: false })
+          if (upErr) throw upErr
+          const { data: { publicUrl } } = supabase.storage
+            .from('job-documents')
+            .getPublicUrl(filePath)
+          const { error: insErr } = await supabase.from('documents').insert({
+            job_id: jobId,
+            job_no: jobNo,
+            file_name: item.file.name,
+            file_type: item.file.name.split('.').pop(),
+            doc_type: item.docType,
+            file_url: publicUrl,
+            file_path: filePath,
+            uploaded_by: user.id,
+            uploaded_by_name: profile?.name || '',
+            file_size: item.file.size,
+            created_at: new Date().toISOString(),
+          })
+          if (insErr) throw insErr
+        } catch (docErr) {
+          console.warn('Document upload failed:', docErr)
+        }
+      }))
+      setUploadingDocs(false)
+    }
+
+    setSaving(false)
 
     if (onCreated) {
       onCreated()
@@ -377,6 +470,56 @@ export default function CreateJob({ isModal = false, onCancel, onCreated }) {
               </div>
             </div>
 
+            <div className="mt-8 border-t border-gray-200 pt-6">
+              <SectionHeading>Documents (Optional)</SectionHeading>
+              <p className="text-sm text-gray-500 mb-4">Attach shipping documents to this job</p>
+
+              {stagedDocs.length === 0 ? (
+                <p className="text-sm text-gray-400 italic mb-4">No documents added yet</p>
+              ) : (
+                <div className="space-y-2 mb-4">
+                  {stagedDocs.map((item) => {
+                    const isPdf = item.file.name.toLowerCase().endsWith('.pdf')
+                    return (
+                      <div key={item.id} className="flex items-center gap-3 bg-gray-50 rounded-md px-3 py-2">
+                        <span className={`text-xs font-bold ${isPdf ? 'text-red-500' : 'text-green-500'}`}>
+                          {isPdf ? 'PDF' : 'IMG'}
+                        </span>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm text-gray-900 truncate">{item.file.name}</p>
+                          <p className="text-xs text-gray-500">{formatFileSize(item.file.size)}</p>
+                        </div>
+                        <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold ${DOC_TYPE_COLORS[item.docType] || 'bg-slate-100 text-slate-800'}`}>
+                          {item.docType}
+                        </span>
+                        <button type="button" onClick={() => setStagedDocs((prev) => prev.filter((d) => d.id !== item.id))}
+                          className="text-gray-400 hover:text-red-600 transition-colors text-lg leading-none">&times;</button>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+
+              <div className="flex flex-wrap items-end gap-3">
+                <div className="w-44">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Document Type</label>
+                  <select value={addDocType} onChange={(e) => setAddDocType(e.target.value)} className={inputClass}>
+                    <option value="">Select...</option>
+                    {DOC_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">File</label>
+                  <input id="doc-file-input" type="file" accept=".pdf,.jpg,.jpeg,.png" onChange={handleAddDocFile} className="text-sm text-gray-600 file:mr-3 file:py-1.5 file:px-3 file:text-sm file:font-medium file:border file:border-gray-300 file:rounded-md file:bg-gray-50 file:text-gray-700 hover:file:bg-gray-100" />
+                </div>
+                <button type="button" onClick={handleAddDoc}
+                  className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-70">
+                  Add
+                </button>
+              </div>
+              {addDocError && <p className="text-xs text-red-600 mt-1">{addDocError}</p>}
+            </div>
+
             {error && (
               <p className="mt-6 text-red-600 text-sm text-center">{error}</p>
             )}
@@ -385,20 +528,20 @@ export default function CreateJob({ isModal = false, onCancel, onCreated }) {
               <button
                 type="button"
                 onClick={handleCancel}
-                disabled={saving}
+                disabled={saving || uploadingDocs}
                 className="px-5 py-2.5 text-sm font-medium text-gray-700 border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-70"
               >
                 Cancel
               </button>
               <button
                 type="submit"
-                disabled={saving}
+                disabled={saving || uploadingDocs}
                 className="px-5 py-2.5 text-sm font-medium text-white bg-[#1e3a5f] rounded-md hover:bg-[#16304f] disabled:opacity-70 flex items-center gap-2"
               >
-                {saving && (
+                {(saving || uploadingDocs) && (
                   <span className="h-4 w-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
                 )}
-                {saving ? 'Saving...' : 'Save Job'}
+                {uploadingDocs ? 'Uploading documents...' : saving ? 'Saving...' : 'Save Job'}
               </button>
             </div>
           </form>

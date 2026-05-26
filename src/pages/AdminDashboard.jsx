@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useState } from 'react'
+﻿import { useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '../supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { getStageName, isEtaThisWeek } from '../utils/jobHelpers'
@@ -425,12 +425,12 @@ function JobProgress({ stage }) {
   const s = Number(stage) || 0
   const pct = Math.min(100, Math.round((s / 10) * 100))
   return (
-    <div className="mt-2">
+    <div className="mt-1.5">
       <div className="flex items-center justify-between gap-2">
-        <span className="text-[11px] text-slate-400 truncate">Stage {s}: {getStageName(s)}</span>
-        <span className="text-[11px] text-slate-400">{pct}%</span>
+        <span className="text-[10px] text-slate-400 truncate">Stage {s}: {getStageName(s)}</span>
+        <span className="text-[10px] text-slate-400">{pct}%</span>
       </div>
-      <div className="mt-1 h-1 bg-slate-200 rounded overflow-hidden">
+      <div className="mt-0.5 h-0.5 bg-slate-200 rounded overflow-hidden">
         <div className="h-full bg-blue-600 rounded" style={{ width: `${pct}%` }} />
       </div>
     </div>
@@ -464,52 +464,48 @@ function JobCard({ job, profiles, onOpen, onDelete }) {
         if (['input','select','textarea','button'].includes(tag)) return
         if (e.key === 'Enter') { e.preventDefault(); onOpen() }
       }}
-      className={classNames('bg-white border border-slate-200 rounded-xl shadow-sm p-4 mb-3 cursor-pointer transition-all hover:border-blue-300 hover:shadow-md border-l-4', priorityBorder)}
+      className={classNames('bg-white border border-slate-200 rounded-xl shadow-sm p-3 mb-2 cursor-pointer transition-all hover:border-blue-300 hover:shadow-md border-l-4', priorityBorder)}
     >
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <div className="text-[15px] font-extrabold text-slate-900 truncate">{job.job_no || '—'}</div>
-          <div className="text-sm text-slate-700 mt-0.5">{job.client || '—'} <span className="text-slate-400">· {job.goods || '—'}</span></div>
-          <div className="text-[11px] text-slate-400 font-mono mt-1">
+          <div className="text-sm font-extrabold text-slate-900 truncate">{job.job_no || '—'}</div>
+          <div className="text-xs text-slate-700">{job.client || '—'} <span className="text-slate-400">· {job.goods || '—'}</span></div>
+          <div className="text-[10px] text-slate-400 font-mono mt-0.5">
             {job.be_no ? `BE:${job.be_no}` : ''}
             {job.bl_no ? `${job.be_no ? ' · ' : ''}BL:${job.bl_no}` : ''}
             {job.containers ? `${job.be_no || job.bl_no ? ' · ' : ''}${job.containers}` : ''}
             {!job.be_no && !job.bl_no && !job.containers ? '—' : ''}
           </div>
-          <div className="text-[11px] text-slate-400 mt-1">
+          <div className="text-[10px] text-slate-400 mt-0.5">
             {lastUpdatedName || lastUpdatedTs ? (
               <>Last updated by: <span className="text-slate-500 font-medium">{lastUpdatedName || '—'}</span> · <span>{lastUpdatedTs ? timeAgo(lastUpdatedTs) : '—'}</span></>
             ) : <span>Last updated by: —</span>}
           </div>
         </div>
-        <div className="flex flex-col items-end gap-2 shrink-0">
-          <div className="flex flex-wrap justify-end gap-2">
+        <div className="flex flex-col items-end gap-1 shrink-0">
+          <div className="flex flex-wrap justify-end gap-1">
             <span className={classNames('inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold', priority.cls)}>{priority.text}</span>
             <span className={classNames('inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold', mode.cls)}>{mode.text}</span>
           </div>
-          <div className="flex flex-wrap justify-end gap-2">
+          <div className="flex flex-wrap justify-end gap-1">
             <span className={classNames('inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold', rms.cls)}>{rms.text}</span>
             <span className={classNames('inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold', risk.cls)}>{risk.text}</span>
           </div>
         </div>
       </div>
       <JobProgress stage={job.stage} />
-      <div className="mt-3 flex items-center justify-between gap-3 flex-wrap">
-        <div className="text-[11px] text-slate-400">
+      <div className="mt-2 flex items-center justify-between gap-2 flex-wrap">
+        <div className="text-[10px] text-slate-400">
           <span className="text-slate-500 font-medium">{assignedName}</span> · {job.destination || '—'} ·{' '}
           <span className={classNames(daysOld >= 4 ? 'text-red-600 font-semibold' : daysOld >= 2 ? 'text-amber-700 font-semibold' : '')}>{daysOld}d old</span>
           {job.delay_reason ? <> · <span className="text-amber-700 font-semibold">{job.delay_reason}</span></> : null}
         </div>
-        <button type="button" onClick={(e) => { e.stopPropagation(); onDelete() }}
-          className="h-8 px-3 text-xs rounded-lg border border-red-300 bg-red-50 text-red-700 hover:bg-red-100">
-          Delete
-        </button>
       </div>
     </div>
   )
 }
 
-function JobDetailView({ job, profiles, currentUserName, isAdmin, canUpdateStage, onBack, onSaved, toast }) {
+function JobDetailView({ job, profiles, currentUserName, isAdmin, canUpdateStage, onBack, onSaved, toast, onDelete }) {
   const [editMode, setEditMode] = useState(false)
   const [saving, setSaving] = useState(false)
   const [stageUpdating, setStageUpdating] = useState(false)
@@ -797,6 +793,381 @@ function JobDetailView({ job, profiles, currentUserName, isAdmin, canUpdateStage
           <p className="text-sm text-slate-700 whitespace-pre-wrap">{job.notes}</p>
         </div>
       )}
+
+      <div className="px-4 sm:px-6 pb-6">
+        <button type="button" onClick={() => onDelete && onDelete()}
+          className="h-9 px-5 text-xs rounded-lg border border-red-300 bg-red-50 text-red-700 hover:bg-red-100 font-semibold">
+          Delete Job
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function DocumentsSection({ jobs, profiles, currentUserName, showToast }) {
+  const { user, profile } = useAuth()
+  const isAdmin = profile?.role === 'admin'
+  const [documents, setDocuments] = useState([])
+  const [loadingDocs, setLoadingDocs] = useState(true)
+  const [expandedJobId, setExpandedJobId] = useState(null)
+  const [uploadModal, setUploadModal] = useState({ open: false, job: null })
+  const [previewModal, setPreviewModal] = useState({ open: false, doc: null })
+  const [uploading, setUploading] = useState(false)
+  const [uploadProgress, setUploadProgress] = useState(0)
+  const [uploadDocType, setUploadDocType] = useState('BL')
+  const [uploadFile, setUploadFile] = useState(null)
+  const [docSearch, setDocSearch] = useState('')
+  const fileInputRef = useRef(null)
+
+  const DOC_TYPES = ['BL', 'Invoice', 'Packing List', 'COO', 'Insurance', 'BE', 'Examination Order', 'OOC', 'E-Way Bill', 'POD', 'Other']
+
+  const DOC_TYPE_COLORS = {
+    BL: 'bg-blue-100 text-blue-800',
+    Invoice: 'bg-green-100 text-green-800',
+    'Packing List': 'bg-teal-100 text-teal-800',
+    COO: 'bg-purple-100 text-purple-800',
+    Insurance: 'bg-amber-100 text-amber-800',
+    BE: 'bg-red-100 text-red-800',
+    'Examination Order': 'bg-orange-100 text-orange-800',
+    OOC: 'bg-emerald-100 text-emerald-800',
+    'E-Way Bill': 'bg-indigo-100 text-indigo-800',
+    POD: 'bg-gray-100 text-gray-800',
+    Other: 'bg-slate-100 text-slate-800',
+  }
+
+  useEffect(() => {
+    let mounted = true
+    ;(async () => {
+      setLoadingDocs(true)
+      const { data, error } = await supabase.from('documents').select('*').order('created_at', { ascending: false })
+      if (mounted) {
+        if (!error) setDocuments(data ?? [])
+        setLoadingDocs(false)
+      }
+    })()
+    return () => { mounted = false }
+  }, [])
+
+  const accordionItems = useMemo(() => {
+    const docMap = {}
+    documents.forEach((d) => {
+      if (!docMap[d.job_id]) docMap[d.job_id] = []
+      docMap[d.job_id].push(d)
+    })
+    let items = (jobs || []).map((j) => ({ ...j, docs: docMap[j.id] || [] }))
+    const q = docSearch.trim().toLowerCase()
+    if (q) {
+      items = items.filter((j) => {
+        if ((j.job_no || '').toLowerCase().includes(q)) return true
+        if ((j.client || '').toLowerCase().includes(q)) return true
+        return j.docs.some((d) => (d.file_name || '').toLowerCase().includes(q) || (d.doc_type || '').toLowerCase().includes(q))
+      })
+    }
+    items.sort((a, b) => {
+      const aHas = a.docs.length > 0 ? 0 : 1
+      const bHas = b.docs.length > 0 ? 0 : 1
+      if (aHas !== bHas) return aHas - bHas
+      return (a.job_no || '').localeCompare(b.job_no || '')
+    })
+    return items
+  }, [jobs, documents, docSearch])
+
+  const formatFileSize = (bytes) => {
+    if (!bytes && bytes !== 0) return '\u2014'
+    if (bytes < 1024) return bytes + ' B'
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
+    return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
+  }
+
+  const formatUploadDate = (ts) => {
+    if (!ts) return '\u2014'
+    return new Date(ts).toLocaleString('en-IN', {
+      day: '2-digit', month: 'short', year: 'numeric',
+      hour: '2-digit', minute: '2-digit',
+    })
+  }
+
+  const sanitizeFilename = (name) => name.replace(/[^a-zA-Z0-9._-]/g, '_')
+
+  const handleUpload = async () => {
+    if (!uploadFile || !uploadDocType || !uploadModal.job) return
+    setUploading(true)
+    setUploadProgress(0)
+    const sim = setInterval(() => setUploadProgress((p) => Math.min(p + 8, 85)), 250)
+    try {
+      const job = uploadModal.job
+      const safeName = sanitizeFilename(uploadFile.name)
+      const filePath = `${job.id}/${Date.now()}_${safeName}`
+      const { error: upErr } = await supabase.storage.from('job-documents').upload(filePath, uploadFile, { cacheControl: '3600', upsert: false })
+      if (upErr) throw upErr
+      const { data: { publicUrl } } = supabase.storage.from('job-documents').getPublicUrl(filePath)
+      const { error: insErr } = await supabase.from('documents').insert({
+        job_id: job.id,
+        job_no: job.job_no || '',
+        file_name: uploadFile.name,
+        file_type: uploadFile.name.split('.').pop(),
+        doc_type: uploadDocType,
+        file_url: publicUrl,
+        file_path: filePath,
+        uploaded_by: user?.id || '',
+        uploaded_by_name: profile?.name || currentUserName,
+        file_size: uploadFile.size,
+        created_at: new Date().toISOString(),
+      })
+      if (insErr) throw insErr
+      clearInterval(sim)
+      setUploadProgress(100)
+      showToast('Document uploaded successfully.', 'success')
+      setUploadModal({ open: false, job: null })
+      setUploadFile(null)
+      setUploadDocType('BL')
+      const { data: newDocs } = await supabase.from('documents').select('*').order('created_at', { ascending: false })
+      setDocuments(newDocs ?? [])
+    } catch (e) {
+      clearInterval(sim)
+      setUploadProgress(0)
+      showToast(e?.message || 'Upload failed.', 'error')
+    } finally {
+      setTimeout(() => setUploading(false), 600)
+    }
+  }
+
+  const handleDelete = async (doc) => {
+    if (!window.confirm(`Delete "${doc.file_name}"?`)) return
+    try {
+      await supabase.storage.from('job-documents').remove([doc.file_path])
+      await supabase.from('documents').delete().eq('id', doc.id)
+      setDocuments((prev) => prev.filter((d) => d.id !== doc.id))
+      showToast('Document deleted.', 'success')
+    } catch (e) {
+      showToast(e?.message || 'Delete failed.', 'error')
+    }
+  }
+
+  const fileIcon = (doc) => {
+    const ext = (doc.file_type || '').toLowerCase()
+    if (['pdf'].includes(ext)) return <span className="text-red-500 font-bold text-sm">PDF</span>
+    if (['jpg', 'jpeg', 'png'].includes(ext)) return <span className="text-green-500 font-bold text-sm">IMG</span>
+    return <span className="text-slate-400 font-bold text-sm">DOC</span>
+  }
+
+  const btnBase = 'h-8 px-3 text-xs rounded-lg font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed'
+
+  const selectBase = 'w-full h-9 px-3 text-xs rounded-lg border border-slate-200 bg-slate-50 text-slate-900 outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-300'
+
+  return (
+    <div>
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-4">
+        <div>
+          <div className="text-lg font-bold text-slate-900">Documents</div>
+          <div className="text-sm text-slate-400">Operational document register \u2014 all jobs</div>
+        </div>
+        <div className="flex items-center h-9 px-3 bg-white border border-slate-200 rounded-lg min-w-[240px]">
+          <input value={docSearch} onChange={(e) => setDocSearch(e.target.value)}
+            placeholder="Search job no., client, file name..."
+            className="w-full bg-transparent outline-none text-sm text-slate-900 placeholder:text-slate-400" />
+        </div>
+      </div>
+
+      {loadingDocs ? (
+        <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-10 flex justify-center">
+          <div className="h-9 w-9 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
+        </div>
+      ) : accordionItems.length === 0 ? (
+        <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-10 text-center text-slate-400">
+          {docSearch.trim() ? 'No jobs match your search.' : 'No jobs found.'}
+        </div>
+      ) : (
+        <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+          {accordionItems.map((job) => {
+            const isExpanded = expandedJobId === job.id
+            const docCount = job.docs.length
+            return (
+              <div key={job.id} className="border-b border-slate-200 last:border-b-0">
+                <div
+                  role="button" tabIndex={0}
+                  onClick={() => setExpandedJobId(isExpanded ? null : job.id)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') setExpandedJobId(isExpanded ? null : job.id) }}
+                  className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-slate-50 transition-colors"
+                >
+                  <div className="min-w-0 flex-1 flex items-center gap-2">
+                    <span className="text-sm font-bold text-slate-900">{job.job_no || '\u2014'}</span>
+                    <span className="text-xs text-slate-400 truncate">{job.client || ''}</span>
+                  </div>
+                  <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold whitespace-nowrap ${docCount > 0 ? 'bg-blue-100 text-blue-800' : 'bg-slate-100 text-slate-500'}`}>
+                    {docCount} document{docCount !== 1 ? 's' : ''}
+                  </span>
+                  <button type="button" onClick={(e) => { e.stopPropagation(); setUploadModal({ open: true, job }); setExpandedJobId(null) }}
+                    className={`${btnBase} bg-[#1e3a5f] text-white hover:bg-[#16304f]`}>
+                    Upload Document
+                  </button>
+                  <span className={`text-slate-400 transition-transform ${isExpanded ? 'rotate-90' : ''}`}>&#9654;</span>
+                </div>
+                {isExpanded && (
+                  <div className="bg-blue-50/30 px-4 py-4">
+                    {docCount === 0 ? (
+                      <p className="text-sm text-slate-400 text-center py-6">No documents uploaded yet for this job.</p>
+                    ) : (
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-xs">
+                          <thead>
+                            <tr className="text-slate-500 border-b border-slate-200">
+                              <th className="text-left font-semibold uppercase tracking-wide text-[10px] pb-2 pr-3">File Name</th>
+                              <th className="text-left font-semibold uppercase tracking-wide text-[10px] pb-2 pr-3">Doc Type</th>
+                              <th className="text-left font-semibold uppercase tracking-wide text-[10px] pb-2 pr-3">Uploaded By</th>
+                              <th className="text-left font-semibold uppercase tracking-wide text-[10px] pb-2 pr-3">Date &amp; Time</th>
+                              <th className="text-left font-semibold uppercase tracking-wide text-[10px] pb-2 pr-3">Size</th>
+                              <th className="text-left font-semibold uppercase tracking-wide text-[10px] pb-2">Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {job.docs.map((doc) => {
+                              const colorClass = DOC_TYPE_COLORS[doc.doc_type] || 'bg-slate-100 text-slate-800'
+                              const canDelete = isAdmin || doc.uploaded_by === user?.id
+                              return (
+                                <tr key={doc.id} className="border-b border-slate-100 last:border-b-0">
+                                  <td className="py-2 pr-3">
+                                    <div className="flex items-center gap-2">
+                                      {fileIcon(doc)}
+                                      <span className="text-slate-900 font-medium truncate max-w-[200px]" title={doc.file_name}>{doc.file_name}</span>
+                                    </div>
+                                  </td>
+                                  <td className="py-2 pr-3">
+                                    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold ${colorClass}`}>{doc.doc_type}</span>
+                                  </td>
+                                  <td className="py-2 pr-3 text-slate-600">{doc.uploaded_by_name || '\u2014'}</td>
+                                  <td className="py-2 pr-3 text-slate-500 whitespace-nowrap">{formatUploadDate(doc.created_at)}</td>
+                                  <td className="py-2 pr-3 text-slate-500 whitespace-nowrap">{formatFileSize(doc.file_size)}</td>
+                                  <td className="py-2">
+                                    <div className="flex items-center gap-1.5">
+                                      <button type="button" onClick={() => setPreviewModal({ open: true, doc })}
+                                        className="h-7 px-2.5 text-[11px] rounded-md bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 font-semibold">
+                                        View
+                                      </button>
+                                      <a href={doc.file_url} download={doc.file_name}
+                                        className="h-7 px-2.5 text-[11px] rounded-md bg-slate-50 text-slate-700 border border-slate-200 hover:bg-slate-100 font-semibold inline-flex items-center no-underline">
+                                        Download
+                                      </a>
+                                      {canDelete && (
+                                        <button type="button" onClick={() => handleDelete(doc)}
+                                          className="h-7 px-2.5 text-[11px] rounded-md border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 font-semibold">
+                                          Delete
+                                        </button>
+                                      )}
+                                    </div>
+                                  </td>
+                                </tr>
+                              )
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {uploadModal.open && uploadModal.job && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm px-4">
+          <div className="w-full max-w-lg bg-white rounded-xl shadow-2xl border border-slate-200 overflow-hidden">
+            <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between">
+              <div className="text-sm font-semibold text-slate-900">Upload Document \u2014 {uploadModal.job.job_no} {uploadModal.job.client}</div>
+              <button type="button" onClick={() => { setUploadModal({ open: false, job: null }); setUploadFile(null); setUploadDocType('BL'); setUploadProgress(0) }}
+                className="h-8 w-8 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition-colors text-lg leading-none">&times;</button>
+            </div>
+            <div className="px-5 py-4 space-y-4">
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-1">Document Type</label>
+                <select value={uploadDocType} onChange={(e) => setUploadDocType(e.target.value)} className={selectBase}>
+                  {DOC_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-1">File</label>
+                <div
+                  onClick={() => fileInputRef.current?.click()}
+                  onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add('border-blue-400', 'bg-blue-50') }}
+                  onDragLeave={(e) => { e.currentTarget.classList.remove('border-blue-400', 'bg-blue-50') }}
+                  onDrop={(e) => { e.preventDefault(); e.currentTarget.classList.remove('border-blue-400', 'bg-blue-50'); const f = e.dataTransfer?.files?.[0]; if (f) { if (f.size > 10 * 1024 * 1024) { showToast('File size must be under 10MB.', 'error') } else { setUploadFile(f) } } }}
+                  className={`border-2 border-dashed rounded-xl px-4 py-8 text-center cursor-pointer transition-colors ${uploadFile ? 'border-green-300 bg-green-50' : 'border-slate-300 hover:border-blue-300'}`}
+                >
+                  <input ref={fileInputRef} type="file" accept=".pdf,.jpg,.jpeg,.png" onChange={(e) => { const f = e.target.files?.[0]; if (f) { if (f.size > 10 * 1024 * 1024) { showToast('File size must be under 10MB.', 'error') } else { setUploadFile(f) } } }} className="hidden" />
+                  {uploadFile ? (
+                    <div>
+                      <p className="text-sm font-semibold text-slate-900 break-all">{uploadFile.name}</p>
+                      <p className="text-xs text-slate-400 mt-1">{formatFileSize(uploadFile.size)}</p>
+                    </div>
+                  ) : (
+                    <div>
+                      <p className="text-sm font-semibold text-slate-400">Click to select or drag &amp; drop</p>
+                      <p className="text-xs text-slate-400 mt-1">PDF, JPG, PNG \u2014 max 10MB</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+              {uploading && (
+                <div>
+                  <div className="h-1.5 bg-slate-200 rounded-full overflow-hidden">
+                    <div className="h-full bg-blue-600 rounded-full transition-all duration-300" style={{ width: `${uploadProgress}%` }} />
+                  </div>
+                </div>
+              )}
+            </div>
+            <div className="px-5 py-4 border-t border-slate-200 flex items-center justify-end gap-2">
+              <button type="button" onClick={() => { setUploadModal({ open: false, job: null }); setUploadFile(null); setUploadDocType('BL'); setUploadProgress(0) }}
+                className={`${btnBase} border border-slate-300 bg-slate-50 text-slate-700 hover:bg-slate-100`}>
+                Cancel
+              </button>
+              <button type="button" onClick={handleUpload} disabled={uploading || !uploadFile || !uploadDocType}
+                className={`${btnBase} bg-blue-600 text-white hover:bg-blue-700 inline-flex items-center gap-2`}>
+                {uploading && <span className="h-3.5 w-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />}
+                {uploading ? `${uploadProgress}%` : 'Upload'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {previewModal.open && previewModal.doc && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm px-4 py-6">
+          <div className="w-full max-w-4xl max-h-[90vh] bg-white rounded-xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col">
+            <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between gap-3 shrink-0">
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="text-sm font-semibold text-slate-900 truncate">{previewModal.doc.file_name}</span>
+                <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold ${DOC_TYPE_COLORS[previewModal.doc.doc_type] || 'bg-slate-100 text-slate-800'}`}>{previewModal.doc.doc_type}</span>
+              </div>
+              <button type="button" onClick={() => setPreviewModal({ open: false, doc: null })}
+                className="h-8 w-8 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition-colors text-lg leading-none shrink-0">&times;</button>
+            </div>
+            <div className="flex-1 overflow-auto bg-slate-100 p-4 flex items-center justify-center min-h-[300px]">
+              {['pdf'].includes((previewModal.doc.file_type || '').toLowerCase()) ? (
+                <iframe src={previewModal.doc.file_url} title="PDF Preview" className="w-full h-[600px] rounded-lg border border-slate-200 bg-white" />
+              ) : ['jpg', 'jpeg', 'png'].includes((previewModal.doc.file_type || '').toLowerCase()) ? (
+                <img src={previewModal.doc.file_url} alt={previewModal.doc.file_name} className="max-w-full max-h-[600px] rounded-lg shadow-sm object-contain" />
+              ) : (
+                <div className="text-center text-slate-400">
+                  <p className="text-sm font-semibold">Preview not available</p>
+                  <p className="text-xs mt-1">This file type cannot be previewed.</p>
+                </div>
+              )}
+            </div>
+            <div className="px-5 py-3 border-t border-slate-200 flex items-center justify-end gap-2 shrink-0">
+              <a href={previewModal.doc.file_url} download={previewModal.doc.file_name}
+                className={`${btnBase} bg-[#1e3a5f] text-white hover:bg-[#16304f] no-underline inline-flex items-center`}>
+                Download
+              </a>
+              <button type="button" onClick={() => setPreviewModal({ open: false, doc: null })}
+                className={`${btnBase} border border-slate-300 bg-slate-50 text-slate-700 hover:bg-slate-100`}>
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -965,8 +1336,8 @@ export default function AdminDashboard() {
     return (jobs || [])
       .filter((j) => {
         if (q) {
-          const hay = [j.job_no,j.client,j.goods,j.be_no,j.bl_no,j.containers,j.destination,j.mode,j.priority].filter(Boolean).join(' ').toLowerCase()
-          if (!hay.includes(q)) return false
+          const num = (j.job_no || '').replace(/^j-/i, '').toLowerCase()
+          if (!num.startsWith(q)) return false
         }
         if (filterStage !== '' && String(j.stage) !== String(filterStage)) return false
         if (filterPriority && String(j.priority||'').toLowerCase() !== filterPriority) return false
@@ -1009,28 +1380,28 @@ export default function AdminDashboard() {
   const jobWorkspace = (
     <>
       {!selectedJob && (
-        <div className="bg-white border border-slate-200 rounded-xl shadow-sm mb-4">
-          <div className="px-4 py-3 border-b border-slate-200 flex items-center justify-between">
+        <div className="bg-white border border-slate-200 rounded-xl shadow-sm mb-2">
+          <div className="px-4 py-1.5 border-b border-slate-200 flex items-center justify-between">
             <div className="text-sm font-semibold text-slate-900">All Jobs</div>
             <div className="text-xs text-slate-400">{filteredJobs.length} shown</div>
           </div>
-          <div className="p-4 flex flex-wrap gap-2 items-center">
-            <div className="flex items-center gap-2 h-8 px-3 bg-slate-50 border border-slate-200 rounded-lg flex-1 min-w-[220px] max-w-[320px]">
+          <div className="p-2 flex flex-wrap gap-1 items-center">
+            <div className="flex items-center h-6 px-2 bg-slate-50 border border-slate-200 rounded-lg flex-1 min-w-[180px] max-w-[240px]">
               <input value={search} onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search job, client, BE, BL, container..."
-                className="w-full bg-transparent outline-none text-sm text-slate-900 placeholder:text-slate-400" />
+                placeholder="Search by job number..."
+                className="w-full bg-transparent outline-none text-xs text-slate-900 placeholder:text-slate-400" />
             </div>
-            <select value={filterStage} onChange={(e) => setFilterStage(e.target.value)} className="h-9 px-3 text-sm bg-slate-50 border border-slate-200 rounded-lg text-slate-700 outline-none">
+            <select value={filterStage} onChange={(e) => setFilterStage(e.target.value)} className="h-6 px-2 text-xs bg-slate-50 border border-slate-200 rounded-lg text-slate-700 outline-none">
               {STAGE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
-            <select value={filterPriority} onChange={(e) => setFilterPriority(e.target.value)} className="h-9 px-3 text-sm bg-slate-50 border border-slate-200 rounded-lg text-slate-700 outline-none">
+            <select value={filterPriority} onChange={(e) => setFilterPriority(e.target.value)} className="h-6 px-2 text-xs bg-slate-50 border border-slate-200 rounded-lg text-slate-700 outline-none">
               {PRIORITY_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
-            <select value={filterMode} onChange={(e) => setFilterMode(e.target.value)} className="h-9 px-3 text-sm bg-slate-50 border border-slate-200 rounded-lg text-slate-700 outline-none">
+            <select value={filterMode} onChange={(e) => setFilterMode(e.target.value)} className="h-6 px-2 text-xs bg-slate-50 border border-slate-200 rounded-lg text-slate-700 outline-none">
               {MODE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
             <button type="button" onClick={() => { setSearch(''); setFilterStage(''); setFilterPriority(''); setFilterMode('') }}
-              className="h-9 px-4 text-sm rounded-lg border border-slate-300 bg-slate-50 text-slate-700 hover:bg-slate-100">
+              className="h-6 px-2.5 text-xs rounded-lg border border-slate-300 bg-slate-50 text-slate-700 hover:bg-slate-100">
               Clear
             </button>
           </div>
@@ -1046,6 +1417,7 @@ export default function AdminDashboard() {
           job={selectedJob} profiles={profiles} currentUserName={currentUserName}
           isAdmin={isAdmin} canUpdateStage={canUpdateStage}
           onBack={() => setSelectedJob(null)} onSaved={refreshJobs} toast={showToast}
+          onDelete={() => handleDeleteJob(selectedJob)}
         />
       ) : filteredJobs.length === 0 ? (
         <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-10 text-center text-slate-400">
@@ -1055,8 +1427,7 @@ export default function AdminDashboard() {
         <div>
           {filteredJobs.map((job) => (
             <JobCard key={job.id} job={job} profiles={profiles}
-              onOpen={() => setSelectedJob(job)}
-              onDelete={() => handleDeleteJob(job)} />
+              onOpen={() => setSelectedJob(job)} />
           ))}
         </div>
       )}
@@ -1065,7 +1436,7 @@ export default function AdminDashboard() {
 
   return (
     <div className="min-h-screen flex bg-slate-100 text-[14px]">
-      <aside className="w-[205px] bg-slate-900 border-r border-slate-700/60 text-slate-200 flex flex-col shrink-0">
+      <aside className="w-[175px] bg-slate-900 border-r border-slate-700/60 text-slate-200 flex flex-col shrink-0">
         <div className="px-4 py-3 border-b border-slate-700/60 flex items-center gap-2">
           <div className="w-8 h-8 rounded-lg bg-blue-600 text-white flex items-center justify-center font-extrabold text-sm">JD</div>
           <div className="min-w-0">
@@ -1077,9 +1448,9 @@ export default function AdminDashboard() {
         <nav className="flex-1 py-1">
           {NAV_ITEMS.map((item) => (
             <button key={item.id} type="button" onClick={() => handleNavClick(item.id)}
-              className={classNames('w-full text-left px-4 py-2 text-sm flex items-center gap-2 border-l-4 transition-colors',
+              className={classNames('w-full text-left px-3 py-2 text-sm flex items-center gap-1.5 border-l-4 transition-colors',
                 activeNav === item.id ? 'bg-slate-700 text-blue-300 border-l-blue-300 font-semibold' : 'text-slate-400 hover:bg-slate-700 hover:text-slate-100 border-l-transparent')}>
-              <span className="w-4 text-center shrink-0 opacity-90">{item.icon}</span>
+              <span className="w-3.5 text-center shrink-0 opacity-90">{item.icon}</span>
               <span className="truncate">{item.label}</span>
             </button>
           ))}
@@ -1121,6 +1492,7 @@ export default function AdminDashboard() {
                 job={selectedJob} profiles={profiles} currentUserName={currentUserName}
                 isAdmin={isAdmin} canUpdateStage={canUpdateStage}
                 onBack={() => setSelectedJob(null)} onSaved={refreshJobs} toast={showToast}
+                onDelete={() => handleDeleteJob(selectedJob)}
               />
             ) : (
             <>
@@ -1153,7 +1525,11 @@ export default function AdminDashboard() {
 
           {activeNav === 'jobs' && jobWorkspace}
 
-          {activeNav !== 'overview' && activeNav !== 'jobs' && (
+          {activeNav === 'documents' && (
+            <DocumentsSection jobs={jobs} profiles={profiles} currentUserName={currentUserName} showToast={showToast} />
+          )}
+
+          {activeNav !== 'overview' && activeNav !== 'jobs' && activeNav !== 'documents' && (
             <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-10 text-center text-slate-400">
               Coming soon
             </div>
