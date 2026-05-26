@@ -3,6 +3,7 @@ import { AuthProvider } from './contexts/AuthContext'
 import ProtectedRoute from './components/ProtectedRoute'
 import Login from './pages/Login'
 import AdminDashboard from './pages/AdminDashboard'
+import CreateJob from './pages/CreateJob'
 import EmployeeDashboard from './pages/EmployeeDashboard'
 
 export default function App() {
@@ -17,6 +18,14 @@ export default function App() {
             element={
               <ProtectedRoute allowedRole="admin">
                 <AdminDashboard />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/create-job"
+            element={
+              <ProtectedRoute allowedRole="admin">
+                <CreateJob />
               </ProtectedRoute>
             }
           />
