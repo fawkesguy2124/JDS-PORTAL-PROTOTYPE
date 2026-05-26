@@ -3,6 +3,7 @@ import { supabase } from '../supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { getStageName, isEtaThisWeek } from '../utils/jobHelpers'
 import CreateJob from './CreateJob'
+import { fetchAllTracking, deleteTracking, lookupAndSaveContainer, checkContainerStatus } from '../services/trackingService'
 
 const NAV_ITEMS = [
   { id: 'overview', label: 'Control Tower', icon: '■' },
@@ -1172,6 +1173,288 @@ function DocumentsSection({ jobs, profiles, currentUserName, showToast }) {
   )
 }
 
+const STATUS_STYLES = {
+  in_transit: 'bg-blue-100 text-blue-800',
+  arrived: 'bg-green-100 text-green-800',
+  customs_hold: 'bg-amber-100 text-amber-800',
+  delivered: 'bg-emerald-100 text-emerald-800',
+  empty_returned: 'bg-slate-100 text-slate-600',
+  at_cfs: 'bg-teal-100 text-teal-800',
+  on_rail: 'bg-indigo-100 text-indigo-800',
+  delayed: 'bg-red-100 text-red-800',
+}
+
+function formatContainerDate(ts) {
+  if (!ts) return '\u2014'
+  return new Date(ts).toLocaleString('en-IN', {
+    day: '2-digit', month: 'short', year: 'numeric',
+    hour: '2-digit', minute: '2-digit',
+  })
+}
+
+function ContainerTrackingSection({ showToast }) {
+  const [containers, setContainers] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [expandedContainer, setExpandedContainer] = useState(null)
+  const [newContainerNo, setNewContainerNo] = useState('')
+  const [addingContainer, setAddingContainer] = useState(false)
+  const [checkingContainers, setCheckingContainers] = useState(new Set())
+
+  const [newCarrier, setNewCarrier] = useState('')
+  const carriers = ['Maersk', 'MSC', 'Hapag-Lloyd', 'CMA-CGM', 'ONE', 'OOCL', 'COSCO']
+
+  const loadData = async (silent = false) => {
+    if (!silent) setLoading(true)
+    setError(null)
+    try {
+      const data = await fetchAllTracking()
+      setContainers(data)
+    } catch (e) {
+      setError(e?.message || 'Failed to load container data.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => { loadData() }, [])
+
+  const handleCheckStatus = async (containerNo, carrier) => {
+    setCheckingContainers((prev) => new Set(prev).add(containerNo))
+    try {
+      const updated = await checkContainerStatus(containerNo, carrier)
+      setContainers((prev) => prev.map((c) => c.containerNo === containerNo ? { ...c, ...updated } : c))
+      showToast(`Updated status for ${containerNo}`, 'success')
+    } catch (e) {
+      showToast(e.message || `Check failed for ${containerNo}`, 'error')
+    } finally {
+      setCheckingContainers((prev) => { const next = new Set(prev); next.delete(containerNo); return next })
+    }
+  }
+
+  const handleAddContainer = async () => {
+    const cn = newContainerNo.trim().toUpperCase()
+    if (!cn || cn.length < 4) {
+      showToast('Enter a valid container number (min 4 chars)', 'error')
+      return
+    }
+    if (!newCarrier) {
+      showToast('Select a shipping line', 'error')
+      return
+    }
+    if (containers.some((c) => c.containerNo === cn)) {
+      showToast('Container already tracked', 'error')
+      return
+    }
+    setAddingContainer(true)
+    try {
+      await lookupAndSaveContainer(cn, newCarrier)
+      showToast(`Added container ${cn}`, 'success')
+      setNewContainerNo('')
+      setNewCarrier('')
+      await loadData(true)
+    } catch (e) {
+      showToast(e.message, 'error')
+    } finally {
+      setAddingContainer(false)
+    }
+  }
+
+  const filtered = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase()
+    if (!q) return containers
+    return containers.filter((c) =>
+      (c.containerNo || '').toLowerCase().includes(q) ||
+      (c.carrier || '').toLowerCase().includes(q) ||
+      (c.vessel || '').toLowerCase().includes(q) ||
+      (c.currentLocation || '').toLowerCase().includes(q)
+    )
+  }, [containers, searchQuery])
+
+  if (loading) {
+    return (
+      <div>
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <div className="text-lg font-bold text-slate-900">Container Tracking</div>
+            <div className="text-sm text-slate-400">On-demand &mdash; click "Check Status" per container</div>
+          </div>
+        </div>
+        <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-6 space-y-4">
+          {[1, 2, 3, 4, 5].map((i) => (
+            <div key={i} className="h-14 bg-slate-100 rounded-lg animate-pulse" />
+          ))}
+        </div>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div>
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <div className="text-lg font-bold text-slate-900">Container Tracking</div>
+            <div className="text-sm text-slate-400">On-demand &mdash; click "Check Status" per container</div>
+          </div>
+        </div>
+        <div className="bg-white border border-red-200 rounded-xl shadow-sm p-10 text-center">
+          <p className="text-red-600 font-semibold mb-2">Failed to load container data</p>
+          <button type="button" onClick={() => loadData()}
+            className="h-8 px-4 text-xs font-semibold rounded-lg bg-[#1e3a5f] text-white hover:bg-[#16304f]">
+            Retry
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div>
+      <div className="flex flex-wrap items-center gap-2 mb-3 bg-white border border-slate-200 rounded-xl shadow-sm p-3">
+        <input value={newContainerNo} onChange={(e) => setNewContainerNo(e.target.value.toUpperCase())}
+          onKeyDown={(e) => e.key === 'Enter' && handleAddContainer()}
+          placeholder="Enter container number (e.g. MAEU1234567)"
+          className="flex-1 min-w-[180px] h-7 px-2.5 text-xs border border-slate-200 rounded-lg outline-none focus:border-[#1e3a5f] placeholder:text-slate-400" />
+        <select value={newCarrier} onChange={(e) => setNewCarrier(e.target.value)}
+          className="h-7 px-2 text-xs border border-slate-200 rounded-lg outline-none focus:border-[#1e3a5f] bg-white text-slate-700">
+          <option value="">Shipping line...</option>
+          {carriers.map((c) => <option key={c} value={c}>{c}</option>)}
+        </select>
+        <button type="button" onClick={handleAddContainer} disabled={addingContainer || !newCarrier}
+          className="h-7 px-3 text-xs font-semibold rounded-lg bg-[#1e3a5f] text-white hover:bg-[#16304f] disabled:opacity-50 inline-flex items-center gap-1">
+          {addingContainer ? <span className="h-3 w-3 border-2 border-white border-t-transparent rounded-full animate-spin" /> : '+'}
+          {addingContainer ? 'Adding...' : 'Track'}
+        </button>
+      </div>
+
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-4">
+        <div>
+          <div className="text-lg font-bold text-slate-900">Container Tracking</div>
+          <div className="text-sm text-slate-400">On-demand &mdash; click "Check Status" per container</div>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="flex items-center h-8 px-3 bg-white border border-slate-200 rounded-lg min-w-[200px]">
+            <input value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search container, carrier, vessel..."
+              className="w-full bg-transparent outline-none text-xs text-slate-900 placeholder:text-slate-400" />
+          </div>
+        </div>
+      </div>
+
+      {filtered.length === 0 ? (
+        <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-10 text-center text-slate-400">
+          {searchQuery.trim() ? 'No containers match your search.' : 'No container data available.'}
+        </div>
+      ) : (
+        <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="bg-slate-50 text-slate-500 border-b border-slate-200">
+                  <th className="text-left font-semibold uppercase tracking-wide text-[10px] px-3 py-2">Job #</th>
+                  <th className="text-left font-semibold uppercase tracking-wide text-[10px] px-3 py-2">Container</th>
+                  <th className="text-left font-semibold uppercase tracking-wide text-[10px] px-3 py-2">Status</th>
+                  <th className="text-left font-semibold uppercase tracking-wide text-[10px] px-3 py-2">Location</th>
+                  <th className="text-left font-semibold uppercase tracking-wide text-[10px] px-3 py-2">Last Update</th>
+                  <th className="text-center font-semibold uppercase tracking-wide text-[10px] px-3 py-2">Check</th>
+                  <th className="w-8 px-3 py-2"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((c) => {
+                  const isExpanded = expandedContainer === c.containerNo
+                  const statusCls = STATUS_STYLES[c.status] || 'bg-slate-100 text-slate-700'
+                  const isChecking = checkingContainers.has(c.containerNo)
+                  return (
+                    <tr key={c.containerNo} className="border-b border-slate-100 last:border-b-0">
+                      <td className="px-3 py-2 text-slate-600 text-[11px] max-w-[80px] truncate" title={c.jobNumber}>{c.jobNumber || '\u2014'}</td>
+                      <td className="px-3 py-2">
+                        <div className="flex items-center gap-2">
+                          <span className="text-slate-900 font-bold text-sm">{c.containerNo}</span>
+                          <span className="text-[10px] text-slate-400 font-mono">{c.carrier}</span>
+                        </div>
+                      </td>
+                      <td className="px-3 py-2">
+                        <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold ${statusCls}`}>{c.statusText}</span>
+                      </td>
+                      <td className="px-3 py-2 text-slate-600 max-w-[120px] truncate text-[11px]" title={c.currentLocation}>{c.currentLocation || '\u2014'}</td>
+                      <td className="px-3 py-2 text-slate-400 whitespace-nowrap text-[10px]">{formatContainerDate(c.lastUpdate)}</td>
+                      <td className="px-3 py-2 text-center">
+                        <button type="button" onClick={() => handleCheckStatus(c.containerNo, c.carrier)} disabled={isChecking}
+                          title={`Scrape ${c.carrier} website for live status`}
+                          className="h-6 px-2.5 text-[10px] font-semibold rounded-md bg-[#1e3a5f] text-white hover:bg-[#16304f] disabled:opacity-50 inline-flex items-center gap-1">
+                          {isChecking ? <span className="h-2.5 w-2.5 border-2 border-white border-t-transparent rounded-full animate-spin" /> : '\u25C9'}
+                          {isChecking ? 'Checking...' : 'Check Status'}
+                        </button>
+                      </td>
+                      <td className="px-3 py-2">
+                        <button type="button" onClick={() => setExpandedContainer(isExpanded ? null : c.containerNo)}
+                          className="text-slate-400 hover:text-slate-700 transition-colors text-xs">
+                          {isExpanded ? '\u25B2' : '\u25BC'}
+                        </button>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          {expandedContainer && (
+            <ContainerTimeline
+              container={containers.find((c) => c.containerNo === expandedContainer)}
+              onClose={() => setExpandedContainer(null)}
+            />
+          )}
+        </div>
+      )}
+
+      <div className="mt-3 text-[10px] text-slate-400">
+        {filtered.length} container{filtered.length !== 1 ? 's' : ''} tracked &middot; Click "Check Status" to fetch live updates
+      </div>
+    </div>
+  )
+}
+
+function ContainerTimeline({ container, onClose }) {
+  if (!container) return null
+  return (
+    <div className="border-t border-slate-200 bg-blue-50/30 px-4 sm:px-6 py-4">
+      <div className="flex items-center justify-between mb-3">
+        <div className="text-sm font-bold text-slate-900">Milestones &mdash; {container.containerNo}</div>
+        <button type="button" onClick={onClose}
+          className="text-[11px] font-semibold text-blue-700 hover:text-blue-800">Close</button>
+      </div>
+      {container.milestones.length === 0 ? (
+        <p className="text-xs text-slate-400 py-4 text-center">No milestone data available.</p>
+      ) : (
+        <div className="relative">
+          <div className="absolute left-[7px] top-2 bottom-2 w-0.5 bg-slate-200" />
+          <div className="space-y-3">
+            {container.milestones.map((m, i) => (
+              <div key={i} className="flex items-start gap-3 relative">
+                <div className={`w-4 h-4 rounded-full border-2 shrink-0 mt-0.5 z-10 ${
+                  i === container.milestones.length - 1
+                    ? 'bg-blue-600 border-blue-600'
+                    : 'bg-white border-slate-300'
+                }`} />
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-semibold text-slate-900">{m.description}</p>
+                  <p className="text-[11px] text-slate-500">
+                    {m.location} &middot; {formatContainerDate(m.date)}
+                  </p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function AdminDashboard() {
   const { profile } = useAuth()
   const [activeNav, setActiveNav] = useState('overview')
@@ -1526,7 +1809,11 @@ export default function AdminDashboard() {
             <DocumentsSection jobs={jobs} profiles={profiles} currentUserName={currentUserName} showToast={showToast} />
           )}
 
-          {activeNav !== 'overview' && activeNav !== 'jobs' && activeNav !== 'documents' && (
+          {activeNav === 'containers' && (
+            <ContainerTrackingSection showToast={showToast} />
+          )}
+
+          {activeNav !== 'overview' && activeNav !== 'jobs' && activeNav !== 'documents' && activeNav !== 'containers' && (
             <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-10 text-center text-slate-400">
               Coming soon
             </div>

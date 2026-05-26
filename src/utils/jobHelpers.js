@@ -1,3 +1,5 @@
+// src/utils/jobHelpers.js
+
 export const STAGE_NAMES = {
   0: 'Job Created',
   1: 'Docs Received',
@@ -13,45 +15,24 @@ export const STAGE_NAMES = {
 }
 
 export function getStageName(stage) {
-  return STAGE_NAMES[stage] ?? `Stage ${stage}`
-}
-
-export function priorityBadgeClass(priority) {
-  switch (priority?.toLowerCase()) {
-    case 'urgent':
-      return 'bg-red-100 text-red-800'
-    case 'high':
-      return 'bg-amber-100 text-amber-800'
-    default:
-      return 'bg-gray-100 text-gray-700'
-  }
-}
-
-export function priorityBorderClass(priority) {
-  switch (priority?.toLowerCase()) {
-    case 'urgent':
-      return 'border-l-4 border-l-red-500'
-    case 'high':
-      return 'border-l-4 border-l-amber-500'
-    default:
-      return 'border-l-4 border-l-blue-500'
-  }
-}
-
-export function getGreeting() {
-  const hour = new Date().getHours()
-  if (hour < 12) return 'Good morning'
-  if (hour < 17) return 'Good afternoon'
-  return 'Good evening'
+  return STAGE_NAMES[Number(stage)] || 'Unknown'
 }
 
 export function isEtaThisWeek(eta) {
   if (!eta) return false
-  const d = new Date(eta)
+  const etaDate = new Date(eta)
+  if (isNaN(etaDate.getTime())) return false
   const now = new Date()
-  const start = new Date(now)
-  start.setHours(0, 0, 0, 0)
-  const end = new Date(start)
-  end.setDate(end.getDate() + 7)
-  return d >= start && d <= end
+  const weekFromNow = new Date()
+  weekFromNow.setDate(now.getDate() + 7)
+  now.setHours(0, 0, 0, 0)
+  etaDate.setHours(0, 0, 0, 0)
+  return etaDate >= now && etaDate <= weekFromNow
+}
+
+export function priorityBadgeClass(priority) {
+  const p = String(priority || 'normal').toLowerCase()
+  if (p === 'urgent') return 'bg-red-100 text-red-800'
+  if (p === 'high') return 'bg-amber-100 text-amber-800'
+  return 'bg-slate-100 text-slate-700'
 }

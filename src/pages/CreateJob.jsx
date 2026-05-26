@@ -3,11 +3,16 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { STAGE_NAMES } from '../utils/jobHelpers'
+import { linkContainer } from '../api/trackingApi'
 
 const MODES = ['Sea FCL', 'Sea LCL', 'Air', 'BPT/MBPT']
 const PRIORITIES = ['normal', 'high', 'urgent']
 const RMS_STATUSES = ['pending', 'rms', 'apr', 'acl', 'check', 'hold']
 const BG_OPTIONS = ['no', 'yes', '100percent']
+const SHIPPING_LINES = [
+  'Maersk', 'MSC', 'Hapag-Lloyd', 'CMA-CGM', 'Evergreen',
+  'ONE', 'OOCL', 'COSCO', 'ZIM', 'HMM', 'Yang Ming', 'Other',
+]
 const DETENTION_RISKS = ['low', 'medium', 'high']
 
 const INITIAL_FORM = {
@@ -19,6 +24,7 @@ const INITIAL_FORM = {
   assigned_to: '',
   bl_no: '',
   containers: '',
+  carrier: '',
   vessel: '',
   eta: '',
   cfs_name: '',
@@ -230,6 +236,18 @@ export default function CreateJob({ isModal = false, onCancel, onCreated }) {
       setUploadingDocs(false)
     }
 
+    if (form.containers.trim()) {
+      if (!form.carrier) {
+        setError('Shipping Line is required when containers are specified.')
+        setSaving(false)
+        return
+      }
+      const containerList = form.containers.trim().split(/[\s,;]+/).filter(Boolean)
+      await Promise.allSettled(containerList.map((cn) =>
+        linkContainer(cn.toUpperCase(), jobId, jobNo, form.carrier).catch(() => {})
+      ))
+    }
+
     setSaving(false)
 
     if (onCreated) {
@@ -335,6 +353,13 @@ export default function CreateJob({ isModal = false, onCancel, onCreated }) {
 
               <Field label="BL Number">
                 <input type="text" value={form.bl_no} onChange={set('bl_no')} className={inputClass} />
+              </Field>
+
+              <Field label="Carrier / Shipping Line">
+                <select value={form.carrier} onChange={set('carrier')} className={inputClass}>
+                  <option value="">Select shipping line</option>
+                  {SHIPPING_LINES.map((s) => <option key={s} value={s}>{s}</option>)}
+                </select>
               </Field>
 
               <Field label="Container Numbers">
