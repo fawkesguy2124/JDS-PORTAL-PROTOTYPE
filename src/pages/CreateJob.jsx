@@ -170,6 +170,7 @@ export default function CreateJob({ isModal = false, onCancel, onCreated }) {
       assigned_to: form.assigned_to || null,
       bl_no: form.bl_no.trim() || null,
       containers: form.containers.trim() || null,
+      shipping_line: form.carrier || null,
       vessel: form.vessel.trim() || null,
       eta: form.eta || null,
       cfs_name: form.cfs_name.trim() || null,

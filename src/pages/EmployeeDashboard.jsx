@@ -68,6 +68,7 @@ export default function EmployeeDashboard() {
     mode: 'Mode',
     bl_no: 'BL Number',
     containers: 'Containers',
+    shipping_line: 'Shipping Line',
     vessel: 'Vessel / Flight',
     eta: 'ETA',
     cfs_name: 'CFS Name',
@@ -97,6 +98,7 @@ export default function EmployeeDashboard() {
       'mode',
       'bl_no',
       'containers',
+      'shipping_line',
       'vessel',
       'eta',
       'cfs_name',
@@ -107,6 +109,7 @@ export default function EmployeeDashboard() {
       'mode',
       'bl_no',
       'containers',
+      'shipping_line',
       'vessel',
       'eta',
       'cfs_name',
@@ -363,6 +366,7 @@ export default function EmployeeDashboard() {
         'mode',
         'bl_no',
         'containers',
+        'shipping_line',
         'vessel',
         'eta',
         'cfs_name',
@@ -774,6 +778,7 @@ export default function EmployeeDashboard() {
                             'bl_no',
                             'be_no',
                             'containers',
+                            'shipping_line',
                             'vessel',
                             'eta',
                             'cfs_name',
@@ -859,6 +864,30 @@ export default function EmployeeDashboard() {
                               }
                               if (k === 'notes') {
                                 return <textarea rows={3} value={value || ''} onChange={updateEditField(k)} disabled={disabled} className={classNames(inputBase, 'h-auto py-2')} onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()} />
+                              }
+                              if (k === 'shipping_line') {
+                                return (
+                                  <select value={value || ''} onChange={updateEditField(k)} disabled={disabled} className={inputBase} onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+                                    <option value="">— Select —</option>
+                                    <option value="Maersk">Maersk</option>
+                                    <option value="MSC">MSC</option>
+                                    <option value="Hapag-Lloyd">Hapag-Lloyd</option>
+                                    <option value="CMA-CGM">CMA-CGM</option>
+                                    <option value="Evergreen">Evergreen</option>
+                                    <option value="ONE">ONE</option>
+                                    <option value="OOCL">OOCL</option>
+                                    <option value="COSCO">COSCO</option>
+                                    <option value="ZIM">ZIM</option>
+                                    <option value="HMM">HMM</option>
+                                    <option value="Yang Ming">Yang Ming</option>
+                                    <option value="Wan Hai">Wan Hai</option>
+                                    <option value="TS Line">TS Line</option>
+                                    <option value="Interasia">Interasia</option>
+                                    <option value="Emirates">Emirates</option>
+                                    <option value="Akkon">Akkon</option>
+                                    <option value="Other">Other</option>
+                                  </select>
+                                )
                               }
                               return <input type="text" value={value || ''} onChange={updateEditField(k)} disabled={disabled} className={inputBase} onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()} />
                             }

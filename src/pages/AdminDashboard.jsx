@@ -49,6 +49,7 @@ const FIELD_LABELS = {
   mode: 'Mode',
   bl_no: 'BL Number',
   containers: 'Containers',
+  shipping_line: 'Shipping Line',
   vessel: 'Vessel / Flight',
   eta: 'ETA',
   cfs_name: 'CFS Name',
@@ -77,6 +78,7 @@ const FIELD_PERMS = {
   mode: { can: ['Uphadhya', 'Akshyani', 'Durgesh'] },
   bl_no: { can: ['Uphadhya', 'Akshyani', 'Durgesh'] },
   containers: { can: ['Uphadhya', 'Akshyani', 'Durgesh'] },
+  shipping_line: { can: ['Uphadhya', 'Akshyani', 'Durgesh'] },
   vessel: { can: ['Uphadhya', 'Akshyani', 'Durgesh'] },
   eta: { can: ['Uphadhya', 'Akshyani', 'Durgesh'] },
   cfs_name: { can: ['Uphadhya', 'Akshyani', 'Durgesh'] },
@@ -545,6 +547,7 @@ function JobDetailView({ job, profiles, currentUserName, isAdmin, canUpdateStage
     { key: 'bl_no', label: 'BL Number', value: displayValue(job.bl_no) },
     { key: 'be_no', label: 'BE Number', value: displayValue(job.be_no) },
     { key: 'containers', label: 'Containers', value: displayValue(job.containers) },
+    { key: 'shipping_line', label: 'Shipping Line', value: displayValue(job.shipping_line) },
     { key: 'vessel', label: 'Vessel / Flight', value: displayValue(job.vessel) },
     { key: 'eta', label: 'ETA', value: formatDateSlash(job.eta) },
     { key: 'cfs_name', label: 'CFS Name', value: displayValue(job.cfs_name) },
@@ -577,7 +580,7 @@ function JobDetailView({ job, profiles, currentUserName, isAdmin, canUpdateStage
     try {
       const updates = {}
       const newMeta = { ...(meta || {}) }
-      const candidates = ['job_no','client','mode','bl_no','containers','vessel','eta','cfs_name','be_no','hs_code','rms_status','bg_required','cfs_amount','destination','priority','goods','free_days','detention_risk','delay_reason','notes']
+      const candidates = ['job_no','client','mode','bl_no','containers','shipping_line','vessel','eta','cfs_name','be_no','hs_code','rms_status','bg_required','cfs_amount','destination','priority','goods','free_days','detention_risk','delay_reason','notes']
       candidates.forEach((k) => {
         if (!canEditField(k)) return
         const prev = job[k]
@@ -627,6 +630,30 @@ function JobDetailView({ job, profiles, currentUserName, isAdmin, canUpdateStage
     if (key === 'detention_risk') return <select value={value||'low'} onChange={updateForm(key)} disabled={disabled} className={inputBase}><option value="low">low</option><option value="medium">medium</option><option value="high">high</option></select>
     if (key === 'eta') return <input type="date" value={value||''} onChange={updateForm(key)} disabled={disabled} className={inputBase} />
     if (key === 'free_days' || key === 'cfs_amount') return <input type="number" value={value??''} onChange={updateForm(key)} disabled={disabled} className={inputBase} />
+    if (key === 'shipping_line') {
+      return (
+        <select value={value || ''} onChange={updateForm(key)} disabled={disabled} className={inputBase}>
+          <option value="">— Select —</option>
+          <option value="Maersk">Maersk</option>
+          <option value="MSC">MSC</option>
+          <option value="Hapag-Lloyd">Hapag-Lloyd</option>
+          <option value="CMA-CGM">CMA-CGM</option>
+          <option value="Evergreen">Evergreen</option>
+          <option value="ONE">ONE</option>
+          <option value="OOCL">OOCL</option>
+          <option value="COSCO">COSCO</option>
+          <option value="ZIM">ZIM</option>
+          <option value="HMM">HMM</option>
+          <option value="Yang Ming">Yang Ming</option>
+          <option value="Wan Hai">Wan Hai</option>
+          <option value="TS Line">TS Line</option>
+          <option value="Interasia">Interasia</option>
+          <option value="Emirates">Emirates</option>
+          <option value="Akkon">Akkon</option>
+          <option value="Other">Other</option>
+        </select>
+      )
+    }
     if (key === 'notes') return <textarea value={value||''} onChange={updateForm(key)} disabled={disabled} rows={3} className={classNames(inputBase,'h-auto py-2')} />
     return <input type="text" value={value||''} onChange={updateForm(key)} disabled={disabled} className={inputBase} />
   }
@@ -695,7 +722,7 @@ function JobDetailView({ job, profiles, currentUserName, isAdmin, canUpdateStage
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-5">
-            {['job_no','client','mode','priority','goods','bl_no','be_no','containers','vessel','eta','cfs_name','cfs_amount','hs_code','rms_status','bg_required','destination','free_days','detention_risk','delay_reason','notes'].map((k) => (
+            {['job_no','client','mode','priority','goods','bl_no','be_no','containers','shipping_line','vessel','eta','cfs_name','cfs_amount','hs_code','rms_status','bg_required','destination','free_days','detention_risk','delay_reason','notes'].map((k) => (
               <div key={k} className={k === 'notes' ? 'md:col-span-2' : ''}>
                 <div className="flex items-center flex-wrap gap-1 mb-1">
                   <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide">{FIELD_LABELS[k] || k}</p>
