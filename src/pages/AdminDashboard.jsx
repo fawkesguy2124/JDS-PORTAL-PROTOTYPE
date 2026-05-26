@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+﻿import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { getStageName, isEtaThisWeek } from '../utils/jobHelpers'
+import CreateJob from './CreateJob'
 
 const NAV_ITEMS = [
   { id: 'overview', label: 'Control Tower', icon: '■' },
@@ -106,6 +106,36 @@ function daysOldFrom(value) {
   return Math.floor(Math.max(0, Date.now() - new Date(value).getTime()) / (1000 * 60 * 60 * 24))
 }
 
+function daysUntilDate(value) {
+  if (!value) return null
+  const target = new Date(value)
+  if (Number.isNaN(target.getTime())) return null
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  target.setHours(0, 0, 0, 0)
+  return Math.ceil((target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
+}
+
+function freeDaysLeft(job) {
+  const etaOffset = daysUntilDate(job.eta)
+  if (etaOffset === null) return null
+  return etaOffset + (Number(job.free_days) || 0)
+}
+
+function lastUpdateAgeHours(job) {
+  const ts = new Date(job.updated_at || job.created_at || 0).getTime()
+  if (!ts) return 9999
+  return Math.floor(Math.max(0, Date.now() - ts) / (1000 * 60 * 60))
+}
+
+function dayLabel(days) {
+  if (days === null || days === undefined) return 'No ETA'
+  if (days < 0) return `${Math.abs(days)}d expired`
+  if (days === 0) return 'Today'
+  if (days === 1) return '1 day'
+  return `${days} days`
+}
+
 function formatDateSlash(value) {
   if (!value) return '—'
   const d = new Date(value)
@@ -115,6 +145,7 @@ function formatDateSlash(value) {
 function formatDateTime(value) {
   if (!value) return '—'
   return new Date(value).toLocaleString('en-IN', {
+    timeZone: 'Asia/Kolkata',
     day: '2-digit', month: 'short', year: 'numeric',
     hour: '2-digit', minute: '2-digit',
   })
@@ -190,6 +221,22 @@ function timeAgo(ts) {
   return `${Math.floor(mo / 12)}y ago`
 }
 
+function formatAccountabilityWhen(ts) {
+  const ms = normalizeMetaTs(ts)
+  if (!ms) return '-'
+  const diff = Math.max(0, Date.now() - ms)
+  const minutes = Math.floor(diff / (1000 * 60))
+  if (minutes < 1) return 'Just now'
+  if (minutes < 60) return `${minutes} ${minutes === 1 ? 'minute' : 'minutes'} ago`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours} ${hours === 1 ? 'hour' : 'hours'} ago`
+  return new Date(ms).toLocaleString('en-IN', {
+    timeZone: 'Asia/Kolkata',
+    day: '2-digit', month: 'short', year: 'numeric',
+    hour: '2-digit', minute: '2-digit',
+  })
+}
+
 function progressColor(stage) {
   const s = Number(stage) || 0
   if (s <= 3) return 'bg-red-600'
@@ -211,7 +258,7 @@ function FieldMetaChip({ meta, profiles }) {
 }
 
 function KpiCard({ label, value, hint, tone, icon }) {
-  const tones = { blue: 'text-blue-600', red: 'text-red-600', amber: 'text-amber-600', green: 'text-green-600' }
+  const tones = { blue: 'text-blue-600', red: 'text-red-600', amber: 'text-amber-600', green: 'text-green-600', violet: 'text-violet-600' }
   return (
     <div className="bg-white border border-slate-200 rounded-xl px-4 py-3 shadow-sm relative overflow-hidden">
       <p className="text-[11px] font-medium text-slate-600 mb-1">{label}</p>
@@ -219,6 +266,136 @@ function KpiCard({ label, value, hint, tone, icon }) {
       {hint && <p className="text-[11px] text-slate-400 mt-1">{hint}</p>}
       {icon && <div className={classNames('absolute right-3 top-1/2 -translate-y-1/2 text-3xl opacity-[0.08]', tones[tone] || tones.blue)}>{icon}</div>}
     </div>
+  )
+}
+
+function TowerCard({ title, subtitle, children }) {
+  return (
+    <section className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+      <div className="px-4 py-3 border-b border-slate-200 flex items-center justify-between gap-3">
+        <div className="text-sm font-semibold text-slate-900 truncate">{title}</div>
+        {subtitle && <div className="text-xs text-slate-400 shrink-0">{subtitle}</div>}
+      </div>
+      {children}
+    </section>
+  )
+}
+
+function EmptyTowerState({ children }) {
+  return <div className="px-4 py-8 text-sm text-center text-slate-400">{children}</div>
+}
+
+function RiskBadge({ tone = 'blue', children }) {
+  const tones = {
+    red: 'bg-red-100 text-red-800',
+    amber: 'bg-amber-100 text-amber-800',
+    green: 'bg-green-100 text-green-800',
+    blue: 'bg-blue-100 text-blue-800',
+    violet: 'bg-violet-100 text-violet-800',
+  }
+  return <span className={classNames('inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold whitespace-nowrap', tones[tone] || tones.blue)}>{children}</span>
+}
+
+function TodayPriorityQueue({ items, profiles, onOpen }) {
+  return (
+    <TowerCard title="Today's Priority Queue" subtitle="Action-first list">
+      {items.length ? (
+        <div className="overflow-x-auto">
+          <table className="w-full table-fixed text-xs">
+            <thead className="bg-slate-50 text-slate-500">
+              <tr>
+                <th className="w-[13%] text-left px-4 py-2 font-semibold uppercase tracking-wide text-[10px]">Job</th>
+                <th className="w-[18%] text-left px-4 py-2 font-semibold uppercase tracking-wide text-[10px]">Client</th>
+                <th className="w-[18%] text-left px-4 py-2 font-semibold uppercase tracking-wide text-[10px]">Stage</th>
+                <th className="w-[15%] text-left px-4 py-2 font-semibold uppercase tracking-wide text-[10px]">Owner</th>
+                <th className="w-[21%] text-left px-4 py-2 font-semibold uppercase tracking-wide text-[10px]">Issue</th>
+                <th className="w-[15%] text-left px-4 py-2 font-semibold uppercase tracking-wide text-[10px]">Next Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map(({ job, issue, action, tone }) => (
+                <tr key={job.id} onClick={() => onOpen(job)} className="border-t border-slate-100 hover:bg-blue-50/40 cursor-pointer">
+                  <td className="px-4 py-2 font-extrabold text-slate-900 truncate">{job.job_no || '—'}</td>
+                  <td className="px-4 py-2 text-slate-700 truncate" title={job.client || '—'}>{job.client || '—'}</td>
+                  <td className="px-4 py-2"><RiskBadge tone={tone}>{getStageName(Number(job.stage) || 0)}</RiskBadge></td>
+                  <td className="px-4 py-2 text-slate-700 truncate">{job.assigned_to ? profiles[job.assigned_to] || '—' : '—'}</td>
+                  <td className="px-4 py-2 text-slate-900 font-semibold truncate" title={issue}>{issue}</td>
+                  <td className="px-4 py-2 text-slate-600 truncate">{action}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : <EmptyTowerState>No urgent operational actions right now.</EmptyTowerState>}
+    </TowerCard>
+  )
+}
+
+function FreeDaysRiskPanel({ items, onOpen }) {
+  return (
+    <TowerCard title="Free Days Risk" subtitle="Detention watch">
+      {items.length ? items.map(({ job, days, tone }) => (
+        <button key={job.id} type="button" onClick={() => onOpen(job)} className="w-full px-4 py-3 border-t border-slate-100 text-left grid grid-cols-[1fr_auto] gap-3 hover:bg-blue-50/40">
+          <span className="min-w-0">
+            <span className="block text-sm font-bold text-slate-900 truncate">{job.job_no || '—'} · {job.client || '—'}</span>
+            <span className="block text-xs text-slate-500 truncate">{job.containers || 'No containers'} · {job.cfs_name || 'CFS pending'}</span>
+          </span>
+          <RiskBadge tone={tone}>{dayLabel(days)}</RiskBadge>
+        </button>
+      )) : <EmptyTowerState>No free-day risks in the active list.</EmptyTowerState>}
+    </TowerCard>
+  )
+}
+
+function StageBottlenecks({ items, maxCount, onStage }) {
+  return (
+    <TowerCard title="Stage Bottlenecks" subtitle="Click to filter">
+      {items.length ? items.map(({ stage, count }) => {
+        const pct = maxCount ? Math.max(8, Math.round((count / maxCount) * 100)) : 0
+        return (
+          <button key={stage} type="button" onClick={() => onStage(String(stage))} className="w-full px-4 py-3 border-t border-slate-100 text-left hover:bg-blue-50/40">
+            <div className="flex items-center justify-between gap-3 mb-2">
+              <span className="text-sm font-semibold text-slate-800 truncate">{getStageName(stage)}</span>
+              <span className="text-xs text-slate-500">{count} jobs</span>
+            </div>
+            <div className="h-2 bg-slate-200 rounded-full overflow-hidden">
+              <div className={classNames('h-full rounded-full', progressColor(stage))} style={{ width: `${pct}%` }} />
+            </div>
+          </button>
+        )
+      }) : <EmptyTowerState>No bottlenecks detected.</EmptyTowerState>}
+    </TowerCard>
+  )
+}
+
+function StaleUpdatesPanel({ items, onOpen }) {
+  return (
+    <TowerCard title="Stale Updates" subtitle="No update in 24h+">
+      {items.length ? items.map(({ job, hours, tone }) => (
+        <button key={job.id} type="button" onClick={() => onOpen(job)} className="w-full px-4 py-3 border-t border-slate-100 text-left grid grid-cols-[1fr_auto] gap-3 hover:bg-blue-50/40">
+          <span className="min-w-0">
+            <span className="block text-sm font-bold text-slate-900 truncate">{job.job_no || '—'} · {job.client || '—'}</span>
+            <span className="block text-xs text-slate-500 truncate">{getStageName(Number(job.stage) || 0)}</span>
+          </span>
+          <RiskBadge tone={tone}>{hours >= 48 ? `${Math.floor(hours / 24)} days` : `${hours} hours`}</RiskBadge>
+        </button>
+      )) : <EmptyTowerState>All active jobs have recent updates.</EmptyTowerState>}
+    </TowerCard>
+  )
+}
+
+function EmployeeAccountability({ items }) {
+  return (
+    <TowerCard title="Employee Accountability" subtitle="Workload snapshot">
+      {items.length ? items.map((x) => (
+        <div key={x.name} className="px-4 py-3 border-t border-slate-100 grid grid-cols-[1fr_auto_auto_auto] gap-3 items-center">
+          <div className="text-sm font-bold text-slate-900 truncate">{x.name}</div>
+          <div className="text-xs text-slate-500 text-right">{x.active} active</div>
+          <div className="text-xs text-slate-500 text-right">{x.urgent} urgent</div>
+          <RiskBadge tone={x.stale > 1 ? 'red' : x.stale ? 'amber' : 'green'}>{x.stale} stale</RiskBadge>
+        </div>
+      )) : <EmptyTowerState>No assigned active jobs yet.</EmptyTowerState>}
+    </TowerCard>
   )
 }
 
@@ -336,6 +513,7 @@ function JobDetailView({ job, profiles, currentUserName, isAdmin, canUpdateStage
   const [editMode, setEditMode] = useState(false)
   const [saving, setSaving] = useState(false)
   const [stageUpdating, setStageUpdating] = useState(false)
+  const [showFullAccountability, setShowFullAccountability] = useState(false)
   const [form, setForm] = useState(() => ({ ...job }))
   const meta = job.field_meta && typeof job.field_meta === 'object' ? job.field_meta : {}
 
@@ -534,33 +712,79 @@ function JobDetailView({ job, profiles, currentUserName, isAdmin, canUpdateStage
       </div>
 
       <div className="px-4 sm:px-6 pb-6">
-        <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
-          <div className="px-4 py-3 border-b border-slate-200 flex items-center justify-between">
+        <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm w-full">
+          <div className="px-4 py-3 border-b border-slate-200 flex items-center justify-between gap-3">
             <div className="text-sm font-semibold text-slate-900">Field Accountability</div>
-            <div className="text-xs text-slate-400">Who updated what</div>
+            <div className="flex items-center gap-3">
+              <div className="text-xs text-slate-400">Who updated what</div>
+              {metaEntries.length > 5 && (
+                <button type="button" onClick={() => setShowFullAccountability(true)} className="text-xs font-semibold text-blue-700 hover:text-blue-800">
+                  View Full List
+                </button>
+              )}
+            </div>
           </div>
-          <table className="w-full text-xs">
-            <thead className="bg-slate-50 text-slate-500">
+          <div className="max-h-[228px] overflow-y-auto">
+          <table className="w-full table-fixed text-xs">
+            <thead className="sticky top-0 z-10 bg-slate-50 text-slate-500">
               <tr>
-                <th className="text-left px-4 py-2 font-semibold uppercase tracking-wide text-[10px]">Field Name</th>
-                <th className="text-left px-4 py-2 font-semibold uppercase tracking-wide text-[10px]">Updated By</th>
-                <th className="text-left px-4 py-2 font-semibold uppercase tracking-wide text-[10px]">When</th>
+                <th className="w-[36%] text-left px-4 py-2 font-semibold uppercase tracking-wide text-[10px]">Field Name</th>
+                <th className="w-[32%] text-left px-4 py-2 font-semibold uppercase tracking-wide text-[10px]">Updated By</th>
+                <th className="w-[32%] text-left px-4 py-2 font-semibold uppercase tracking-wide text-[10px]">When</th>
               </tr>
             </thead>
             <tbody>
               {metaEntries.length ? metaEntries.map((m) => (
                 <tr key={m.key} className="border-t border-slate-100">
-                  <td className="px-4 py-2 text-slate-700">{m.label}</td>
-                  <td className="px-4 py-2 text-slate-900 font-semibold">{profiles[m.by] || m.by}</td>
-                  <td className="px-4 py-2 text-slate-500">{m.ts ? timeAgo(m.ts) : '—'}</td>
+                  <td className="px-4 py-2 text-slate-700 truncate" title={m.label}>{m.label}</td>
+                  <td className="px-4 py-2 text-slate-900 font-semibold truncate" title={profiles[m.by] || m.by}>{profiles[m.by] || m.by}</td>
+                  <td className="px-4 py-2 text-slate-500">{formatAccountabilityWhen(m.ts)}</td>
                 </tr>
               )) : (
                 <tr><td colSpan={3} className="px-4 py-8 text-center text-slate-400">No field updates logged yet</td></tr>
               )}
             </tbody>
           </table>
+          </div>
         </div>
       </div>
+
+      {showFullAccountability && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/35 px-4">
+          <div className="w-full max-w-3xl max-h-[82vh] overflow-hidden rounded-xl bg-white shadow-2xl border border-slate-200">
+            <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between gap-3">
+              <div>
+                <div className="text-base font-semibold text-slate-900">Field Accountability</div>
+                <div className="text-xs text-slate-500">{metaEntries.length} updates shown in IST</div>
+              </div>
+              <button type="button" onClick={() => setShowFullAccountability(false)}
+                className="h-8 px-3 text-xs rounded-lg border border-slate-300 bg-slate-50 text-slate-700 hover:bg-slate-100 font-semibold">
+                Close
+              </button>
+            </div>
+            <div className="max-h-[68vh] overflow-y-auto">
+              <table className="w-full table-fixed text-xs">
+                <thead className="sticky top-0 z-10 bg-slate-50 text-slate-500">
+                  <tr>
+                    <th className="w-[36%] text-left px-5 py-2 font-semibold uppercase tracking-wide text-[10px]">Field Name</th>
+                    <th className="w-[32%] text-left px-5 py-2 font-semibold uppercase tracking-wide text-[10px]">Updated By</th>
+                    <th className="w-[32%] text-left px-5 py-2 font-semibold uppercase tracking-wide text-[10px]">When</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {metaEntries.map((m) => (
+                    <tr key={m.key} className="border-t border-slate-100">
+                      <td className="px-5 py-2 text-slate-700">{m.label}</td>
+                      <td className="px-5 py-2 text-slate-900 font-semibold">{profiles[m.by] || m.by}</td>
+                      <td className="px-5 py-2 text-slate-500">{formatAccountabilityWhen(m.ts)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
 
       {job.delay_reason?.trim() && (
         <div className="mx-4 sm:mx-6 mb-5 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
@@ -578,7 +802,6 @@ function JobDetailView({ job, profiles, currentUserName, isAdmin, canUpdateStage
 }
 
 export default function AdminDashboard() {
-  const navigate = useNavigate()
   const { profile } = useAuth()
   const [activeNav, setActiveNav] = useState('overview')
   const [jobs, setJobs] = useState([])
@@ -589,6 +812,7 @@ export default function AdminDashboard() {
   const [filterPriority, setFilterPriority] = useState('')
   const [filterMode, setFilterMode] = useState('')
   const [selectedJob, setSelectedJob] = useState(null)
+  const [showCreateJob, setShowCreateJob] = useState(false)
   const [toastState, setToastState] = useState(null)
 
   useEffect(() => {
@@ -620,9 +844,120 @@ export default function AdminDashboard() {
     const active = jobs.filter((j) => j.stage !== 10)
     const urgent = jobs.filter((j) => String(j.priority||'').toLowerCase() === 'urgent' && j.stage !== 10)
     const etasWeek = jobs.filter((j) => isEtaThisWeek(j.eta) && j.stage !== 10)
-    const paymentsPending = jobs.filter((j) => j.stage === 6)
-    return { active: active.length, urgent: urgent.length, etasWeek: etasWeek.length, paymentsPending: paymentsPending.length }
+    const paymentsPending = active.filter((j) => [6, 8].includes(Number(j.stage)))
+    const freeDaysAtRisk = active.filter((j) => {
+      const left = freeDaysLeft(j)
+      return left !== null && left <= 2
+    })
+    const stale = active.filter((j) => {
+      const hours = lastUpdateAgeHours(j)
+      return String(j.priority || '').toLowerCase() === 'urgent' ? hours >= 12 : hours >= 24
+    })
+    return {
+      active: active.length,
+      urgent: urgent.length,
+      etasWeek: etasWeek.length,
+      paymentsPending: paymentsPending.length,
+      freeDaysAtRisk: freeDaysAtRisk.length,
+      stale: stale.length,
+    }
   }, [jobs])
+
+  const controlTower = useMemo(() => {
+    const active = (jobs || []).filter((j) => Number(j.stage) !== 10)
+
+    const priorityItems = active.map((job) => {
+      const stage = Number(job.stage) || 0
+      const left = freeDaysLeft(job)
+      const hours = lastUpdateAgeHours(job)
+      const urgent = String(job.priority || '').toLowerCase() === 'urgent'
+      const highRisk = String(job.detention_risk || '').toLowerCase() === 'high'
+      let score = urgent ? 40 : 0
+      let issue = urgent ? 'Urgent priority' : 'Needs review'
+      let action = 'Open job'
+      let tone = urgent ? 'red' : 'blue'
+
+      if (left !== null && left <= 2) {
+        score += left <= 0 ? 60 : 45
+        issue = left <= 0 ? 'Free days expired' : 'Free days ending soon'
+        action = 'Clear / deliver'
+        tone = left <= 0 ? 'red' : 'amber'
+      } else if ([6, 8].includes(stage)) {
+        score += 34
+        issue = stage === 6 ? 'Duty payment pending' : 'CFS coordination pending'
+        action = stage === 6 ? 'Confirm payment' : 'Coordinate CFS'
+        tone = 'violet'
+      } else if (job.delay_reason?.trim()) {
+        score += 32
+        issue = job.delay_reason.trim()
+        action = 'Resolve delay'
+        tone = 'amber'
+      } else if (highRisk) {
+        score += 30
+        issue = 'High detention risk'
+        action = 'Review risk'
+        tone = 'red'
+      } else if (hours >= (urgent ? 12 : 24)) {
+        score += hours >= 48 ? 28 : 20
+        issue = 'No recent update'
+        action = 'Ask owner'
+        tone = hours >= 48 ? 'red' : 'amber'
+      } else if (isEtaThisWeek(job.eta)) {
+        score += 12
+        issue = 'ETA this week'
+        action = 'Check readiness'
+        tone = 'blue'
+      }
+
+      return { job, score, issue, action, tone }
+    }).filter((x) => x.score > 0)
+      .sort((a, b) => b.score - a.score || new Date(b.job.updated_at || 0) - new Date(a.job.updated_at || 0))
+      .slice(0, 6)
+
+    const freeDaysRisk = active.map((job) => ({ job, days: freeDaysLeft(job) }))
+      .filter((x) => x.days !== null && x.days <= 4)
+      .map((x) => ({ ...x, tone: x.days <= 0 ? 'red' : x.days <= 2 ? 'amber' : 'green' }))
+      .sort((a, b) => a.days - b.days)
+      .slice(0, 5)
+
+    const staleUpdates = active.map((job) => ({ job, hours: lastUpdateAgeHours(job) }))
+      .filter((x) => x.hours >= (String(x.job.priority || '').toLowerCase() === 'urgent' ? 12 : 24))
+      .map((x) => ({ ...x, tone: x.hours >= 48 ? 'red' : 'amber' }))
+      .sort((a, b) => b.hours - a.hours)
+      .slice(0, 5)
+
+    const stageMap = new Map()
+    active.forEach((job) => {
+      const stage = Number(job.stage) || 0
+      stageMap.set(stage, (stageMap.get(stage) || 0) + 1)
+    })
+    const stageBottlenecks = [...stageMap.entries()]
+      .map(([stage, count]) => ({ stage, count }))
+      .sort((a, b) => b.count - a.count || a.stage - b.stage)
+      .slice(0, 5)
+
+    const ownerMap = new Map()
+    active.forEach((job) => {
+      const name = job.assigned_to ? profiles[job.assigned_to] || 'Unassigned' : 'Unassigned'
+      const row = ownerMap.get(name) || { name, active: 0, urgent: 0, stale: 0 }
+      row.active += 1
+      if (String(job.priority || '').toLowerCase() === 'urgent') row.urgent += 1
+      if (lastUpdateAgeHours(job) >= 24) row.stale += 1
+      ownerMap.set(name, row)
+    })
+    const employeeAccountability = [...ownerMap.values()]
+      .sort((a, b) => b.active - a.active || b.urgent - a.urgent || a.name.localeCompare(b.name))
+      .slice(0, 5)
+
+    return {
+      priorityItems,
+      freeDaysRisk,
+      staleUpdates,
+      stageBottlenecks,
+      stageMaxCount: Math.max(0, ...stageBottlenecks.map((x) => x.count)),
+      employeeAccountability,
+    }
+  }, [jobs, profiles])
 
   const filteredJobs = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -671,6 +1006,62 @@ export default function AdminDashboard() {
   const isAdmin = profile?.role === 'admin'
   const canUpdateStage = isAdmin || ['Trupti', 'Uphadhya'].includes(currentUserName)
   const pageTitle = NAV_ITEMS.find((n) => n.id === activeNav)?.label ?? 'Control Tower'
+  const jobWorkspace = (
+    <>
+      {!selectedJob && (
+        <div className="bg-white border border-slate-200 rounded-xl shadow-sm mb-4">
+          <div className="px-4 py-3 border-b border-slate-200 flex items-center justify-between">
+            <div className="text-sm font-semibold text-slate-900">All Jobs</div>
+            <div className="text-xs text-slate-400">{filteredJobs.length} shown</div>
+          </div>
+          <div className="p-4 flex flex-wrap gap-2 items-center">
+            <div className="flex items-center gap-2 h-8 px-3 bg-slate-50 border border-slate-200 rounded-lg flex-1 min-w-[220px] max-w-[320px]">
+              <input value={search} onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search job, client, BE, BL, container..."
+                className="w-full bg-transparent outline-none text-sm text-slate-900 placeholder:text-slate-400" />
+            </div>
+            <select value={filterStage} onChange={(e) => setFilterStage(e.target.value)} className="h-9 px-3 text-sm bg-slate-50 border border-slate-200 rounded-lg text-slate-700 outline-none">
+              {STAGE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+            <select value={filterPriority} onChange={(e) => setFilterPriority(e.target.value)} className="h-9 px-3 text-sm bg-slate-50 border border-slate-200 rounded-lg text-slate-700 outline-none">
+              {PRIORITY_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+            <select value={filterMode} onChange={(e) => setFilterMode(e.target.value)} className="h-9 px-3 text-sm bg-slate-50 border border-slate-200 rounded-lg text-slate-700 outline-none">
+              {MODE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+            <button type="button" onClick={() => { setSearch(''); setFilterStage(''); setFilterPriority(''); setFilterMode('') }}
+              className="h-9 px-4 text-sm rounded-lg border border-slate-300 bg-slate-50 text-slate-700 hover:bg-slate-100">
+              Clear
+            </button>
+          </div>
+        </div>
+      )}
+
+      {loadingJobs ? (
+        <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-10 flex justify-center">
+          <div className="h-9 w-9 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
+        </div>
+      ) : selectedJob ? (
+        <JobDetailView
+          job={selectedJob} profiles={profiles} currentUserName={currentUserName}
+          isAdmin={isAdmin} canUpdateStage={canUpdateStage}
+          onBack={() => setSelectedJob(null)} onSaved={refreshJobs} toast={showToast}
+        />
+      ) : filteredJobs.length === 0 ? (
+        <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-10 text-center text-slate-400">
+          No jobs match your search/filters.
+        </div>
+      ) : (
+        <div>
+          {filteredJobs.map((job) => (
+            <JobCard key={job.id} job={job} profiles={profiles}
+              onOpen={() => setSelectedJob(job)}
+              onDelete={() => handleDeleteJob(job)} />
+          ))}
+        </div>
+      )}
+    </>
+  )
 
   return (
     <div className="min-h-screen flex bg-slate-100 text-[14px]">
@@ -712,7 +1103,7 @@ export default function AdminDashboard() {
             <div className="text-sm text-slate-400 truncate">Live operations overview</div>
           </div>
           <div className="ml-auto flex items-center gap-2">
-            <button type="button" onClick={() => navigate('/admin/create-job')}
+            <button type="button" onClick={() => setShowCreateJob(true)}
               className="h-9 px-4 text-sm rounded-lg bg-blue-600 text-white hover:bg-blue-700 font-semibold">
               + Create Job
             </button>
@@ -725,76 +1116,44 @@ export default function AdminDashboard() {
 
         <main className="flex-1 overflow-y-auto p-4 sm:p-6">
           {activeNav === 'overview' && (
+            selectedJob ? (
+              <JobDetailView
+                job={selectedJob} profiles={profiles} currentUserName={currentUserName}
+                isAdmin={isAdmin} canUpdateStage={canUpdateStage}
+                onBack={() => setSelectedJob(null)} onSaved={refreshJobs} toast={showToast}
+              />
+            ) : (
             <>
-              <div className="mb-4 text-sm text-slate-500">
-                {getGreeting()}, <span className="font-semibold text-slate-700">{profile?.name || 'there'}</span>
+              <div className="mb-3 text-[20px] font-semibold leading-tight text-slate-800">
+                {getGreeting()}, <span className="font-semibold text-slate-900">{profile?.name || 'there'}</span>
               </div>
 
-              {!selectedJob && (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
-                  <KpiCard label="Active Jobs" value={stats.active} hint="In progress" tone="blue" icon="☕" />
-                  <KpiCard label="Urgent" value={stats.urgent} hint="Needs attention" tone="red" icon="!" />
-                  <KpiCard label="ETAs This Week" value={stats.etasWeek} hint="Upcoming arrivals" tone="amber" icon="~" />
-                  <KpiCard label="Payments Pending" value={stats.paymentsPending} hint="Duty / CFS queue" tone="green" icon="Rs" />
-                </div>
-              )}
+              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-6 gap-3 mb-4">
+                <KpiCard label="Active Jobs" value={stats.active} hint="In progress" tone="blue" icon="A" />
+                <KpiCard label="Urgent" value={stats.urgent} hint="Needs attention" tone="red" icon="!" />
+                <KpiCard label="ETAs This Week" value={stats.etasWeek} hint="Upcoming arrivals" tone="amber" icon="~" />
+                <KpiCard label="Free Days At Risk" value={stats.freeDaysAtRisk} hint="0-2 days left" tone="red" icon="D" />
+                <KpiCard label="Payment Blocks" value={stats.paymentsPending} hint="Duty / CFS queue" tone="violet" icon="Rs" />
+                <KpiCard label="Stale Updates" value={stats.stale} hint="Needs follow-up" tone="amber" icon="24" />
+              </div>
 
-              {!selectedJob && (
-                <div className="bg-white border border-slate-200 rounded-xl shadow-sm mb-4">
-                  <div className="px-4 py-3 border-b border-slate-200 flex items-center justify-between">
-                    <div className="text-sm font-semibold text-slate-900">Jobs</div>
-                    <div className="text-xs text-slate-400">{filteredJobs.length} shown</div>
-                  </div>
-                  <div className="p-4 flex flex-wrap gap-2 items-center">
-                    <div className="flex items-center gap-2 h-8 px-3 bg-slate-50 border border-slate-200 rounded-lg flex-1 min-w-[220px] max-w-[320px]">
-                      <input value={search} onChange={(e) => setSearch(e.target.value)}
-                        placeholder="Search job, client, BE, BL, container..."
-                        className="w-full bg-transparent outline-none text-sm text-slate-900 placeholder:text-slate-400" />
-                    </div>
-                    <select value={filterStage} onChange={(e) => setFilterStage(e.target.value)} className="h-9 px-3 text-sm bg-slate-50 border border-slate-200 rounded-lg text-slate-700 outline-none">
-                      {STAGE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                    </select>
-                    <select value={filterPriority} onChange={(e) => setFilterPriority(e.target.value)} className="h-9 px-3 text-sm bg-slate-50 border border-slate-200 rounded-lg text-slate-700 outline-none">
-                      {PRIORITY_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                    </select>
-                    <select value={filterMode} onChange={(e) => setFilterMode(e.target.value)} className="h-9 px-3 text-sm bg-slate-50 border border-slate-200 rounded-lg text-slate-700 outline-none">
-                      {MODE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                    </select>
-                    <button type="button" onClick={() => { setSearch(''); setFilterStage(''); setFilterPriority(''); setFilterMode('') }}
-                      className="h-9 px-4 text-sm rounded-lg border border-slate-300 bg-slate-50 text-slate-700 hover:bg-slate-100">
-                      Clear
-                    </button>
-                  </div>
-                </div>
-              )}
+              <div className="grid grid-cols-1 xl:grid-cols-[1.55fr_0.95fr] gap-4 mb-4">
+                <TodayPriorityQueue items={controlTower.priorityItems} profiles={profiles} onOpen={setSelectedJob} />
+                <FreeDaysRiskPanel items={controlTower.freeDaysRisk} onOpen={setSelectedJob} />
+              </div>
 
-              {loadingJobs ? (
-                <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-10 flex justify-center">
-                  <div className="h-9 w-9 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
-                </div>
-              ) : selectedJob ? (
-                <JobDetailView
-                  job={selectedJob} profiles={profiles} currentUserName={currentUserName}
-                  isAdmin={isAdmin} canUpdateStage={canUpdateStage}
-                  onBack={() => setSelectedJob(null)} onSaved={refreshJobs} toast={showToast}
-                />
-              ) : filteredJobs.length === 0 ? (
-                <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-10 text-center text-slate-400">
-                  No jobs match your search/filters.
-                </div>
-              ) : (
-                <div>
-                  {filteredJobs.map((job) => (
-                    <JobCard key={job.id} job={job} profiles={profiles}
-                      onOpen={() => setSelectedJob(job)}
-                      onDelete={() => handleDeleteJob(job)} />
-                  ))}
-                </div>
-              )}
+              <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 mb-4">
+                <StageBottlenecks items={controlTower.stageBottlenecks} maxCount={controlTower.stageMaxCount} onStage={(stage) => { setFilterStage(stage); setActiveNav('jobs') }} />
+                <StaleUpdatesPanel items={controlTower.staleUpdates} onOpen={setSelectedJob} />
+                <EmployeeAccountability items={controlTower.employeeAccountability} />
+              </div>
             </>
+            )
           )}
 
-          {activeNav !== 'overview' && (
+          {activeNav === 'jobs' && jobWorkspace}
+
+          {activeNav !== 'overview' && activeNav !== 'jobs' && (
             <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-10 text-center text-slate-400">
               Coming soon
             </div>
@@ -808,6 +1167,22 @@ export default function AdminDashboard() {
           toastState.type === 'error' && 'bg-red-600 text-white border-red-700',
           toastState.type === 'info' && 'bg-slate-900 text-white border-slate-800')}>
           {toastState.message}
+        </div>
+      )}
+
+      {showCreateJob && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-950/35 px-4 py-6">
+          <div className="w-full max-w-5xl overflow-hidden rounded-xl bg-white shadow-2xl border border-slate-200">
+            <CreateJob
+              isModal
+              onCancel={() => setShowCreateJob(false)}
+              onCreated={async () => {
+                setShowCreateJob(false)
+                await refreshJobs()
+                showToast('Job created.', 'success')
+              }}
+            />
+          </div>
         </div>
       )}
     </div>

@@ -1,12 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
 import { supabase } from '../supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { getStageName } from '../utils/jobHelpers'
+import CreateJob from './CreateJob'
 
 export default function EmployeeDashboard() {
   const { user, profile } = useAuth()
-  const navigate = useNavigate()
   const [jobs, setJobs] = useState([])
   const [profiles, setProfiles] = useState({})
   const [loading, setLoading] = useState(true)
@@ -18,6 +17,7 @@ export default function EmployeeDashboard() {
   const [editingJobId, setEditingJobId] = useState(null)
   const [editForm, setEditForm] = useState({})
   const [saving, setSaving] = useState(false)
+  const [showCreateJob, setShowCreateJob] = useState(false)
   const [toastState, setToastState] = useState(null)
 
   useEffect(() => {
@@ -527,7 +527,7 @@ export default function EmployeeDashboard() {
             {canCreateJob && (
               <button
                 type="button"
-                onClick={() => navigate('/admin/create-job')}
+                onClick={() => setShowCreateJob(true)}
                 className="h-9 px-4 text-sm rounded-lg bg-blue-600 text-white hover:bg-blue-700 font-semibold"
               >
                 + Create Job
@@ -926,6 +926,22 @@ export default function EmployeeDashboard() {
           )}
         >
           {toastState.message}
+        </div>
+      )}
+
+      {showCreateJob && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-950/35 px-4 py-6">
+          <div className="w-full max-w-5xl overflow-hidden rounded-xl bg-white shadow-2xl border border-slate-200">
+            <CreateJob
+              isModal
+              onCancel={() => setShowCreateJob(false)}
+              onCreated={async () => {
+                setShowCreateJob(false)
+                await refreshJobs()
+                showToast('Job created.', 'success')
+              }}
+            />
+          </div>
         </div>
       )}
     </div>

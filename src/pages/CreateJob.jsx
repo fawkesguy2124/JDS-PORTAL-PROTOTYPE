@@ -59,7 +59,7 @@ function Field({ label, required, children }) {
   )
 }
 
-export default function CreateJob() {
+export default function CreateJob({ isModal = false, onCancel, onCreated }) {
   const navigate = useNavigate()
   const { user, profile } = useAuth()
   const [form, setForm] = useState(INITIAL_FORM)
@@ -80,7 +80,16 @@ export default function CreateJob() {
     setError('')
   }
 
+  const setJobNumber = (e) => {
+    setForm((prev) => ({ ...prev, job_no: e.target.value.replace(/\D/g, '') }))
+    setError('')
+  }
+
   const handleCancel = () => {
+    if (onCancel) {
+      onCancel()
+      return
+    }
     navigate('/admin')
   }
 
@@ -96,7 +105,7 @@ export default function CreateJob() {
     }
 
     const payload = {
-      job_no: form.job_no.trim(),
+      job_no: `J-${form.job_no.trim()}`,
       client: form.client.trim(),
       mode: form.mode,
       goods: form.goods.trim() || null,
@@ -130,21 +139,38 @@ export default function CreateJob() {
       return
     }
 
+    if (onCreated) {
+      onCreated()
+      return
+    }
     navigate('/admin')
   }
 
   return (
-    <div className="min-h-screen bg-gray-100 flex flex-col">
-      <header className="bg-[#1e3a5f] text-white px-6 py-4 shadow-md flex items-center justify-between">
+    <div className={isModal ? 'bg-white flex flex-col max-h-[88vh]' : 'min-h-screen bg-gray-100 flex flex-col'}>
+      <header className={isModal ? 'bg-white text-slate-900 px-5 py-4 border-b border-slate-200 flex items-center justify-between' : 'bg-[#1e3a5f] text-white px-6 py-4 shadow-md flex items-center justify-between'}>
         <div>
           <h1 className="text-xl font-semibold">Create Job</h1>
-          <p className="text-sm text-blue-200 mt-0.5">JDS Logistics — Admin</p>
+          <p className={isModal ? 'text-sm text-slate-500 mt-0.5' : 'text-sm text-blue-200 mt-0.5'}>JDS Logistics - Admin</p>
         </div>
-        <span className="text-sm text-blue-100">{profile?.name}</span>
+        <div className="flex items-center gap-3">
+          <span className={isModal ? 'text-sm text-slate-500' : 'text-sm text-blue-100'}>{profile?.name}</span>
+          {isModal && (
+            <button
+              type="button"
+              onClick={handleCancel}
+              disabled={saving}
+              className="h-8 w-8 rounded-lg border border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100 disabled:opacity-70"
+              aria-label="Close create job"
+            >
+              x
+            </button>
+          )}
+        </div>
       </header>
 
-      <main className="flex-1 p-6 overflow-auto">
-        <div className="max-w-5xl mx-auto bg-white rounded-lg shadow-lg p-6 md:p-8">
+      <main className={isModal ? 'flex-1 p-5 overflow-y-auto' : 'flex-1 p-6 overflow-auto'}>
+        <div className={isModal ? 'bg-white' : 'max-w-5xl mx-auto bg-white rounded-lg shadow-lg p-6 md:p-8'}>
           <form onSubmit={handleSubmit}>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
               <SectionHeading>Job Header</SectionHeading>
@@ -152,11 +178,13 @@ export default function CreateJob() {
               <Field label="Job Number" required>
                 <input
                   type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
                   required
                   value={form.job_no}
-                  onChange={set('job_no')}
+                  onChange={setJobNumber}
                   className={inputClass}
-                  placeholder="e.g. JDS-2026-001"
+                  placeholder="e.g. 123"
                 />
               </Field>
 
