@@ -1,9 +1,12 @@
 ﻿import { useEffect, useMemo, useRef, useState } from 'react'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { supabase } from '../supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { getStageName, isEtaThisWeek } from '../utils/jobHelpers'
 import CreateJob from './CreateJob'
 import { fetchAllTracking, deleteTracking, lookupAndSaveContainer, checkContainerStatus } from '../services/trackingService'
+import * as XLSX from 'xlsx'
+import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 
 const NAV_ITEMS = [
   { id: 'overview', label: 'Control Tower', icon: '■' },
@@ -845,7 +848,287 @@ function DocumentsSection({ jobs, profiles, currentUserName, showToast }) {
   const [uploadDocType, setUploadDocType] = useState('BL')
   const [uploadFile, setUploadFile] = useState(null)
   const [docSearch, setDocSearch] = useState('')
+  const [extractModal, setExtractModal] = useState({ open: false, job: null })
+  const [extracting, setExtracting] = useState(false)
+  const [extractedFields, setExtractedFields] = useState(null)
+  const [extractEdits, setExtractEdits] = useState(null)
+  const [extractError, setExtractError] = useState(null)
+  const [extractProgress, setExtractProgress] = useState('')
   const fileInputRef = useRef(null)
+
+  const EXTRACT_FIELDS = [
+    'bl_number','bl_date','vessel_name','voyage_number','container_numbers',
+    'port_of_loading','port_of_discharge','shipper_name','consignee_name','notify_party',
+    'hs_code','goods_description','invoice_number','invoice_date',
+    'invoice_value','currency','shipment_terms','country_of_origin',
+    'number_of_packages','gross_weight','net_weight',
+  ]
+
+  const EXTRACT_LABELS = {
+    bl_number:'BL No',bl_date:'BL Date',vessel_name:'Vessel',voyage_number:'Voyage',
+    container_numbers:'Containers',port_of_loading:'Port of Loading',port_of_discharge:'Port of Discharge',
+    shipper_name:'Shipper',consignee_name:'Consignee',notify_party:'Notify Party',
+    hs_code:'HS Code',goods_description:'Goods Description',invoice_number:'Invoice No',
+    invoice_date:'Invoice Date',invoice_value:'Invoice Value',currency:'Currency',
+    shipment_terms:'Shipment Terms',country_of_origin:'Country of Origin',
+    number_of_packages:'Packages',gross_weight:'Gross Weight',net_weight:'Net Weight',
+  }
+
+  async function urlToBase64(url) {
+    const response = await fetch(url)
+    const blob = await response.blob()
+    return new Promise((resolve) => {
+      const reader = new FileReader()
+      reader.onloadend = () => {
+        const base64 = reader.result.split(',')[1]
+        resolve({ base64, mimeType: blob.type })
+      }
+      reader.readAsDataURL(blob)
+    })
+  }
+
+  const closeExtract = () => {
+    setExtractModal({ open: false, job: null })
+    setExtracting(false)
+    setExtractedFields(null)
+    setExtractEdits(null)
+    setExtractError(null)
+    setExtractProgress('')
+  }
+
+  async function compressImage(base64, mimeType, maxWidth = 1200, quality = 0.7) {
+    return new Promise((resolve) => {
+      const img = new Image()
+      img.onload = () => {
+        let w = img.width
+        let h = img.height
+        if (w > maxWidth) {
+          h = Math.round(h * (maxWidth / w))
+          w = maxWidth
+        }
+        const canvas = document.createElement('canvas')
+        canvas.width = w
+        canvas.height = h
+        const ctx = canvas.getContext('2d')
+        ctx.imageSmoothingEnabled = true
+        ctx.imageSmoothingQuality = 'high'
+        ctx.drawImage(img, 0, 0, w, h)
+        const compressed = canvas.toDataURL(mimeType || 'image/jpeg', quality).split(',')[1]
+        resolve({ base64: compressed, mimeType: mimeType || 'image/jpeg' })
+      }
+      img.src = `data:${mimeType || 'image/jpeg'};base64,${base64}`
+    })
+  }
+
+  const groqFetch = async (files, prompt, signal) => {
+    const key = import.meta.env.VITE_GROQ_API_KEY
+    if (!key) throw new Error('Groq API key is not configured. Please contact your administrator.')
+    const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${key}`,
+        'Content-Type': 'application/json',
+      },
+      signal,
+      body: JSON.stringify({
+        model: 'meta-llama/llama-4-scout-17b-16e-instruct',
+        messages: [{
+          role: 'user',
+          content: [
+            { type: 'text', text: prompt },
+            ...files.map((f) => ({
+              type: 'image_url',
+              image_url: { url: `data:${f.mimeType};base64,${f.base64}` },
+            })),
+          ],
+        }],
+        max_tokens: 4096,
+        temperature: 0.1,
+      }),
+    })
+    if (!res.ok) {
+      const errBody = await res.json().catch(() => ({}))
+      const errMsg = errBody?.error?.message || `Groq API error ${res.status}`
+      if (res.status === 429 || errMsg.includes('rate_limit') || errMsg.includes('Rate limit')) {
+        throw new Error('Groq rate limit reached. Please wait a moment and try again.')
+      }
+      if (res.status === 503 || errMsg.includes('unavailable') || errMsg.includes('overloaded')) {
+        throw new Error('Groq service is temporarily unavailable. Please try again later.')
+      }
+      throw new Error(errMsg)
+    }
+    const data = await res.json()
+    const choice = data?.choices?.[0]
+    const model = data?.model || 'unknown'
+    if (!choice) throw new Error('AI model returned no choices. Please try again.')
+    const msg = choice.message || {}
+    if (msg.refusal) throw new Error(`Model refused the request: ${msg.refusal}`)
+    let raw = msg.content
+    if (Array.isArray(raw)) {
+      raw = raw.map((p) => (p.type === 'text' ? p.text : '')).filter(Boolean).join('\n')
+    }
+    if (!raw) throw new Error('AI model returned an empty response. Please try again.')
+    return raw
+  }
+
+  const withRetry = async (fn, maxRetries = 2) => {
+    let lastError
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        return await fn()
+      } catch (err) {
+        lastError = err
+        if (err.name === 'AbortError') throw new Error('Request timed out after 120 seconds. Please try again.')
+        if (attempt < maxRetries) await new Promise((r) => setTimeout(r, 2000 * (attempt + 1)))
+      }
+    }
+    throw lastError
+  }
+
+  const pdfToImages = async (base64) => {
+    const pdfjsLib = await import('pdfjs-dist')
+    pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl
+    const data = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0))
+    const pdf = await pdfjsLib.getDocument({ data }).promise
+    const images = []
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i)
+      const viewport = page.getViewport({ scale: 1.2 })
+      const canvas = document.createElement('canvas')
+      canvas.width = Math.min(viewport.width, 1200)
+      canvas.height = Math.round(viewport.height * (Math.min(viewport.width, 1200) / viewport.width))
+      const ctx = canvas.getContext('2d')
+      ctx.imageSmoothingEnabled = true
+      ctx.imageSmoothingQuality = 'high'
+      await page.render({ canvasContext: ctx, viewport }).promise
+      const imgBase64 = canvas.toDataURL('image/jpeg', 0.7).split(',')[1]
+      images.push({ base64: imgBase64, mimeType: 'image/jpeg' })
+    }
+    return images
+  }
+
+  const runExtraction = async () => {
+    const job = extractModal.job
+    const key = import.meta.env.VITE_GROQ_API_KEY
+    if (!key) { setExtractError('Groq API key is not configured. Please contact your administrator.'); return }
+
+    setExtracting(true)
+    setExtractError(null)
+    setExtractedFields(null)
+    setExtractEdits(null)
+    setExtractProgress('Preparing document...')
+
+    try {
+      const docs = job.docs
+      const validTypes = ['pdf', 'jpg', 'jpeg', 'png']
+      const badDoc = docs.find((d) => !validTypes.includes((d.file_type || '').toLowerCase()))
+      if (badDoc) {
+        showToast(`Unsupported file type: ${badDoc.file_type}. Only PDF and image files can be processed.`, 'error')
+        setExtracting(false); return
+      }
+
+      const files = []
+      for (const doc of docs) {
+        setExtractProgress('Rendering PDF pages...')
+        const result = await urlToBase64(doc.file_url)
+        const isPdf = (doc.file_type || '').toLowerCase() === 'pdf'
+        if (isPdf) {
+          const pageImages = await pdfToImages(result.base64)
+          files.push(...pageImages)
+        } else {
+          const compressed = await compressImage(result.base64, result.mimeType)
+          files.push(compressed)
+        }
+      }
+
+      setExtractProgress('Extracting shipment data...')
+
+      const prompt = `You are a customs documentation assistant for JDS Logistics, a CHA company in Mumbai, India. Extract shipment details from the uploaded logistics documents. Return ONLY valid JSON. Do not return markdown. Do not return explanations. For each field return: { "value": "...", "confidence": "high|medium|low" }. Fields: bl_number, bl_date, vessel_name, voyage_number, container_numbers, port_of_loading, port_of_discharge, shipper_name, consignee_name, notify_party, hs_code, goods_description, invoice_number, invoice_date, invoice_value, currency, shipment_terms, country_of_origin, number_of_packages, gross_weight, net_weight`
+
+      const controller = new AbortController()
+      const timeout = setTimeout(() => controller.abort(), 120000)
+
+      const raw = await withRetry(() => groqFetch(files, prompt, controller.signal))
+      clearTimeout(timeout)
+
+      setExtractProgress('Formatting extracted fields...')
+
+      const cleaned = raw.replace(/```(?:json)?\s*/gi, '').replace(/```/g, '').trim()
+      const parsed = JSON.parse(cleaned)
+      const result = {}
+      for (const key of EXTRACT_FIELDS) {
+        const field = parsed[key] || {}
+        result[key] = { value: field.value ?? null, confidence: field.confidence ?? null }
+      }
+      const nonNullCount = Object.values(result).filter(
+        (f) => f && f.value !== null && f.value !== undefined && f.value !== ''
+      ).length
+      if (nonNullCount < 3) {
+        setExtractError(`This does not appear to be a shipping document. Only ${nonNullCount} field(s) could be extracted. Please upload a Bill of Lading, Commercial Invoice, Packing List, or Certificate of Origin.`)
+        setExtracting(false); return
+      }
+      if (nonNullCount < 8) {
+        showToast(`Low confidence extraction — only ${nonNullCount} of 27 fields found. Please verify this is the correct document and review all fields carefully.`, 'error')
+      }
+      setExtractedFields(result)
+      setExtractEdits(JSON.parse(JSON.stringify(result)))
+    } catch (err) {
+      if (err.message?.includes('Groq API error') || err.message?.includes('API error')) {
+        setExtractError(`Extraction failed: ${err.message}`)
+      } else if (err.message?.includes('Empty response') || err.message?.includes('returned an empty')) {
+        setExtractError(err.message)
+      } else if (err.name === 'AbortError' || err.message?.includes('timed out')) {
+        setExtractError('Request timed out after 120 seconds. Please try again.')
+      } else if (err.message?.includes('JSON') || err.message?.includes('parse') || err.message?.includes('Unexpected token')) {
+        setExtractError('Extraction failed — invalid response from AI. Please try again.')
+      } else {
+        setExtractError(err.message || 'Extraction failed')
+      }
+    } finally {
+      setExtracting(false)
+      setExtractProgress('')
+    }
+  }
+
+  const updateExtractField = (key) => (e) => {
+    setExtractEdits((prev) => ({ ...prev, [key]: { ...prev[key], value: e.target.value } }))
+  }
+
+  const confidenceColor = (value, confidence) => {
+    if (!value) return 'border-l-red-500 bg-red-50'
+    if (confidence === 'high') return 'border-l-green-500 bg-green-50/40'
+    if (confidence === 'medium') return 'border-l-amber-500 bg-amber-50/40'
+    return 'border-l-red-500 bg-red-50'
+  }
+
+  const downloadExcel = () => {
+    const job = extractModal.job
+    const headers = [
+      'Job No','Client','BL No','BL Date','Vessel','Voyage','Containers',
+      'Port of Loading','Port of Discharge','Shipper','Consignee','Notify Party',
+      'HS Code','Goods Description','Invoice No','Invoice Date','Invoice Value',
+      'Currency','Shipment Terms','Country of Origin','Packages','Gross Weight','Net Weight',
+    ]
+    const values = [job.job_no, job.client, ...EXTRACT_FIELDS.map((k) => extractEdits?.[k]?.value ?? '')]
+    const ws = XLSX.utils.aoa_to_sheet([headers, values])
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, job.job_no || 'Extracted')
+    XLSX.writeFile(wb, `JDS_${job.job_no || 'Extract'}_Checklist.xlsx`)
+    showToast('Excel downloaded', 'success')
+  }
+
+  const summary = extractedFields
+    ? EXTRACT_FIELDS.reduce(
+        (acc, k) => {
+          const f = extractedFields[k]
+          if (!f?.value) acc.notFound++
+          else if (f.confidence === 'high') acc.high++
+          else acc.needsReview++
+          return acc
+        },
+        { high: 0, needsReview: 0, notFound: 0 }
+      )
+    : null
 
   const DOC_TYPES = ['BL', 'Invoice', 'Packing List', 'COO', 'Insurance', 'BE', 'Examination Order', 'OOC', 'E-Way Bill', 'POD', 'Other']
 
@@ -1029,6 +1312,12 @@ function DocumentsSection({ jobs, profiles, currentUserName, showToast }) {
                     className={`${btnBase} bg-[#1e3a5f] text-white hover:bg-[#16304f]`}>
                     Upload Document
                   </button>
+                  {docCount > 0 && (
+                    <button type="button" onClick={(e) => { e.stopPropagation(); setExtractModal({ open: true, job }); setExpandedJobId(null) }}
+                      className={`${btnBase} border border-emerald-600 text-emerald-700 hover:bg-emerald-50`}>
+                      &#10026; AI Extract
+                    </button>
+                  )}
                   <span className={`text-slate-400 transition-transform ${isExpanded ? 'rotate-90' : ''}`}>&#9654;</span>
                 </div>
                 {isExpanded && (
@@ -1193,6 +1482,125 @@ function DocumentsSection({ jobs, profiles, currentUserName, showToast }) {
                 Close
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Extraction Modal */}
+      {extractModal.open && extractModal.job && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm px-4">
+          <div className="w-full max-w-4xl max-h-[90vh] overflow-y-auto bg-white rounded-xl shadow-2xl border border-slate-200">
+            <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between sticky top-0 bg-white z-10">
+              <div>
+                <div className="text-sm font-bold text-slate-900">AI Document Extraction &mdash; {extractModal.job.job_no}</div>
+                <div className="text-xs text-slate-400">{extractModal.job.client}</div>
+              </div>
+              <button type="button" onClick={closeExtract}
+                className="h-8 w-8 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-700 text-lg leading-none">&times;</button>
+            </div>
+
+            <div className="p-6 space-y-6">
+              {/* Document list + Extract trigger */}
+              {!extracting && !extractedFields && !extractError && (
+                <div>
+                  <p className="text-sm font-semibold text-slate-700 mb-3">Documents to process ({extractModal.job.docs.length})</p>
+                  <div className="space-y-2">
+                    {extractModal.job.docs.map((doc) => (
+                      <div key={doc.id} className="flex items-center gap-2 text-sm text-slate-600 px-3 py-2 bg-slate-50 rounded-lg border border-slate-200">
+                        <span className="text-base">&#128196;</span>
+                        <span className="truncate">{doc.file_name}</span>
+                        <span className="text-[10px] text-slate-400 ml-auto">{doc.doc_type}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <button type="button" onClick={runExtraction}
+                    className="mt-4 h-10 px-5 text-sm font-semibold rounded-lg bg-[#1e3a5f] text-white hover:bg-[#16304f] inline-flex items-center gap-2">
+                    &#10026; Extract
+                  </button>
+                </div>
+              )}
+
+              {/* Loading */}
+              {extracting && (
+                <div className="flex flex-col items-center justify-center py-16">
+                  <div className="h-10 w-10 border-4 border-[#1e3a5f] border-t-transparent rounded-full animate-spin mb-4" />
+                  <p className="text-sm font-semibold text-slate-700">{extractProgress || 'AI is extracting shipment data...'}</p>
+                  <p className="text-sm text-slate-400">This may take up to 2 minutes for large documents</p>
+                </div>
+              )}
+
+              {/* Error */}
+              {extractError && !extracting && (
+                <div className="flex flex-col items-center py-10">
+                  <p className="text-sm text-red-600 font-semibold mb-3">{extractError}</p>
+                  <button type="button" onClick={runExtraction}
+                    className="h-9 px-4 text-sm rounded-lg border border-slate-300 bg-slate-50 text-slate-700 hover:bg-slate-100 font-semibold">
+                    Retry
+                  </button>
+                </div>
+              )}
+
+              {/* Review Form */}
+              {extractedFields && extractEdits && (
+                <>
+                  {/* Summary */}
+                  <div className="flex items-center gap-3">
+                    <span className="text-sm font-semibold text-slate-600">Confidence:</span>
+                    {summary.high > 0 && (
+                      <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-bold bg-green-100 text-green-800">{summary.high}</span>
+                    )}
+                    {summary.needsReview > 0 && (
+                      <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-bold bg-amber-100 text-amber-800">{summary.needsReview}</span>
+                    )}
+                    {summary.notFound > 0 && (
+                      <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-bold bg-red-100 text-red-800">{summary.notFound}</span>
+                    )}
+                    <span className="text-[11px] text-slate-400">{summary.high} high &middot; {summary.needsReview} need review &middot; {summary.notFound} not found</span>
+                  </div>
+
+                  {/* Fields grid */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-5">
+                    {EXTRACT_FIELDS.map((k) => {
+                      const f = extractEdits[k] || {}
+                      const value = f.value ?? ''
+                      const confidence = f.confidence
+                      const borderCls = confidenceColor(value, confidence)
+                      return (
+                        <div key={k}>
+                          <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-1">{EXTRACT_LABELS[k] || k}</p>
+                          <input type="text" value={value} onChange={updateExtractField(k)}
+                            placeholder={value ? '' : 'Not found'}
+                            className={`w-full h-9 px-3 text-xs rounded-lg border border-slate-200 bg-slate-50 text-slate-900 outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-300 ${borderCls} border-l-4 ${!value ? 'text-red-600 placeholder:text-red-300' : ''}`} />
+                          {confidence && (
+                            <p className={`text-[10px] mt-0.5 font-medium ${confidence === 'high' ? 'text-green-600' : confidence === 'medium' ? 'text-amber-600' : 'text-red-600'}`}>
+                              {confidence} confidence
+                            </p>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* Footer */}
+            {extractedFields && (
+              <div className="px-6 py-4 border-t border-slate-200 flex items-center gap-3 sticky bottom-0 bg-white">
+                <button type="button" onClick={closeExtract}
+                  className="h-9 px-4 text-sm rounded-lg border border-slate-300 bg-slate-50 text-slate-700 hover:bg-slate-100 font-semibold">
+                  Close
+                </button>
+                <button type="button" onClick={() => { setExtractedFields(null); setExtractEdits(null); setExtractError(null); }}
+                  className="h-9 px-4 text-sm rounded-lg border border-slate-300 bg-slate-50 text-slate-700 hover:bg-slate-100 font-semibold">
+                  Extract Again
+                </button>
+                <button type="button" onClick={downloadExcel}
+                  className="h-9 px-4 text-sm rounded-lg bg-[#1e3a5f] text-white hover:bg-[#16304f] font-semibold ml-auto">
+                  &#128229; Download Excel
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -1483,8 +1891,9 @@ function ContainerTimeline({ container, onClose }) {
 }
 
 export default function AdminDashboard() {
+  const navigate = useNavigate()
+  const location = useLocation()
   const { profile } = useAuth()
-  const [activeNav, setActiveNav] = useState('overview')
   const [jobs, setJobs] = useState([])
   const [profiles, setProfiles] = useState({})
   const [loadingJobs, setLoadingJobs] = useState(true)
@@ -1495,6 +1904,18 @@ export default function AdminDashboard() {
   const [selectedJob, setSelectedJob] = useState(null)
   const [showCreateJob, setShowCreateJob] = useState(false)
   const [toastState, setToastState] = useState(null)
+
+  const activeNav = useMemo(() => {
+    const params = new URLSearchParams(location.search)
+    return params.get('tab') || 'overview'
+  }, [location.search])
+
+  useEffect(() => {
+    if (location.state?.tab) {
+      navigate(`/admin?tab=${location.state.tab}`, { replace: true })
+      window.history.replaceState({}, '')
+    }
+  }, [])
 
   useEffect(() => {
     let mounted = true
@@ -1663,7 +2084,14 @@ export default function AdminDashboard() {
   }, [jobs, search, filterStage, filterPriority, filterMode])
 
   const handleLogout = async () => { await supabase.auth.signOut(); window.location.replace('/login') }
-  const handleNavClick = (id) => { setActiveNav(id); setSelectedJob(null); setSearch(''); setFilterStage(''); setFilterPriority(''); setFilterMode('') }
+  const handleNavClick = (id) => {
+    navigate(`/admin?tab=${id}`, { replace: true })
+    setSelectedJob(null)
+    setSearch('')
+    setFilterStage('')
+    setFilterPriority('')
+    setFilterMode('')
+  }
 
   const handleDeleteJob = async (job) => {
     if (!window.confirm(`Delete job ${job.job_no || ''}?`)) return
@@ -1872,6 +2300,7 @@ export default function AdminDashboard() {
           </div>
         </div>
       )}
+
     </div>
   )
 }
