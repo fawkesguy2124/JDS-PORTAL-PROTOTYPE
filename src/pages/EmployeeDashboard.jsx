@@ -1,11 +1,34 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { supabase } from '../supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { getStageName } from '../utils/jobHelpers'
 import CreateJob from './CreateJob'
+import * as XLSX from 'xlsx'
+import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
+
+const NAV_ITEMS = [
+  { id: 'jobs', label: 'All Jobs', icon: '■' },
+  { id: 'documents', label: 'Documents', icon: '⌁' },
+]
+
+function getGreeting() {
+  const hour = new Date().getHours()
+  if (hour < 12) return 'Good morning'
+  if (hour < 17) return 'Good afternoon'
+  return 'Good evening'
+}
+
+function formatDateSlash(value) {
+  if (!value) return '—'
+  const d = new Date(value)
+  return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`
+}
 
 export default function EmployeeDashboard() {
   const { user, profile } = useAuth()
+  const navigate = useNavigate()
+  const location = useLocation()
   const [jobs, setJobs] = useState([])
   const [profiles, setProfiles] = useState({})
   const [loading, setLoading] = useState(true)
@@ -19,6 +42,33 @@ export default function EmployeeDashboard() {
   const [saving, setSaving] = useState(false)
   const [showCreateJob, setShowCreateJob] = useState(false)
   const [toastState, setToastState] = useState(null)
+  const [showMyJobs, setShowMyJobs] = useState(false)
+  const [documents, setDocuments] = useState([])
+  const [loadingDocs, setLoadingDocs] = useState(false)
+  const [expandedDocJobId, setExpandedDocJobId] = useState(null)
+  const [previewModal, setPreviewModal] = useState({ open: false, doc: null })
+  const [extractModal, setExtractModal] = useState({ open: false, job: null, docs: [] })
+  const [extracting, setExtracting] = useState(false)
+  const [extractedFields, setExtractedFields] = useState(null)
+  const [extractEdits, setExtractEdits] = useState(null)
+  const [extractError, setExtractError] = useState(null)
+  const [extractProgress, setExtractProgress] = useState('')
+  const [uploadModal, setUploadModal] = useState({ open: false, job: null })
+  const [uploadDocType, setUploadDocType] = useState('BL')
+  const [uploadFile, setUploadFile] = useState(null)
+  const [uploading, setUploading] = useState(false)
+  const [uploadProgress, setUploadProgress] = useState(0)
+
+  const activeNav = useMemo(() => {
+    const params = new URLSearchParams(location.search)
+    return params.get('tab') || 'jobs'
+  }, [location.search])
+
+  const handleNavClick = (id) => {
+    navigate(`/dashboard?tab=${id}`, { replace: true })
+  }
+
+  const isAkshyani = profile?.name === 'Akshyani'
 
   useEffect(() => {
     if (!user?.id) return
@@ -89,6 +139,24 @@ export default function EmployeeDashboard() {
     created_by: 'Created By',
     created_at: 'Created At',
     updated_at: 'Updated At',
+  }
+
+  const EXTRACT_FIELDS = [
+    'bl_number','bl_date','vessel_name','voyage_number','container_numbers',
+    'port_of_loading','port_of_discharge','shipper_name','consignee_name','notify_party',
+    'hs_code','goods_description','invoice_number','invoice_date',
+    'invoice_value','currency','shipment_terms','country_of_origin',
+    'number_of_packages','gross_weight','net_weight',
+  ]
+
+  const EXTRACT_LABELS = {
+    bl_number:'BL No',bl_date:'BL Date',vessel_name:'Vessel',voyage_number:'Voyage',
+    container_numbers:'Containers',port_of_loading:'Port of Loading',port_of_discharge:'Port of Discharge',
+    shipper_name:'Shipper',consignee_name:'Consignee',notify_party:'Notify Party',
+    hs_code:'HS Code',goods_description:'Goods Description',invoice_number:'Invoice No',
+    invoice_date:'Invoice Date',invoice_value:'Invoice Value',currency:'Currency',
+    shipment_terms:'Shipment Terms',country_of_origin:'Country of Origin',
+    number_of_packages:'Packages',gross_weight:'Gross Weight',net_weight:'Net Weight',
   }
 
   const FIELD_PERMS_BY_NAME = {
@@ -194,15 +262,6 @@ export default function EmployeeDashboard() {
     return `${yr}y ago`
   }
 
-  const formatDateSlash = (value) => {
-    if (!value) return '—'
-    const d = new Date(value)
-    const dd = String(d.getDate()).padStart(2, '0')
-    const mm = String(d.getMonth() + 1).padStart(2, '0')
-    const yy = String(d.getFullYear())
-    return `${dd}/${mm}/${yy}`
-  }
-
   const formatDateTime = (value) => {
     if (!value) return '—'
     return new Date(value).toLocaleString('en-IN', {
@@ -299,6 +358,7 @@ export default function EmployeeDashboard() {
       if (filterStage !== '' && String(j.stage) !== String(filterStage)) return false
       if (filterPriority && String(j.priority || '').toLowerCase() !== filterPriority) return false
       if (filterMode && String(j.mode || '') !== filterMode) return false
+      if (showMyJobs && user?.id && j.assigned_to !== user.id) return false
       return true
     }
 
@@ -311,7 +371,24 @@ export default function EmployeeDashboard() {
         if (pa !== pb) return pa - pb
         return new Date(b.updated_at || b.created_at || 0).getTime() - new Date(a.updated_at || a.created_at || 0).getTime()
       })
-  }, [jobs, search, filterStage, filterPriority, filterMode])
+  }, [jobs, search, filterStage, filterPriority, filterMode, showMyJobs, user?.id])
+
+  useEffect(() => {
+    if (activeNav !== 'documents') return
+    let mounted = true
+    setLoadingDocs(true)
+    ;(async () => {
+      const { data, error } = await supabase
+        .from('documents')
+        .select('*')
+        .order('created_at', { ascending: false })
+      if (mounted) {
+        if (!error) setDocuments(data ?? [])
+        setLoadingDocs(false)
+      }
+    })()
+    return () => { mounted = false }
+  }, [activeNav])
 
   const refreshJobs = async () => {
     const { data } = await supabase.from('jobs').select('*').order('updated_at', { ascending: false })
@@ -485,6 +562,359 @@ export default function EmployeeDashboard() {
     )
   }
 
+  async function urlToBase64(url) {
+    const response = await fetch(url)
+    const blob = await response.blob()
+    return new Promise((resolve) => {
+      const reader = new FileReader()
+      reader.onloadend = () => {
+        const base64 = reader.result.split(',')[1]
+        resolve({ base64, mimeType: blob.type })
+      }
+      reader.readAsDataURL(blob)
+    })
+  }
+
+  async function compressImage(base64, mimeType, maxWidth = 1000, quality = 0.6) {
+    return new Promise((resolve) => {
+      const img = new Image()
+      img.onload = () => {
+        let w = img.width
+        let h = img.height
+        if (w > maxWidth) {
+          h = Math.round(h * (maxWidth / w))
+          w = maxWidth
+        }
+        const canvas = document.createElement('canvas')
+        canvas.width = w
+        canvas.height = h
+        const ctx = canvas.getContext('2d')
+        ctx.imageSmoothingEnabled = true
+        ctx.imageSmoothingQuality = 'high'
+        ctx.drawImage(img, 0, 0, w, h)
+        const compressed = canvas.toDataURL(mimeType || 'image/jpeg', quality).split(',')[1]
+        resolve({ base64: compressed, mimeType: mimeType || 'image/jpeg' })
+      }
+      img.src = `data:${mimeType || 'image/jpeg'};base64,${base64}`
+    })
+  }
+
+  const groqFetch = async (files, prompt, signal) => {
+    const key = import.meta.env.VITE_GROQ_API_KEY
+    if (!key) throw new Error('Groq API key is not configured. Please contact your administrator.')
+    const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${key}`,
+        'Content-Type': 'application/json',
+      },
+      signal,
+      body: JSON.stringify({
+        model: 'meta-llama/llama-4-scout-17b-16e-instruct',
+        messages: [{
+          role: 'user',
+          content: [
+            { type: 'text', text: prompt },
+            ...files.map((f) => ({
+              type: 'image_url',
+              image_url: { url: `data:${f.mimeType};base64,${f.base64}` },
+            })),
+          ],
+        }],
+        max_tokens: 4096,
+        temperature: 0.1,
+      }),
+    })
+    if (!res.ok) {
+      const errBody = await res.json().catch(() => ({}))
+      const errMsg = errBody?.error?.message || `Groq API error ${res.status}`
+      if (res.status === 429 || errMsg.includes('rate_limit') || errMsg.includes('Rate limit')) {
+        throw new Error('Groq rate limit reached. Please wait a moment and try again.')
+      }
+      if (res.status === 503 || errMsg.includes('unavailable') || errMsg.includes('overloaded')) {
+        throw new Error('Groq service is temporarily unavailable. Please try again later.')
+      }
+      throw new Error(errMsg)
+    }
+    const data = await res.json()
+    const choice = data?.choices?.[0]
+    const model = data?.model || 'unknown'
+    if (!choice) throw new Error('AI model returned no choices. Please try again.')
+    const msg = choice.message || {}
+    if (msg.refusal) throw new Error(`Model refused the request: ${msg.refusal}`)
+    let raw = msg.content
+    if (Array.isArray(raw)) {
+      raw = raw.map((p) => (p.type === 'text' ? p.text : '')).filter(Boolean).join('\n')
+    }
+    if (!raw) throw new Error('AI model returned an empty response. Please try again.')
+    return raw
+  }
+
+  const withRetry = async (fn, maxRetries = 3) => {
+    const rateLimitDelays = [3000, 6000, 12000]
+    let lastError
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        return await fn()
+      } catch (err) {
+        lastError = err
+        if (err.name === 'AbortError') throw new Error('Request timed out after 120 seconds. Please try again.')
+        const isRateLimit = err.message?.includes('rate_limit') || err.message?.includes('Rate limit') || err.message?.includes('429')
+        if (isRateLimit) {
+          const delay = rateLimitDelays[attempt] || 12000
+          if (attempt < maxRetries) await new Promise((r) => setTimeout(r, delay))
+        } else if (attempt < maxRetries) {
+          await new Promise((r) => setTimeout(r, 2000 * (attempt + 1)))
+        }
+      }
+    }
+    throw lastError
+  }
+
+  const pdfToImages = async (base64) => {
+    const pdfjsLib = await import('pdfjs-dist')
+    pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl
+    const data = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0))
+    const pdf = await pdfjsLib.getDocument({ data }).promise
+    const maxPages = Math.min(pdf.numPages, 5)
+    const images = []
+    for (let i = 1; i <= maxPages; i++) {
+      const page = await pdf.getPage(i)
+      const viewport = page.getViewport({ scale: 1.2 })
+      const canvas = document.createElement('canvas')
+      canvas.width = Math.min(viewport.width, 1200)
+      canvas.height = Math.round(viewport.height * (Math.min(viewport.width, 1200) / viewport.width))
+      const ctx = canvas.getContext('2d')
+      ctx.imageSmoothingEnabled = true
+      ctx.imageSmoothingQuality = 'high'
+      await page.render({ canvasContext: ctx, viewport }).promise
+      const imgBase64 = canvas.toDataURL('image/jpeg', 0.7).split(',')[1]
+      images.push({ base64: imgBase64, mimeType: 'image/jpeg' })
+    }
+    return images
+  }
+
+  const confidenceColor = (value, confidence) => {
+    if (!value) return 'border-l-red-500 bg-red-50'
+    if (confidence === 'high') return 'border-l-green-500 bg-green-50/40'
+    if (confidence === 'medium') return 'border-l-amber-500 bg-amber-50/40'
+    return 'border-l-red-500 bg-red-50'
+  }
+
+  const formatFileSize = (bytes) => {
+    if (!bytes) return '—'
+    if (bytes < 1024) return bytes + ' B'
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
+    return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
+  }
+
+  const uploadDocument = async () => {
+    const job = uploadModal.job
+    if (!job || !uploadFile || !uploadDocType) return
+    setUploading(true)
+    setUploadProgress(0)
+    try {
+      if (uploadFile.size > 10 * 1024 * 1024) {
+        showToast('File size exceeds 10MB limit.', 'error')
+        setUploading(false)
+        return
+      }
+      setUploadProgress(20)
+      const sanitized = uploadFile.name.replace(/[^a-zA-Z0-9._-]/g, '_')
+      const filePath = `${job.id}/${Date.now()}_${sanitized}`
+      const { error: uploadError } = await supabase.storage
+        .from('job-documents')
+        .upload(filePath, uploadFile)
+      if (uploadError) throw uploadError
+      setUploadProgress(60)
+      const { data: urlData } = supabase.storage
+        .from('job-documents')
+        .getPublicUrl(filePath)
+      const fileUrl = urlData?.publicUrl
+      if (!fileUrl) throw new Error('Failed to get public URL')
+      setUploadProgress(80)
+      const ext = (uploadFile.name.split('.').pop() || '').toLowerCase()
+      const { error: insertError } = await supabase
+        .from('documents')
+        .insert({
+          job_id: job.id,
+          job_no: job.job_no,
+          file_name: uploadFile.name,
+          file_type: ext,
+          doc_type: uploadDocType,
+          file_url: fileUrl,
+          file_path: filePath,
+          uploaded_by: user.id,
+          uploaded_by_name: profile?.name || 'Unknown',
+          file_size: uploadFile.size,
+        })
+      if (insertError) throw insertError
+      setUploadProgress(100)
+      setUploadModal({ open: false, job: null })
+      setUploadFile(null)
+      setUploadDocType('BL')
+      setUploadProgress(0)
+      showToast('Document uploaded successfully', 'success')
+      const { data } = await supabase
+        .from('documents')
+        .select('*')
+        .order('created_at', { ascending: false })
+      if (data) setDocuments(data)
+    } catch (e) {
+      showToast(e?.message || 'Upload failed.', 'error')
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  const closeExtract = () => {
+    setExtractModal({ open: false, job: null, docs: [] })
+    setExtractedFields(null)
+    setExtractEdits(null)
+    setExtractError(null)
+    setExtracting(false)
+    setExtractProgress('')
+  }
+
+  const downloadExcel = () => {
+    const job = extractModal.job
+    const headers = [
+      'Job No','Client','BL No','BL Date','Vessel','Voyage','Containers',
+      'Port of Loading','Port of Discharge','Shipper','Consignee','Notify Party',
+      'HS Code','Goods Description','Invoice No','Invoice Date','Invoice Value',
+      'Currency','Shipment Terms','Country of Origin','Packages','Gross Weight','Net Weight',
+    ]
+    const values = [job.job_no, job.client, ...EXTRACT_FIELDS.map((k) => extractEdits?.[k]?.value ?? '')]
+    const ws = XLSX.utils.aoa_to_sheet([headers, values])
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, job.job_no || 'Extracted')
+    XLSX.writeFile(wb, `JDS_${job.job_no || 'Extract'}_Checklist.xlsx`)
+    showToast('Excel downloaded', 'success')
+  }
+
+  const runExtraction = async () => {
+    const job = extractModal.job
+    const docs = extractModal.docs
+    const key = import.meta.env.VITE_GROQ_API_KEY
+    if (!key) { setExtractError('Groq API key is not configured. Please contact your administrator.'); return }
+
+    setExtracting(true)
+    setExtractError(null)
+    setExtractedFields(null)
+    setExtractEdits(null)
+    setExtractProgress('Preparing document...')
+
+    try {
+      const validTypes = ['pdf', 'jpg', 'jpeg', 'png']
+      const badDoc = docs.find((d) => !validTypes.includes((d.file_type || '').toLowerCase()))
+      if (badDoc) {
+        showToast(`Unsupported file type: ${badDoc.file_type}. Only PDF and image files can be processed.`, 'error')
+        setExtracting(false); return
+      }
+
+      const files = []
+      for (const doc of docs) {
+        setExtractProgress('Rendering PDF pages...')
+        const result = await urlToBase64(doc.file_url)
+        const isPdf = (doc.file_type || '').toLowerCase() === 'pdf'
+        if (isPdf) {
+          const pageImages = await pdfToImages(result.base64)
+          files.push(...pageImages)
+        } else {
+          const compressed = await compressImage(result.base64, result.mimeType)
+          files.push(compressed)
+        }
+      }
+
+      const MAX_IMAGES_PER_REQUEST = 5
+      const chunks = []
+      for (let i = 0; i < files.length; i += MAX_IMAGES_PER_REQUEST) {
+        chunks.push(files.slice(i, i + MAX_IMAGES_PER_REQUEST))
+      }
+
+      const prompt = `You are a customs documentation assistant for JDS Logistics, a CHA company in Mumbai, India. Extract shipment details from the uploaded logistics documents. Return ONLY valid JSON. Do not return markdown. Do not return explanations. For each field return: { "value": "...", "confidence": "high|medium|low" }. Fields: bl_number, bl_date, vessel_name, voyage_number, container_numbers, port_of_loading, port_of_discharge, shipper_name, consignee_name, notify_party, hs_code, goods_description, invoice_number, invoice_date, invoice_value, currency, shipment_terms, country_of_origin, number_of_packages, gross_weight, net_weight`
+
+      const controller = new AbortController()
+      const timeout = setTimeout(() => controller.abort(), 120000)
+
+      const allResults = []
+      for (let ci = 0; ci < chunks.length; ci++) {
+        setExtractProgress(`Extracting shipment data (batch ${ci + 1}/${chunks.length})...`)
+        if (ci > 0) {
+          const delay = 2000 + Math.random() * 2000
+          await new Promise((r) => setTimeout(r, delay))
+        }
+        const raw = await withRetry(() => groqFetch(chunks[ci], prompt, controller.signal))
+        const cleaned = raw.replace(/```(?:json)?\s*/gi, '').replace(/```/g, '').trim()
+        const parsed = JSON.parse(cleaned)
+        const partial = {}
+        for (const key of EXTRACT_FIELDS) {
+          const field = parsed[key] || {}
+          partial[key] = { value: field.value ?? null, confidence: field.confidence ?? null }
+        }
+        allResults.push(partial)
+      }
+      clearTimeout(timeout)
+
+      setExtractProgress('Formatting extracted fields...')
+
+      const merged = {}
+      for (const key of EXTRACT_FIELDS) {
+        merged[key] = { value: null, confidence: null }
+      }
+      const rankMap = { high: 3, medium: 2, low: 1 }
+      for (const partial of allResults) {
+        for (const key of EXTRACT_FIELDS) {
+          const field = partial[key]
+          if (!field || field.value === null || field.value === undefined || field.value === '') continue
+          const current = merged[key]
+          if (!current.value) {
+            merged[key] = { value: field.value, confidence: field.confidence }
+          } else if (key === 'container_numbers') {
+            const existing = String(current.value).split(',').map((s) => s.trim()).filter(Boolean)
+            const incoming = String(field.value).split(',').map((s) => s.trim()).filter(Boolean)
+            const combined = [...new Set([...existing, ...incoming])]
+            merged[key] = { value: combined.join(', '), confidence: 'medium' }
+          } else {
+            const currRank = rankMap[current.confidence] || 0
+            const newRank = rankMap[field.confidence] || 0
+            if (newRank > currRank) {
+              merged[key] = { value: field.value, confidence: field.confidence }
+            }
+          }
+        }
+      }
+
+      const nonNullCount = Object.values(merged).filter(
+        (f) => f && f.value !== null && f.value !== undefined && f.value !== ''
+      ).length
+      if (nonNullCount < 3) {
+        setExtractError(`This does not appear to be a shipping document. Only ${nonNullCount} field(s) could be extracted. Please upload a Bill of Lading, Commercial Invoice, Packing List, or Certificate of Origin.`)
+        setExtracting(false); return
+      }
+      if (nonNullCount < 8) {
+        showToast(`Low confidence extraction — only ${nonNullCount} of 27 fields found. Please verify this is the correct document and review all fields carefully.`, 'error')
+      }
+      setExtractedFields(merged)
+      setExtractEdits(JSON.parse(JSON.stringify(merged)))
+    } catch (err) {
+      if (err.message?.includes('Groq API error') || err.message?.includes('API error')) {
+        setExtractError(`Extraction failed: ${err.message}`)
+      } else if (err.message?.includes('Empty response') || err.message?.includes('returned an empty')) {
+        setExtractError(err.message)
+      } else if (err.name === 'AbortError' || err.message?.includes('timed out')) {
+        setExtractError('Request timed out after 120 seconds. Please try again.')
+      } else if (err.message?.includes('JSON') || err.message?.includes('parse') || err.message?.includes('Unexpected token')) {
+        setExtractError('Extraction failed — invalid response from AI. Please try again.')
+      } else {
+        setExtractError(err.message || 'Extraction failed')
+      }
+    } finally {
+      setExtracting(false)
+      setExtractProgress('')
+    }
+  }
+
   return (
     <div className="min-h-screen flex bg-slate-100 text-[14px]">
       <aside className="w-[205px] bg-slate-900 border-r border-slate-700/60 text-slate-200 flex flex-col shrink-0">
@@ -501,13 +931,22 @@ export default function EmployeeDashboard() {
           Operations
         </div>
         <nav className="flex-1 py-1">
-          <button
-            type="button"
-            className="w-full text-left px-4 py-2 text-sm flex items-center gap-2 border-l-4 bg-slate-700 text-blue-300 border-l-blue-300 font-semibold"
-          >
-            <span className="w-4 text-center shrink-0 opacity-90">■</span>
-            <span className="truncate">All Jobs</span>
-          </button>
+          {NAV_ITEMS.filter((item) => item.id !== 'documents' || isAkshyani).map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => handleNavClick(item.id)}
+              className={classNames(
+                'w-full text-left px-3 py-2 text-sm flex items-center gap-1.5 border-l-4 transition-colors',
+                activeNav === item.id
+                  ? 'bg-slate-700 text-blue-300 border-l-blue-300 font-semibold'
+                  : 'text-slate-400 hover:bg-slate-700 hover:text-slate-100 border-l-transparent'
+              )}
+            >
+              <span className="w-3.5 text-center shrink-0 opacity-90">{item.icon}</span>
+              <span className="truncate">{item.label}</span>
+            </button>
+          ))}
         </nav>
         <div className="mt-auto border-t border-slate-700/60 px-4 py-3 flex items-center gap-2">
           <div className="w-7 h-7 rounded-full bg-blue-700 text-white flex items-center justify-center text-[10px] font-bold">
@@ -524,8 +963,10 @@ export default function EmployeeDashboard() {
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         <header className="h-[54px] bg-white border-b border-slate-200 shadow-sm px-4 sm:px-6 flex items-center gap-3">
           <div className="min-w-0">
-            <div className="text-base font-bold text-slate-900 truncate">All Jobs</div>
-            <div className="text-sm text-slate-400 truncate">Team-wide shipment register</div>
+            <div className="text-base font-bold text-slate-900 truncate">
+              {NAV_ITEMS.find((n) => n.id === activeNav)?.label ?? 'All Jobs'}
+            </div>
+            <div className="text-sm text-slate-400 truncate">Employee Command Center</div>
           </div>
           <div className="ml-auto flex items-center gap-2">
             {canCreateJob && (
@@ -548,402 +989,760 @@ export default function EmployeeDashboard() {
         </header>
 
         <main className="flex-1 overflow-y-auto p-4 sm:p-6">
-          <div className="bg-white border border-slate-200 rounded-xl shadow-sm mb-4">
-            <div className="px-4 py-3 border-b border-slate-200 flex items-center justify-between">
-              <div className="text-sm font-semibold text-slate-900">Jobs</div>
-              <div className="text-xs text-slate-400">{filteredJobs.length} shown</div>
-            </div>
-            <div className="p-4 flex flex-wrap gap-2 items-center">
-              <div className="flex items-center gap-2 h-9 px-3 bg-slate-50 border border-slate-200 rounded-lg flex-1 min-w-[220px] max-w-[320px]">
-                <span className="text-slate-400 text-sm">⎆</span>
-                <input
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Search job, client, BE, BL, container..."
-                  className="w-full bg-transparent outline-none text-sm text-slate-900 placeholder:text-slate-400"
-                />
+          {activeNav === 'jobs' && (
+            <>
+              <div className="mb-4 text-sm text-slate-500">
+                {getGreeting()}, <span className="font-semibold text-slate-700">{profile?.name || 'there'}</span>
               </div>
-              <select
-                value={filterStage}
-                onChange={(e) => setFilterStage(e.target.value)}
-                className="h-9 px-3 text-sm bg-slate-50 border border-slate-200 rounded-lg text-slate-700 outline-none"
-              >
-                {STAGE_OPTIONS.map((o) => (
-                  <option key={o.value} value={o.value}>
-                    {o.label}
-                  </option>
-                ))}
-              </select>
-              <select
-                value={filterPriority}
-                onChange={(e) => setFilterPriority(e.target.value)}
-                className="h-9 px-3 text-sm bg-slate-50 border border-slate-200 rounded-lg text-slate-700 outline-none"
-              >
-                {PRIORITY_OPTIONS.map((o) => (
-                  <option key={o.value} value={o.value}>
-                    {o.label}
-                  </option>
-                ))}
-              </select>
-              <select
-                value={filterMode}
-                onChange={(e) => setFilterMode(e.target.value)}
-                className="h-9 px-3 text-sm bg-slate-50 border border-slate-200 rounded-lg text-slate-700 outline-none"
-              >
-                {MODE_OPTIONS.map((o) => (
-                  <option key={o.value} value={o.value}>
-                    {o.label}
-                  </option>
-                ))}
-              </select>
-              <button
-                type="button"
-                onClick={() => {
-                  setSearch('')
-                  setFilterStage('')
-                  setFilterPriority('')
-                  setFilterMode('')
-                }}
-                className="h-9 px-4 text-sm rounded-lg border border-slate-300 bg-slate-50 text-slate-700 hover:bg-slate-100"
-              >
-                Clear
-              </button>
-            </div>
-          </div>
 
-          {loading ? (
-            <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-10 flex justify-center">
-              <div className="h-9 w-9 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
-            </div>
-          ) : filteredJobs.length === 0 ? (
-            <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-10 text-center text-slate-400">
-              No jobs match your search/filters.
-            </div>
-          ) : (
-            <div>
-              {filteredJobs.map((job) => {
-                const isAssignedToMe = user?.id && job.assigned_to === user.id
-                const priority = priorityChip(job.priority)
-                const mode = modeChip(job.mode)
-                const rms = rmsChip(job.rms_status)
-                const risk = riskChip(job.detention_risk)
-                const expanded = expandedJobId === job.id
-                const isEditing = editingJobId === job.id
-                const assignedName = job.assigned_to ? profiles[job.assigned_to] ?? '—' : '—'
-                const daysOld = daysOldFrom(job.created_at || job.updated_at)
-                const meta = job.field_meta && typeof job.field_meta === 'object' ? job.field_meta : {}
-                const cfsDisplay =
-                  job.cfs_amount !== null && job.cfs_amount !== undefined && job.cfs_amount !== ''
-                    ? `Rs. ${Number(job.cfs_amount).toLocaleString('en-IN')}`
-                    : 'Pending'
-
-                return (
-                  <div
-                    key={job.id}
-                    role="button"
-                    tabIndex={0}
-                    onClick={(e) => handleCardClick(e, job.id)}
-                    onKeyDown={(e) => handleCardKeyDown(e, job.id)}
-                    className={classNames(
-                      'bg-white border border-slate-200 rounded-xl shadow-sm p-4 mb-3 cursor-pointer transition-all',
-                      'hover:border-blue-300 hover:shadow-md',
-                      'border-l-4',
-                      String(job.priority || '').toLowerCase() === 'urgent'
-                        ? 'border-l-red-600'
-                        : String(job.priority || '').toLowerCase() === 'high'
-                          ? 'border-l-amber-500'
-                          : 'border-l-blue-600'
-                    )}
+              <div className="bg-white border border-slate-200 rounded-xl shadow-sm mb-4">
+                <div className="px-4 py-3 border-b border-slate-200 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="text-sm font-semibold text-slate-900">Jobs</div>
+                    <button
+                      type="button"
+                      onClick={() => setShowMyJobs(!showMyJobs)}
+                      className={classNames(
+                        'px-2.5 py-1 text-xs rounded-lg font-semibold transition-colors',
+                        showMyJobs
+                          ? 'bg-blue-600 text-white'
+                          : 'border border-slate-300 text-slate-700 hover:bg-slate-50'
+                      )}
+                    >
+                      {showMyJobs ? '\u25CF My Jobs' : '\u25CB My Jobs'}
+                    </button>
+                  </div>
+                  <div className="text-xs text-slate-400">{filteredJobs.length} shown</div>
+                </div>
+                <div className="p-4 flex flex-wrap gap-2 items-center">
+                  <div className="flex items-center gap-2 h-9 px-3 bg-slate-50 border border-slate-200 rounded-lg flex-1 min-w-[220px] max-w-[320px]">
+                    <span className="text-slate-400 text-sm">⎆</span>
+                    <input
+                      value={search}
+                      onChange={(e) => setSearch(e.target.value)}
+                      placeholder="Search job, client, BE, BL, container..."
+                      className="w-full bg-transparent outline-none text-sm text-slate-900 placeholder:text-slate-400"
+                    />
+                  </div>
+                  <select
+                    value={filterStage}
+                    onChange={(e) => setFilterStage(e.target.value)}
+                    className="h-9 px-3 text-sm bg-slate-50 border border-slate-200 rounded-lg text-slate-700 outline-none"
                   >
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <div className="text-[15px] font-extrabold text-slate-900 truncate">
-                            {job.job_no || '—'}
+                    {STAGE_OPTIONS.map((o) => (
+                      <option key={o.value} value={o.value}>
+                        {o.label}
+                      </option>
+                    ))}
+                  </select>
+                  <select
+                    value={filterPriority}
+                    onChange={(e) => setFilterPriority(e.target.value)}
+                    className="h-9 px-3 text-sm bg-slate-50 border border-slate-200 rounded-lg text-slate-700 outline-none"
+                  >
+                    {PRIORITY_OPTIONS.map((o) => (
+                      <option key={o.value} value={o.value}>
+                        {o.label}
+                      </option>
+                    ))}
+                  </select>
+                  <select
+                    value={filterMode}
+                    onChange={(e) => setFilterMode(e.target.value)}
+                    className="h-9 px-3 text-sm bg-slate-50 border border-slate-200 rounded-lg text-slate-700 outline-none"
+                  >
+                    {MODE_OPTIONS.map((o) => (
+                      <option key={o.value} value={o.value}>
+                        {o.label}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSearch('')
+                      setFilterStage('')
+                      setFilterPriority('')
+                      setFilterMode('')
+                      setShowMyJobs(false)
+                    }}
+                    className="h-9 px-4 text-sm rounded-lg border border-slate-300 bg-slate-50 text-slate-700 hover:bg-slate-100"
+                  >
+                    Clear
+                  </button>
+                </div>
+              </div>
+
+              {loading ? (
+                <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-10 flex justify-center">
+                  <div className="h-9 w-9 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
+                </div>
+              ) : filteredJobs.length === 0 ? (
+                <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-10 text-center text-slate-400">
+                  No jobs match your search/filters.
+                </div>
+              ) : (
+                <div>
+                  {filteredJobs.map((job) => {
+                    const isAssignedToMe = user?.id && job.assigned_to === user.id
+                    const priority = priorityChip(job.priority)
+                    const mode = modeChip(job.mode)
+                    const rms = rmsChip(job.rms_status)
+                    const risk = riskChip(job.detention_risk)
+                    const expanded = expandedJobId === job.id
+                    const isEditing = editingJobId === job.id
+                    const assignedName = job.assigned_to ? profiles[job.assigned_to] ?? '—' : '—'
+                    const daysOld = daysOldFrom(job.created_at || job.updated_at)
+                    const meta = job.field_meta && typeof job.field_meta === 'object' ? job.field_meta : {}
+                    const cfsDisplay =
+                      job.cfs_amount !== null && job.cfs_amount !== undefined && job.cfs_amount !== ''
+                        ? `Rs. ${Number(job.cfs_amount).toLocaleString('en-IN')}`
+                        : 'Pending'
+
+                    return (
+                      <div
+                        key={job.id}
+                        role="button"
+                        tabIndex={0}
+                        onClick={(e) => handleCardClick(e, job.id)}
+                        onKeyDown={(e) => handleCardKeyDown(e, job.id)}
+                        className={classNames(
+                          'bg-white border border-slate-200 rounded-xl shadow-sm p-4 mb-3 cursor-pointer transition-all',
+                          'hover:border-blue-300 hover:shadow-md',
+                          'border-l-4',
+                          String(job.priority || '').toLowerCase() === 'urgent'
+                            ? 'border-l-red-600'
+                            : String(job.priority || '').toLowerCase() === 'high'
+                              ? 'border-l-amber-500'
+                              : 'border-l-blue-600'
+                        )}
+                      >
+                        <div className="flex items-start justify-between gap-4">
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <div className="text-[15px] font-extrabold text-slate-900 truncate">
+                                {job.job_no || '—'}
+                              </div>
+                              {isAssignedToMe && (
+                                <span className="inline-flex items-center rounded-full bg-blue-50 text-blue-700 border border-blue-200 px-2 py-0.5 text-[11px] font-semibold">
+                                  Assigned to me
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-sm text-slate-700 mt-0.5">
+                              {job.client || '—'}{' '}
+                              <span className="text-slate-400">· {job.goods || '—'}</span>
+                            </div>
+                            <div className="text-[11px] text-slate-400 font-mono mt-1">
+                              {job.be_no ? `BE:${job.be_no}` : ''}
+                              {job.bl_no ? `${job.be_no ? ' · ' : ''}BL:${job.bl_no}` : ''}
+                              {job.containers ? `${job.be_no || job.bl_no ? ' · ' : ''}${job.containers}` : ''}
+                              {!job.be_no && !job.bl_no && !job.containers ? '—' : ''}
+                            </div>
+                            <div className="text-[11px] text-slate-400 mt-1">
+                              {meta?.stage?.by || meta?.stage?.ts ? (
+                                <>
+                                  Last updated by:{' '}
+                                  <span className="text-slate-500 font-medium">{meta.stage.by || '—'}</span>{' '}
+                                  <span className="text-slate-300">·</span>{' '}
+                                  <span>{meta.stage.ts ? timeAgo(meta.stage.ts) : '—'}</span>
+                                </>
+                              ) : (
+                                <span>Last updated by: —</span>
+                              )}
+                            </div>
                           </div>
-                          {isAssignedToMe && (
-                            <span className="inline-flex items-center rounded-full bg-blue-50 text-blue-700 border border-blue-200 px-2 py-0.5 text-[11px] font-semibold">
-                              Assigned to me
+
+                          <div className="flex flex-col items-end gap-2 shrink-0">
+                            <div className="flex flex-wrap justify-end gap-2">
+                              <span className={classNames('inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-bold', priority.cls)}>
+                                {priority.text}
+                              </span>
+                              <span className={classNames('inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-bold', mode.cls)}>
+                                {mode.text}
+                              </span>
+                            </div>
+                            <div className="flex flex-wrap justify-end gap-2">
+                              <span className={classNames('inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-bold', rms.cls)}>
+                                {rms.text}
+                              </span>
+                              <span className={classNames('inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-bold', risk.cls)}>
+                                {risk.text}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <JobProgress stage={job.stage} />
+
+                        <div className="mt-3 flex items-center justify-between gap-3 flex-wrap">
+                          <div className="text-[12px] text-slate-400">
+                            <span className="text-slate-500 font-medium">{assignedName}</span> · {job.destination || '—'} ·{' '}
+                            <span className={classNames(daysOld >= 4 ? 'text-red-600 font-semibold' : daysOld >= 2 ? 'text-amber-700 font-semibold' : '')}>
+                              {daysOld}d old
                             </span>
-                          )}
+                            {job.delay_reason ? (
+                              <>
+                                {' '}
+                                · <span className="text-amber-700 font-semibold">{job.delay_reason}</span>
+                              </>
+                            ) : null}
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                startEditing(job)
+                              }}
+                              className="h-8 px-3 text-sm rounded-lg border border-slate-300 bg-slate-50 text-slate-700 hover:bg-slate-100"
+                            >
+                              Edit
+                            </button>
+                          </div>
                         </div>
-                        <div className="text-sm text-slate-700 mt-0.5">
-                          {job.client || '—'}{' '}
-                          <span className="text-slate-400">· {job.goods || '—'}</span>
-                        </div>
-                        <div className="text-[11px] text-slate-400 font-mono mt-1">
-                          {job.be_no ? `BE:${job.be_no}` : ''}
-                          {job.bl_no ? `${job.be_no ? ' · ' : ''}BL:${job.bl_no}` : ''}
-                          {job.containers ? `${job.be_no || job.bl_no ? ' · ' : ''}${job.containers}` : ''}
-                          {!job.be_no && !job.bl_no && !job.containers ? '—' : ''}
-                        </div>
-                        <div className="text-[11px] text-slate-400 mt-1">
-                          {meta?.stage?.by || meta?.stage?.ts ? (
-                            <>
-                              Last updated by:{' '}
-                              <span className="text-slate-500 font-medium">{meta.stage.by || '—'}</span>{' '}
-                              <span className="text-slate-300">·</span>{' '}
-                              <span>{meta.stage.ts ? timeAgo(meta.stage.ts) : '—'}</span>
-                            </>
-                          ) : (
-                            <span>Last updated by: —</span>
-                          )}
-                        </div>
+
+                        {expanded && (
+                          <div className="mt-4 border-t border-slate-200 pt-4" onClick={(e) => e.stopPropagation()}>
+                            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+                              <MiniStatus title="CUSTOMS" value={job.rms_status ? String(job.rms_status).toUpperCase() : '—'} tone="blue" />
+                              <MiniStatus title="CFS" value={cfsDisplay} tone="amber" />
+                              <MiniStatus title="TRANSPORT" value={job.vessel?.trim() ? job.vessel : 'Not Yet'} tone="gray" />
+                              <MiniStatus title="DELIVERY" value={job.destination?.trim() ? job.destination : 'Pending'} tone="green" />
+                            </div>
+
+                            {canUpdateStage && (
+                              <div className="mb-4 flex items-center gap-2">
+                                <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide">Update Stage</span>
+                                <select
+                                  disabled={saving}
+                                  value={Number(isEditing ? editForm.stage ?? job.stage : job.stage)}
+                                  onChange={(e) => updateStage(job, e.target.value)}
+                                  className={classNames(inputBase, 'h-9 text-sm max-w-[320px]')}
+                                >
+                                  {STAGE_LIST.map((s) => (
+                                    <option key={s.value} value={s.value}>
+                                      {s.value} — {s.label}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                            )}
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-5">
+                              {[
+                                'job_no',
+                                'client',
+                                'mode',
+                                'priority',
+                                'goods',
+                                'bl_no',
+                                'be_no',
+                                'containers',
+                                'shipping_line',
+                                'vessel',
+                                'eta',
+                                'cfs_name',
+                                'cfs_amount',
+                                'hs_code',
+                                'rms_status',
+                                'bg_required',
+                                'destination',
+                                'free_days',
+                                'detention_risk',
+                                'delay_reason',
+                                'notes',
+                              ].map((k) => {
+                                const locked = !isFieldEditable(k)
+                                const value = isEditing ? (editForm[k] ?? '') : job[k]
+                                const disabled = locked || saving || !isEditing
+
+                                const renderInput = () => {
+                                  if (!isEditing) {
+                                    let shown = displayValue(value)
+                                    if (k === 'eta') shown = formatDateSlash(value)
+                                    if (k === 'cfs_amount') {
+                                      shown = value !== null && value !== undefined && value !== '' ? `Rs. ${Number(value).toLocaleString('en-IN')}` : 'Pending'
+                                    }
+                                    return <div className="text-sm text-slate-900">{shown}</div>
+                                  }
+
+                                  if (k === 'mode') {
+                                    return (
+                                      <select value={value || ''} onChange={updateEditField(k)} disabled={disabled} className={inputBase} onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+                                        <option value="">—</option>
+                                        <option value="Sea FCL">Sea FCL</option>
+                                        <option value="Sea LCL">Sea LCL</option>
+                                        <option value="Air">Air</option>
+                                        <option value="BPT/MBPT">BPT/MBPT</option>
+                                      </select>
+                                    )
+                                  }
+                                  if (k === 'priority') {
+                                    return (
+                                      <select value={value || 'normal'} onChange={updateEditField(k)} disabled={disabled} className={inputBase} onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+                                        <option value="normal">Normal</option>
+                                        <option value="high">High</option>
+                                        <option value="urgent">Urgent</option>
+                                      </select>
+                                    )
+                                  }
+                                  if (k === 'rms_status') {
+                                    return (
+                                      <select value={value || 'pending'} onChange={updateEditField(k)} disabled={disabled} className={inputBase} onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+                                        <option value="pending">pending</option>
+                                        <option value="rms">rms</option>
+                                        <option value="apr">apr</option>
+                                        <option value="acl">acl</option>
+                                        <option value="check">check</option>
+                                        <option value="hold">hold</option>
+                                      </select>
+                                    )
+                                  }
+                                  if (k === 'bg_required') {
+                                    return (
+                                      <select value={value || 'no'} onChange={updateEditField(k)} disabled={disabled} className={inputBase} onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+                                        <option value="no">no</option>
+                                        <option value="yes">yes</option>
+                                        <option value="100percent">100percent</option>
+                                      </select>
+                                    )
+                                  }
+                                  if (k === 'detention_risk') {
+                                    return (
+                                      <select value={value || 'low'} onChange={updateEditField(k)} disabled={disabled} className={inputBase} onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+                                        <option value="low">low</option>
+                                        <option value="medium">medium</option>
+                                        <option value="high">high</option>
+                                      </select>
+                                    )
+                                  }
+                                  if (k === 'eta') {
+                                    return <input type="date" value={value || ''} onChange={updateEditField(k)} disabled={disabled} className={inputBase} onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()} />
+                                  }
+                                  if (k === 'free_days' || k === 'cfs_amount') {
+                                    return <input type="number" value={value ?? ''} onChange={updateEditField(k)} disabled={disabled} className={inputBase} onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()} />
+                                  }
+                                  if (k === 'notes') {
+                                    return <textarea rows={3} value={value || ''} onChange={updateEditField(k)} disabled={disabled} className={classNames(inputBase, 'h-auto py-2')} onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()} />
+                                  }
+                                  if (k === 'shipping_line') {
+                                    return (
+                                      <select value={value || ''} onChange={updateEditField(k)} disabled={disabled} className={inputBase} onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+                                        <option value="">— Select —</option>
+                                        <option value="Maersk">Maersk</option>
+                                        <option value="MSC">MSC</option>
+                                        <option value="Hapag-Lloyd">Hapag-Lloyd</option>
+                                        <option value="CMA-CGM">CMA-CGM</option>
+                                        <option value="Evergreen">Evergreen</option>
+                                        <option value="ONE">ONE</option>
+                                        <option value="OOCL">OOCL</option>
+                                        <option value="COSCO">COSCO</option>
+                                        <option value="ZIM">ZIM</option>
+                                        <option value="HMM">HMM</option>
+                                        <option value="Yang Ming">Yang Ming</option>
+                                        <option value="Wan Hai">Wan Hai</option>
+                                        <option value="TS Line">TS Line</option>
+                                        <option value="Interasia">Interasia</option>
+                                        <option value="Emirates">Emirates</option>
+                                        <option value="Akkon">Akkon</option>
+                                        <option value="Other">Other</option>
+                                      </select>
+                                    )
+                                  }
+                                  return <input type="text" value={value || ''} onChange={updateEditField(k)} disabled={disabled} className={inputBase} onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()} />
+                                }
+
+                                return (
+                                  <div key={k} className={k === 'notes' ? 'md:col-span-2' : ''}>
+                                    <FieldLabel label={FIELD_LABELS[k] || k} locked={locked} />
+                                    {renderInput()}
+                                  </div>
+                                )
+                              })}
+                            </div>
+
+                            {job.delay_reason?.trim() && (
+                              <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                                <span className="font-semibold">\u26A0 Delay:</span> {job.delay_reason}
+                              </div>
+                            )}
+
+                            {job.notes?.trim() && !isEditing && (
+                              <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+                                <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-1">Notes</p>
+                                <p className="text-sm text-slate-700 whitespace-pre-wrap">{job.notes}</p>
+                              </div>
+                            )}
+
+                            {isEditing && (
+                              <div className="mt-4 flex items-center justify-end gap-2">
+                                <button
+                                  type="button"
+                                  disabled={saving}
+                                  onClick={(e) => { e.stopPropagation(); cancelEditing(); }}
+                                  className="h-9 px-4 text-sm rounded-lg border border-slate-300 bg-slate-50 text-slate-700 hover:bg-slate-100 font-semibold disabled:opacity-60"
+                                >
+                                  Cancel
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={saving}
+                                  onClick={(e) => { e.stopPropagation(); saveEdits(job); }}
+                                  className="h-9 px-4 text-sm rounded-lg bg-blue-600 text-white hover:bg-blue-700 font-semibold disabled:opacity-60 inline-flex items-center gap-2"
+                                >
+                                  {saving && <span className="h-3.5 w-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />}
+                                  Save
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </div>
+                    )
+                  })}
+                </div>
+              )}
+            </>
+          )}
 
-                      <div className="flex flex-col items-end gap-2 shrink-0">
-                        <div className="flex flex-wrap justify-end gap-2">
-                          <span className={classNames('inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-bold', priority.cls)}>
-                            {priority.text}
-                          </span>
-                          <span className={classNames('inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-bold', mode.cls)}>
-                            {mode.text}
-                          </span>
-                        </div>
-                        <div className="flex flex-wrap justify-end gap-2">
-                          <span className={classNames('inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-bold', rms.cls)}>
-                            {rms.text}
-                          </span>
-                          <span className={classNames('inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-bold', risk.cls)}>
-                            {risk.text}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-
-                    <JobProgress stage={job.stage} />
-
-                    <div className="mt-3 flex items-center justify-between gap-3 flex-wrap">
-                      <div className="text-[12px] text-slate-400">
-                        <span className="text-slate-500 font-medium">{assignedName}</span> · {job.destination || '—'} ·{' '}
-                        <span className={classNames(daysOld >= 4 ? 'text-red-600 font-semibold' : daysOld >= 2 ? 'text-amber-700 font-semibold' : '')}>
-                          {daysOld}d old
-                        </span>
-                        {job.delay_reason ? (
-                          <>
-                            {' '}
-                            · <span className="text-amber-700 font-semibold">{job.delay_reason}</span>
-                          </>
-                        ) : null}
-                      </div>
-
-                      <div className="flex items-center gap-2">
+          {activeNav === 'documents' && (
+            <div>
+              <div className="text-lg font-bold text-slate-900 mb-4">Documents</div>
+              {loadingDocs ? (
+                <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-10 flex justify-center">
+                  <div className="h-9 w-9 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
+                </div>
+              ) : documents.length === 0 ? (
+                <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-10 text-center text-slate-400">
+                  No documents uploaded yet. Upload documents when creating a job.
+                </div>
+              ) : (
+                <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+                  {Object.entries(
+                    documents.reduce((groups, doc) => {
+                      const key = doc.job_no || 'unknown'
+                      if (!groups[key]) groups[key] = []
+                      groups[key].push(doc)
+                      return groups
+                    }, {})
+                  ).map(([jobNo, docs]) => {
+                    const isExpanded = expandedDocJobId === jobNo
+                    const docCount = docs.length
+                    return (
+                      <div key={jobNo} className="border-b border-slate-200 last:border-b-0">
                         <button
                           type="button"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            startEditing(job)
-                          }}
-                          className="h-8 px-3 text-sm rounded-lg border border-slate-300 bg-slate-50 text-slate-700 hover:bg-slate-100"
+                          onClick={() => setExpandedDocJobId(isExpanded ? null : jobNo)}
+                          className="w-full px-4 py-3 bg-slate-50/60 font-semibold text-sm text-slate-900 border-b border-slate-200 flex items-center justify-between gap-2 hover:bg-slate-100 transition-colors"
                         >
-                          Edit
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className="truncate">{jobNo}</span>
+                            <span className="text-slate-400 text-xs font-normal truncate">{jobs.find(j => j.job_no === jobNo)?.client || ''}</span>
+                            <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold bg-slate-100 text-slate-600 shrink-0">{docCount}</span>
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0" onClick={(e) => e.stopPropagation()}>
+                            <button
+                              type="button"
+                              onClick={() => setUploadModal({ open: true, job: jobs.find(j => j.job_no === jobNo) || { job_no: jobNo, client: '', id: '' } })}
+                              className="h-8 px-3 text-xs rounded-lg bg-[#1e3a5f] text-white hover:bg-[#16304f] font-semibold"
+                            >
+                              Upload Document
+                            </button>
+                            {isAkshyani && docCount > 0 && (
+                              <button
+                                type="button"
+                                onClick={() => setExtractModal({ open: true, job: jobs.find(j => j.job_no === jobNo) || { job_no: jobNo, client: '' }, docs })}
+                                className="h-8 px-3 text-xs rounded-md border border-emerald-600 text-emerald-700 hover:bg-emerald-50 font-semibold"
+                              >
+                                &#10026; Extract
+                              </button>
+                            )}
+                            <span className="text-slate-400 text-sm">{isExpanded ? '\u25B2' : '\u25BC'}</span>
+                          </div>
                         </button>
-                      </div>
-                    </div>
-
-                    {expanded && (
-                      <div className="mt-4 border-t border-slate-200 pt-4" onClick={(e) => e.stopPropagation()}>
-                        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
-                          <MiniStatus title="CUSTOMS" value={job.rms_status ? String(job.rms_status).toUpperCase() : '—'} tone="blue" />
-                          <MiniStatus title="CFS" value={cfsDisplay} tone="amber" />
-                          <MiniStatus title="TRANSPORT" value={job.vessel?.trim() ? job.vessel : 'Not Yet'} tone="gray" />
-                          <MiniStatus title="DELIVERY" value={job.destination?.trim() ? job.destination : 'Pending'} tone="green" />
-                        </div>
-
-                        {canUpdateStage && (
-                          <div className="mb-4 flex items-center gap-2">
-                            <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide">Update Stage</span>
-                            <select
-                              disabled={saving}
-                              value={Number(isEditing ? editForm.stage ?? job.stage : job.stage)}
-                              onChange={(e) => updateStage(job, e.target.value)}
-                              className={classNames(inputBase, 'h-9 text-sm max-w-[320px]')}
-                            >
-                              {STAGE_LIST.map((s) => (
-                                <option key={s.value} value={s.value}>
-                                  {s.value} — {s.label}
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-                        )}
-
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-5">
-                          {[
-                            'job_no',
-                            'client',
-                            'mode',
-                            'priority',
-                            'goods',
-                            'bl_no',
-                            'be_no',
-                            'containers',
-                            'shipping_line',
-                            'vessel',
-                            'eta',
-                            'cfs_name',
-                            'cfs_amount',
-                            'hs_code',
-                            'rms_status',
-                            'bg_required',
-                            'destination',
-                            'free_days',
-                            'detention_risk',
-                            'delay_reason',
-                            'notes',
-                          ].map((k) => {
-                            const locked = !isFieldEditable(k)
-                            const value = isEditing ? (editForm[k] ?? '') : job[k]
-                            const disabled = locked || saving || !isEditing
-
-                            const renderInput = () => {
-                              if (!isEditing) {
-                                let shown = displayValue(value)
-                                if (k === 'eta') shown = formatDateSlash(value)
-                                if (k === 'cfs_amount') {
-                                  shown = value !== null && value !== undefined && value !== '' ? `Rs. ${Number(value).toLocaleString('en-IN')}` : 'Pending'
-                                }
-                                return <div className="text-sm text-slate-900">{shown}</div>
-                              }
-
-                              if (k === 'mode') {
-                                return (
-                                  <select value={value || ''} onChange={updateEditField(k)} disabled={disabled} className={inputBase} onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
-                                    <option value="">—</option>
-                                    <option value="Sea FCL">Sea FCL</option>
-                                    <option value="Sea LCL">Sea LCL</option>
-                                    <option value="Air">Air</option>
-                                    <option value="BPT/MBPT">BPT/MBPT</option>
-                                  </select>
-                                )
-                              }
-                              if (k === 'priority') {
-                                return (
-                                  <select value={value || 'normal'} onChange={updateEditField(k)} disabled={disabled} className={inputBase} onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
-                                    <option value="normal">Normal</option>
-                                    <option value="high">High</option>
-                                    <option value="urgent">Urgent</option>
-                                  </select>
-                                )
-                              }
-                              if (k === 'rms_status') {
-                                return (
-                                  <select value={value || 'pending'} onChange={updateEditField(k)} disabled={disabled} className={inputBase} onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
-                                    <option value="pending">pending</option>
-                                    <option value="rms">rms</option>
-                                    <option value="apr">apr</option>
-                                    <option value="acl">acl</option>
-                                    <option value="check">check</option>
-                                    <option value="hold">hold</option>
-                                  </select>
-                                )
-                              }
-                              if (k === 'bg_required') {
-                                return (
-                                  <select value={value || 'no'} onChange={updateEditField(k)} disabled={disabled} className={inputBase} onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
-                                    <option value="no">no</option>
-                                    <option value="yes">yes</option>
-                                    <option value="100percent">100percent</option>
-                                  </select>
-                                )
-                              }
-                              if (k === 'detention_risk') {
-                                return (
-                                  <select value={value || 'low'} onChange={updateEditField(k)} disabled={disabled} className={inputBase} onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
-                                    <option value="low">low</option>
-                                    <option value="medium">medium</option>
-                                    <option value="high">high</option>
-                                  </select>
-                                )
-                              }
-                              if (k === 'eta') {
-                                return <input type="date" value={value || ''} onChange={updateEditField(k)} disabled={disabled} className={inputBase} onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()} />
-                              }
-                              if (k === 'free_days' || k === 'cfs_amount') {
-                                return <input type="number" value={value ?? ''} onChange={updateEditField(k)} disabled={disabled} className={inputBase} onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()} />
-                              }
-                              if (k === 'notes') {
-                                return <textarea rows={3} value={value || ''} onChange={updateEditField(k)} disabled={disabled} className={classNames(inputBase, 'h-auto py-2')} onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()} />
-                              }
-                              if (k === 'shipping_line') {
-                                return (
-                                  <select value={value || ''} onChange={updateEditField(k)} disabled={disabled} className={inputBase} onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
-                                    <option value="">— Select —</option>
-                                    <option value="Maersk">Maersk</option>
-                                    <option value="MSC">MSC</option>
-                                    <option value="Hapag-Lloyd">Hapag-Lloyd</option>
-                                    <option value="CMA-CGM">CMA-CGM</option>
-                                    <option value="Evergreen">Evergreen</option>
-                                    <option value="ONE">ONE</option>
-                                    <option value="OOCL">OOCL</option>
-                                    <option value="COSCO">COSCO</option>
-                                    <option value="ZIM">ZIM</option>
-                                    <option value="HMM">HMM</option>
-                                    <option value="Yang Ming">Yang Ming</option>
-                                    <option value="Wan Hai">Wan Hai</option>
-                                    <option value="TS Line">TS Line</option>
-                                    <option value="Interasia">Interasia</option>
-                                    <option value="Emirates">Emirates</option>
-                                    <option value="Akkon">Akkon</option>
-                                    <option value="Other">Other</option>
-                                  </select>
-                                )
-                              }
-                              return <input type="text" value={value || ''} onChange={updateEditField(k)} disabled={disabled} className={inputBase} onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()} />
-                            }
-
-                            return (
-                              <div key={k} className={k === 'notes' ? 'md:col-span-2' : ''}>
-                                <FieldLabel label={FIELD_LABELS[k] || k} locked={locked} />
-                                {renderInput()}
-                              </div>
-                            )
-                          })}
-                        </div>
-
-                        {job.delay_reason?.trim() && (
-                          <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-                            <span className="font-semibold">⚠ Delay:</span> {job.delay_reason}
-                          </div>
-                        )}
-
-                        {job.notes?.trim() && !isEditing && (
-                          <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
-                            <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-1">Notes</p>
-                            <p className="text-sm text-slate-700 whitespace-pre-wrap">{job.notes}</p>
-                          </div>
-                        )}
-
-                        {isEditing && (
-                          <div className="mt-4 flex items-center justify-end gap-2">
-                            <button
-                              type="button"
-                              disabled={saving}
-                              onClick={(e) => { e.stopPropagation(); cancelEditing(); }}
-                              className="h-9 px-4 text-sm rounded-lg border border-slate-300 bg-slate-50 text-slate-700 hover:bg-slate-100 font-semibold disabled:opacity-60"
-                            >
-                              Cancel
-                            </button>
-                            <button
-                              type="button"
-                              disabled={saving}
-                              onClick={(e) => { e.stopPropagation(); saveEdits(job); }}
-                              className="h-9 px-4 text-sm rounded-lg bg-blue-600 text-white hover:bg-blue-700 font-semibold disabled:opacity-60 inline-flex items-center gap-2"
-                            >
-                              {saving && <span className="h-3.5 w-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />}
-                              Save
-                            </button>
+                        {isExpanded && (
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-xs">
+                              <thead>
+                                <tr className="text-slate-500 border-b border-slate-200">
+                                  <th className="text-left font-semibold uppercase tracking-wide text-[10px] px-4 py-2">File Name</th>
+                                  <th className="text-left font-semibold uppercase tracking-wide text-[10px] px-4 py-2">Doc Type</th>
+                                  <th className="text-left font-semibold uppercase tracking-wide text-[10px] px-4 py-2">Uploaded</th>
+                                  <th className="text-left font-semibold uppercase tracking-wide text-[10px] px-4 py-2">Actions</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {docs.map((doc) => (
+                                  <tr key={doc.id} className="border-b border-slate-100 last:border-b-0">
+                                    <td className="px-4 py-2 text-slate-900 font-medium truncate max-w-[250px]" title={doc.file_name}>{doc.file_name}</td>
+                                    <td className="px-4 py-2">
+                                      <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold bg-blue-100 text-blue-800">{doc.doc_type || '—'}</span>
+                                    </td>
+                                    <td className="px-4 py-2 text-slate-500 whitespace-nowrap">
+                                      {doc.created_at ? new Date(doc.created_at).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'}
+                                    </td>
+                                    <td className="px-4 py-2">
+                                      <div className="flex items-center gap-1.5">
+                                        <button
+                                          type="button"
+                                          onClick={() => setPreviewModal({ open: true, doc })}
+                                          className="h-7 px-2.5 text-[11px] rounded-md bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 font-semibold"
+                                        >
+                                          Preview
+                                        </button>
+                                        <a href={doc.file_url} download={doc.file_name}
+                                          className="h-7 px-2.5 text-[11px] rounded-md bg-slate-50 text-slate-700 border border-slate-200 hover:bg-slate-100 font-semibold inline-flex items-center no-underline">
+                                          Download
+                                        </a>
+                                      </div>
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
                           </div>
                         )}
                       </div>
-                    )}
-                  </div>
-                )
-              })}
+                    )
+                  })}
+                </div>
+              )}
             </div>
           )}
         </main>
       </div>
+
+      {previewModal.open && previewModal.doc && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm px-4 py-6">
+          <div className="w-full max-w-4xl max-h-[90vh] bg-white rounded-xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col">
+            <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between gap-3 shrink-0">
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="text-sm font-semibold text-slate-900 truncate">{previewModal.doc.file_name}</span>
+                <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold bg-blue-100 text-blue-800">{previewModal.doc.doc_type}</span>
+              </div>
+              <button type="button" onClick={() => setPreviewModal({ open: false, doc: null })}
+                className="h-8 w-8 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition-colors text-lg leading-none shrink-0">&times;</button>
+            </div>
+            <div className="flex-1 overflow-auto bg-slate-100 p-4 flex items-center justify-center min-h-[300px]">
+              {['pdf'].includes((previewModal.doc.file_type || '').toLowerCase()) ? (
+                <iframe src={previewModal.doc.file_url} title="PDF Preview" className="w-full h-[600px] rounded-lg border border-slate-200 bg-white" />
+              ) : ['jpg', 'jpeg', 'png'].includes((previewModal.doc.file_type || '').toLowerCase()) ? (
+                <img src={previewModal.doc.file_url} alt={previewModal.doc.file_name} className="max-w-full max-h-[600px] rounded-lg shadow-sm object-contain" />
+              ) : (
+                <div className="text-center text-slate-400">
+                  <p className="text-sm font-semibold">Preview not available</p>
+                  <p className="text-xs mt-1">This file type cannot be previewed.</p>
+                </div>
+              )}
+            </div>
+            <div className="px-5 py-3 border-t border-slate-200 flex items-center justify-end gap-2 shrink-0">
+              <a href={previewModal.doc.file_url} download={previewModal.doc.file_name}
+                className="h-9 px-4 text-sm rounded-lg bg-[#1e3a5f] text-white hover:bg-[#16304f] font-semibold no-underline inline-flex items-center">
+                Download
+              </a>
+              <button type="button" onClick={() => setPreviewModal({ open: false, doc: null })}
+                className="h-9 px-4 text-sm rounded-lg border border-slate-300 bg-slate-50 text-slate-700 hover:bg-slate-100 font-semibold">
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {extractModal.open && extractModal.job && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm px-4">
+          <div className="w-full max-w-4xl max-h-[90vh] overflow-y-auto bg-white rounded-xl shadow-2xl border border-slate-200">
+            <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between sticky top-0 bg-white z-10">
+              <div>
+                <div className="text-sm font-bold text-slate-900">AI Document Extraction &mdash; {extractModal.job.job_no}</div>
+                <div className="text-xs text-slate-400">{extractModal.job.client}</div>
+              </div>
+              <button type="button" onClick={closeExtract}
+                className="h-8 w-8 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-700 text-lg leading-none">&times;</button>
+            </div>
+
+            <div className="p-6 space-y-6">
+              {!extracting && !extractedFields && !extractError && (
+                <div>
+                  <p className="text-sm font-semibold text-slate-700 mb-3">Documents to process ({extractModal.docs.length})</p>
+                  <div className="space-y-2">
+                    {extractModal.docs.map((doc) => (
+                      <div key={doc.id} className="flex items-center gap-2 text-sm text-slate-600 px-3 py-2 bg-slate-50 rounded-lg border border-slate-200">
+                        <span className="text-base">📄</span>
+                        <span className="truncate">{doc.file_name}</span>
+                        <span className="text-[10px] text-slate-400 ml-auto">{doc.doc_type}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <button type="button" onClick={runExtraction} disabled={extracting}
+                    className="mt-4 h-10 px-5 text-sm font-semibold rounded-lg bg-[#1e3a5f] text-white hover:bg-[#16304f] disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2">
+                    {extracting ? 'Extraction in progress...' : '✦ Extract'}
+                  </button>
+                </div>
+              )}
+
+              {extracting && (
+                <div className="flex flex-col items-center justify-center py-16">
+                  <div className="h-10 w-10 border-4 border-[#1e3a5f] border-t-transparent rounded-full animate-spin mb-4" />
+                  <p className="text-sm font-semibold text-slate-700">{extractProgress || 'AI is extracting shipment data...'}</p>
+                  <p className="text-sm text-slate-400">This may take up to 2 minutes for large documents</p>
+                </div>
+              )}
+
+              {extractError && !extracting && (
+                <div className="flex flex-col items-center py-10">
+                  <p className="text-sm text-red-600 font-semibold mb-3">{extractError}</p>
+                  <button type="button" onClick={runExtraction}
+                    className="h-9 px-4 text-sm rounded-lg border border-slate-300 bg-slate-50 text-slate-700 hover:bg-slate-100 font-semibold">
+                    Retry
+                  </button>
+                </div>
+              )}
+
+              {extractedFields && extractEdits && (
+                <>
+                  <div className="flex items-center gap-3">
+                    <span className="text-sm font-semibold text-slate-600">Confidence:</span>
+                    {(() => {
+                      const summary = EXTRACT_FIELDS.reduce((acc, k) => {
+                        const f = extractedFields[k]
+                        if (!f?.value) acc.notFound++
+                        else if (f.confidence === 'high') acc.high++
+                        else acc.needsReview++
+                        return acc
+                      }, { high: 0, needsReview: 0, notFound: 0 })
+                      return (
+                        <>
+                          {summary.high > 0 && (
+                            <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-bold bg-green-100 text-green-800">{summary.high}</span>
+                          )}
+                          {summary.needsReview > 0 && (
+                            <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-bold bg-amber-100 text-amber-800">{summary.needsReview}</span>
+                          )}
+                          {summary.notFound > 0 && (
+                            <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-bold bg-red-100 text-red-800">{summary.notFound}</span>
+                          )}
+                          <span className="text-[11px] text-slate-400">{summary.high} high · {summary.needsReview} need review · {summary.notFound} not found</span>
+                        </>
+                      )
+                    })()}
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-5">
+                    {EXTRACT_FIELDS.map((k) => {
+                      const f = extractEdits[k] || {}
+                      const value = f.value ?? ''
+                      const confidence = f.confidence
+                      const borderCls = confidenceColor(value, confidence)
+                      return (
+                        <div key={k}>
+                          <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-1">{EXTRACT_LABELS[k] || k}</p>
+                          <input type="text" value={value} onChange={(e) => setExtractEdits((prev) => ({ ...prev, [k]: { ...prev[k], value: e.target.value } }))}
+                            placeholder={value ? '' : 'Not found'}
+                            className={`w-full h-9 px-3 text-xs rounded-lg border border-slate-200 bg-slate-50 text-slate-900 outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-300 ${borderCls} border-l-4 ${!value ? 'text-red-600 placeholder:text-red-300' : ''}`} />
+                          {confidence && (
+                            <p className={`text-[10px] mt-0.5 font-medium ${confidence === 'high' ? 'text-green-600' : confidence === 'medium' ? 'text-amber-600' : 'text-red-600'}`}>
+                              {confidence} confidence
+                            </p>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                </>
+              )}
+            </div>
+
+            {extractedFields && (
+              <div className="px-6 py-4 border-t border-slate-200 flex items-center gap-3 sticky bottom-0 bg-white">
+                <button type="button" onClick={closeExtract}
+                  className="h-9 px-4 text-sm rounded-lg border border-slate-300 bg-slate-50 text-slate-700 hover:bg-slate-100 font-semibold">
+                  Close
+                </button>
+                <button type="button" onClick={() => { setExtractedFields(null); setExtractEdits(null); setExtractError(null); }}
+                  className="h-9 px-4 text-sm rounded-lg border border-slate-300 bg-slate-50 text-slate-700 hover:bg-slate-100 font-semibold">
+                  Extract Again
+                </button>
+                <button type="button" onClick={downloadExcel}
+                  className="h-9 px-4 text-sm rounded-lg bg-[#1e3a5f] text-white hover:bg-[#16304f] font-semibold ml-auto">
+                  &#128229; Download Excel
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {uploadModal.open && uploadModal.job && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm px-4 py-6">
+          <div className="w-full max-w-lg bg-white rounded-xl shadow-2xl border border-slate-200 overflow-hidden">
+            <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between gap-3">
+              <div className="text-sm font-bold text-slate-900 truncate">Upload Document &mdash; {uploadModal.job.job_no} {uploadModal.job.client ? `(${uploadModal.job.client})` : ''}</div>
+              <button type="button" onClick={() => { setUploadModal({ open: false, job: null }); setUploadFile(null); setUploadDocType('BL'); setUploadProgress(0); }}
+                className="h-8 w-8 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-700 text-lg leading-none shrink-0">&times;</button>
+            </div>
+            <div className="p-5 space-y-4">
+              <div>
+                <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-1">Document Type</p>
+                <select value={uploadDocType} onChange={(e) => setUploadDocType(e.target.value)}
+                  className="w-full h-9 px-3 text-sm rounded-lg border border-slate-200 bg-slate-50 text-slate-900 outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-300">
+                  <option value="BL">BL</option>
+                  <option value="Invoice">Invoice</option>
+                  <option value="Packing List">Packing List</option>
+                  <option value="COO">COO</option>
+                  <option value="Insurance">Insurance</option>
+                  <option value="BE">BE</option>
+                  <option value="Examination Order">Examination Order</option>
+                  <option value="OOC">OOC</option>
+                  <option value="E-Way Bill">E-Way Bill</option>
+                  <option value="POD">POD</option>
+                  <option value="Other">Other</option>
+                </select>
+              </div>
+              <div>
+                <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-1">File</p>
+                <label className="flex flex-col items-center justify-center w-full h-28 border-2 border-dashed border-slate-300 rounded-lg bg-slate-50 cursor-pointer hover:bg-slate-100/60 hover:border-slate-400 transition-colors">
+                  {uploadFile ? (
+                    <div className="flex flex-col items-center gap-1 px-3">
+                      <span className="text-sm font-medium text-slate-700 truncate max-w-full">{uploadFile.name}</span>
+                      <span className="text-[11px] text-slate-400">{formatFileSize(uploadFile.size)}</span>
+                      <button type="button" onClick={(e) => { e.preventDefault(); setUploadFile(null); }}
+                        className="text-[11px] text-red-600 hover:text-red-700 font-semibold">Remove</button>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-center gap-1">
+                      <span className="text-lg text-slate-400">+</span>
+                      <span className="text-sm text-slate-500 font-medium">Click to select or drag &amp; drop</span>
+                      <span className="text-[11px] text-slate-400">PDF, JPG, PNG &mdash; max 10MB</span>
+                    </div>
+                  )}
+                  <input type="file" accept=".pdf,.jpg,.jpeg,.png" onChange={(e) => { const f = e.target.files?.[0]; if (f) setUploadFile(f); }} className="hidden" />
+                </label>
+              </div>
+              {uploading && (
+                <div>
+                  <div className="h-2 bg-slate-200 rounded overflow-hidden">
+                    <div className="h-full bg-[#1e3a5f] rounded transition-all duration-300" style={{ width: `${uploadProgress}%` }} />
+                  </div>
+                  <p className="text-[11px] text-slate-400 mt-1">{uploadProgress}%</p>
+                </div>
+              )}
+            </div>
+            <div className="px-5 py-4 border-t border-slate-200 flex items-center justify-end gap-2">
+              <button type="button" onClick={() => { setUploadModal({ open: false, job: null }); setUploadFile(null); setUploadDocType('BL'); setUploadProgress(0); }}
+                className="h-9 px-4 text-sm rounded-lg border border-slate-300 bg-slate-50 text-slate-700 hover:bg-slate-100 font-semibold">
+                Cancel
+              </button>
+              <button type="button" disabled={!uploadFile || !uploadDocType || uploading} onClick={uploadDocument}
+                className="h-9 px-4 text-sm rounded-lg bg-[#1e3a5f] text-white hover:bg-[#16304f] font-semibold disabled:opacity-50 disabled:cursor-not-allowed">
+                {uploading ? 'Uploading...' : 'Upload'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {toastState && (
         <div
