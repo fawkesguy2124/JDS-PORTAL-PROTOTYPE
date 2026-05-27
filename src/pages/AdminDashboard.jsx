@@ -896,7 +896,7 @@ function DocumentsSection({ jobs, profiles, currentUserName, showToast }) {
     setExtractProgress('')
   }
 
-  async function compressImage(base64, mimeType, maxWidth = 1200, quality = 0.7) {
+  async function compressImage(base64, mimeType, maxWidth = 1000, quality = 0.6) {
     return new Promise((resolve) => {
       const img = new Image()
       img.onload = () => {
@@ -971,7 +971,8 @@ function DocumentsSection({ jobs, profiles, currentUserName, showToast }) {
     return raw
   }
 
-  const withRetry = async (fn, maxRetries = 2) => {
+  const withRetry = async (fn, maxRetries = 3) => {
+    const rateLimitDelays = [3000, 6000, 12000]
     let lastError
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       try {
@@ -979,7 +980,13 @@ function DocumentsSection({ jobs, profiles, currentUserName, showToast }) {
       } catch (err) {
         lastError = err
         if (err.name === 'AbortError') throw new Error('Request timed out after 120 seconds. Please try again.')
-        if (attempt < maxRetries) await new Promise((r) => setTimeout(r, 2000 * (attempt + 1)))
+        const isRateLimit = err.message?.includes('rate_limit') || err.message?.includes('Rate limit') || err.message?.includes('429')
+        if (isRateLimit) {
+          const delay = rateLimitDelays[attempt] || 12000
+          if (attempt < maxRetries) await new Promise((r) => setTimeout(r, delay))
+        } else if (attempt < maxRetries) {
+          await new Promise((r) => setTimeout(r, 2000 * (attempt + 1)))
+        }
       }
     }
     throw lastError
@@ -990,8 +997,9 @@ function DocumentsSection({ jobs, profiles, currentUserName, showToast }) {
     pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl
     const data = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0))
     const pdf = await pdfjsLib.getDocument({ data }).promise
+    const maxPages = Math.min(pdf.numPages, 5)
     const images = []
-    for (let i = 1; i <= pdf.numPages; i++) {
+    for (let i = 1; i <= maxPages; i++) {
       const page = await pdf.getPage(i)
       const viewport = page.getViewport({ scale: 1.2 })
       const canvas = document.createElement('canvas')
@@ -1041,26 +1049,66 @@ function DocumentsSection({ jobs, profiles, currentUserName, showToast }) {
         }
       }
 
-      setExtractProgress('Extracting shipment data...')
+      const MAX_IMAGES_PER_REQUEST = 5
+      const chunks = []
+      for (let i = 0; i < files.length; i += MAX_IMAGES_PER_REQUEST) {
+        chunks.push(files.slice(i, i + MAX_IMAGES_PER_REQUEST))
+      }
 
       const prompt = `You are a customs documentation assistant for JDS Logistics, a CHA company in Mumbai, India. Extract shipment details from the uploaded logistics documents. Return ONLY valid JSON. Do not return markdown. Do not return explanations. For each field return: { "value": "...", "confidence": "high|medium|low" }. Fields: bl_number, bl_date, vessel_name, voyage_number, container_numbers, port_of_loading, port_of_discharge, shipper_name, consignee_name, notify_party, hs_code, goods_description, invoice_number, invoice_date, invoice_value, currency, shipment_terms, country_of_origin, number_of_packages, gross_weight, net_weight`
 
       const controller = new AbortController()
       const timeout = setTimeout(() => controller.abort(), 120000)
 
-      const raw = await withRetry(() => groqFetch(files, prompt, controller.signal))
+      const allResults = []
+      for (let ci = 0; ci < chunks.length; ci++) {
+        setExtractProgress(`Extracting shipment data (batch ${ci + 1}/${chunks.length})...`)
+        if (ci > 0) {
+          const delay = 2000 + Math.random() * 2000
+          await new Promise((r) => setTimeout(r, delay))
+        }
+        const raw = await withRetry(() => groqFetch(chunks[ci], prompt, controller.signal))
+        const cleaned = raw.replace(/```(?:json)?\s*/gi, '').replace(/```/g, '').trim()
+        const parsed = JSON.parse(cleaned)
+        const partial = {}
+        for (const key of EXTRACT_FIELDS) {
+          const field = parsed[key] || {}
+          partial[key] = { value: field.value ?? null, confidence: field.confidence ?? null }
+        }
+        allResults.push(partial)
+      }
       clearTimeout(timeout)
 
       setExtractProgress('Formatting extracted fields...')
 
-      const cleaned = raw.replace(/```(?:json)?\s*/gi, '').replace(/```/g, '').trim()
-      const parsed = JSON.parse(cleaned)
-      const result = {}
+      const merged = {}
       for (const key of EXTRACT_FIELDS) {
-        const field = parsed[key] || {}
-        result[key] = { value: field.value ?? null, confidence: field.confidence ?? null }
+        merged[key] = { value: null, confidence: null }
       }
-      const nonNullCount = Object.values(result).filter(
+      const rankMap = { high: 3, medium: 2, low: 1 }
+      for (const partial of allResults) {
+        for (const key of EXTRACT_FIELDS) {
+          const field = partial[key]
+          if (!field || field.value === null || field.value === undefined || field.value === '') continue
+          const current = merged[key]
+          if (!current.value) {
+            merged[key] = { value: field.value, confidence: field.confidence }
+          } else if (key === 'container_numbers') {
+            const existing = String(current.value).split(',').map((s) => s.trim()).filter(Boolean)
+            const incoming = String(field.value).split(',').map((s) => s.trim()).filter(Boolean)
+            const combined = [...new Set([...existing, ...incoming])]
+            merged[key] = { value: combined.join(', '), confidence: 'medium' }
+          } else {
+            const currRank = rankMap[current.confidence] || 0
+            const newRank = rankMap[field.confidence] || 0
+            if (newRank > currRank) {
+              merged[key] = { value: field.value, confidence: field.confidence }
+            }
+          }
+        }
+      }
+
+      const nonNullCount = Object.values(merged).filter(
         (f) => f && f.value !== null && f.value !== undefined && f.value !== ''
       ).length
       if (nonNullCount < 3) {
@@ -1070,8 +1118,8 @@ function DocumentsSection({ jobs, profiles, currentUserName, showToast }) {
       if (nonNullCount < 8) {
         showToast(`Low confidence extraction — only ${nonNullCount} of 27 fields found. Please verify this is the correct document and review all fields carefully.`, 'error')
       }
-      setExtractedFields(result)
-      setExtractEdits(JSON.parse(JSON.stringify(result)))
+      setExtractedFields(merged)
+      setExtractEdits(JSON.parse(JSON.stringify(merged)))
     } catch (err) {
       if (err.message?.includes('Groq API error') || err.message?.includes('API error')) {
         setExtractError(`Extraction failed: ${err.message}`)
@@ -1513,9 +1561,9 @@ function DocumentsSection({ jobs, profiles, currentUserName, showToast }) {
                       </div>
                     ))}
                   </div>
-                  <button type="button" onClick={runExtraction}
-                    className="mt-4 h-10 px-5 text-sm font-semibold rounded-lg bg-[#1e3a5f] text-white hover:bg-[#16304f] inline-flex items-center gap-2">
-                    &#10026; Extract
+                  <button type="button" onClick={runExtraction} disabled={extracting}
+                    className="mt-4 h-10 px-5 text-sm font-semibold rounded-lg bg-[#1e3a5f] text-white hover:bg-[#16304f] disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2">
+                    {extracting ? 'Extraction in progress...' : '\u2726 Extract'}
                   </button>
                 </div>
               )}
