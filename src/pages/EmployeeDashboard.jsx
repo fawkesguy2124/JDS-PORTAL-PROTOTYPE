@@ -123,7 +123,9 @@ export default function EmployeeDashboard() {
     eta: 'ETA',
     cfs_name: 'CFS Name',
     be_no: 'BE Number',
+    be_date: 'BE Date',
     hs_code: 'HS Code',
+    container_size: 'Container Size',
     rms_status: 'RMS Status',
     bg_required: 'BG Required',
     cfs_amount: 'CFS Amount',
@@ -170,6 +172,7 @@ export default function EmployeeDashboard() {
       'vessel',
       'eta',
       'cfs_name',
+      'container_size',
     ],
     Akshyani: [
       'job_no',
@@ -177,16 +180,18 @@ export default function EmployeeDashboard() {
       'mode',
       'bl_no',
       'containers',
+      'container_size',
       'shipping_line',
       'vessel',
       'eta',
       'cfs_name',
       'be_no',
+      'be_date',
       'hs_code',
       'rms_status',
       'bg_required',
     ],
-    Trupti: ['be_no', 'hs_code', 'rms_status', 'stage'],
+    Trupti: ['be_no', 'be_date', 'hs_code', 'rms_status', 'stage'],
     Kiran: ['cfs_amount'],
     Virendra: ['cfs_amount'],
     Mayur: ['cfs_amount'],
@@ -290,31 +295,31 @@ export default function EmployeeDashboard() {
 
   const priorityChip = (priority) => {
     const p = String(priority || 'normal').toLowerCase()
-    if (p === 'urgent') return { text: 'Urgent', cls: 'bg-red-100 text-red-800' }
-    if (p === 'high') return { text: 'High', cls: 'bg-amber-100 text-amber-800' }
-    return { text: 'Normal', cls: 'bg-slate-100 text-slate-700' }
+    if (p === 'urgent') return { text: 'Urgent', cls: 'bg-[#fef2f2] text-[#991b1b] border border-[#fecaca]' }
+    if (p === 'high') return { text: 'High', cls: 'bg-[#fffbeb] text-[#92400e] border border-[#fde68a]' }
+    return { text: 'Normal', cls: 'bg-[#f9fafb] text-[#4a5568] border border-[#d0d6e0]' }
   }
 
   const modeChip = (mode) => {
     const m = String(mode || '').trim()
-    if (m === 'Air') return { text: 'Air', cls: 'bg-green-100 text-green-800' }
-    if (m === 'BPT/MBPT') return { text: 'BPT', cls: 'bg-purple-100 text-purple-800' }
-    if (m === 'Sea LCL') return { text: 'LCL', cls: 'bg-teal-100 text-teal-800' }
-    if (m === 'Sea FCL') return { text: 'FCL', cls: 'bg-blue-100 text-blue-800' }
-    return { text: m || '—', cls: 'bg-slate-100 text-slate-700' }
+    if (m === 'Air') return { text: 'Air', cls: 'bg-[#f5f3ff] text-[#5b21b6] border border-[#ddd6fe]' }
+    if (m === 'BPT/MBPT') return { text: 'BPT', cls: 'bg-purple-100 text-purple-800 border border-[#ddd6fe]' }
+    if (m === 'Sea LCL') return { text: 'LCL', cls: 'bg-[#f0fdfa] text-[#0f766e] border border-[#99f6e4]' }
+    if (m === 'Sea FCL') return { text: 'FCL', cls: 'bg-[#eff6ff] text-[#1e40af] border border-[#bfdbfe]' }
+    return { text: m || '—', cls: 'bg-[#f9fafb] text-[#4a5568] border border-[#d0d6e0]' }
   }
 
   const rmsChip = (rms) => {
     const r = String(rms || '').toLowerCase()
     const map = {
-      pending: { text: 'Awaiting', cls: 'bg-slate-100 text-slate-700' },
-      rms: { text: 'RMS OK', cls: 'bg-green-100 text-green-800' },
-      apr: { text: 'APR', cls: 'bg-amber-100 text-amber-800' },
-      acl: { text: 'ACL', cls: 'bg-amber-100 text-amber-800' },
-      check: { text: '1st Check', cls: 'bg-red-100 text-red-800' },
-      hold: { text: 'HOLD', cls: 'bg-red-100 text-red-800' },
+      pending: { text: 'Awaiting', cls: 'bg-[#f9fafb] text-[#4a5568] border border-[#d0d6e0]' },
+      rms: { text: 'RMS OK', cls: 'bg-[#f0fdf4] text-[#15803d] border border-[#bbf7d0]' },
+      apr: { text: 'APR', cls: 'bg-[#fffbeb] text-[#92400e] border border-[#fde68a]' },
+      acl: { text: 'ACL', cls: 'bg-[#fffbeb] text-[#92400e] border border-[#fde68a]' },
+      check: { text: '1st Check', cls: 'bg-[#fef2f2] text-[#991b1b] border border-[#fecaca]' },
+      hold: { text: 'HOLD', cls: 'bg-[#fef2f2] text-[#991b1b] border border-[#fecaca]' },
     }
-    return map[r] || { text: rms ? String(rms).toUpperCase() : '—', cls: 'bg-slate-100 text-slate-700' }
+    return map[r] || { text: rms ? String(rms).toUpperCase() : '—', cls: 'bg-[#f9fafb] text-[#4a5568] border border-[#d0d6e0]' }
   }
 
   const riskChip = (risk) => {
@@ -322,7 +327,7 @@ export default function EmployeeDashboard() {
     if (r === 'high') return { text: 'High Risk', cls: 'bg-red-100 text-red-800' }
     if (r === 'medium') return { text: 'Medium', cls: 'bg-amber-100 text-amber-800' }
     if (r === 'low') return { text: 'Low', cls: 'bg-green-100 text-green-800' }
-    return { text: displayValue(risk), cls: 'bg-slate-100 text-slate-700' }
+    return { text: displayValue(risk), cls: 'bg-[#f9fafb] text-[#4a5568] border border-[#d0d6e0]' }
   }
 
   const progressColor = (stage) => {
@@ -443,11 +448,13 @@ export default function EmployeeDashboard() {
         'mode',
         'bl_no',
         'containers',
+        'container_size',
         'shipping_line',
         'vessel',
         'eta',
         'cfs_name',
         'be_no',
+        'be_date',
         'hs_code',
         'rms_status',
         'bg_required',
@@ -468,7 +475,7 @@ export default function EmployeeDashboard() {
 
         if (k === 'free_days') next = next === '' ? null : Number(next)
         if (k === 'cfs_amount') next = next === '' ? null : Number(next)
-        if (k === 'eta') next = next ? next : null
+        if (k === 'eta' || k === 'be_date') next = next ? next : null
         if (typeof next === 'string') {
           next = next.trim()
           if (next === '') next = null
@@ -520,12 +527,12 @@ export default function EmployeeDashboard() {
   }
 
   const inputBase =
-    'w-full h-9 px-3 text-sm rounded-lg border border-slate-200 bg-slate-50 text-slate-900 outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-300 disabled:opacity-60 disabled:cursor-not-allowed'
+    'w-full h-9 px-3 text-sm rounded-lg bg-white border-[1.5px] border-[#e2e6ed] text-[#1a2233] outline-none focus:ring-2 focus:ring-[#e8eef8] focus:border-[#1a4fa0] disabled:opacity-60 disabled:cursor-not-allowed'
 
   const FieldLabel = ({ label, locked }) => (
     <div className="flex items-center gap-2 mb-1">
-      <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide">{label}</p>
-      {locked && <span className="text-slate-400 text-[12px]" title="No permission">🔒</span>}
+      <p className="text-xs font-semibold text-[#8a96a8] uppercase tracking-wide">{label}</p>
+      {locked && <span className="text-[#8a96a8] text-sm" title="No permission">🔒</span>}
     </div>
   )
 
@@ -534,12 +541,12 @@ export default function EmployeeDashboard() {
       blue: 'border-t-blue-500',
       amber: 'border-t-amber-500',
       green: 'border-t-green-500',
-      gray: 'border-t-slate-400',
+      gray: 'border-t-[#8a96a8]',
     }
     return (
-      <div className={classNames('bg-white border border-slate-200 rounded-xl shadow-sm p-3 border-t-4', tones[tone] || tones.blue)}>
-        <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide">{title}</p>
-        <p className="text-sm font-semibold text-slate-800 mt-1 truncate" title={value}>
+      <div className={classNames('bg-white border border-[#e2e6ed] rounded-xl shadow-sm p-3 border-t-4', tones[tone] || tones.blue)}>
+        <p className="text-xs font-semibold text-[#8a96a8] uppercase tracking-wide">{title}</p>
+        <p className="text-sm font-semibold text-[#1a2233] mt-1 truncate" title={value}>
           {value}
         </p>
       </div>
@@ -552,10 +559,10 @@ export default function EmployeeDashboard() {
     return (
       <div className="mt-2">
         <div className="flex items-center justify-between gap-2">
-          <span className="text-[11px] text-slate-400 truncate">Stage {s}: {getStageName(s)}</span>
-          <span className="text-[11px] text-slate-400">{pct}%</span>
+          <span className="text-xs text-[#8a96a8] truncate">Stage {s}: {getStageName(s)}</span>
+          <span className="text-xs text-[#8a96a8]">{pct}%</span>
         </div>
-        <div className="mt-1 h-1 bg-slate-200 rounded overflow-hidden">
+        <div className="mt-1 h-1 bg-[#e2e6ed] border border-[#e2e6ed] rounded overflow-hidden">
           <div className={classNames('h-full rounded', progressColor(s))} style={{ width: `${pct}%` }} />
         </div>
       </div>
@@ -916,18 +923,18 @@ export default function EmployeeDashboard() {
   }
 
   return (
-    <div className="min-h-screen flex bg-slate-100 text-[14px]">
-      <aside className="w-[205px] bg-slate-900 border-r border-slate-700/60 text-slate-200 flex flex-col shrink-0">
-        <div className="px-4 py-3 border-b border-slate-700/60 flex items-center gap-2">
-          <div className="w-8 h-8 rounded-lg bg-blue-600 text-white flex items-center justify-center font-extrabold text-sm">
+    <div className="min-h-screen flex bg-[#f4f6f9] text-[14px]">
+      <aside className="w-[230px] bg-[#1a4fa0] flex flex-col shrink-0 h-screen fixed left-0 top-0 z-50">
+        <div className="px-4 py-3 border-b border-white/15 flex items-center gap-2">
+          <div className="w-8 h-8 rounded-lg bg-white text-[#1a4fa0] flex items-center justify-center font-extrabold text-sm">
             JD
           </div>
           <div className="min-w-0">
-            <div className="text-sm font-bold text-slate-100 truncate">JDS Logistics</div>
-            <div className="text-[11px] text-slate-400 truncate">Employee — Command Center</div>
+            <div className="text-white font-bold truncate">JDS Logistics</div>
+            <div className="text-white/60 truncate">Employee — Command Center</div>
           </div>
         </div>
-        <div className="px-4 pt-3 pb-1 text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+        <div className="px-4 pt-3 pb-1 text-xs font-bold text-white/45 uppercase tracking-wider">
           Operations
         </div>
         <nav className="flex-1 py-1">
@@ -937,10 +944,10 @@ export default function EmployeeDashboard() {
               type="button"
               onClick={() => handleNavClick(item.id)}
               className={classNames(
-                'w-full text-left px-3 py-2 text-sm flex items-center gap-1.5 border-l-4 transition-colors',
+                'w-full text-left px-5 py-2.5 text-sm flex items-center gap-1.5 border-l-2 transition-colors',
                 activeNav === item.id
-                  ? 'bg-slate-700 text-blue-300 border-l-blue-300 font-semibold'
-                  : 'text-slate-400 hover:bg-slate-700 hover:text-slate-100 border-l-transparent'
+                  ? 'bg-white/15 text-white border-l-2 border-white font-semibold'
+                  : 'text-white/70 hover:bg-white/10 hover:text-white border-l-2 border-transparent'
               )}
             >
               <span className="w-3.5 text-center shrink-0 opacity-90">{item.icon}</span>
@@ -948,32 +955,32 @@ export default function EmployeeDashboard() {
             </button>
           ))}
         </nav>
-        <div className="mt-auto border-t border-slate-700/60 px-4 py-3 flex items-center gap-2">
-          <div className="w-7 h-7 rounded-full bg-blue-700 text-white flex items-center justify-center text-[10px] font-bold">
+        <div className="mt-auto border-t border-white/15 px-4 py-3 flex items-center gap-2">
+          <div className="w-7 h-7 rounded-full bg-white/20 border-2 border-white/30 text-white flex items-center justify-center text-xs font-bold">
             {(profile?.name || 'E').slice(0, 2).toUpperCase()}
           </div>
           <div className="min-w-0">
-            <div className="text-sm font-bold text-slate-100 truncate">{profile?.name || 'Employee'}</div>
-            <div className="text-[11px] text-slate-400 truncate">Employee</div>
+            <div className="text-white font-semibold truncate">{profile?.name || 'Employee'}</div>
+            <div className="text-white/55 truncate">Employee</div>
           </div>
-          <span className="ml-auto w-2 h-2 rounded-full bg-green-500" title="Live" />
+          <span className="ml-auto w-2 h-2 rounded-full bg-green-400" title="Live" />
         </div>
       </aside>
 
-      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        <header className="h-[54px] bg-white border-b border-slate-200 shadow-sm px-4 sm:px-6 flex items-center gap-3">
+      <div className="bg-[#f4f6f9] flex-1 flex flex-col min-w-0 overflow-hidden ml-[230px]">
+        <header className="h-[60px] bg-white border-b border-[#e2e6ed] shadow-sm px-6 flex items-center gap-3 flex-shrink-0">
           <div className="min-w-0">
-            <div className="text-base font-bold text-slate-900 truncate">
+            <div className="text-[17px] font-bold text-[#1a2233] truncate">
               {NAV_ITEMS.find((n) => n.id === activeNav)?.label ?? 'All Jobs'}
             </div>
-            <div className="text-sm text-slate-400 truncate">Employee Command Center</div>
+            <div className="text-sm text-[#8a96a8] truncate">Employee Command Center</div>
           </div>
           <div className="ml-auto flex items-center gap-2">
             {canCreateJob && (
               <button
                 type="button"
                 onClick={() => setShowCreateJob(true)}
-                className="h-9 px-4 text-sm rounded-lg bg-blue-600 text-white hover:bg-blue-700 font-semibold"
+                className="h-9 px-4 text-sm rounded-lg bg-[#1a4fa0] text-white hover:bg-[#153d82] font-semibold"
               >
                 + Create Job
               </button>
@@ -981,7 +988,7 @@ export default function EmployeeDashboard() {
             <button
               type="button"
               onClick={handleLogout}
-              className="h-9 px-4 text-sm rounded-lg border border-slate-300 bg-slate-50 text-red-600 hover:bg-slate-100 font-semibold"
+              className="h-9 px-4 text-sm rounded-lg bg-white border-[1.5px] border-[#d0d6e0] text-[#dc2626] hover:border-[#fecaca] hover:bg-[#fef2f2] font-semibold"
             >
               Logout
             </button>
@@ -991,43 +998,43 @@ export default function EmployeeDashboard() {
         <main className="flex-1 overflow-y-auto p-4 sm:p-6">
           {activeNav === 'jobs' && (
             <>
-              <div className="mb-4 text-sm text-slate-500">
-                {getGreeting()}, <span className="font-semibold text-slate-700">{profile?.name || 'there'}</span>
+              <div className="mb-4 text-sm text-[#8a96a8]">
+                {getGreeting()}, <span className="font-semibold text-[#4a5568]">{profile?.name || 'there'}</span>
               </div>
 
-              <div className="bg-white border border-slate-200 rounded-xl shadow-sm mb-4">
-                <div className="px-4 py-3 border-b border-slate-200 flex items-center justify-between">
+              <div className="bg-white border border-[#e2e6ed] rounded-xl shadow-sm mb-4">
+                <div className="px-4 py-3 bg-[#f8f9fb] border-b border-[#e2e6ed] flex items-center justify-between">
                   <div className="flex items-center gap-3">
-                    <div className="text-sm font-semibold text-slate-900">Jobs</div>
+                    <div className="text-sm font-semibold text-[#1a2233]">Jobs</div>
                     <button
                       type="button"
                       onClick={() => setShowMyJobs(!showMyJobs)}
                       className={classNames(
                         'px-2.5 py-1 text-xs rounded-lg font-semibold transition-colors',
                         showMyJobs
-                          ? 'bg-blue-600 text-white'
-                          : 'border border-slate-300 text-slate-700 hover:bg-slate-50'
+                          ? 'bg-[#1a4fa0] text-white border border-[#1a4fa0]'
+                          : 'bg-white text-[#4a5568] border-[1.5px] border-[#d0d6e0]'
                       )}
                     >
                       {showMyJobs ? '\u25CF My Jobs' : '\u25CB My Jobs'}
                     </button>
                   </div>
-                  <div className="text-xs text-slate-400">{filteredJobs.length} shown</div>
+                  <div className="text-xs text-[#8a96a8]">{filteredJobs.length} shown</div>
                 </div>
                 <div className="p-4 flex flex-wrap gap-2 items-center">
-                  <div className="flex items-center gap-2 h-9 px-3 bg-slate-50 border border-slate-200 rounded-lg flex-1 min-w-[220px] max-w-[320px]">
-                    <span className="text-slate-400 text-sm">⎆</span>
+                  <div className="flex items-center gap-2 h-9 px-3 bg-white border-[1.5px] border-[#e2e6ed] rounded-lg flex-1 min-w-[220px] max-w-[320px] focus-within:border-[#1a4fa0]">
+                    <span className="text-[#8a96a8] text-sm">⎆</span>
                     <input
                       value={search}
                       onChange={(e) => setSearch(e.target.value)}
                       placeholder="Search job, client, BE, BL, container..."
-                      className="w-full bg-transparent outline-none text-sm text-slate-900 placeholder:text-slate-400"
+                      className="w-full bg-transparent outline-none text-sm text-[#1a2233] placeholder:text-[#8a96a8]"
                     />
                   </div>
                   <select
                     value={filterStage}
                     onChange={(e) => setFilterStage(e.target.value)}
-                    className="h-9 px-3 text-sm bg-slate-50 border border-slate-200 rounded-lg text-slate-700 outline-none"
+                    className="h-9 px-3 text-sm bg-white border-[1.5px] border-[#e2e6ed] rounded-lg text-[#4a5568] outline-none focus:border-[#1a4fa0]"
                   >
                     {STAGE_OPTIONS.map((o) => (
                       <option key={o.value} value={o.value}>
@@ -1038,7 +1045,7 @@ export default function EmployeeDashboard() {
                   <select
                     value={filterPriority}
                     onChange={(e) => setFilterPriority(e.target.value)}
-                    className="h-9 px-3 text-sm bg-slate-50 border border-slate-200 rounded-lg text-slate-700 outline-none"
+                    className="h-9 px-3 text-sm bg-white border-[1.5px] border-[#e2e6ed] rounded-lg text-[#4a5568] outline-none focus:border-[#1a4fa0]"
                   >
                     {PRIORITY_OPTIONS.map((o) => (
                       <option key={o.value} value={o.value}>
@@ -1049,7 +1056,7 @@ export default function EmployeeDashboard() {
                   <select
                     value={filterMode}
                     onChange={(e) => setFilterMode(e.target.value)}
-                    className="h-9 px-3 text-sm bg-slate-50 border border-slate-200 rounded-lg text-slate-700 outline-none"
+                    className="h-9 px-3 text-sm bg-white border-[1.5px] border-[#e2e6ed] rounded-lg text-[#4a5568] outline-none focus:border-[#1a4fa0]"
                   >
                     {MODE_OPTIONS.map((o) => (
                       <option key={o.value} value={o.value}>
@@ -1066,7 +1073,7 @@ export default function EmployeeDashboard() {
                       setFilterMode('')
                       setShowMyJobs(false)
                     }}
-                    className="h-9 px-4 text-sm rounded-lg border border-slate-300 bg-slate-50 text-slate-700 hover:bg-slate-100"
+                    className="h-9 px-4 text-sm rounded-lg bg-white border-[1.5px] border-[#d0d6e0] text-[#4a5568] hover:border-[#1a4fa0] hover:text-[#1a4fa0] hover:bg-[#e8eef8]"
                   >
                     Clear
                   </button>
@@ -1074,11 +1081,11 @@ export default function EmployeeDashboard() {
               </div>
 
               {loading ? (
-                <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-10 flex justify-center">
+                <div className="bg-white border border-[#e2e6ed] rounded-xl shadow-sm p-10 flex justify-center">
                   <div className="h-9 w-9 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
                 </div>
               ) : filteredJobs.length === 0 ? (
-                <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-10 text-center text-slate-400">
+                <div className="bg-white border border-[#e2e6ed] rounded-xl shadow-sm p-10 text-center text-[#8a96a8]">
                   No jobs match your search/filters.
                 </div>
               ) : (
@@ -1107,44 +1114,44 @@ export default function EmployeeDashboard() {
                         onClick={(e) => handleCardClick(e, job.id)}
                         onKeyDown={(e) => handleCardKeyDown(e, job.id)}
                         className={classNames(
-                          'bg-white border border-slate-200 rounded-xl shadow-sm p-4 mb-3 cursor-pointer transition-all',
-                          'hover:border-blue-300 hover:shadow-md',
+                          'bg-white border-[1.5px] border-[#e2e6ed] rounded-xl shadow-sm p-4 mb-3 cursor-pointer transition-all',
+                          'hover:border-[#d0d6e0] hover:shadow-md',
                           'border-l-4',
                           String(job.priority || '').toLowerCase() === 'urgent'
-                            ? 'border-l-red-600'
+                            ? 'border-l-[#dc2626]'
                             : String(job.priority || '').toLowerCase() === 'high'
-                              ? 'border-l-amber-500'
-                              : 'border-l-blue-600'
+                              ? 'border-l-[#f59e0b]'
+                              : 'border-l-[#1a4fa0]'
                         )}
                       >
                         <div className="flex items-start justify-between gap-4">
                           <div className="min-w-0">
                             <div className="flex items-center gap-2 flex-wrap">
-                              <div className="text-[15px] font-extrabold text-slate-900 truncate">
+                              <div className="text-[15px] font-extrabold text-[#1a2233] truncate">
                                 {job.job_no || '—'}
                               </div>
                               {isAssignedToMe && (
-                                <span className="inline-flex items-center rounded-full bg-blue-50 text-blue-700 border border-blue-200 px-2 py-0.5 text-[11px] font-semibold">
+                                <span className="inline-flex items-center rounded-full bg-[#e8eef8] text-[#1a4fa0] border border-[#bfdbfe] px-2.5 py-0.5 text-xs font-semibold">
                                   Assigned to me
                                 </span>
                               )}
                             </div>
-                            <div className="text-sm text-slate-700 mt-0.5">
+                            <div className="text-sm text-[#4a5568] mt-0.5">
                               {job.client || '—'}{' '}
-                              <span className="text-slate-400">· {job.goods || '—'}</span>
+                              <span className="text-[#8a96a8]">· {job.goods || '—'}</span>
                             </div>
-                            <div className="text-[11px] text-slate-400 font-mono mt-1">
+                            <div className="text-xs text-[#8a96a8] font-mono mt-1">
                               {job.be_no ? `BE:${job.be_no}` : ''}
                               {job.bl_no ? `${job.be_no ? ' · ' : ''}BL:${job.bl_no}` : ''}
                               {job.containers ? `${job.be_no || job.bl_no ? ' · ' : ''}${job.containers}` : ''}
                               {!job.be_no && !job.bl_no && !job.containers ? '—' : ''}
                             </div>
-                            <div className="text-[11px] text-slate-400 mt-1">
+                            <div className="text-xs text-[#8a96a8] mt-1">
                               {meta?.stage?.by || meta?.stage?.ts ? (
                                 <>
                                   Last updated by:{' '}
-                                  <span className="text-slate-500 font-medium">{meta.stage.by || '—'}</span>{' '}
-                                  <span className="text-slate-300">·</span>{' '}
+                                  <span className="text-[#8a96a8] font-medium">{meta.stage.by || '—'}</span>{' '}
+                                  <span className="text-[#d0d6e0]">·</span>{' '}
                                   <span>{meta.stage.ts ? timeAgo(meta.stage.ts) : '—'}</span>
                                 </>
                               ) : (
@@ -1155,18 +1162,18 @@ export default function EmployeeDashboard() {
 
                           <div className="flex flex-col items-end gap-2 shrink-0">
                             <div className="flex flex-wrap justify-end gap-2">
-                              <span className={classNames('inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-bold', priority.cls)}>
+                              <span className={classNames('inline-flex items-center rounded-full px-2 py-0.5 text-xs font-bold', priority.cls)}>
                                 {priority.text}
                               </span>
-                              <span className={classNames('inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-bold', mode.cls)}>
+                              <span className={classNames('inline-flex items-center rounded-full px-2 py-0.5 text-xs font-bold', mode.cls)}>
                                 {mode.text}
                               </span>
                             </div>
                             <div className="flex flex-wrap justify-end gap-2">
-                              <span className={classNames('inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-bold', rms.cls)}>
+                              <span className={classNames('inline-flex items-center rounded-full px-2 py-0.5 text-xs font-bold', rms.cls)}>
                                 {rms.text}
                               </span>
-                              <span className={classNames('inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-bold', risk.cls)}>
+                              <span className={classNames('inline-flex items-center rounded-full px-2 py-0.5 text-xs font-bold', risk.cls)}>
                                 {risk.text}
                               </span>
                             </div>
@@ -1176,8 +1183,8 @@ export default function EmployeeDashboard() {
                         <JobProgress stage={job.stage} />
 
                         <div className="mt-3 flex items-center justify-between gap-3 flex-wrap">
-                          <div className="text-[12px] text-slate-400">
-                            <span className="text-slate-500 font-medium">{assignedName}</span> · {job.destination || '—'} ·{' '}
+                          <div className="text-sm text-[#8a96a8]">
+                            <span className="text-[#8a96a8] font-medium">{assignedName}</span> · {job.destination || '—'} ·{' '}
                             <span className={classNames(daysOld >= 4 ? 'text-red-600 font-semibold' : daysOld >= 2 ? 'text-amber-700 font-semibold' : '')}>
                               {daysOld}d old
                             </span>
@@ -1196,7 +1203,7 @@ export default function EmployeeDashboard() {
                                 e.stopPropagation()
                                 startEditing(job)
                               }}
-                              className="h-8 px-3 text-sm rounded-lg border border-slate-300 bg-slate-50 text-slate-700 hover:bg-slate-100"
+                              className="h-8 px-3 text-sm rounded-lg bg-white border-[1.5px] border-[#d0d6e0] text-[#4a5568] hover:border-[#1a4fa0] hover:text-[#1a4fa0] hover:bg-[#e8eef8]"
                             >
                               Edit
                             </button>
@@ -1204,7 +1211,7 @@ export default function EmployeeDashboard() {
                         </div>
 
                         {expanded && (
-                          <div className="mt-4 border-t border-slate-200 pt-4" onClick={(e) => e.stopPropagation()}>
+                          <div className="mt-4 border-t border-[#e2e6ed] pt-4" onClick={(e) => e.stopPropagation()}>
                             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
                               <MiniStatus title="CUSTOMS" value={job.rms_status ? String(job.rms_status).toUpperCase() : '—'} tone="blue" />
                               <MiniStatus title="CFS" value={cfsDisplay} tone="amber" />
@@ -1214,7 +1221,7 @@ export default function EmployeeDashboard() {
 
                             {canUpdateStage && (
                               <div className="mb-4 flex items-center gap-2">
-                                <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide">Update Stage</span>
+                                <span className="text-xs font-semibold text-[#8a96a8] uppercase tracking-wide">Update Stage</span>
                                 <select
                                   disabled={saving}
                                   value={Number(isEditing ? editForm.stage ?? job.stage : job.stage)}
@@ -1239,7 +1246,9 @@ export default function EmployeeDashboard() {
                                 'goods',
                                 'bl_no',
                                 'be_no',
+                                'be_date',
                                 'containers',
+                                'container_size',
                                 'shipping_line',
                                 'vessel',
                                 'eta',
@@ -1261,11 +1270,11 @@ export default function EmployeeDashboard() {
                                 const renderInput = () => {
                                   if (!isEditing) {
                                     let shown = displayValue(value)
-                                    if (k === 'eta') shown = formatDateSlash(value)
+                                    if (k === 'eta' || k === 'be_date') shown = formatDateSlash(value)
                                     if (k === 'cfs_amount') {
                                       shown = value !== null && value !== undefined && value !== '' ? `Rs. ${Number(value).toLocaleString('en-IN')}` : 'Pending'
                                     }
-                                    return <div className="text-sm text-slate-900">{shown}</div>
+                                    return <div className="text-sm text-[#1a2233] font-medium">{shown}</div>
                                   }
 
                                   if (k === 'mode') {
@@ -1315,6 +1324,18 @@ export default function EmployeeDashboard() {
                                         <option value="low">low</option>
                                         <option value="medium">medium</option>
                                         <option value="high">high</option>
+                                      </select>
+                                    )
+                                  }
+                                  if (k === 'be_date') {
+                                    return <input type="date" value={value || ''} onChange={updateEditField(k)} disabled={disabled} className={inputBase} onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()} />
+                                  }
+                                  if (k === 'container_size') {
+                                    return (
+                                      <select value={value || ''} onChange={updateEditField(k)} disabled={disabled} className={inputBase} onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+                                        <option value="">— Select —</option>
+                                        <option value="20 Feet">20 Feet</option>
+                                        <option value="40 Feet">40 Feet</option>
                                       </select>
                                     )
                                   }
@@ -1370,9 +1391,9 @@ export default function EmployeeDashboard() {
                             )}
 
                             {job.notes?.trim() && !isEditing && (
-                              <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
-                                <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-1">Notes</p>
-                                <p className="text-sm text-slate-700 whitespace-pre-wrap">{job.notes}</p>
+                              <div className="mt-4 rounded-lg border border-[#e2e6ed] bg-[#f8f9fb] px-4 py-3">
+                                <p className="text-xs font-semibold text-[#8a96a8] uppercase tracking-wide mb-1">Notes</p>
+                                <p className="text-sm text-[#4a5568] whitespace-pre-wrap">{job.notes}</p>
                               </div>
                             )}
 
@@ -1382,7 +1403,7 @@ export default function EmployeeDashboard() {
                                   type="button"
                                   disabled={saving}
                                   onClick={(e) => { e.stopPropagation(); cancelEditing(); }}
-                                  className="h-9 px-4 text-sm rounded-lg border border-slate-300 bg-slate-50 text-slate-700 hover:bg-slate-100 font-semibold disabled:opacity-60"
+                                  className="h-9 px-4 text-sm rounded-lg bg-white border-[1.5px] border-[#d0d6e0] text-[#4a5568] hover:border-[#1a4fa0] hover:text-[#1a4fa0] hover:bg-[#e8eef8] font-semibold disabled:opacity-60"
                                 >
                                   Cancel
                                 </button>
@@ -1390,7 +1411,7 @@ export default function EmployeeDashboard() {
                                   type="button"
                                   disabled={saving}
                                   onClick={(e) => { e.stopPropagation(); saveEdits(job); }}
-                                  className="h-9 px-4 text-sm rounded-lg bg-blue-600 text-white hover:bg-blue-700 font-semibold disabled:opacity-60 inline-flex items-center gap-2"
+                                  className="h-9 px-4 text-sm rounded-lg bg-[#1a4fa0] text-white hover:bg-[#153d82] font-semibold disabled:opacity-60 inline-flex items-center gap-2"
                                 >
                                   {saving && <span className="h-3.5 w-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />}
                                   Save
@@ -1409,17 +1430,17 @@ export default function EmployeeDashboard() {
 
           {activeNav === 'documents' && (
             <div>
-              <div className="text-lg font-bold text-slate-900 mb-4">Documents</div>
+              <div className="text-lg font-bold text-[#1a2233] mb-4">Documents</div>
               {loadingDocs ? (
-                <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-10 flex justify-center">
+                <div className="bg-white border border-[#e2e6ed] rounded-xl shadow-sm p-10 flex justify-center">
                   <div className="h-9 w-9 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
                 </div>
               ) : documents.length === 0 ? (
-                <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-10 text-center text-slate-400">
+                <div className="bg-white border border-[#e2e6ed] rounded-xl shadow-sm p-10 text-center text-[#8a96a8]">
                   No documents uploaded yet. Upload documents when creating a job.
                 </div>
               ) : (
-                <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+                <div className="bg-white border border-[#e2e6ed] rounded-xl shadow-sm overflow-hidden">
                   {Object.entries(
                     documents.reduce((groups, doc) => {
                       const key = doc.job_no || 'unknown'
@@ -1431,22 +1452,22 @@ export default function EmployeeDashboard() {
                     const isExpanded = expandedDocJobId === jobNo
                     const docCount = docs.length
                     return (
-                      <div key={jobNo} className="border-b border-slate-200 last:border-b-0">
+                      <div key={jobNo} className="border-b border-[#e2e6ed] last:border-b-0">
                         <button
                           type="button"
                           onClick={() => setExpandedDocJobId(isExpanded ? null : jobNo)}
-                          className="w-full px-4 py-3 bg-slate-50/60 font-semibold text-sm text-slate-900 border-b border-slate-200 flex items-center justify-between gap-2 hover:bg-slate-100 transition-colors"
+                          className="w-full px-4 py-3 bg-[#f8f9fb] font-semibold text-sm text-[#1a2233] border-b border-[#e2e6ed] flex items-center justify-between gap-2 hover:bg-[#e8eef8] transition-colors"
                         >
                           <div className="flex items-center gap-2 min-w-0">
                             <span className="truncate">{jobNo}</span>
-                            <span className="text-slate-400 text-xs font-normal truncate">{jobs.find(j => j.job_no === jobNo)?.client || ''}</span>
-                            <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold bg-slate-100 text-slate-600 shrink-0">{docCount}</span>
+                            <span className="text-[#8a96a8] text-xs font-normal truncate">{jobs.find(j => j.job_no === jobNo)?.client || ''}</span>
+                            <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-bold bg-[#f9fafb] text-[#4a5568] border border-[#d0d6e0] shrink-0">{docCount}</span>
                           </div>
                           <div className="flex items-center gap-2 shrink-0" onClick={(e) => e.stopPropagation()}>
                             <button
                               type="button"
                               onClick={() => setUploadModal({ open: true, job: jobs.find(j => j.job_no === jobNo) || { job_no: jobNo, client: '', id: '' } })}
-                              className="h-8 px-3 text-xs rounded-lg bg-[#1e3a5f] text-white hover:bg-[#16304f] font-semibold"
+                              className="h-8 px-3 text-xs rounded-lg bg-[#1a4fa0] text-white hover:bg-[#153d82] font-semibold"
                             >
                               Upload Document
                             </button>
@@ -1459,41 +1480,41 @@ export default function EmployeeDashboard() {
                                 &#10026; Extract
                               </button>
                             )}
-                            <span className="text-slate-400 text-sm">{isExpanded ? '\u25B2' : '\u25BC'}</span>
+                            <span className="text-[#8a96a8] text-sm">{isExpanded ? '\u25B2' : '\u25BC'}</span>
                           </div>
                         </button>
                         {isExpanded && (
                           <div className="overflow-x-auto">
                             <table className="w-full text-xs">
                               <thead>
-                                <tr className="text-slate-500 border-b border-slate-200">
-                                  <th className="text-left font-semibold uppercase tracking-wide text-[10px] px-4 py-2">File Name</th>
-                                  <th className="text-left font-semibold uppercase tracking-wide text-[10px] px-4 py-2">Doc Type</th>
-                                  <th className="text-left font-semibold uppercase tracking-wide text-[10px] px-4 py-2">Uploaded</th>
-                                  <th className="text-left font-semibold uppercase tracking-wide text-[10px] px-4 py-2">Actions</th>
+                                <tr className="text-[#8a96a8] border-b border-[#e2e6ed] bg-[#f8f9fb]">
+                                  <th className="text-left font-semibold uppercase tracking-wide text-xs px-4 py-3">File Name</th>
+                                  <th className="text-left font-semibold uppercase tracking-wide text-xs px-4 py-3">Doc Type</th>
+                                  <th className="text-left font-semibold uppercase tracking-wide text-xs px-4 py-3">Uploaded</th>
+                                  <th className="text-left font-semibold uppercase tracking-wide text-xs px-4 py-3">Actions</th>
                                 </tr>
                               </thead>
                               <tbody>
                                 {docs.map((doc) => (
-                                  <tr key={doc.id} className="border-b border-slate-100 last:border-b-0">
-                                    <td className="px-4 py-2 text-slate-900 font-medium truncate max-w-[250px]" title={doc.file_name}>{doc.file_name}</td>
-                                    <td className="px-4 py-2">
-                                      <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold bg-blue-100 text-blue-800">{doc.doc_type || '—'}</span>
+                                  <tr key={doc.id} className="border-b border-[#e2e6ed] last:border-b-0">
+                                    <td className="px-4 py-3 text-[#1a2233] font-medium truncate max-w-[250px]" title={doc.file_name}>{doc.file_name}</td>
+                                    <td className="px-4 py-3">
+                                      <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-bold bg-blue-100 text-blue-800 border border-[#bfdbfe]">{doc.doc_type || '—'}</span>
                                     </td>
-                                    <td className="px-4 py-2 text-slate-500 whitespace-nowrap">
+                                    <td className="px-4 py-3 text-[#8a96a8] whitespace-nowrap">
                                       {doc.created_at ? new Date(doc.created_at).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'}
                                     </td>
-                                    <td className="px-4 py-2">
+                                    <td className="px-4 py-3">
                                       <div className="flex items-center gap-1.5">
                                         <button
                                           type="button"
                                           onClick={() => setPreviewModal({ open: true, doc })}
-                                          className="h-7 px-2.5 text-[11px] rounded-md bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 font-semibold"
+                                          className="h-7 px-2.5 text-xs rounded-md bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 font-semibold"
                                         >
                                           Preview
                                         </button>
                                         <a href={doc.file_url} download={doc.file_name}
-                                          className="h-7 px-2.5 text-[11px] rounded-md bg-slate-50 text-slate-700 border border-slate-200 hover:bg-slate-100 font-semibold inline-flex items-center no-underline">
+                                          className="h-7 px-2.5 text-xs rounded-md bg-white text-[#4a5568] border border-[#e2e6ed] hover:bg-[#e8eef8] font-semibold inline-flex items-center no-underline">
                                           Download
                                         </a>
                                       </div>
@@ -1516,34 +1537,34 @@ export default function EmployeeDashboard() {
 
       {previewModal.open && previewModal.doc && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm px-4 py-6">
-          <div className="w-full max-w-4xl max-h-[90vh] bg-white rounded-xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col">
-            <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between gap-3 shrink-0">
+          <div className="w-full max-w-4xl max-h-[90vh] bg-white rounded-xl shadow-2xl border border-[#e2e6ed] overflow-hidden flex flex-col">
+            <div className="px-5 py-4 border-b border-[#e2e6ed] flex items-center justify-between gap-3 shrink-0">
               <div className="flex items-center gap-2 min-w-0">
-                <span className="text-sm font-semibold text-slate-900 truncate">{previewModal.doc.file_name}</span>
-                <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold bg-blue-100 text-blue-800">{previewModal.doc.doc_type}</span>
+                <span className="text-sm font-semibold text-[#1a2233] truncate">{previewModal.doc.file_name}</span>
+                <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-bold bg-blue-100 text-blue-800 border border-[#bfdbfe]">{previewModal.doc.doc_type}</span>
               </div>
               <button type="button" onClick={() => setPreviewModal({ open: false, doc: null })}
-                className="h-8 w-8 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition-colors text-lg leading-none shrink-0">&times;</button>
+                className="h-8 w-8 flex items-center justify-center rounded-lg hover:bg-[#fef2f2] hover:text-[#dc2626] transition-colors text-lg leading-none shrink-0">&times;</button>
             </div>
-            <div className="flex-1 overflow-auto bg-slate-100 p-4 flex items-center justify-center min-h-[300px]">
+            <div className="flex-1 overflow-auto bg-[#f4f6f9] p-4 flex items-center justify-center min-h-[300px]">
               {['pdf'].includes((previewModal.doc.file_type || '').toLowerCase()) ? (
-                <iframe src={previewModal.doc.file_url} title="PDF Preview" className="w-full h-[600px] rounded-lg border border-slate-200 bg-white" />
+                <iframe src={previewModal.doc.file_url} title="PDF Preview" className="w-full h-[600px] rounded-lg border border-[#e2e6ed] bg-white" />
               ) : ['jpg', 'jpeg', 'png'].includes((previewModal.doc.file_type || '').toLowerCase()) ? (
                 <img src={previewModal.doc.file_url} alt={previewModal.doc.file_name} className="max-w-full max-h-[600px] rounded-lg shadow-sm object-contain" />
               ) : (
-                <div className="text-center text-slate-400">
+                <div className="text-center text-[#8a96a8]">
                   <p className="text-sm font-semibold">Preview not available</p>
                   <p className="text-xs mt-1">This file type cannot be previewed.</p>
                 </div>
               )}
             </div>
-            <div className="px-5 py-3 border-t border-slate-200 flex items-center justify-end gap-2 shrink-0">
+            <div className="px-5 py-3 border-t border-[#e2e6ed] flex items-center justify-end gap-2 shrink-0">
               <a href={previewModal.doc.file_url} download={previewModal.doc.file_name}
-                className="h-9 px-4 text-sm rounded-lg bg-[#1e3a5f] text-white hover:bg-[#16304f] font-semibold no-underline inline-flex items-center">
+                className="h-9 px-4 text-sm rounded-lg bg-[#1a4fa0] text-white hover:bg-[#153d82] font-semibold no-underline inline-flex items-center">
                 Download
               </a>
               <button type="button" onClick={() => setPreviewModal({ open: false, doc: null })}
-                className="h-9 px-4 text-sm rounded-lg border border-slate-300 bg-slate-50 text-slate-700 hover:bg-slate-100 font-semibold">
+                className="h-9 px-4 text-sm rounded-lg bg-white border-[1.5px] border-[#d0d6e0] text-[#4a5568] hover:border-[#1a4fa0] hover:text-[#1a4fa0] hover:bg-[#e8eef8] font-semibold">
                 Close
               </button>
             </div>
@@ -1553,31 +1574,31 @@ export default function EmployeeDashboard() {
 
       {extractModal.open && extractModal.job && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm px-4">
-          <div className="w-full max-w-4xl max-h-[90vh] overflow-y-auto bg-white rounded-xl shadow-2xl border border-slate-200">
-            <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between sticky top-0 bg-white z-10">
+          <div className="w-full max-w-4xl max-h-[90vh] overflow-y-auto bg-white rounded-xl shadow-2xl border border-[#e2e6ed]">
+            <div className="px-6 py-4 border-b border-[#e2e6ed] flex items-center justify-between sticky top-0 bg-white z-10">
               <div>
-                <div className="text-sm font-bold text-slate-900">AI Document Extraction &mdash; {extractModal.job.job_no}</div>
-                <div className="text-xs text-slate-400">{extractModal.job.client}</div>
+                <div className="text-sm font-bold text-[#1a2233]">AI Document Extraction &mdash; {extractModal.job.job_no}</div>
+                <div className="text-xs text-[#8a96a8]">{extractModal.job.client}</div>
               </div>
               <button type="button" onClick={closeExtract}
-                className="h-8 w-8 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-700 text-lg leading-none">&times;</button>
+                className="h-8 w-8 flex items-center justify-center rounded-lg hover:bg-[#fef2f2] text-[#8a96a8] hover:text-[#dc2626] text-lg leading-none">&times;</button>
             </div>
 
             <div className="p-6 space-y-6">
               {!extracting && !extractedFields && !extractError && (
                 <div>
-                  <p className="text-sm font-semibold text-slate-700 mb-3">Documents to process ({extractModal.docs.length})</p>
+                  <p className="text-sm font-semibold text-[#4a5568] mb-3">Documents to process ({extractModal.docs.length})</p>
                   <div className="space-y-2">
                     {extractModal.docs.map((doc) => (
-                      <div key={doc.id} className="flex items-center gap-2 text-sm text-slate-600 px-3 py-2 bg-slate-50 rounded-lg border border-slate-200">
+                      <div key={doc.id} className="flex items-center gap-2 text-sm text-[#4a5568] px-3 py-2 bg-[#f8f9fb] rounded-lg border border-[#e2e6ed]">
                         <span className="text-base">📄</span>
                         <span className="truncate">{doc.file_name}</span>
-                        <span className="text-[10px] text-slate-400 ml-auto">{doc.doc_type}</span>
+                        <span className="text-xs text-[#8a96a8] ml-auto">{doc.doc_type}</span>
                       </div>
                     ))}
                   </div>
                   <button type="button" onClick={runExtraction} disabled={extracting}
-                    className="mt-4 h-10 px-5 text-sm font-semibold rounded-lg bg-[#1e3a5f] text-white hover:bg-[#16304f] disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2">
+                    className="mt-4 h-10 px-5 text-sm font-semibold rounded-lg bg-[#1a4fa0] text-white hover:bg-[#153d82] disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2">
                     {extracting ? 'Extraction in progress...' : '✦ Extract'}
                   </button>
                 </div>
@@ -1585,9 +1606,9 @@ export default function EmployeeDashboard() {
 
               {extracting && (
                 <div className="flex flex-col items-center justify-center py-16">
-                  <div className="h-10 w-10 border-4 border-[#1e3a5f] border-t-transparent rounded-full animate-spin mb-4" />
-                  <p className="text-sm font-semibold text-slate-700">{extractProgress || 'AI is extracting shipment data...'}</p>
-                  <p className="text-sm text-slate-400">This may take up to 2 minutes for large documents</p>
+                  <div className="h-10 w-10 border-4 border-[#1a4fa0] border-t-transparent rounded-full animate-spin mb-4" />
+                  <p className="text-sm font-semibold text-[#4a5568]">{extractProgress || 'AI is extracting shipment data...'}</p>
+                  <p className="text-sm text-[#8a96a8]">This may take up to 2 minutes for large documents</p>
                 </div>
               )}
 
@@ -1595,7 +1616,7 @@ export default function EmployeeDashboard() {
                 <div className="flex flex-col items-center py-10">
                   <p className="text-sm text-red-600 font-semibold mb-3">{extractError}</p>
                   <button type="button" onClick={runExtraction}
-                    className="h-9 px-4 text-sm rounded-lg border border-slate-300 bg-slate-50 text-slate-700 hover:bg-slate-100 font-semibold">
+                    className="h-9 px-4 text-sm rounded-lg bg-white border-[1.5px] border-[#d0d6e0] text-[#4a5568] hover:border-[#1a4fa0] hover:text-[#1a4fa0] hover:bg-[#e8eef8] font-semibold">
                     Retry
                   </button>
                 </div>
@@ -1604,7 +1625,7 @@ export default function EmployeeDashboard() {
               {extractedFields && extractEdits && (
                 <>
                   <div className="flex items-center gap-3">
-                    <span className="text-sm font-semibold text-slate-600">Confidence:</span>
+                    <span className="text-sm font-semibold text-[#4a5568]">Confidence:</span>
                     {(() => {
                       const summary = EXTRACT_FIELDS.reduce((acc, k) => {
                         const f = extractedFields[k]
@@ -1616,15 +1637,15 @@ export default function EmployeeDashboard() {
                       return (
                         <>
                           {summary.high > 0 && (
-                            <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-bold bg-green-100 text-green-800">{summary.high}</span>
+                            <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-bold bg-green-100 text-green-800">{summary.high}</span>
                           )}
                           {summary.needsReview > 0 && (
-                            <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-bold bg-amber-100 text-amber-800">{summary.needsReview}</span>
+                            <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-bold bg-amber-100 text-amber-800">{summary.needsReview}</span>
                           )}
                           {summary.notFound > 0 && (
-                            <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-bold bg-red-100 text-red-800">{summary.notFound}</span>
+                            <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-bold bg-red-100 text-red-800">{summary.notFound}</span>
                           )}
-                          <span className="text-[11px] text-slate-400">{summary.high} high · {summary.needsReview} need review · {summary.notFound} not found</span>
+                          <span className="text-xs text-[#8a96a8]">{summary.high} high · {summary.needsReview} need review · {summary.notFound} not found</span>
                         </>
                       )
                     })()}
@@ -1638,12 +1659,12 @@ export default function EmployeeDashboard() {
                       const borderCls = confidenceColor(value, confidence)
                       return (
                         <div key={k}>
-                          <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-1">{EXTRACT_LABELS[k] || k}</p>
+                          <p className="text-xs font-semibold text-[#8a96a8] uppercase tracking-wide mb-1">{EXTRACT_LABELS[k] || k}</p>
                           <input type="text" value={value} onChange={(e) => setExtractEdits((prev) => ({ ...prev, [k]: { ...prev[k], value: e.target.value } }))}
                             placeholder={value ? '' : 'Not found'}
-                            className={`w-full h-9 px-3 text-xs rounded-lg border border-slate-200 bg-slate-50 text-slate-900 outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-300 ${borderCls} border-l-4 ${!value ? 'text-red-600 placeholder:text-red-300' : ''}`} />
+                            className={`w-full h-9 px-3 text-xs rounded-lg border border-[#e2e6ed] bg-[#f8f9fb] text-[#1a2233] outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-300 ${borderCls} border-l-4 ${!value ? 'text-red-600 placeholder:text-red-300' : ''}`} />
                           {confidence && (
-                            <p className={`text-[10px] mt-0.5 font-medium ${confidence === 'high' ? 'text-green-600' : confidence === 'medium' ? 'text-amber-600' : 'text-red-600'}`}>
+                            <p className={`text-xs mt-0.5 font-medium ${confidence === 'high' ? 'text-green-600' : confidence === 'medium' ? 'text-amber-600' : 'text-red-600'}`}>
                               {confidence} confidence
                             </p>
                           )}
@@ -1656,17 +1677,17 @@ export default function EmployeeDashboard() {
             </div>
 
             {extractedFields && (
-              <div className="px-6 py-4 border-t border-slate-200 flex items-center gap-3 sticky bottom-0 bg-white">
+              <div className="px-6 py-4 border-t border-[#e2e6ed] flex items-center gap-3 sticky bottom-0 bg-white">
                 <button type="button" onClick={closeExtract}
-                  className="h-9 px-4 text-sm rounded-lg border border-slate-300 bg-slate-50 text-slate-700 hover:bg-slate-100 font-semibold">
+                  className="h-9 px-4 text-sm rounded-lg bg-white border-[1.5px] border-[#d0d6e0] text-[#4a5568] hover:border-[#1a4fa0] hover:text-[#1a4fa0] hover:bg-[#e8eef8] font-semibold">
                   Close
                 </button>
                 <button type="button" onClick={() => { setExtractedFields(null); setExtractEdits(null); setExtractError(null); }}
-                  className="h-9 px-4 text-sm rounded-lg border border-slate-300 bg-slate-50 text-slate-700 hover:bg-slate-100 font-semibold">
+                  className="h-9 px-4 text-sm rounded-lg bg-white border-[1.5px] border-[#d0d6e0] text-[#4a5568] hover:border-[#1a4fa0] hover:text-[#1a4fa0] hover:bg-[#e8eef8] font-semibold">
                   Extract Again
                 </button>
                 <button type="button" onClick={downloadExcel}
-                  className="h-9 px-4 text-sm rounded-lg bg-[#1e3a5f] text-white hover:bg-[#16304f] font-semibold ml-auto">
+                  className="h-9 px-4 text-sm rounded-lg bg-[#1a4fa0] text-white hover:bg-[#153d82] font-semibold ml-auto">
                   &#128229; Download Excel
                 </button>
               </div>
@@ -1677,17 +1698,17 @@ export default function EmployeeDashboard() {
 
       {uploadModal.open && uploadModal.job && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm px-4 py-6">
-          <div className="w-full max-w-lg bg-white rounded-xl shadow-2xl border border-slate-200 overflow-hidden">
-            <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between gap-3">
-              <div className="text-sm font-bold text-slate-900 truncate">Upload Document &mdash; {uploadModal.job.job_no} {uploadModal.job.client ? `(${uploadModal.job.client})` : ''}</div>
+          <div className="w-full max-w-lg bg-white rounded-xl shadow-2xl border border-[#e2e6ed] overflow-hidden">
+            <div className="px-5 py-4 border-b border-[#e2e6ed] flex items-center justify-between gap-3">
+              <div className="text-sm font-bold text-[#1a2233] truncate">Upload Document &mdash; {uploadModal.job.job_no} {uploadModal.job.client ? `(${uploadModal.job.client})` : ''}</div>
               <button type="button" onClick={() => { setUploadModal({ open: false, job: null }); setUploadFile(null); setUploadDocType('BL'); setUploadProgress(0); }}
-                className="h-8 w-8 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-700 text-lg leading-none shrink-0">&times;</button>
+                className="h-8 w-8 flex items-center justify-center rounded-lg hover:bg-[#e8eef8] text-[#8a96a8] hover:text-[#4a5568] text-lg leading-none shrink-0">&times;</button>
             </div>
             <div className="p-5 space-y-4">
               <div>
-                <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-1">Document Type</p>
+                <p className="text-xs font-semibold text-[#8a96a8] uppercase tracking-wide mb-1">Document Type</p>
                 <select value={uploadDocType} onChange={(e) => setUploadDocType(e.target.value)}
-                  className="w-full h-9 px-3 text-sm rounded-lg border border-slate-200 bg-slate-50 text-slate-900 outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-300">
+                  className="w-full h-9 px-3 text-sm rounded-lg border border-[#e2e6ed] bg-[#f8f9fb] text-[#1a2233] outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-300">
                   <option value="BL">BL</option>
                   <option value="Invoice">Invoice</option>
                   <option value="Packing List">Packing List</option>
@@ -1702,20 +1723,20 @@ export default function EmployeeDashboard() {
                 </select>
               </div>
               <div>
-                <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-1">File</p>
-                <label className="flex flex-col items-center justify-center w-full h-28 border-2 border-dashed border-slate-300 rounded-lg bg-slate-50 cursor-pointer hover:bg-slate-100/60 hover:border-slate-400 transition-colors">
+                <p className="text-xs font-semibold text-[#8a96a8] uppercase tracking-wide mb-1">File</p>
+                <label className="flex flex-col items-center justify-center w-full h-28 border-2 border-dashed border-[#e2e6ed] rounded-lg bg-white cursor-pointer hover:bg-[#e8eef8] hover:border-[#1a4fa0] transition-colors">
                   {uploadFile ? (
                     <div className="flex flex-col items-center gap-1 px-3">
-                      <span className="text-sm font-medium text-slate-700 truncate max-w-full">{uploadFile.name}</span>
-                      <span className="text-[11px] text-slate-400">{formatFileSize(uploadFile.size)}</span>
+                      <span className="text-sm font-medium text-[#4a5568] truncate max-w-full">{uploadFile.name}</span>
+                      <span className="text-xs text-[#8a96a8]">{formatFileSize(uploadFile.size)}</span>
                       <button type="button" onClick={(e) => { e.preventDefault(); setUploadFile(null); }}
-                        className="text-[11px] text-red-600 hover:text-red-700 font-semibold">Remove</button>
+                        className="text-xs text-red-600 hover:text-red-700 font-semibold">Remove</button>
                     </div>
                   ) : (
                     <div className="flex flex-col items-center gap-1">
-                      <span className="text-lg text-slate-400">+</span>
-                      <span className="text-sm text-slate-500 font-medium">Click to select or drag &amp; drop</span>
-                      <span className="text-[11px] text-slate-400">PDF, JPG, PNG &mdash; max 10MB</span>
+                      <span className="text-lg text-[#8a96a8]">+</span>
+                      <span className="text-sm text-[#8a96a8] font-medium">Click to select or drag &amp; drop</span>
+                      <span className="text-xs text-[#8a96a8]">PDF, JPG, PNG &mdash; max 10MB</span>
                     </div>
                   )}
                   <input type="file" accept=".pdf,.jpg,.jpeg,.png" onChange={(e) => { const f = e.target.files?.[0]; if (f) setUploadFile(f); }} className="hidden" />
@@ -1723,20 +1744,20 @@ export default function EmployeeDashboard() {
               </div>
               {uploading && (
                 <div>
-                  <div className="h-2 bg-slate-200 rounded overflow-hidden">
-                    <div className="h-full bg-[#1e3a5f] rounded transition-all duration-300" style={{ width: `${uploadProgress}%` }} />
+                  <div className="h-2 bg-[#e2e6ed] border border-[#e2e6ed] rounded overflow-hidden">
+                    <div className="h-full bg-[#1a4fa0] rounded transition-all duration-300" style={{ width: `${uploadProgress}%` }} />
                   </div>
-                  <p className="text-[11px] text-slate-400 mt-1">{uploadProgress}%</p>
+                  <p className="text-xs text-[#8a96a8] mt-1">{uploadProgress}%</p>
                 </div>
               )}
             </div>
-            <div className="px-5 py-4 border-t border-slate-200 flex items-center justify-end gap-2">
+            <div className="px-5 py-4 border-t border-[#e2e6ed] flex items-center justify-end gap-2">
               <button type="button" onClick={() => { setUploadModal({ open: false, job: null }); setUploadFile(null); setUploadDocType('BL'); setUploadProgress(0); }}
-                className="h-9 px-4 text-sm rounded-lg border border-slate-300 bg-slate-50 text-slate-700 hover:bg-slate-100 font-semibold">
+                className="h-9 px-4 text-sm rounded-lg bg-white border-[1.5px] border-[#d0d6e0] text-[#4a5568] hover:border-[#1a4fa0] hover:text-[#1a4fa0] hover:bg-[#e8eef8] font-semibold">
                 Cancel
               </button>
               <button type="button" disabled={!uploadFile || !uploadDocType || uploading} onClick={uploadDocument}
-                className="h-9 px-4 text-sm rounded-lg bg-[#1e3a5f] text-white hover:bg-[#16304f] font-semibold disabled:opacity-50 disabled:cursor-not-allowed">
+                className="h-9 px-4 text-sm rounded-lg bg-[#1a4fa0] text-white hover:bg-[#153d82] font-semibold disabled:opacity-50 disabled:cursor-not-allowed">
                 {uploading ? 'Uploading...' : 'Upload'}
               </button>
             </div>
@@ -1748,9 +1769,9 @@ export default function EmployeeDashboard() {
         <div
           className={classNames(
             'fixed bottom-5 right-5 z-50 px-4 py-3 rounded-xl text-sm font-semibold shadow-lg border',
-            toastState.type === 'success' && 'bg-green-600 text-white border-green-700',
-            toastState.type === 'error' && 'bg-red-600 text-white border-red-700',
-            toastState.type === 'info' && 'bg-slate-900 text-white border-slate-800'
+            toastState.type === 'success' && 'bg-[#16a34a] text-white rounded-xl',
+            toastState.type === 'error' && 'bg-[#dc2626] text-white rounded-xl',
+            toastState.type === 'info' && 'bg-[#1a2233] text-white rounded-xl'
           )}
         >
           {toastState.message}
@@ -1758,8 +1779,8 @@ export default function EmployeeDashboard() {
       )}
 
       {showCreateJob && (
-        <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-950/35 px-4 py-6">
-          <div className="w-full max-w-5xl overflow-hidden rounded-xl bg-white shadow-2xl border border-slate-200">
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 backdrop-blur-sm px-4 py-6">
+          <div className="w-full max-w-5xl overflow-hidden rounded-xl bg-white shadow-2xl border border-[#e2e6ed]">
             <CreateJob
               isModal
               onCancel={() => setShowCreateJob(false)}

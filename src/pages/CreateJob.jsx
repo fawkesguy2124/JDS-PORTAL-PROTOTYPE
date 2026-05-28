@@ -19,9 +19,9 @@ const INITIAL_FORM = {
   job_no: '',
   client: '',
   mode: 'Sea FCL',
+  container_size: '20 Feet',
   goods: '',
   priority: 'normal',
-  assigned_to: '',
   bl_no: '',
   containers: '',
   carrier: '',
@@ -30,6 +30,7 @@ const INITIAL_FORM = {
   cfs_name: '',
   cfs_amount: '',
   be_no: '',
+  be_date: '',
   hs_code: '',
   rms_status: 'pending',
   bg_required: 'no',
@@ -165,17 +166,18 @@ export default function CreateJob({ isModal = false, onCancel, onCreated }) {
       job_no: `J-${form.job_no.trim()}`,
       client: form.client.trim(),
       mode: form.mode,
+      container_size: ['Sea FCL', 'Sea LCL'].includes(form.mode) ? form.container_size : null,
       goods: form.goods.trim() || null,
       priority: form.priority,
-      assigned_to: form.assigned_to || null,
       bl_no: form.bl_no.trim() || null,
-      containers: form.containers.trim() || null,
+      containers: form.containers.split(',').map(c => c.trim()).filter(Boolean).join(', ') || null,
       shipping_line: form.carrier || null,
       vessel: form.vessel.trim() || null,
       eta: form.eta || null,
       cfs_name: form.cfs_name.trim() || null,
       cfs_amount: form.cfs_amount !== '' ? Number(form.cfs_amount) : null,
       be_no: form.be_no.trim() || null,
+      be_date: form.be_date || null,
       hs_code: form.hs_code.trim() || null,
       rms_status: form.rms_status,
       bg_required: form.bg_required,
@@ -320,6 +322,15 @@ export default function CreateJob({ isModal = false, onCancel, onCreated }) {
                 </select>
               </Field>
 
+              {['Sea FCL', 'Sea LCL'].includes(form.mode) && (
+                <Field label="Container Size">
+                  <select value={form.container_size} onChange={set('container_size')} className={inputClass}>
+                    <option value="20 Feet">20 Feet</option>
+                    <option value="40 Feet">40 Feet</option>
+                  </select>
+                </Field>
+              )}
+
               <Field label="Goods Description">
                 <input
                   type="text"
@@ -339,17 +350,6 @@ export default function CreateJob({ isModal = false, onCancel, onCreated }) {
                 </select>
               </Field>
 
-              <Field label="Assign To">
-                <select value={form.assigned_to} onChange={set('assigned_to')} className={inputClass}>
-                  <option value="">Unassigned</option>
-                  {profiles.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-
               <SectionHeading>Shipment Details</SectionHeading>
 
               <Field label="BL Number">
@@ -363,14 +363,15 @@ export default function CreateJob({ isModal = false, onCancel, onCreated }) {
                 </select>
               </Field>
 
-              <Field label="Container Numbers">
+              <Field label="Container Numbers (comma separated)">
                 <input
                   type="text"
                   value={form.containers}
                   onChange={set('containers')}
                   className={inputClass}
-                  placeholder="Comma-separated"
+                  placeholder="e.g. MSCU1234567, OOLU7654321, CMAU9988776"
                 />
+                <p className="text-xs text-gray-400 mt-1">Enter multiple container numbers separated by commas</p>
               </Field>
 
               <Field label="Vessel / Flight">
@@ -400,6 +401,10 @@ export default function CreateJob({ isModal = false, onCancel, onCreated }) {
 
               <Field label="BE Number">
                 <input type="text" value={form.be_no} onChange={set('be_no')} className={inputClass} />
+              </Field>
+
+              <Field label="BE Date">
+                <input type="date" value={form.be_date} onChange={set('be_date')} className={inputClass} />
               </Field>
 
               <Field label="HS Code">

@@ -8,15 +8,37 @@ import { fetchAllTracking, deleteTracking, lookupAndSaveContainer, checkContaine
 import * as XLSX from 'xlsx'
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 
-const NAV_ITEMS = [
-  { id: 'overview', label: 'Control Tower', icon: '■' },
-  { id: 'jobs', label: 'All Jobs', icon: '☕' },
-  { id: 'containers', label: 'Container Tracking', icon: '▶' },
-  { id: 'documents', label: 'Documents', icon: '⌁' },
-  { id: 'payments', label: 'Payments', icon: '₹' },
-  { id: 'compliance', label: 'Compliance', icon: '✓' },
-  { id: 'settings', label: 'Settings', icon: '⚙' },
+const NAV_SECTIONS = [
+  {
+    label: 'OPERATIONS',
+    items: [
+      { id: 'overview', label: 'Control Tower', icon: '⊞' },
+      { id: 'jobs', label: 'All Jobs', icon: '≡' },
+      { id: 'containers', label: 'Container Tracking', icon: '⊟' },
+      { id: 'documents', label: 'Documents', icon: '📄' },
+    ]
+  },
+  {
+    label: 'FINANCE',
+    items: [
+      { id: 'payments', label: 'Payments', icon: '₹' },
+    ]
+  },
+  {
+    label: 'COMPLIANCE',
+    items: [
+      { id: 'compliance', label: 'BIS & Licences', icon: '✓' },
+    ]
+  },
+  {
+    label: 'AI TOOLS',
+    items: [
+      { id: 'ocr', label: 'OCR Extract', icon: '✦' },
+    ]
+  },
 ]
+
+const NAV_ITEMS = NAV_SECTIONS.flatMap(s => s.items)
 
 const STAGE_OPTIONS = [
   { value: '', label: 'All stages' },
@@ -57,7 +79,9 @@ const FIELD_LABELS = {
   eta: 'ETA',
   cfs_name: 'CFS Name',
   be_no: 'BE Number',
+  be_date: 'BE Date',
   hs_code: 'HS Code',
+  container_size: 'Container Size',
   rms_status: 'RMS Status',
   bg_required: 'BG Required',
   cfs_amount: 'CFS Amount',
@@ -86,6 +110,8 @@ const FIELD_PERMS = {
   eta: { can: ['Uphadhya', 'Akshyani', 'Durgesh'] },
   cfs_name: { can: ['Uphadhya', 'Akshyani', 'Durgesh'] },
   be_no: { can: ['Akshyani', 'Trupti'] },
+  be_date: { can: ['Akshyani', 'Trupti'] },
+  container_size: { can: ['Uphadhya', 'Akshyani', 'Durgesh'] },
   hs_code: { can: ['Akshyani', 'Trupti', 'Durgesh'] },
   rms_status: { can: ['Akshyani', 'Trupti', 'Durgesh'] },
   bg_required: { can: ['Anil', 'Akshyani', 'Durgesh'] },
@@ -168,39 +194,39 @@ function classNames(...xs) { return xs.filter(Boolean).join(' ') }
 
 function priorityChip(priority) {
   const p = String(priority || 'normal').toLowerCase()
-  if (p === 'urgent') return { text: 'Urgent', cls: 'bg-red-100 text-red-800' }
-  if (p === 'high') return { text: 'High', cls: 'bg-amber-100 text-amber-800' }
-  return { text: 'Normal', cls: 'bg-slate-100 text-slate-700' }
+  if (p === 'urgent') return { text: 'Urgent', cls: 'bg-[#fef2f2] text-[#991b1b] border border-[#fecaca]' }
+  if (p === 'high') return { text: 'High', cls: 'bg-[#fffbeb] text-[#92400e] border border-[#fde68a]' }
+  return { text: 'Normal', cls: 'bg-[#f9fafb] text-[#4a5568] border border-[#d0d6e0]' }
 }
 
 function modeChip(mode) {
   const m = String(mode || '').trim()
-  if (m === 'Air') return { text: 'Air', cls: 'bg-green-100 text-green-800' }
+  if (m === 'Air') return { text: 'Air', cls: 'bg-[#f5f3ff] text-[#5b21b6] border border-[#ddd6fe]' }
   if (m === 'BPT/MBPT') return { text: 'BPT', cls: 'bg-purple-100 text-purple-800' }
-  if (m === 'Sea LCL') return { text: 'LCL', cls: 'bg-teal-100 text-teal-800' }
-  if (m === 'Sea FCL') return { text: 'FCL', cls: 'bg-blue-100 text-blue-800' }
-  return { text: m || '—', cls: 'bg-slate-100 text-slate-700' }
+  if (m === 'Sea LCL') return { text: 'LCL', cls: 'bg-[#f0fdfa] text-[#0f766e] border border-[#99f6e4]' }
+  if (m === 'Sea FCL') return { text: 'FCL', cls: 'bg-[#eff6ff] text-[#1e40af] border border-[#bfdbfe]' }
+  return { text: m || '—', cls: 'bg-[#f9fafb] text-[#4a5568] border border-[#d0d6e0]' }
 }
 
 function rmsChip(rms) {
   const r = String(rms || '').toLowerCase()
   const map = {
-    pending: { text: 'Awaiting', cls: 'bg-slate-100 text-slate-700' },
-    rms: { text: 'RMS OK', cls: 'bg-green-100 text-green-800' },
-    apr: { text: 'APR', cls: 'bg-amber-100 text-amber-800' },
-    acl: { text: 'ACL', cls: 'bg-amber-100 text-amber-800' },
-    check: { text: '1st Check', cls: 'bg-red-100 text-red-800' },
-    hold: { text: 'HOLD', cls: 'bg-red-100 text-red-800' },
+    pending: { text: 'Awaiting', cls: 'bg-[#f9fafb] text-[#4a5568] border border-[#d0d6e0]' },
+    rms: { text: 'RMS OK', cls: 'bg-[#f0fdf4] text-[#15803d] border border-[#bbf7d0]' },
+    apr: { text: 'APR', cls: 'bg-[#fffbeb] text-[#92400e] border border-[#fde68a]' },
+    acl: { text: 'ACL', cls: 'bg-[#fffbeb] text-[#92400e] border border-[#fde68a]' },
+    check: { text: '1st Check', cls: 'bg-[#fef2f2] text-[#991b1b] border border-[#fecaca]' },
+    hold: { text: 'HOLD', cls: 'bg-[#fef2f2] text-[#991b1b] border border-[#fecaca]' },
   }
-  return map[r] || { text: rms ? String(rms).toUpperCase() : '—', cls: 'bg-slate-100 text-slate-700' }
+  return map[r] || { text: rms ? String(rms).toUpperCase() : '—', cls: 'bg-[#f9fafb] text-[#4a5568] border border-[#d0d6e0]' }
 }
 
 function riskChip(risk) {
   const r = String(risk || '').toLowerCase()
-  if (r === 'high') return { text: 'High Risk', cls: 'bg-red-100 text-red-800' }
-  if (r === 'medium') return { text: 'Medium', cls: 'bg-amber-100 text-amber-800' }
-  if (r === 'low') return { text: 'Low', cls: 'bg-green-100 text-green-800' }
-  return { text: displayValue(risk), cls: 'bg-slate-100 text-slate-700' }
+  if (r === 'high') return { text: 'High Risk', cls: 'bg-[#fef2f2] text-[#991b1b] border border-[#fecaca]' }
+  if (r === 'medium') return { text: 'Medium', cls: 'bg-[#fffbeb] text-[#92400e] border border-[#fde68a]' }
+  if (r === 'low') return { text: 'Low', cls: 'bg-[#f0fdf4] text-[#15803d] border border-[#bbf7d0]' }
+  return { text: displayValue(risk), cls: 'bg-[#f9fafb] text-[#4a5568] border border-[#d0d6e0]' }
 }
 
 function normalizeMetaTs(ts) {
@@ -257,7 +283,7 @@ function FieldMetaChip({ meta, profiles }) {
   if (!by && !ts) return null
   const name = by && profiles && profiles[by] ? profiles[by] : by
   return (
-    <span className="ml-2 inline-flex items-center rounded-full bg-slate-100 text-slate-500 border border-slate-200 px-2 py-0.5 text-[11px] font-medium">
+    <span className="ml-2 inline-flex items-center rounded-full bg-[#f9fafb] text-[#4a5568] border border-[#d0d6e0] px-2 py-0.5 text-xs font-medium">
       {name || '—'} · {ts ? timeAgo(ts) : '—'}
     </span>
   )
@@ -266,10 +292,10 @@ function FieldMetaChip({ meta, profiles }) {
 function KpiCard({ label, value, hint, tone, icon }) {
   const tones = { blue: 'text-blue-600', red: 'text-red-600', amber: 'text-amber-600', green: 'text-green-600', violet: 'text-violet-600' }
   return (
-    <div className="bg-white border border-slate-200 rounded-xl px-4 py-3 shadow-sm relative overflow-hidden">
-      <p className="text-[11px] font-medium text-slate-600 mb-1">{label}</p>
+    <div className="bg-white border-[1.5px] border-[#e2e6ed] rounded-xl p-5 shadow-sm hover:shadow-md hover:border-[#d0d6e0] transition-all">
+      <p className="text-xs font-medium text-[#8a96a8] mb-2">{label}</p>
       <p className={classNames('text-2xl font-extrabold leading-none', tones[tone] || tones.blue)}>{value}</p>
-      {hint && <p className="text-[11px] text-slate-400 mt-1">{hint}</p>}
+      {hint && <p className="text-xs text-[#8a96a8] mt-1.5">{hint}</p>}
       {icon && <div className={classNames('absolute right-3 top-1/2 -translate-y-1/2 text-3xl opacity-[0.08]', tones[tone] || tones.blue)}>{icon}</div>}
     </div>
   )
@@ -277,10 +303,10 @@ function KpiCard({ label, value, hint, tone, icon }) {
 
 function TowerCard({ title, subtitle, children }) {
   return (
-    <section className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
-      <div className="px-4 py-3 border-b border-slate-200 flex items-center justify-between gap-3">
-        <div className="text-sm font-semibold text-slate-900 truncate">{title}</div>
-        {subtitle && <div className="text-xs text-slate-400 shrink-0">{subtitle}</div>}
+    <section className="bg-white border-[1.5px] border-[#e2e6ed] rounded-xl shadow-sm overflow-hidden">
+      <div className="px-5 py-4 border-b border-[#e2e6ed] flex items-center justify-between gap-3 bg-white">
+<div className="text-sm font-bold text-[#1a2233] truncate">{title}</div>
+        {subtitle && <div className="text-xs text-[#8a96a8] shrink-0">{subtitle}</div>}
       </div>
       {children}
     </section>
@@ -288,7 +314,7 @@ function TowerCard({ title, subtitle, children }) {
 }
 
 function EmptyTowerState({ children }) {
-  return <div className="px-4 py-8 text-sm text-center text-slate-400">{children}</div>
+  return <div className="px-4 py-8 text-sm text-center text-[#8a96a8]">{children}</div>
 }
 
 function RiskBadge({ tone = 'blue', children }) {
@@ -299,40 +325,56 @@ function RiskBadge({ tone = 'blue', children }) {
     blue: 'bg-blue-100 text-blue-800',
     violet: 'bg-violet-100 text-violet-800',
   }
-  return <span className={classNames('inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold whitespace-nowrap', tones[tone] || tones.blue)}>{children}</span>
+  return <span className={classNames('inline-flex items-center rounded-full px-2 py-0.5 text-xs font-bold whitespace-nowrap', tones[tone] || tones.blue)}>{children}</span>
 }
 
 function TodayPriorityQueue({ items, profiles, onOpen }) {
+  const nav = useNavigate()
+  const modeChip = (m) => {
+    if (m === 'Air') return { text: 'Air', cls: 'bg-[#f5f3ff] text-[#5b21b6] border border-[#ddd6fe]' }
+    if (m === 'BPT/MBPT') return { text: 'BPT', cls: 'bg-purple-100 text-purple-800 border border-[#ddd6fe]' }
+    if (m === 'Sea LCL') return { text: 'LCL', cls: 'bg-[#f0fdfa] text-[#0f766e] border border-[#99f6e4]' }
+    if (m === 'Sea FCL') return { text: 'FCL', cls: 'bg-[#eff6ff] text-[#1e40af] border border-[#bfdbfe]' }
+    return { text: m || '—', cls: 'bg-[#f9fafb] text-[#4a5568] border border-[#d0d6e0]' }
+  }
+  const formatDate = (d) => { if (!d) return '—'; const x = new Date(d); return `${String(x.getDate()).padStart(2,'0')}/${String(x.getMonth()+1).padStart(2,'0')}` }
   return (
-    <TowerCard title="Today's Priority Queue" subtitle="Action-first list">
+    <TowerCard title="Priority Queue" subtitle="Urgent and high-risk shipments">
       {items.length ? (
         <div className="overflow-x-auto">
           <table className="w-full table-fixed text-xs">
-            <thead className="bg-slate-50 text-slate-500">
+            <thead className="bg-[#f8f9fb] text-[#8a96a8]">
               <tr>
-                <th className="w-[13%] text-left px-4 py-2 font-semibold uppercase tracking-wide text-[10px]">Job</th>
-                <th className="w-[18%] text-left px-4 py-2 font-semibold uppercase tracking-wide text-[10px]">Client</th>
-                <th className="w-[18%] text-left px-4 py-2 font-semibold uppercase tracking-wide text-[10px]">Stage</th>
-                <th className="w-[15%] text-left px-4 py-2 font-semibold uppercase tracking-wide text-[10px]">Owner</th>
-                <th className="w-[21%] text-left px-4 py-2 font-semibold uppercase tracking-wide text-[10px]">Issue</th>
-                <th className="w-[15%] text-left px-4 py-2 font-semibold uppercase tracking-wide text-[10px]">Next Action</th>
+                <th className="w-[14%] text-left px-4 py-3 font-semibold uppercase tracking-wide text-xs">Job No.</th>
+                <th className="w-[22%] text-left px-4 py-3 font-semibold uppercase tracking-wide text-xs">Client / Goods</th>
+                <th className="w-[16%] text-left px-4 py-3 font-semibold uppercase tracking-wide text-xs">Progress</th>
+                <th className="w-[10%] text-left px-4 py-3 font-semibold uppercase tracking-wide text-xs">Mode</th>
+                <th className="w-[14%] text-left px-4 py-3 font-semibold uppercase tracking-wide text-xs">ETA</th>
+                <th className="w-[24%] text-left px-4 py-3 font-semibold uppercase tracking-wide text-xs">Status</th>
               </tr>
             </thead>
             <tbody>
-              {items.map(({ job, issue, action, tone }) => (
-                <tr key={job.id} onClick={() => onOpen(job)} className="border-t border-slate-100 hover:bg-blue-50/40 cursor-pointer">
-                  <td className="px-4 py-2 font-extrabold text-slate-900 truncate">{job.job_no || '—'}</td>
-                  <td className="px-4 py-2 text-slate-700 truncate" title={job.client || '—'}>{job.client || '—'}</td>
-                  <td className="px-4 py-2"><RiskBadge tone={tone}>{getStageName(Number(job.stage) || 0)}</RiskBadge></td>
-                  <td className="px-4 py-2 text-slate-700 truncate">{job.assigned_to ? profiles[job.assigned_to] || '—' : '—'}</td>
-                  <td className="px-4 py-2 text-slate-900 font-semibold truncate" title={issue}>{issue}</td>
-                  <td className="px-4 py-2 text-slate-600 truncate">{action}</td>
+              {items.map(({ job, issue, tone }) => {
+                const mc = modeChip(job.mode)
+                const stageName = getStageName(Number(job.stage) || 0)
+                return (
+                <tr key={job.id} onClick={() => onOpen(job)} className="border-t border-[#e2e6ed] hover:bg-[#e8eef8] cursor-pointer">
+                  <td className="px-4 py-2 font-extrabold text-[#1a4fa0] font-mono truncate">{job.job_no || '—'}</td>
+                  <td className="px-4 py-2 text-[#4a5568] truncate" title={`${job.client || ''} — ${job.goods || ''}`}>{job.client || '—'}<span className="text-xs text-[#8a96a8] ml-1">{job.goods ? `· ${String(job.goods).slice(0,18)}` : ''}</span></td>
+                  <td className="px-4 py-2"><RiskBadge tone={tone}>{stageName}</RiskBadge></td>
+                  <td className="px-4 py-2"><span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${mc.cls}`}>{mc.text}</span></td>
+                  <td className="px-4 py-2 font-mono text-xs text-[#8a96a8]">{formatDate(job.eta)}</td>
+                  <td className="px-4 py-2 text-xs text-[#1a2233] truncate" title={issue}>{issue}</td>
                 </tr>
-              ))}
+              )})}
             </tbody>
           </table>
         </div>
       ) : <EmptyTowerState>No urgent operational actions right now.</EmptyTowerState>}
+      {items.length > 0 && (
+        <button type="button" onClick={() => nav('/admin?tab=jobs')}
+          className="w-full px-4 py-2.5 text-xs font-semibold text-[#1a4fa0] hover:text-[#153d82] hover:bg-[#e8eef8] border-t border-[#e2e6ed] text-center transition-colors">View all jobs &rarr;</button>
+      )}
     </TowerCard>
   )
 }
@@ -341,10 +383,10 @@ function FreeDaysRiskPanel({ items, onOpen }) {
   return (
     <TowerCard title="Free Days Risk" subtitle="Detention watch">
       {items.length ? items.map(({ job, days, tone }) => (
-        <button key={job.id} type="button" onClick={() => onOpen(job)} className="w-full px-4 py-3 border-t border-slate-100 text-left grid grid-cols-[1fr_auto] gap-3 hover:bg-blue-50/40">
+        <button key={job.id} type="button" onClick={() => onOpen(job)} className="w-full px-4 py-3 border-t border-[#e2e6ed] text-left grid grid-cols-[1fr_auto] gap-3 hover:bg-[#e8eef8]">
           <span className="min-w-0">
-            <span className="block text-sm font-bold text-slate-900 truncate">{job.job_no || '—'} · {job.client || '—'}</span>
-            <span className="block text-xs text-slate-500 truncate">{job.containers || 'No containers'} · {job.cfs_name || 'CFS pending'}</span>
+            <span className="block text-sm font-bold text-[#1a2233] truncate">{job.job_no || '—'} · {job.client || '—'}</span>
+            <span className="block text-xs text-[#8a96a8] truncate">{job.containers || 'No containers'} · {job.cfs_name || 'CFS pending'}</span>
           </span>
           <RiskBadge tone={tone}>{dayLabel(days)}</RiskBadge>
         </button>
@@ -359,12 +401,12 @@ function StageBottlenecks({ items, maxCount, onStage }) {
       {items.length ? items.map(({ stage, count }) => {
         const pct = maxCount ? Math.max(8, Math.round((count / maxCount) * 100)) : 0
         return (
-          <button key={stage} type="button" onClick={() => onStage(String(stage))} className="w-full px-4 py-3 border-t border-slate-100 text-left hover:bg-blue-50/40">
+          <button key={stage} type="button" onClick={() => onStage(String(stage))} className="w-full px-4 py-3 border-t border-[#e2e6ed] text-left hover:bg-[#e8eef8]">
             <div className="flex items-center justify-between gap-3 mb-2">
-              <span className="text-sm font-semibold text-slate-800 truncate">{getStageName(stage)}</span>
-              <span className="text-xs text-slate-500">{count} jobs</span>
+              <span className="text-sm font-semibold text-[#1a2233] truncate">{getStageName(stage)}</span>
+              <span className="text-xs text-[#8a96a8]">{count} jobs</span>
             </div>
-            <div className="h-2 bg-slate-200 rounded-full overflow-hidden">
+<div className="h-2 bg-[#e2e6ed] border border-[#e2e6ed] rounded-full overflow-hidden">
               <div className={classNames('h-full rounded-full', progressColor(stage))} style={{ width: `${pct}%` }} />
             </div>
           </button>
@@ -378,10 +420,10 @@ function StaleUpdatesPanel({ items, onOpen }) {
   return (
     <TowerCard title="Stale Updates" subtitle="No update in 24h+">
       {items.length ? items.map(({ job, hours, tone }) => (
-        <button key={job.id} type="button" onClick={() => onOpen(job)} className="w-full px-4 py-3 border-t border-slate-100 text-left grid grid-cols-[1fr_auto] gap-3 hover:bg-blue-50/40">
+        <button key={job.id} type="button" onClick={() => onOpen(job)} className="w-full px-4 py-3 border-t border-[#e2e6ed] text-left grid grid-cols-[1fr_auto] gap-3 hover:bg-[#e8eef8]">
           <span className="min-w-0">
-            <span className="block text-sm font-bold text-slate-900 truncate">{job.job_no || '—'} · {job.client || '—'}</span>
-            <span className="block text-xs text-slate-500 truncate">{getStageName(Number(job.stage) || 0)}</span>
+            <span className="block text-sm font-bold text-[#1a2233] truncate">{job.job_no || '—'} · {job.client || '—'}</span>
+            <span className="block text-xs text-[#8a96a8] truncate">{getStageName(Number(job.stage) || 0)}</span>
           </span>
           <RiskBadge tone={tone}>{hours >= 48 ? `${Math.floor(hours / 24)} days` : `${hours} hours`}</RiskBadge>
         </button>
@@ -394,10 +436,10 @@ function EmployeeAccountability({ items }) {
   return (
     <TowerCard title="Employee Accountability" subtitle="Workload snapshot">
       {items.length ? items.map((x) => (
-        <div key={x.name} className="px-4 py-3 border-t border-slate-100 grid grid-cols-[1fr_auto_auto_auto] gap-3 items-center">
-          <div className="text-sm font-bold text-slate-900 truncate">{x.name}</div>
-          <div className="text-xs text-slate-500 text-right">{x.active} active</div>
-          <div className="text-xs text-slate-500 text-right">{x.urgent} urgent</div>
+        <div key={x.name} className="px-4 py-3 border-t border-[#e2e6ed] grid grid-cols-[1fr_auto_auto_auto] gap-3 items-center">
+          <div className="text-sm font-bold text-[#1a2233] truncate">{x.name}</div>
+          <div className="text-xs text-[#8a96a8] text-right">{x.active} active</div>
+          <div className="text-xs text-[#8a96a8] text-right">{x.urgent} urgent</div>
           <RiskBadge tone={x.stale > 1 ? 'red' : x.stale ? 'amber' : 'green'}>{x.stale} stale</RiskBadge>
         </div>
       )) : <EmptyTowerState>No assigned active jobs yet.</EmptyTowerState>}
@@ -406,11 +448,11 @@ function EmployeeAccountability({ items }) {
 }
 
 function MiniStatus({ title, value, tone }) {
-  const tones = { blue: 'border-t-blue-500', amber: 'border-t-amber-500', green: 'border-t-green-500', gray: 'border-t-slate-400' }
+  const tones = { blue: 'border-t-blue-500', amber: 'border-t-amber-500', green: 'border-t-green-500', gray: 'border-t-[#8a96a8]' }
   return (
-    <div className={classNames('bg-white border border-slate-200 rounded-xl shadow-sm p-3 border-t-4', tones[tone] || tones.blue)}>
-      <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide">{title}</p>
-      <p className="text-sm font-semibold text-slate-800 mt-1 truncate" title={value}>{value}</p>
+    <div className={classNames('bg-white border-[1.5px] border-[#e2e6ed] rounded-xl shadow-sm p-3 border-t-4', tones[tone] || tones.blue)}>
+      <p className="text-xs font-semibold uppercase tracking-wide text-[#8a96a8]">{title}</p>
+      <p className="text-sm font-semibold text-[#1a2233] mt-1 truncate" title={value}>{value}</p>
     </div>
   )
 }
@@ -419,10 +461,10 @@ function DetailField({ label, value, meta, profiles }) {
   return (
     <div>
       <div className="flex items-center flex-wrap gap-1">
-        <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide">{label}</p>
+        <p className="text-xs uppercase tracking-wide text-[#8a96a8] font-medium">{label}</p>
         <FieldMetaChip meta={meta} profiles={profiles} />
       </div>
-      <p className="text-sm text-slate-900 mt-0.5">{value}</p>
+      <p className="text-sm text-[#1a2233] font-medium mt-0.5">{value}</p>
     </div>
   )
 }
@@ -433,11 +475,11 @@ function JobProgress({ stage }) {
   return (
     <div className="mt-1.5">
       <div className="flex items-center justify-between gap-2">
-        <span className="text-[10px] text-slate-400 truncate">Stage {s}: {getStageName(s)}</span>
-        <span className="text-[10px] text-slate-400">{pct}%</span>
+        <span className="text-sm font-medium text-[#4a5568] truncate">Stage {s}: {getStageName(s)}</span>
+        <span className="text-xs text-[#8a96a8]">{pct}%</span>
       </div>
-      <div className="mt-0.5 h-0.5 bg-slate-200 rounded overflow-hidden">
-        <div className="h-full bg-blue-600 rounded" style={{ width: `${pct}%` }} />
+      <div className="mt-0.5 h-0.5 bg-[#e2e6ed] border border-[#e2e6ed] rounded overflow-hidden">
+        <div className="h-full bg-[#1a4fa0] rounded" style={{ width: `${pct}%` }} />
       </div>
     </div>
   )
@@ -470,39 +512,39 @@ function JobCard({ job, profiles, onOpen, onDelete }) {
         if (['input','select','textarea','button'].includes(tag)) return
         if (e.key === 'Enter') { e.preventDefault(); onOpen() }
       }}
-      className={classNames('bg-white border border-slate-200 rounded-xl shadow-sm p-3 mb-2 cursor-pointer transition-all hover:border-blue-300 hover:shadow-md border-l-4', priorityBorder)}
+      className={classNames('bg-white border-[1.5px] border-[#e2e6ed] rounded-xl shadow-sm p-3 mb-2 cursor-pointer transition-all hover:border-[#d0d6e0] hover:shadow-md border-l-4', priorityBorder)}
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <div className="text-sm font-extrabold text-slate-900 truncate">{job.job_no || '—'}</div>
-          <div className="text-xs text-slate-700">{job.client || '—'} <span className="text-slate-400">· {job.goods || '—'}</span></div>
-          <div className="text-[10px] text-slate-400 font-mono mt-0.5">
+          <div className="text-sm font-extrabold text-[#1a2233] truncate font-mono text-[#1a4fa0]">{job.job_no || '—'}</div>
+          <div className="text-xs text-[#4a5568]">{job.client || '—'} <span className="text-[#8a96a8]">· {job.goods || '—'}</span></div>
+          <div className="text-xs text-[#8a96a8] font-mono mt-0.5">
             {job.be_no ? `BE:${job.be_no}` : ''}
             {job.bl_no ? `${job.be_no ? ' · ' : ''}BL:${job.bl_no}` : ''}
-            {job.containers ? `${job.be_no || job.bl_no ? ' · ' : ''}${job.containers}` : ''}
+            {job.containers ? `${job.be_no || job.bl_no ? ' · ' : ''}${(job.containers || '').split(',').map(c => c.trim()).filter(Boolean).join(' · ')}` : ''}
             {!job.be_no && !job.bl_no && !job.containers ? '—' : ''}
           </div>
-          <div className="text-[10px] text-slate-400 mt-0.5">
+          <div className="text-xs text-[#8a96a8] mt-0.5">
             {lastUpdatedName || lastUpdatedTs ? (
-              <>Last updated by: <span className="text-slate-500 font-medium">{lastUpdatedName || '—'}</span> · <span>{lastUpdatedTs ? timeAgo(lastUpdatedTs) : '—'}</span></>
+              <>Last updated by: <span className="text-[#4a5568] font-medium">{lastUpdatedName || '—'}</span> · <span>{lastUpdatedTs ? timeAgo(lastUpdatedTs) : '—'}</span></>
             ) : <span>Last updated by: —</span>}
           </div>
         </div>
         <div className="flex flex-col items-end gap-1 shrink-0">
           <div className="flex flex-wrap justify-end gap-1">
-            <span className={classNames('inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold', priority.cls)}>{priority.text}</span>
-            <span className={classNames('inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold', mode.cls)}>{mode.text}</span>
+            <span className={classNames('inline-flex items-center rounded-full px-2 py-0.5 text-xs font-bold', priority.cls)}>{priority.text}</span>
+            <span className={classNames('inline-flex items-center rounded-full px-2 py-0.5 text-xs font-bold', mode.cls)}>{mode.text}</span>
           </div>
           <div className="flex flex-wrap justify-end gap-1">
-            <span className={classNames('inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold', rms.cls)}>{rms.text}</span>
-            <span className={classNames('inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold', risk.cls)}>{risk.text}</span>
+            <span className={classNames('inline-flex items-center rounded-full px-2 py-0.5 text-xs font-bold', rms.cls)}>{rms.text}</span>
+            <span className={classNames('inline-flex items-center rounded-full px-2 py-0.5 text-xs font-bold', risk.cls)}>{risk.text}</span>
           </div>
         </div>
       </div>
       <JobProgress stage={job.stage} />
       <div className="mt-2 flex items-center justify-between gap-2 flex-wrap">
-        <div className="text-[10px] text-slate-400">
-          <span className="text-slate-500 font-medium">{assignedName}</span> · {job.destination || '—'} ·{' '}
+        <div className="text-xs text-[#8a96a8]">
+          <span className="text-[#4a5568] font-medium">{assignedName}</span> · {job.destination || '—'} ·{' '}
           <span className={classNames(daysOld >= 4 ? 'text-red-600 font-semibold' : daysOld >= 2 ? 'text-amber-700 font-semibold' : '')}>{daysOld}d old</span>
           {job.delay_reason ? <> · <span className="text-amber-700 font-semibold">{job.delay_reason}</span></> : null}
         </div>
@@ -549,7 +591,9 @@ function JobDetailView({ job, profiles, currentUserName, isAdmin, canUpdateStage
     { key: 'goods', label: 'Goods', value: displayValue(job.goods) },
     { key: 'bl_no', label: 'BL Number', value: displayValue(job.bl_no) },
     { key: 'be_no', label: 'BE Number', value: displayValue(job.be_no) },
+    { key: 'be_date', label: 'BE Date', value: formatDateSlash(job.be_date) },
     { key: 'containers', label: 'Containers', value: displayValue(job.containers) },
+    { key: 'container_size', label: 'Container Size', value: displayValue(job.container_size) },
     { key: 'shipping_line', label: 'Shipping Line', value: displayValue(job.shipping_line) },
     { key: 'vessel', label: 'Vessel / Flight', value: displayValue(job.vessel) },
     { key: 'eta', label: 'ETA', value: formatDateSlash(job.eta) },
@@ -563,7 +607,6 @@ function JobDetailView({ job, profiles, currentUserName, isAdmin, canUpdateStage
     { key: 'detention_risk', label: 'Detention Risk', value: displayValue(job.detention_risk) },
     { key: 'stage', label: 'Current Stage', value: `${stage} — ${stageName}` },
     { key: 'delay_reason', label: 'Delay Reason', value: displayValue(job.delay_reason) },
-    { key: 'assigned_to', label: 'Assigned To', value: assignedName },
     { key: 'created_by', label: 'Created By', value: job.created_by ? profiles[job.created_by] ?? job.created_by : '—' },
     { key: 'created_at', label: 'Created At', value: formatDateTime(job.created_at) },
     { key: 'updated_at', label: 'Updated At', value: formatDateTime(job.updated_at) },
@@ -583,13 +626,13 @@ function JobDetailView({ job, profiles, currentUserName, isAdmin, canUpdateStage
     try {
       const updates = {}
       const newMeta = { ...(meta || {}) }
-      const candidates = ['job_no','client','mode','bl_no','containers','shipping_line','vessel','eta','cfs_name','be_no','hs_code','rms_status','bg_required','cfs_amount','destination','priority','goods','free_days','detention_risk','delay_reason','notes']
+      const candidates = ['job_no','client','mode','bl_no','containers','container_size','shipping_line','vessel','eta','cfs_name','be_no','be_date','hs_code','rms_status','bg_required','cfs_amount','destination','priority','goods','free_days','detention_risk','delay_reason','notes']
       candidates.forEach((k) => {
         if (!canEditField(k)) return
         const prev = job[k]
         let next = form[k]
         if (k === 'free_days' || k === 'cfs_amount') next = next === '' || next === null || next === undefined ? null : Number(next)
-        if (k === 'eta') next = next ? next : null
+        if (k === 'eta' || k === 'be_date') next = next ? next : null
         if (typeof next === 'string') { next = next.trim(); if (next === '') next = null }
         if ((prev ?? null) !== (next ?? null)) { updates[k] = next; newMeta[k] = { by: currentUserName, ts: Date.now() } }
       })
@@ -621,7 +664,7 @@ function JobDetailView({ job, profiles, currentUserName, isAdmin, canUpdateStage
     finally { setStageUpdating(false) }
   }
 
-  const inputBase = 'w-full h-9 px-3 text-xs rounded-lg border border-slate-200 bg-slate-50 text-slate-900 outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-300 disabled:opacity-60 disabled:cursor-not-allowed'
+  const inputBase = 'w-full h-9 px-3 py-2 text-xs rounded-lg bg-white border-[1.5px] border-[#e2e6ed] text-[#1a2233] outline-none focus:border-[#1a4fa0] focus:ring-2 focus:ring-[#e8eef8] disabled:opacity-60 disabled:cursor-not-allowed'
 
   const renderFieldInput = (key) => {
     const disabled = !canEditField(key) || saving
@@ -631,6 +674,16 @@ function JobDetailView({ job, profiles, currentUserName, isAdmin, canUpdateStage
     if (key === 'rms_status') return <select value={value||'pending'} onChange={updateForm(key)} disabled={disabled} className={inputBase}><option value="pending">pending</option><option value="rms">rms</option><option value="apr">apr</option><option value="acl">acl</option><option value="check">check</option><option value="hold">hold</option></select>
     if (key === 'bg_required') return <select value={value||'no'} onChange={updateForm(key)} disabled={disabled} className={inputBase}><option value="no">no</option><option value="yes">yes</option><option value="100percent">100percent</option></select>
     if (key === 'detention_risk') return <select value={value||'low'} onChange={updateForm(key)} disabled={disabled} className={inputBase}><option value="low">low</option><option value="medium">medium</option><option value="high">high</option></select>
+    if (key === 'be_date') return <input type="date" value={value||''} onChange={updateForm(key)} disabled={disabled} className={inputBase} />
+    if (key === 'container_size') {
+      return (
+        <select value={value || ''} onChange={updateForm(key)} disabled={disabled} className={inputBase}>
+          <option value="">— Select —</option>
+          <option value="20 Feet">20 Feet</option>
+          <option value="40 Feet">40 Feet</option>
+        </select>
+      )
+    }
     if (key === 'eta') return <input type="date" value={value||''} onChange={updateForm(key)} disabled={disabled} className={inputBase} />
     if (key === 'free_days' || key === 'cfs_amount') return <input type="number" value={value??''} onChange={updateForm(key)} disabled={disabled} className={inputBase} />
     if (key === 'shipping_line') {
@@ -662,34 +715,34 @@ function JobDetailView({ job, profiles, currentUserName, isAdmin, canUpdateStage
   }
 
   return (
-    <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
-      <div className="px-4 sm:px-6 py-4 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
-        <button type="button" onClick={onBack} className="h-9 px-3 text-xs rounded-lg border border-slate-300 bg-slate-50 text-slate-700 hover:bg-slate-100 font-semibold">
+    <div className="bg-white border-[1.5px] border-[#e2e6ed] rounded-xl shadow-sm overflow-hidden">
+      <div className="px-4 sm:px-6 py-4 border-b border-[#e2e6ed] flex flex-wrap items-center justify-between gap-3">
+        <button type="button" onClick={onBack} className="h-9 px-3 text-xs rounded-lg bg-white border-[1.5px] border-[#d0d6e0] text-[#4a5568] hover:border-[#1a4fa0] hover:text-[#1a4fa0] hover:bg-[#e8eef8] font-semibold">
           &larr; Back to Jobs
         </button>
         <div className="flex-1 min-w-0">
-          <div className="text-sm sm:text-base font-extrabold text-slate-900 truncate">{job.job_no} &mdash; {job.client}</div>
+          <div className="text-sm sm:text-base font-extrabold text-[#1a2233] truncate">{job.job_no} &mdash; {job.client}</div>
           <div className="mt-1 flex flex-wrap gap-2">
-            <span className={classNames('inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold', priority.cls)}>{priority.text}</span>
-            <span className={classNames('inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold', mode.cls)}>{mode.text}</span>
+            <span className={classNames('inline-flex items-center rounded-full px-2 py-0.5 text-xs font-bold', priority.cls)}>{priority.text}</span>
+            <span className={classNames('inline-flex items-center rounded-full px-2 py-0.5 text-xs font-bold', mode.cls)}>{mode.text}</span>
           </div>
         </div>
         <div className="flex items-center gap-2">
           {!editMode ? (
             <>
-              <button type="button" onClick={() => setEditMode(true)} className="h-9 px-4 text-xs rounded-lg bg-[#1e3a5f] text-white hover:bg-[#16304f] font-semibold">Edit</button>
+              <button type="button" onClick={() => setEditMode(true)} className="h-9 px-4 text-xs rounded-lg bg-[#1a4fa0] text-white hover:bg-[#153d82] font-semibold">Edit</button>
               <select disabled={!canUpdateStage||stageUpdating} value={stage} onChange={handleStageChange}
-                className={classNames('h-9 px-3 text-xs rounded-lg border border-slate-200 bg-slate-50 text-slate-900 outline-none', (!canUpdateStage||stageUpdating)?'opacity-60 cursor-not-allowed':'hover:bg-slate-100')}>
+                className={classNames('h-9 px-3 text-xs rounded-lg bg-white border-[1.5px] border-[#e2e6ed] text-[#4a5568] outline-none focus:border-[#1a4fa0]', (!canUpdateStage||stageUpdating)?'opacity-60 cursor-not-allowed':'hover:border-[#1a4fa0]')}>
                 {STAGE_LIST.map((s) => <option key={s.value} value={s.value}>{s.value} — {s.label}</option>)}
               </select>
-              <span className="text-[10px] text-slate-400 font-semibold">Update Stage</span>
+              <span className="text-xs text-[#8a96a8] font-semibold">Update Stage</span>
             </>
           ) : (
             <>
               <button type="button" disabled={saving} onClick={() => { setEditMode(false); setForm({...job}) }}
-                className="h-9 px-4 text-xs rounded-lg border border-slate-300 bg-slate-50 text-slate-700 hover:bg-slate-100 font-semibold disabled:opacity-60">Cancel</button>
+                className="h-9 px-4 text-xs rounded-lg bg-white border-[1.5px] border-[#d0d6e0] text-[#4a5568] hover:border-[#1a4fa0] hover:text-[#1a4fa0] hover:bg-[#e8eef8] font-semibold disabled:opacity-60">Cancel</button>
               <button type="button" disabled={saving} onClick={handleSave}
-                className="h-9 px-4 text-xs rounded-lg bg-blue-600 text-white hover:bg-blue-700 font-semibold disabled:opacity-60 inline-flex items-center gap-2">
+                className="h-9 px-4 text-xs rounded-lg bg-[#1a4fa0] text-white hover:bg-[#153d82] font-semibold disabled:opacity-60 inline-flex items-center gap-2">
                 {saving && <span className="h-3.5 w-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />}
                 Save
               </button>
@@ -698,17 +751,17 @@ function JobDetailView({ job, profiles, currentUserName, isAdmin, canUpdateStage
         </div>
       </div>
 
-      <div className="px-4 sm:px-6 py-4 border-b border-slate-200 bg-slate-50/60">
+      <div className="px-4 sm:px-6 py-4 border-b border-[#e2e6ed] bg-[#f8f9fb]">
         <div className="flex items-center justify-between gap-3 mb-2">
-          <div className="text-xs font-semibold text-slate-500 truncate">{stageName}</div>
-          <div className="text-xs font-semibold text-slate-400">{pct}%</div>
+          <div className="text-sm font-medium text-[#4a5568] truncate">{stageName}</div>
+          <div className="text-xs text-[#8a96a8]">{pct}%</div>
         </div>
-        <div className="h-2 bg-slate-200 rounded overflow-hidden">
+        <div className="h-2 bg-[#e2e6ed] border border-[#e2e6ed] rounded overflow-hidden">
           <div className={classNames('h-full rounded', progressColor(stage))} style={{ width: `${pct}%` }} />
         </div>
       </div>
 
-      <div className="px-4 sm:px-6 py-4 border-b border-slate-200">
+      <div className="px-4 sm:px-6 py-4 border-b border-[#e2e6ed]">
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
           <MiniStatus title="CUSTOMS" value={job.rms_status ? String(job.rms_status).toUpperCase() : '—'} tone="blue" />
           <MiniStatus title="CFS" value={cfsDisplay} tone="amber" />
@@ -718,17 +771,17 @@ function JobDetailView({ job, profiles, currentUserName, isAdmin, canUpdateStage
       </div>
 
       <div className="px-4 sm:px-6 py-5">
-        <h3 className="text-sm font-semibold text-slate-900 mb-3">Job Details</h3>
+        <h3 className="text-sm font-semibold text-[#1a2233] mb-3">Job Details</h3>
         {!editMode ? (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-5">
             {fieldRows.map((f) => <DetailField key={f.key} label={f.label} value={f.value} meta={meta?.[f.key]} profiles={profiles} />)}
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-5">
-            {['job_no','client','mode','priority','goods','bl_no','be_no','containers','shipping_line','vessel','eta','cfs_name','cfs_amount','hs_code','rms_status','bg_required','destination','free_days','detention_risk','delay_reason','notes'].map((k) => (
+            {['job_no','client','mode','priority','goods','bl_no','be_no','be_date','containers','container_size','shipping_line','vessel','eta','cfs_name','cfs_amount','hs_code','rms_status','bg_required','destination','free_days','detention_risk','delay_reason','notes'].map((k) => (
               <div key={k} className={k === 'notes' ? 'md:col-span-2' : ''}>
                 <div className="flex items-center flex-wrap gap-1 mb-1">
-                  <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide">{FIELD_LABELS[k] || k}</p>
+                  <p className="text-xs text-[#8a96a8] font-medium uppercase tracking-wide">{FIELD_LABELS[k] || k}</p>
                   <FieldMetaChip meta={meta?.[k]} profiles={profiles} />
                 </div>
                 {renderFieldInput(k)}
@@ -739,11 +792,11 @@ function JobDetailView({ job, profiles, currentUserName, isAdmin, canUpdateStage
       </div>
 
       <div className="px-4 sm:px-6 pb-6">
-        <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm w-full">
-          <div className="px-4 py-3 border-b border-slate-200 flex items-center justify-between gap-3">
-            <div className="text-sm font-semibold text-slate-900">Field Accountability</div>
+        <div className="bg-white border border-[#e2e6ed] rounded-xl overflow-hidden shadow-sm w-full">
+          <div className="px-4 py-3 border-b border-[#e2e6ed] flex items-center justify-between gap-3">
+<div className="text-sm font-semibold text-[#1a2233]">Field Accountability</div>
             <div className="flex items-center gap-3">
-              <div className="text-xs text-slate-400">Who updated what</div>
+              <div className="text-xs text-[#8a96a8]">Who updated what</div>
               {metaEntries.length > 5 && (
                 <button type="button" onClick={() => setShowFullAccountability(true)} className="text-xs font-semibold text-blue-700 hover:text-blue-800">
                   View Full List
@@ -753,22 +806,22 @@ function JobDetailView({ job, profiles, currentUserName, isAdmin, canUpdateStage
           </div>
           <div className="max-h-[228px] overflow-y-auto">
           <table className="w-full table-fixed text-xs">
-            <thead className="sticky top-0 z-10 bg-slate-50 text-slate-500">
+            <thead className="sticky top-0 z-10 bg-[#f8f9fb] text-[#8a96a8]">
               <tr>
-                <th className="w-[36%] text-left px-4 py-2 font-semibold uppercase tracking-wide text-[10px]">Field Name</th>
-                <th className="w-[32%] text-left px-4 py-2 font-semibold uppercase tracking-wide text-[10px]">Updated By</th>
-                <th className="w-[32%] text-left px-4 py-2 font-semibold uppercase tracking-wide text-[10px]">When</th>
+                <th className="w-[36%] text-left px-4 py-3 font-semibold uppercase tracking-wide text-xs">Field Name</th>
+                <th className="w-[32%] text-left px-4 py-3 font-semibold uppercase tracking-wide text-xs">Updated By</th>
+                <th className="w-[32%] text-left px-4 py-3 font-semibold uppercase tracking-wide text-xs">When</th>
               </tr>
             </thead>
             <tbody>
               {metaEntries.length ? metaEntries.map((m) => (
-                <tr key={m.key} className="border-t border-slate-100">
-                  <td className="px-4 py-2 text-slate-700 truncate" title={m.label}>{m.label}</td>
-                  <td className="px-4 py-2 text-slate-900 font-semibold truncate" title={profiles[m.by] || m.by}>{profiles[m.by] || m.by}</td>
-                  <td className="px-4 py-2 text-slate-500">{formatAccountabilityWhen(m.ts)}</td>
+                <tr key={m.key} className="border-t border-[#e2e6ed]">
+                  <td className="px-4 py-2 text-[#4a5568] truncate" title={m.label}>{m.label}</td>
+                  <td className="px-4 py-2 text-[#1a2233] font-semibold truncate" title={profiles[m.by] || m.by}>{profiles[m.by] || m.by}</td>
+                  <td className="px-4 py-2 text-[#8a96a8]">{formatAccountabilityWhen(m.ts)}</td>
                 </tr>
               )) : (
-                <tr><td colSpan={3} className="px-4 py-8 text-center text-slate-400">No field updates logged yet</td></tr>
+                <tr><td colSpan={3} className="px-4 py-8 text-center text-[#8a96a8]">No field updates logged yet</td></tr>
               )}
             </tbody>
           </table>
@@ -777,33 +830,33 @@ function JobDetailView({ job, profiles, currentUserName, isAdmin, canUpdateStage
       </div>
 
       {showFullAccountability && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/35 px-4">
-          <div className="w-full max-w-3xl max-h-[82vh] overflow-hidden rounded-xl bg-white shadow-2xl border border-slate-200">
-            <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between gap-3">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm px-4">
+          <div className="w-full max-w-3xl max-h-[82vh] overflow-hidden rounded-xl bg-white shadow-2xl border border-[#e2e6ed]">
+            <div className="px-5 py-4 border-b border-[#e2e6ed] flex items-center justify-between gap-3">
               <div>
-                <div className="text-base font-semibold text-slate-900">Field Accountability</div>
-                <div className="text-xs text-slate-500">{metaEntries.length} updates shown in IST</div>
+                <div className="text-base font-semibold text-[#1a2233]">Field Accountability</div>
+                <div className="text-xs text-[#8a96a8]">{metaEntries.length} updates shown in IST</div>
               </div>
               <button type="button" onClick={() => setShowFullAccountability(false)}
-                className="h-8 px-3 text-xs rounded-lg border border-slate-300 bg-slate-50 text-slate-700 hover:bg-slate-100 font-semibold">
+                className="h-8 px-3 text-xs rounded-lg bg-white border-[1.5px] border-[#d0d6e0] text-[#4a5568] hover:border-[#1a4fa0] hover:text-[#1a4fa0] hover:bg-[#e8eef8] font-semibold">
                 Close
               </button>
             </div>
             <div className="max-h-[68vh] overflow-y-auto">
               <table className="w-full table-fixed text-xs">
-                <thead className="sticky top-0 z-10 bg-slate-50 text-slate-500">
+                <thead className="sticky top-0 z-10 bg-[#f8f9fb] text-[#8a96a8]">
                   <tr>
-                    <th className="w-[36%] text-left px-5 py-2 font-semibold uppercase tracking-wide text-[10px]">Field Name</th>
-                    <th className="w-[32%] text-left px-5 py-2 font-semibold uppercase tracking-wide text-[10px]">Updated By</th>
-                    <th className="w-[32%] text-left px-5 py-2 font-semibold uppercase tracking-wide text-[10px]">When</th>
+                    <th className="w-[36%] text-left px-5 py-3 font-semibold uppercase tracking-wide text-xs">Field Name</th>
+                    <th className="w-[32%] text-left px-5 py-3 font-semibold uppercase tracking-wide text-xs">Updated By</th>
+                    <th className="w-[32%] text-left px-5 py-3 font-semibold uppercase tracking-wide text-xs">When</th>
                   </tr>
                 </thead>
                 <tbody>
                   {metaEntries.map((m) => (
-                    <tr key={m.key} className="border-t border-slate-100">
-                      <td className="px-5 py-2 text-slate-700">{m.label}</td>
-                      <td className="px-5 py-2 text-slate-900 font-semibold">{profiles[m.by] || m.by}</td>
-                      <td className="px-5 py-2 text-slate-500">{formatAccountabilityWhen(m.ts)}</td>
+                    <tr key={m.key} className="border-t border-[#e2e6ed]">
+                      <td className="px-5 py-2 text-[#4a5568]">{m.label}</td>
+                      <td className="px-5 py-2 text-[#1a2233] font-semibold">{profiles[m.by] || m.by}</td>
+                      <td className="px-5 py-2 text-[#8a96a8]">{formatAccountabilityWhen(m.ts)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -819,9 +872,9 @@ function JobDetailView({ job, profiles, currentUserName, isAdmin, canUpdateStage
         </div>
       )}
       {job.notes?.trim() && (
-        <div className="mx-4 sm:mx-6 mb-6 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
-          <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-1">Notes</p>
-          <p className="text-sm text-slate-700 whitespace-pre-wrap">{job.notes}</p>
+        <div className="mx-4 sm:mx-6 mb-6 rounded-lg border border-[#e2e6ed] bg-white px-4 py-3">
+          <p className="text-xs font-semibold text-[#8a96a8] uppercase tracking-wide mb-1">Notes</p>
+          <p className="text-sm text-[#4a5568] whitespace-pre-wrap">{job.notes}</p>
         </div>
       )}
 
@@ -833,6 +886,295 @@ function JobDetailView({ job, profiles, currentUserName, isAdmin, canUpdateStage
       </div>
     </div>
   )
+}
+
+const EXTRACTION_PROMPT = `You are a customs documentation expert for JDS Logistics, a licensed Customs House Agent (CHA) in Mumbai, India. We clear shipments at JNPT, MBPT, and MIAL.
+
+I am uploading shipping documents for a shipment job. These may include a Bill of Lading, Commercial Invoice, Packing List, Certificate of Origin, Insurance Certificate, or other trade documents.
+
+Extract ALL available shipment data from ALL uploaded documents and intelligently combine them into one unified shipment dataset.
+
+Return ONLY a valid JSON object. No markdown, no backticks, no explanation. Just raw JSON.
+
+For each field provide:
+- value: extracted string or null if not found
+- confidence: "high", "medium", or "low"
+- source: document type e.g. "BL", "Invoice", "Packing List", "COO", "Insurance"
+
+{
+  "bl_number": {"value":null,"confidence":"low","source":null},
+  "bl_date": {"value":null,"confidence":"low","source":null},
+  "vessel_name": {"value":null,"confidence":"low","source":null},
+  "voyage_number": {"value":null,"confidence":"low","source":null},
+  "container_numbers": {"value":null,"confidence":"low","source":null},
+  "container_size": {"value":null,"confidence":"low","source":null},
+  "seal_numbers": {"value":null,"confidence":"low","source":null},
+  "port_of_loading": {"value":null,"confidence":"low","source":null},
+  "port_of_discharge": {"value":null,"confidence":"low","source":null},
+  "place_of_delivery": {"value":null,"confidence":"low","source":null},
+  "shipper_name": {"value":null,"confidence":"low","source":null},
+  "shipper_address": {"value":null,"confidence":"low","source":null},
+  "consignee_name": {"value":null,"confidence":"low","source":null},
+  "consignee_address": {"value":null,"confidence":"low","source":null},
+  "notify_party": {"value":null,"confidence":"low","source":null},
+  "freight_terms": {"value":null,"confidence":"low","source":null},
+  "shipment_terms": {"value":null,"confidence":"low","source":null},
+  "number_of_packages": {"value":null,"confidence":"low","source":null},
+  "package_type": {"value":null,"confidence":"low","source":null},
+  "gross_weight": {"value":null,"confidence":"low","source":null},
+  "net_weight": {"value":null,"confidence":"low","source":null},
+  "volume_cbm": {"value":null,"confidence":"low","source":null},
+  "invoice_number": {"value":null,"confidence":"low","source":null},
+  "invoice_date": {"value":null,"confidence":"low","source":null},
+  "invoice_value": {"value":null,"confidence":"low","source":null},
+  "currency": {"value":null,"confidence":"low","source":null},
+  "country_of_origin": {"value":null,"confidence":"low","source":null},
+  "hs_code": {"value":null,"confidence":"low","source":null},
+  "goods_description": {"value":null,"confidence":"low","source":null},
+  "goods_description_detailed": {"value":null,"confidence":"low","source":null},
+  "coo_certificate_number": {"value":null,"confidence":"low","source":null},
+  "coo_issuing_authority": {"value":null,"confidence":"low","source":null},
+  "insurance_policy_number": {"value":null,"confidence":"low","source":null},
+  "insurance_value": {"value":null,"confidence":"low","source":null},
+  "insurance_company": {"value":null,"confidence":"low","source":null},
+  "iec_code": {"value":null,"confidence":"low","source":null},
+  "ad_code": {"value":null,"confidence":"low","source":null},
+  "gstin": {"value":null,"confidence":"low","source":null},
+  "pan_number": {"value":null,"confidence":"low","source":null},
+  "bank_name": {"value":null,"confidence":"low","source":null},
+  "lc_number": {"value":null,"confidence":"low","source":null},
+  "marks_and_numbers": {"value":null,"confidence":"low","source":null}
+}`
+
+const FIELD_LABELS_OCR = {
+  bl_number: 'BL Number', bl_date: 'BL Date', vessel_name: 'Vessel Name', voyage_number: 'Voyage Number',
+  container_numbers: 'Container Numbers', container_size: 'Container Size', seal_numbers: 'Seal Numbers',
+  port_of_loading: 'Port of Loading', port_of_discharge: 'Port of Discharge', place_of_delivery: 'Place of Delivery',
+  shipper_name: 'Shipper Name', shipper_address: 'Shipper Address', consignee_name: 'Consignee Name',
+  consignee_address: 'Consignee Address', notify_party: 'Notify Party',
+  freight_terms: 'Freight Terms', shipment_terms: 'Shipment Terms',
+  number_of_packages: 'Number of Packages', package_type: 'Package Type',
+  gross_weight: 'Gross Weight', net_weight: 'Net Weight', volume_cbm: 'Volume (CBM)',
+  invoice_number: 'Invoice Number', invoice_date: 'Invoice Date', invoice_value: 'Invoice Value',
+  currency: 'Currency', country_of_origin: 'Country of Origin', hs_code: 'HS Code',
+  goods_description: 'Goods Description', goods_description_detailed: 'Goods Description (Detailed)',
+  coo_certificate_number: 'COO Certificate Number', coo_issuing_authority: 'COO Issuing Authority',
+  insurance_policy_number: 'Insurance Policy Number', insurance_value: 'Insurance Value',
+  insurance_company: 'Insurance Company', iec_code: 'IEC Code', ad_code: 'AD Code',
+  gstin: 'GSTIN', pan_number: 'PAN Number', bank_name: 'Bank Name', lc_number: 'LC Number',
+  marks_and_numbers: 'Marks & Numbers',
+}
+
+const OCR_SECTIONS = [
+  { title: 'Bill of Lading Details', fields: ['bl_number','bl_date','vessel_name','voyage_number','container_numbers','container_size','seal_numbers','port_of_loading','port_of_discharge','place_of_delivery','freight_terms','shipment_terms'] },
+  { title: 'Parties', fields: ['shipper_name','shipper_address','consignee_name','consignee_address','notify_party'] },
+  { title: 'Cargo Details', fields: ['goods_description','goods_description_detailed','hs_code','number_of_packages','package_type','gross_weight','net_weight','volume_cbm','country_of_origin','marks_and_numbers'] },
+  { title: 'Invoice & Finance', fields: ['invoice_number','invoice_date','invoice_value','currency','iec_code','ad_code','gstin','pan_number','bank_name','lc_number'] },
+  { title: 'COO & Insurance', fields: ['coo_certificate_number','coo_issuing_authority','insurance_policy_number','insurance_value','insurance_company'] },
+]
+
+async function urlToBase64(url) {
+  const response = await fetch(url)
+  const blob = await response.blob()
+  return new Promise((resolve) => {
+    const reader = new FileReader()
+    reader.onloadend = () => {
+      const base64 = reader.result.split(',')[1]
+      resolve({ base64, mimeType: blob.type })
+    }
+    reader.readAsDataURL(blob)
+  })
+}
+
+async function compressImage(base64, mimeType, maxWidth = 1000, quality = 0.6) {
+  return new Promise((resolve) => {
+    const img = new Image()
+    img.onload = () => {
+      let w = img.width; let h = img.height
+      if (w > maxWidth) { h = Math.round(h * (maxWidth / w)); w = maxWidth }
+      const canvas = document.createElement('canvas')
+      canvas.width = w; canvas.height = h
+      const ctx = canvas.getContext('2d')
+      ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high'
+      ctx.drawImage(img, 0, 0, w, h)
+      const compressed = canvas.toDataURL(mimeType || 'image/jpeg', quality).split(',')[1]
+      resolve({ base64: compressed, mimeType: mimeType || 'image/jpeg' })
+    }
+    img.src = `data:${mimeType || 'image/jpeg'};base64,${base64}`
+  })
+}
+
+async function pdfToImages(base64) {
+  const pdfjsLib = await import('pdfjs-dist')
+  pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl
+  const data = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0))
+  const pdf = await pdfjsLib.getDocument({ data }).promise
+  const maxPages = Math.min(pdf.numPages, 5)
+  const images = []
+  for (let i = 1; i <= maxPages; i++) {
+    const page = await pdf.getPage(i)
+    const viewport = page.getViewport({ scale: 1.2 })
+    const canvas = document.createElement('canvas')
+    canvas.width = Math.min(viewport.width, 1200)
+    canvas.height = Math.round(viewport.height * (Math.min(viewport.width, 1200) / viewport.width))
+    const ctx = canvas.getContext('2d')
+    ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high'
+    await page.render({ canvasContext: ctx, viewport }).promise
+    const imgBase64 = canvas.toDataURL('image/jpeg', 0.7).split(',')[1]
+    images.push({ base64: imgBase64, mimeType: 'image/jpeg' })
+  }
+  return images
+}
+
+async function withRetry(fn, maxRetries = 3, baseDelay = 2000) {
+  const rateLimitDelays = [3000, 6000, 12000]
+  let lastError
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await fn()
+    } catch (err) {
+      lastError = err
+      if (err.name === 'AbortError') throw new Error('Request timed out. Please try again.')
+      const isRateLimit = err.message?.includes('rate_limit') || err.message?.includes('Rate limit') || err.message?.includes('429')
+      if (isRateLimit) {
+        const delay = rateLimitDelays[attempt] || 12000
+        if (attempt < maxRetries) await new Promise((r) => setTimeout(r, delay))
+      } else if (attempt < maxRetries) {
+        await new Promise((r) => setTimeout(r, baseDelay * (attempt + 1)))
+      }
+    }
+  }
+  throw lastError
+}
+
+function mergeResults(results, rankMap = { high: 3, medium: 2, low: 1 }) {
+  const allKeys = Object.keys(results[0] || {})
+  const merged = {}
+  for (const key of allKeys) merged[key] = { value: null, confidence: null, source: null }
+  for (const partial of results) {
+    for (const key of allKeys) {
+      const field = partial[key]
+      if (!field || field.value === null || field.value === undefined || field.value === '') continue
+      const current = merged[key]
+      if (!current.value) {
+        merged[key] = { value: field.value, confidence: field.confidence, source: field.source || current.source }
+      } else if (key === 'container_numbers') {
+        const existing = String(current.value).split(',').map((s) => s.trim()).filter(Boolean)
+        const incoming = String(field.value).split(',').map((s) => s.trim()).filter(Boolean)
+        const combined = [...new Set([...existing, ...incoming])]
+        merged[key] = { value: combined.join(', '), confidence: 'medium', source: field.source || current.source }
+      } else {
+        const currRank = rankMap[current.confidence] || 0
+        const newRank = rankMap[field.confidence] || 0
+        if (newRank > currRank) {
+          merged[key] = { value: field.value, confidence: field.confidence, source: field.source || current.source }
+        }
+      }
+    }
+  }
+  return merged
+}
+
+async function groqExtract(imageChunks, prompt) {
+  const key = import.meta.env.VITE_GROQ_API_KEY
+  if (!key) throw new Error('Groq API key not configured.')
+  const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: 'meta-llama/llama-4-scout-17b-16e-instruct',
+      messages: [{ role: 'user', content: [
+        { type: 'text', text: prompt },
+        ...imageChunks.map((f) => ({
+          type: 'image_url',
+          image_url: { url: `data:${f.mimeType};base64,${f.base64}` },
+        })),
+      ]}],
+      max_tokens: 4096,
+      temperature: 0.1,
+    }),
+  })
+  if (!res.ok) {
+    const errBody = await res.json().catch(() => ({}))
+    const errMsg = errBody?.error?.message || `Groq API error ${res.status}`
+    if (res.status === 429 || errMsg.includes('rate_limit') || errMsg.includes('Rate limit')) throw new Error('Groq rate limit reached.')
+    if (res.status === 503 || errMsg.includes('unavailable')) throw new Error('Groq service temporarily unavailable.')
+    throw new Error(errMsg)
+  }
+  const data = await res.json()
+  const choice = data?.choices?.[0]
+  if (!choice) throw new Error('Groq returned no choices.')
+  const msg = choice.message || {}
+  if (msg.refusal) throw new Error(`Model refused: ${msg.refusal}`)
+  let raw = msg.content
+  if (Array.isArray(raw)) raw = raw.map((p) => (p.type === 'text' ? p.text : '')).filter(Boolean).join('\n')
+  if (!raw) throw new Error('Groq returned empty response.')
+  const cleaned = raw.replace(/```(?:json)?\s*/gi, '').replace(/```/g, '').trim()
+  return JSON.parse(cleaned)
+}
+
+async function geminiExtract(imageChunks, prompt) {
+  const key = import.meta.env.VITE_GEMINI_API_KEY
+  if (!key) throw new Error('Gemini API key not configured.')
+  const parts = [{ text: prompt }]
+  for (const img of imageChunks) {
+    parts.push({ inline_data: { mime_type: img.mimeType || 'image/jpeg', data: img.base64 } })
+  }
+  const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${key}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ contents: [{ parts }] }),
+  })
+  if (!res.ok) {
+    const errBody = await res.json().catch(() => ({}))
+    throw new Error(errBody?.error?.message || `Gemini API error ${res.status}`)
+  }
+  const data = await res.json()
+  const text = data?.candidates?.[0]?.content?.parts?.map((p) => p.text).filter(Boolean).join('\n')
+  if (!text) throw new Error('Gemini returned empty response.')
+  const cleaned = text.replace(/```(?:json)?\s*/gi, '').replace(/```/g, '').trim()
+  return JSON.parse(cleaned)
+}
+
+async function extractWithFallback(docs, prompt) {
+  const allImages = []
+  for (const doc of docs) {
+    const { base64, mimeType } = await urlToBase64(doc.file_url)
+    if (mimeType === 'application/pdf' || doc.file_name?.toLowerCase().endsWith('.pdf')) {
+      const pages = await pdfToImages(base64)
+      allImages.push(...pages)
+    } else {
+      const compressed = await compressImage(base64, mimeType)
+      allImages.push({ base64: compressed.base64, mimeType: compressed.mimeType })
+    }
+  }
+  const MAX_IMAGES_PER_REQUEST = 5
+  const chunks = []
+  for (let i = 0; i < allImages.length; i += MAX_IMAGES_PER_REQUEST) {
+    chunks.push(allImages.slice(i, i + MAX_IMAGES_PER_REQUEST))
+  }
+  try {
+    const allResults = []
+    for (let ci = 0; ci < chunks.length; ci++) {
+      if (ci > 0) await new Promise((r) => setTimeout(r, 2000 + Math.random() * 2000))
+      const parsed = await withRetry(() => groqExtract(chunks[ci], prompt), 2, 1500)
+      allResults.push(parsed)
+    }
+    return { result: mergeResults(allResults), provider: 'groq' }
+  } catch (groqError) {
+    console.warn('Groq failed, trying Gemini fallback:', groqError.message)
+    try {
+      const allResults = []
+      for (let ci = 0; ci < chunks.length; ci++) {
+        if (ci > 0) await new Promise((r) => setTimeout(r, 2000 + Math.random() * 2000))
+        const parsed = await withRetry(() => geminiExtract(chunks[ci], prompt), 2, 2000)
+        allResults.push(parsed)
+      }
+      return { result: mergeResults(allResults), provider: 'gemini' }
+    } catch (geminiError) {
+      throw new Error(`Both Groq and Gemini failed. Groq: ${groqError.message} | Gemini: ${geminiError.message}`)
+    }
+  }
 }
 
 function DocumentsSection({ jobs, profiles, currentUserName, showToast }) {
@@ -848,350 +1190,22 @@ function DocumentsSection({ jobs, profiles, currentUserName, showToast }) {
   const [uploadDocType, setUploadDocType] = useState('BL')
   const [uploadFile, setUploadFile] = useState(null)
   const [docSearch, setDocSearch] = useState('')
-  const [extractModal, setExtractModal] = useState({ open: false, job: null })
-  const [extracting, setExtracting] = useState(false)
-  const [extractedFields, setExtractedFields] = useState(null)
-  const [extractEdits, setExtractEdits] = useState(null)
-  const [extractError, setExtractError] = useState(null)
-  const [extractProgress, setExtractProgress] = useState('')
   const fileInputRef = useRef(null)
-
-  const EXTRACT_FIELDS = [
-    'bl_number','bl_date','vessel_name','voyage_number','container_numbers',
-    'port_of_loading','port_of_discharge','shipper_name','consignee_name','notify_party',
-    'hs_code','goods_description','invoice_number','invoice_date',
-    'invoice_value','currency','shipment_terms','country_of_origin',
-    'number_of_packages','gross_weight','net_weight',
-  ]
-
-  const EXTRACT_LABELS = {
-    bl_number:'BL No',bl_date:'BL Date',vessel_name:'Vessel',voyage_number:'Voyage',
-    container_numbers:'Containers',port_of_loading:'Port of Loading',port_of_discharge:'Port of Discharge',
-    shipper_name:'Shipper',consignee_name:'Consignee',notify_party:'Notify Party',
-    hs_code:'HS Code',goods_description:'Goods Description',invoice_number:'Invoice No',
-    invoice_date:'Invoice Date',invoice_value:'Invoice Value',currency:'Currency',
-    shipment_terms:'Shipment Terms',country_of_origin:'Country of Origin',
-    number_of_packages:'Packages',gross_weight:'Gross Weight',net_weight:'Net Weight',
-  }
-
-  async function urlToBase64(url) {
-    const response = await fetch(url)
-    const blob = await response.blob()
-    return new Promise((resolve) => {
-      const reader = new FileReader()
-      reader.onloadend = () => {
-        const base64 = reader.result.split(',')[1]
-        resolve({ base64, mimeType: blob.type })
-      }
-      reader.readAsDataURL(blob)
-    })
-  }
-
-  const closeExtract = () => {
-    setExtractModal({ open: false, job: null })
-    setExtracting(false)
-    setExtractedFields(null)
-    setExtractEdits(null)
-    setExtractError(null)
-    setExtractProgress('')
-  }
-
-  async function compressImage(base64, mimeType, maxWidth = 1000, quality = 0.6) {
-    return new Promise((resolve) => {
-      const img = new Image()
-      img.onload = () => {
-        let w = img.width
-        let h = img.height
-        if (w > maxWidth) {
-          h = Math.round(h * (maxWidth / w))
-          w = maxWidth
-        }
-        const canvas = document.createElement('canvas')
-        canvas.width = w
-        canvas.height = h
-        const ctx = canvas.getContext('2d')
-        ctx.imageSmoothingEnabled = true
-        ctx.imageSmoothingQuality = 'high'
-        ctx.drawImage(img, 0, 0, w, h)
-        const compressed = canvas.toDataURL(mimeType || 'image/jpeg', quality).split(',')[1]
-        resolve({ base64: compressed, mimeType: mimeType || 'image/jpeg' })
-      }
-      img.src = `data:${mimeType || 'image/jpeg'};base64,${base64}`
-    })
-  }
-
-  const groqFetch = async (files, prompt, signal) => {
-    const key = import.meta.env.VITE_GROQ_API_KEY
-    if (!key) throw new Error('Groq API key is not configured. Please contact your administrator.')
-    const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${key}`,
-        'Content-Type': 'application/json',
-      },
-      signal,
-      body: JSON.stringify({
-        model: 'meta-llama/llama-4-scout-17b-16e-instruct',
-        messages: [{
-          role: 'user',
-          content: [
-            { type: 'text', text: prompt },
-            ...files.map((f) => ({
-              type: 'image_url',
-              image_url: { url: `data:${f.mimeType};base64,${f.base64}` },
-            })),
-          ],
-        }],
-        max_tokens: 4096,
-        temperature: 0.1,
-      }),
-    })
-    if (!res.ok) {
-      const errBody = await res.json().catch(() => ({}))
-      const errMsg = errBody?.error?.message || `Groq API error ${res.status}`
-      if (res.status === 429 || errMsg.includes('rate_limit') || errMsg.includes('Rate limit')) {
-        throw new Error('Groq rate limit reached. Please wait a moment and try again.')
-      }
-      if (res.status === 503 || errMsg.includes('unavailable') || errMsg.includes('overloaded')) {
-        throw new Error('Groq service is temporarily unavailable. Please try again later.')
-      }
-      throw new Error(errMsg)
-    }
-    const data = await res.json()
-    const choice = data?.choices?.[0]
-    const model = data?.model || 'unknown'
-    if (!choice) throw new Error('AI model returned no choices. Please try again.')
-    const msg = choice.message || {}
-    if (msg.refusal) throw new Error(`Model refused the request: ${msg.refusal}`)
-    let raw = msg.content
-    if (Array.isArray(raw)) {
-      raw = raw.map((p) => (p.type === 'text' ? p.text : '')).filter(Boolean).join('\n')
-    }
-    if (!raw) throw new Error('AI model returned an empty response. Please try again.')
-    return raw
-  }
-
-  const withRetry = async (fn, maxRetries = 3) => {
-    const rateLimitDelays = [3000, 6000, 12000]
-    let lastError
-    for (let attempt = 0; attempt <= maxRetries; attempt++) {
-      try {
-        return await fn()
-      } catch (err) {
-        lastError = err
-        if (err.name === 'AbortError') throw new Error('Request timed out after 120 seconds. Please try again.')
-        const isRateLimit = err.message?.includes('rate_limit') || err.message?.includes('Rate limit') || err.message?.includes('429')
-        if (isRateLimit) {
-          const delay = rateLimitDelays[attempt] || 12000
-          if (attempt < maxRetries) await new Promise((r) => setTimeout(r, delay))
-        } else if (attempt < maxRetries) {
-          await new Promise((r) => setTimeout(r, 2000 * (attempt + 1)))
-        }
-      }
-    }
-    throw lastError
-  }
-
-  const pdfToImages = async (base64) => {
-    const pdfjsLib = await import('pdfjs-dist')
-    pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl
-    const data = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0))
-    const pdf = await pdfjsLib.getDocument({ data }).promise
-    const maxPages = Math.min(pdf.numPages, 5)
-    const images = []
-    for (let i = 1; i <= maxPages; i++) {
-      const page = await pdf.getPage(i)
-      const viewport = page.getViewport({ scale: 1.2 })
-      const canvas = document.createElement('canvas')
-      canvas.width = Math.min(viewport.width, 1200)
-      canvas.height = Math.round(viewport.height * (Math.min(viewport.width, 1200) / viewport.width))
-      const ctx = canvas.getContext('2d')
-      ctx.imageSmoothingEnabled = true
-      ctx.imageSmoothingQuality = 'high'
-      await page.render({ canvasContext: ctx, viewport }).promise
-      const imgBase64 = canvas.toDataURL('image/jpeg', 0.7).split(',')[1]
-      images.push({ base64: imgBase64, mimeType: 'image/jpeg' })
-    }
-    return images
-  }
-
-  const runExtraction = async () => {
-    const job = extractModal.job
-    const key = import.meta.env.VITE_GROQ_API_KEY
-    if (!key) { setExtractError('Groq API key is not configured. Please contact your administrator.'); return }
-
-    setExtracting(true)
-    setExtractError(null)
-    setExtractedFields(null)
-    setExtractEdits(null)
-    setExtractProgress('Preparing document...')
-
-    try {
-      const docs = job.docs
-      const validTypes = ['pdf', 'jpg', 'jpeg', 'png']
-      const badDoc = docs.find((d) => !validTypes.includes((d.file_type || '').toLowerCase()))
-      if (badDoc) {
-        showToast(`Unsupported file type: ${badDoc.file_type}. Only PDF and image files can be processed.`, 'error')
-        setExtracting(false); return
-      }
-
-      const files = []
-      for (const doc of docs) {
-        setExtractProgress('Rendering PDF pages...')
-        const result = await urlToBase64(doc.file_url)
-        const isPdf = (doc.file_type || '').toLowerCase() === 'pdf'
-        if (isPdf) {
-          const pageImages = await pdfToImages(result.base64)
-          files.push(...pageImages)
-        } else {
-          const compressed = await compressImage(result.base64, result.mimeType)
-          files.push(compressed)
-        }
-      }
-
-      const MAX_IMAGES_PER_REQUEST = 5
-      const chunks = []
-      for (let i = 0; i < files.length; i += MAX_IMAGES_PER_REQUEST) {
-        chunks.push(files.slice(i, i + MAX_IMAGES_PER_REQUEST))
-      }
-
-      const prompt = `You are a customs documentation assistant for JDS Logistics, a CHA company in Mumbai, India. Extract shipment details from the uploaded logistics documents. Return ONLY valid JSON. Do not return markdown. Do not return explanations. For each field return: { "value": "...", "confidence": "high|medium|low" }. Fields: bl_number, bl_date, vessel_name, voyage_number, container_numbers, port_of_loading, port_of_discharge, shipper_name, consignee_name, notify_party, hs_code, goods_description, invoice_number, invoice_date, invoice_value, currency, shipment_terms, country_of_origin, number_of_packages, gross_weight, net_weight`
-
-      const controller = new AbortController()
-      const timeout = setTimeout(() => controller.abort(), 120000)
-
-      const allResults = []
-      for (let ci = 0; ci < chunks.length; ci++) {
-        setExtractProgress(`Extracting shipment data (batch ${ci + 1}/${chunks.length})...`)
-        if (ci > 0) {
-          const delay = 2000 + Math.random() * 2000
-          await new Promise((r) => setTimeout(r, delay))
-        }
-        const raw = await withRetry(() => groqFetch(chunks[ci], prompt, controller.signal))
-        const cleaned = raw.replace(/```(?:json)?\s*/gi, '').replace(/```/g, '').trim()
-        const parsed = JSON.parse(cleaned)
-        const partial = {}
-        for (const key of EXTRACT_FIELDS) {
-          const field = parsed[key] || {}
-          partial[key] = { value: field.value ?? null, confidence: field.confidence ?? null }
-        }
-        allResults.push(partial)
-      }
-      clearTimeout(timeout)
-
-      setExtractProgress('Formatting extracted fields...')
-
-      const merged = {}
-      for (const key of EXTRACT_FIELDS) {
-        merged[key] = { value: null, confidence: null }
-      }
-      const rankMap = { high: 3, medium: 2, low: 1 }
-      for (const partial of allResults) {
-        for (const key of EXTRACT_FIELDS) {
-          const field = partial[key]
-          if (!field || field.value === null || field.value === undefined || field.value === '') continue
-          const current = merged[key]
-          if (!current.value) {
-            merged[key] = { value: field.value, confidence: field.confidence }
-          } else if (key === 'container_numbers') {
-            const existing = String(current.value).split(',').map((s) => s.trim()).filter(Boolean)
-            const incoming = String(field.value).split(',').map((s) => s.trim()).filter(Boolean)
-            const combined = [...new Set([...existing, ...incoming])]
-            merged[key] = { value: combined.join(', '), confidence: 'medium' }
-          } else {
-            const currRank = rankMap[current.confidence] || 0
-            const newRank = rankMap[field.confidence] || 0
-            if (newRank > currRank) {
-              merged[key] = { value: field.value, confidence: field.confidence }
-            }
-          }
-        }
-      }
-
-      const nonNullCount = Object.values(merged).filter(
-        (f) => f && f.value !== null && f.value !== undefined && f.value !== ''
-      ).length
-      if (nonNullCount < 3) {
-        setExtractError(`This does not appear to be a shipping document. Only ${nonNullCount} field(s) could be extracted. Please upload a Bill of Lading, Commercial Invoice, Packing List, or Certificate of Origin.`)
-        setExtracting(false); return
-      }
-      if (nonNullCount < 8) {
-        showToast(`Low confidence extraction — only ${nonNullCount} of 27 fields found. Please verify this is the correct document and review all fields carefully.`, 'error')
-      }
-      setExtractedFields(merged)
-      setExtractEdits(JSON.parse(JSON.stringify(merged)))
-    } catch (err) {
-      if (err.message?.includes('Groq API error') || err.message?.includes('API error')) {
-        setExtractError(`Extraction failed: ${err.message}`)
-      } else if (err.message?.includes('Empty response') || err.message?.includes('returned an empty')) {
-        setExtractError(err.message)
-      } else if (err.name === 'AbortError' || err.message?.includes('timed out')) {
-        setExtractError('Request timed out after 120 seconds. Please try again.')
-      } else if (err.message?.includes('JSON') || err.message?.includes('parse') || err.message?.includes('Unexpected token')) {
-        setExtractError('Extraction failed — invalid response from AI. Please try again.')
-      } else {
-        setExtractError(err.message || 'Extraction failed')
-      }
-    } finally {
-      setExtracting(false)
-      setExtractProgress('')
-    }
-  }
-
-  const updateExtractField = (key) => (e) => {
-    setExtractEdits((prev) => ({ ...prev, [key]: { ...prev[key], value: e.target.value } }))
-  }
-
-  const confidenceColor = (value, confidence) => {
-    if (!value) return 'border-l-red-500 bg-red-50'
-    if (confidence === 'high') return 'border-l-green-500 bg-green-50/40'
-    if (confidence === 'medium') return 'border-l-amber-500 bg-amber-50/40'
-    return 'border-l-red-500 bg-red-50'
-  }
-
-  const downloadExcel = () => {
-    const job = extractModal.job
-    const headers = [
-      'Job No','Client','BL No','BL Date','Vessel','Voyage','Containers',
-      'Port of Loading','Port of Discharge','Shipper','Consignee','Notify Party',
-      'HS Code','Goods Description','Invoice No','Invoice Date','Invoice Value',
-      'Currency','Shipment Terms','Country of Origin','Packages','Gross Weight','Net Weight',
-    ]
-    const values = [job.job_no, job.client, ...EXTRACT_FIELDS.map((k) => extractEdits?.[k]?.value ?? '')]
-    const ws = XLSX.utils.aoa_to_sheet([headers, values])
-    const wb = XLSX.utils.book_new()
-    XLSX.utils.book_append_sheet(wb, ws, job.job_no || 'Extracted')
-    XLSX.writeFile(wb, `JDS_${job.job_no || 'Extract'}_Checklist.xlsx`)
-    showToast('Excel downloaded', 'success')
-  }
-
-  const summary = extractedFields
-    ? EXTRACT_FIELDS.reduce(
-        (acc, k) => {
-          const f = extractedFields[k]
-          if (!f?.value) acc.notFound++
-          else if (f.confidence === 'high') acc.high++
-          else acc.needsReview++
-          return acc
-        },
-        { high: 0, needsReview: 0, notFound: 0 }
-      )
-    : null
 
   const DOC_TYPES = ['BL', 'Invoice', 'Packing List', 'COO', 'Insurance', 'BE', 'Examination Order', 'OOC', 'E-Way Bill', 'POD', 'Other']
 
   const DOC_TYPE_COLORS = {
-    BL: 'bg-blue-100 text-blue-800',
-    Invoice: 'bg-green-100 text-green-800',
-    'Packing List': 'bg-teal-100 text-teal-800',
-    COO: 'bg-purple-100 text-purple-800',
-    Insurance: 'bg-amber-100 text-amber-800',
-    BE: 'bg-red-100 text-red-800',
-    'Examination Order': 'bg-orange-100 text-orange-800',
-    OOC: 'bg-emerald-100 text-emerald-800',
-    'E-Way Bill': 'bg-indigo-100 text-indigo-800',
-    POD: 'bg-gray-100 text-gray-800',
-    Other: 'bg-slate-100 text-slate-800',
+    BL: 'bg-[#eff6ff] text-[#1e40af] border border-[#bfdbfe]',
+    Invoice: 'bg-[#f0fdf4] text-[#15803d] border border-[#bbf7d0]',
+    'Packing List': 'bg-[#f0fdfa] text-[#0f766e] border border-[#99f6e4]',
+    COO: 'bg-[#f5f3ff] text-[#5b21b6] border border-[#ddd6fe]',
+    Insurance: 'bg-[#fffbeb] text-[#92400e] border border-[#fde68a]',
+    BE: 'bg-[#fef2f2] text-[#991b1b] border border-[#fecaca]',
+    'Examination Order': 'bg-[#fff7ed] text-[#c2410c] border border-[#fed7aa]',
+    OOC: 'bg-[#ecfdf5] text-[#065f46] border border-[#a7f3d0]',
+    'E-Way Bill': 'bg-[#eef2ff] text-[#3730a3] border border-[#c7d2fe]',
+    POD: 'bg-[#f9fafb] text-[#4a5568] border border-[#d0d6e0]',
+    Other: 'bg-[#f9fafb] text-[#4a5568] border border-[#d0d6e0]',
   }
 
   useEffect(() => {
@@ -1307,115 +1321,110 @@ function DocumentsSection({ jobs, profiles, currentUserName, showToast }) {
     const ext = (doc.file_type || '').toLowerCase()
     if (['pdf'].includes(ext)) return <span className="text-red-500 font-bold text-sm">PDF</span>
     if (['jpg', 'jpeg', 'png'].includes(ext)) return <span className="text-green-500 font-bold text-sm">IMG</span>
-    return <span className="text-slate-400 font-bold text-sm">DOC</span>
+    return <span className="text-[#8a96a8] font-bold text-sm">DOC</span>
   }
 
   const btnBase = 'h-8 px-3 text-xs rounded-lg font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed'
 
-  const selectBase = 'w-full h-9 px-3 text-xs rounded-lg border border-slate-200 bg-slate-50 text-slate-900 outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-300'
+  const selectBase = 'w-full h-9 px-3 text-xs rounded-lg bg-white border-[1.5px] border-[#e2e6ed] text-[#4a5568] outline-none focus:border-[#1a4fa0] focus:ring-2 focus:ring-[#e8eef8]'
 
   return (
     <div>
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-4">
         <div>
-          <div className="text-lg font-bold text-slate-900">Documents</div>
-          <div className="text-sm text-slate-400">Operational document register \u2014 all jobs</div>
+          <div className="text-lg font-bold text-[#1a2233]">Documents</div>
+          <div className="text-sm text-[#8a96a8]">Operational document register \u2014 all jobs</div>
         </div>
-        <div className="flex items-center h-9 px-3 bg-white border border-slate-200 rounded-lg min-w-[240px]">
+        <div className="flex items-center h-9 px-3 bg-[#f8f9fb] border-[1.5px] border-[#e2e6ed] rounded-lg min-w-[240px]">
           <input value={docSearch} onChange={(e) => setDocSearch(e.target.value)}
             placeholder="Search job no., client, file name..."
-            className="w-full bg-transparent outline-none text-sm text-slate-900 placeholder:text-slate-400" />
+            className="w-full bg-transparent outline-none text-sm text-[#1a2233] placeholder:text-[#8a96a8]" />
         </div>
       </div>
 
       {loadingDocs ? (
-        <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-10 flex justify-center">
+        <div className="bg-white border-[1.5px] border-[#e2e6ed] rounded-xl shadow-sm p-10 flex justify-center">
           <div className="h-9 w-9 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
         </div>
       ) : accordionItems.length === 0 ? (
-        <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-10 text-center text-slate-400">
+        <div className="bg-white border-[1.5px] border-[#e2e6ed] rounded-xl shadow-sm p-10 text-center text-[#8a96a8]">
           {docSearch.trim() ? 'No jobs match your search.' : 'No jobs found.'}
         </div>
       ) : (
-        <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+    <div className="bg-white border-[1.5px] border-[#e2e6ed] rounded-xl shadow-sm overflow-hidden">
           {accordionItems.map((job) => {
             const isExpanded = expandedJobId === job.id
             const docCount = job.docs.length
             return (
-              <div key={job.id} className="border-b border-slate-200 last:border-b-0">
+              <div key={job.id} className="border-b border-[#e2e6ed] last:border-b-0">
                 <div
                   role="button" tabIndex={0}
                   onClick={() => setExpandedJobId(isExpanded ? null : job.id)}
                   onKeyDown={(e) => { if (e.key === 'Enter') setExpandedJobId(isExpanded ? null : job.id) }}
-                  className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-slate-50 transition-colors"
+                  className="flex items-center gap-3 px-4 py-3 cursor-pointer bg-[#f8f9fb] hover:bg-[#e8eef8] border-b border-[#e2e6ed] transition-colors"
                 >
                   <div className="min-w-0 flex-1 flex items-center gap-2">
-                    <span className="text-sm font-bold text-slate-900">{job.job_no || '\u2014'}</span>
-                    <span className="text-xs text-slate-400 truncate">{job.client || ''}</span>
+                    <span className="text-sm font-bold text-[#1a2233]">{job.job_no || '\u2014'}</span>
+                    <span className="text-xs text-[#8a96a8] truncate">{job.client || ''}</span>
                   </div>
-                  <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold whitespace-nowrap ${docCount > 0 ? 'bg-blue-100 text-blue-800' : 'bg-slate-100 text-slate-500'}`}>
+                  <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-bold whitespace-nowrap ${docCount > 0 ? 'bg-blue-100 text-blue-800' : 'bg-[#f9fafb] text-[#4a5568] border border-[#d0d6e0]'}`}>
                     {docCount} document{docCount !== 1 ? 's' : ''}
                   </span>
                   <button type="button" onClick={(e) => { e.stopPropagation(); setUploadModal({ open: true, job }); setExpandedJobId(null) }}
-                    className={`${btnBase} bg-[#1e3a5f] text-white hover:bg-[#16304f]`}>
+                    className={`${btnBase} bg-[#1a4fa0] text-white hover:bg-[#153d82]`}>
                     Upload Document
                   </button>
-                  {docCount > 0 && (
-                    <button type="button" onClick={(e) => { e.stopPropagation(); setExtractModal({ open: true, job }); setExpandedJobId(null) }}
-                      className={`${btnBase} border border-emerald-600 text-emerald-700 hover:bg-emerald-50`}>
-                      &#10026; AI Extract
-                    </button>
-                  )}
-                  <span className={`text-slate-400 transition-transform ${isExpanded ? 'rotate-90' : ''}`}>&#9654;</span>
+
+                  <span className={`text-[#8a96a8] transition-transform ${isExpanded ? 'rotate-90' : ''}`}>&#9654;</span>
                 </div>
                 {isExpanded && (
-                  <div className="bg-blue-50/30 px-4 py-4">
+                  <div className="bg-white px-4 py-4">
                     {docCount === 0 ? (
-                      <p className="text-sm text-slate-400 text-center py-6">No documents uploaded yet for this job.</p>
+                      <p className="text-sm text-[#8a96a8] text-center py-6">No documents uploaded yet for this job.</p>
                     ) : (
                       <div className="overflow-x-auto">
                         <table className="w-full text-xs">
                           <thead>
-                            <tr className="text-slate-500 border-b border-slate-200">
-                              <th className="text-left font-semibold uppercase tracking-wide text-[10px] pb-2 pr-3">File Name</th>
-                              <th className="text-left font-semibold uppercase tracking-wide text-[10px] pb-2 pr-3">Doc Type</th>
-                              <th className="text-left font-semibold uppercase tracking-wide text-[10px] pb-2 pr-3">Uploaded By</th>
-                              <th className="text-left font-semibold uppercase tracking-wide text-[10px] pb-2 pr-3">Date &amp; Time</th>
-                              <th className="text-left font-semibold uppercase tracking-wide text-[10px] pb-2 pr-3">Size</th>
-                              <th className="text-left font-semibold uppercase tracking-wide text-[10px] pb-2">Actions</th>
+                            <tr className="text-[#8a96a8] border-b border-[#e2e6ed]">
+                              <th className="text-left font-semibold uppercase tracking-wide text-xs pb-3 pr-3">File Name</th>
+                              <th className="text-left font-semibold uppercase tracking-wide text-xs pb-3 pr-3">Doc Type</th>
+                              <th className="text-left font-semibold uppercase tracking-wide text-xs pb-3 pr-3">Uploaded By</th>
+                              <th className="text-left font-semibold uppercase tracking-wide text-xs pb-3 pr-3">Date &amp; Time</th>
+                              <th className="text-left font-semibold uppercase tracking-wide text-xs pb-3 pr-3">Size</th>
+                              <th className="text-left font-semibold uppercase tracking-wide text-xs pb-3">Actions</th>
                             </tr>
                           </thead>
                           <tbody>
                             {job.docs.map((doc) => {
-                              const colorClass = DOC_TYPE_COLORS[doc.doc_type] || 'bg-slate-100 text-slate-800'
+                              const colorClass = DOC_TYPE_COLORS[doc.doc_type] || 'bg-[#f9fafb] text-[#4a5568] border border-[#d0d6e0]'
                               const canDelete = isAdmin || doc.uploaded_by === user?.id
                               return (
-                                <tr key={doc.id} className="border-b border-slate-100 last:border-b-0">
-                                  <td className="py-2 pr-3">
+                                <tr key={doc.id} className="border-b border-[#e2e6ed] last:border-b-0">
+                                  <td className="py-3 pr-3">
                                     <div className="flex items-center gap-2">
                                       {fileIcon(doc)}
-                                      <span className="text-slate-900 font-medium truncate max-w-[200px]" title={doc.file_name}>{doc.file_name}</span>
+                                      <span className="text-[#1a2233] font-medium truncate max-w-[200px]" title={doc.file_name}>{doc.file_name}</span>
                                     </div>
                                   </td>
-                                  <td className="py-2 pr-3">
-                                    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold ${colorClass}`}>{doc.doc_type}</span>
+                                  <td className="py-3 pr-3">
+                                    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-bold ${colorClass}`}>{doc.doc_type}</span>
                                   </td>
-                                  <td className="py-2 pr-3 text-slate-600">{doc.uploaded_by_name || '\u2014'}</td>
-                                  <td className="py-2 pr-3 text-slate-500 whitespace-nowrap">{formatUploadDate(doc.created_at)}</td>
-                                  <td className="py-2 pr-3 text-slate-500 whitespace-nowrap">{formatFileSize(doc.file_size)}</td>
+                                  <td className="py-3 pr-3 text-[#4a5568]">{doc.uploaded_by_name || '\u2014'}</td>
+                                  <td className="py-3 pr-3 text-[#8a96a8] whitespace-nowrap">{formatUploadDate(doc.created_at)}</td>
+                                  <td className="py-3 pr-3 text-[#8a96a8] whitespace-nowrap">{formatFileSize(doc.file_size)}</td>
                                   <td className="py-2">
                                     <div className="flex items-center gap-1.5">
                                       <button type="button" onClick={() => setPreviewModal({ open: true, doc })}
-                                        className="h-7 px-2.5 text-[11px] rounded-md bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 font-semibold">
+                                        className="h-7 px-2.5 text-xs rounded-md bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 font-semibold">
                                         View
                                       </button>
                                       <a href={doc.file_url} download={doc.file_name}
-                                        className="h-7 px-2.5 text-[11px] rounded-md bg-slate-50 text-slate-700 border border-slate-200 hover:bg-slate-100 font-semibold inline-flex items-center no-underline">
+                                        className="h-7 px-2.5 text-xs rounded-md bg-white border-[1.5px] border-[#d0d6e0] text-[#4a5568] hover:border-[#1a4fa0] hover:text-[#1a4fa0] hover:bg-[#e8eef8] font-semibold inline-flex items-center no-underline">
                                         Download
                                       </a>
                                       {canDelete && (
                                         <button type="button" onClick={() => handleDelete(doc)}
-                                          className="h-7 px-2.5 text-[11px] rounded-md border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 font-semibold">
+                                          className="h-7 px-2.5 text-xs rounded-md border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 font-semibold">
                                           Delete
                                         </button>
                                       )}
@@ -1437,58 +1446,58 @@ function DocumentsSection({ jobs, profiles, currentUserName, showToast }) {
       )}
 
       {uploadModal.open && uploadModal.job && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm px-4">
-          <div className="w-full max-w-lg bg-white rounded-xl shadow-2xl border border-slate-200 overflow-hidden">
-            <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between">
-              <div className="text-sm font-semibold text-slate-900">Upload Document \u2014 {uploadModal.job.job_no} {uploadModal.job.client}</div>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm px-4">
+          <div className="w-full max-w-lg bg-white rounded-xl shadow-2xl border border-[#e2e6ed] overflow-hidden">
+            <div className="px-5 py-4 border-b border-[#e2e6ed] flex items-center justify-between">
+              <div className="text-sm font-semibold text-[#1a2233]">Upload Document \u2014 {uploadModal.job.job_no} {uploadModal.job.client}</div>
               <button type="button" onClick={() => { setUploadModal({ open: false, job: null }); setUploadFile(null); setUploadDocType('BL'); setUploadProgress(0) }}
-                className="h-8 w-8 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition-colors text-lg leading-none">&times;</button>
+                className="h-8 w-8 flex items-center justify-center rounded-lg bg-white border border-[#e2e6ed] hover:bg-[#fef2f2] hover:border-[#fecaca] hover:text-[#dc2626] text-[#8a96a8] transition-colors text-lg leading-none">&times;</button>
             </div>
             <div className="px-5 py-4 space-y-4">
               <div>
-                <label className="block text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-1">Document Type</label>
+                <label className="block text-xs font-semibold text-[#8a96a8] uppercase tracking-wide mb-1">Document Type</label>
                 <select value={uploadDocType} onChange={(e) => setUploadDocType(e.target.value)} className={selectBase}>
                   {DOC_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
                 </select>
               </div>
               <div>
-                <label className="block text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-1">File</label>
+                <label className="block text-xs font-semibold text-[#8a96a8] uppercase tracking-wide mb-1">File</label>
                 <div
                   onClick={() => fileInputRef.current?.click()}
                   onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add('border-blue-400', 'bg-blue-50') }}
                   onDragLeave={(e) => { e.currentTarget.classList.remove('border-blue-400', 'bg-blue-50') }}
                   onDrop={(e) => { e.preventDefault(); e.currentTarget.classList.remove('border-blue-400', 'bg-blue-50'); const f = e.dataTransfer?.files?.[0]; if (f) { if (f.size > 10 * 1024 * 1024) { showToast('File size must be under 10MB.', 'error') } else { setUploadFile(f) } } }}
-                  className={`border-2 border-dashed rounded-xl px-4 py-8 text-center cursor-pointer transition-colors ${uploadFile ? 'border-green-300 bg-green-50' : 'border-slate-300 hover:border-blue-300'}`}
+                  className={`border-2 border-dashed rounded-xl px-4 py-8 text-center cursor-pointer transition-colors ${uploadFile ? 'border-green-300 bg-green-50' : 'border-[#d0d6e0] hover:border-blue-300'}`}
                 >
                   <input ref={fileInputRef} type="file" accept=".pdf,.jpg,.jpeg,.png" onChange={(e) => { const f = e.target.files?.[0]; if (f) { if (f.size > 10 * 1024 * 1024) { showToast('File size must be under 10MB.', 'error') } else { setUploadFile(f) } } }} className="hidden" />
                   {uploadFile ? (
                     <div>
-                      <p className="text-sm font-semibold text-slate-900 break-all">{uploadFile.name}</p>
-                      <p className="text-xs text-slate-400 mt-1">{formatFileSize(uploadFile.size)}</p>
+                      <p className="text-sm font-semibold text-[#1a2233] break-all">{uploadFile.name}</p>
+                      <p className="text-xs text-[#8a96a8] mt-1">{formatFileSize(uploadFile.size)}</p>
                     </div>
                   ) : (
                     <div>
-                      <p className="text-sm font-semibold text-slate-400">Click to select or drag &amp; drop</p>
-                      <p className="text-xs text-slate-400 mt-1">PDF, JPG, PNG \u2014 max 10MB</p>
+                      <p className="text-sm font-semibold text-[#8a96a8]">Click to select or drag &amp; drop</p>
+                      <p className="text-xs text-[#8a96a8] mt-1">PDF, JPG, PNG \u2014 max 10MB</p>
                     </div>
                   )}
                 </div>
               </div>
               {uploading && (
                 <div>
-                  <div className="h-1.5 bg-slate-200 rounded-full overflow-hidden">
-                    <div className="h-full bg-blue-600 rounded-full transition-all duration-300" style={{ width: `${uploadProgress}%` }} />
+                  <div className="h-1.5 bg-[#e2e6ed] border border-[#e2e6ed] rounded-full overflow-hidden">
+                    <div className="h-full bg-[#1a4fa0] rounded-full transition-all duration-300" style={{ width: `${uploadProgress}%` }} />
                   </div>
                 </div>
               )}
             </div>
-            <div className="px-5 py-4 border-t border-slate-200 flex items-center justify-end gap-2">
+            <div className="px-5 py-4 border-t border-[#e2e6ed] flex items-center justify-end gap-2">
               <button type="button" onClick={() => { setUploadModal({ open: false, job: null }); setUploadFile(null); setUploadDocType('BL'); setUploadProgress(0) }}
-                className={`${btnBase} border border-slate-300 bg-slate-50 text-slate-700 hover:bg-slate-100`}>
+                className={`${btnBase} bg-white border-[1.5px] border-[#d0d6e0] text-[#4a5568] hover:border-[#1a4fa0] hover:text-[#1a4fa0] hover:bg-[#e8eef8]`}>
                 Cancel
               </button>
               <button type="button" onClick={handleUpload} disabled={uploading || !uploadFile || !uploadDocType}
-                className={`${btnBase} bg-blue-600 text-white hover:bg-blue-700 inline-flex items-center gap-2`}>
+                className={`${btnBase} bg-[#1a4fa0] text-white hover:bg-[#153d82] inline-flex items-center gap-2`}>
                 {uploading && <span className="h-3.5 w-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />}
                 {uploading ? `${uploadProgress}%` : 'Upload'}
               </button>
@@ -1498,35 +1507,35 @@ function DocumentsSection({ jobs, profiles, currentUserName, showToast }) {
       )}
 
       {previewModal.open && previewModal.doc && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm px-4 py-6">
-          <div className="w-full max-w-4xl max-h-[90vh] bg-white rounded-xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col">
-            <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between gap-3 shrink-0">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm px-4 py-6">
+          <div className="w-full max-w-4xl max-h-[90vh] bg-white rounded-xl shadow-2xl border border-[#e2e6ed] overflow-hidden flex flex-col">
+            <div className="px-5 py-4 border-b border-[#e2e6ed] flex items-center justify-between gap-3 shrink-0">
               <div className="flex items-center gap-2 min-w-0">
-                <span className="text-sm font-semibold text-slate-900 truncate">{previewModal.doc.file_name}</span>
-                <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold ${DOC_TYPE_COLORS[previewModal.doc.doc_type] || 'bg-slate-100 text-slate-800'}`}>{previewModal.doc.doc_type}</span>
+                <span className="text-sm font-semibold text-[#1a2233] truncate">{previewModal.doc.file_name}</span>
+                <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-bold ${DOC_TYPE_COLORS[previewModal.doc.doc_type] || 'bg-[#f9fafb] text-[#4a5568] border border-[#d0d6e0]'}`}>{previewModal.doc.doc_type}</span>
               </div>
               <button type="button" onClick={() => setPreviewModal({ open: false, doc: null })}
-                className="h-8 w-8 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition-colors text-lg leading-none shrink-0">&times;</button>
+                className="h-8 w-8 flex items-center justify-center rounded-lg bg-white border border-[#e2e6ed] hover:bg-[#fef2f2] hover:border-[#fecaca] hover:text-[#dc2626] text-[#8a96a8] transition-colors text-lg leading-none shrink-0">&times;</button>
             </div>
-            <div className="flex-1 overflow-auto bg-slate-100 p-4 flex items-center justify-center min-h-[300px]">
+            <div className="flex-1 overflow-auto bg-[#f4f6f9] p-4 flex items-center justify-center min-h-[300px]">
               {['pdf'].includes((previewModal.doc.file_type || '').toLowerCase()) ? (
-                <iframe src={previewModal.doc.file_url} title="PDF Preview" className="w-full h-[600px] rounded-lg border border-slate-200 bg-white" />
+                <iframe src={previewModal.doc.file_url} title="PDF Preview" className="w-full h-[600px] rounded-lg border border-[#e2e6ed] bg-white" />
               ) : ['jpg', 'jpeg', 'png'].includes((previewModal.doc.file_type || '').toLowerCase()) ? (
                 <img src={previewModal.doc.file_url} alt={previewModal.doc.file_name} className="max-w-full max-h-[600px] rounded-lg shadow-sm object-contain" />
               ) : (
-                <div className="text-center text-slate-400">
+                <div className="text-center text-[#8a96a8]">
                   <p className="text-sm font-semibold">Preview not available</p>
                   <p className="text-xs mt-1">This file type cannot be previewed.</p>
                 </div>
               )}
             </div>
-            <div className="px-5 py-3 border-t border-slate-200 flex items-center justify-end gap-2 shrink-0">
+            <div className="px-5 py-3 border-t border-[#e2e6ed] flex items-center justify-end gap-2 shrink-0">
               <a href={previewModal.doc.file_url} download={previewModal.doc.file_name}
-                className={`${btnBase} bg-[#1e3a5f] text-white hover:bg-[#16304f] no-underline inline-flex items-center`}>
+                className={`${btnBase} bg-[#1a4fa0] text-white hover:bg-[#153d82] no-underline inline-flex items-center`}>
                 Download
               </a>
               <button type="button" onClick={() => setPreviewModal({ open: false, doc: null })}
-                className={`${btnBase} border border-slate-300 bg-slate-50 text-slate-700 hover:bg-slate-100`}>
+                className={`${btnBase} bg-white border-[1.5px] border-[#d0d6e0] text-[#4a5568] hover:border-[#1a4fa0] hover:text-[#1a4fa0] hover:bg-[#e8eef8]`}>
                 Close
               </button>
             </div>
@@ -1534,137 +1543,20 @@ function DocumentsSection({ jobs, profiles, currentUserName, showToast }) {
         </div>
       )}
 
-      {/* Extraction Modal */}
-      {extractModal.open && extractModal.job && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm px-4">
-          <div className="w-full max-w-4xl max-h-[90vh] overflow-y-auto bg-white rounded-xl shadow-2xl border border-slate-200">
-            <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between sticky top-0 bg-white z-10">
-              <div>
-                <div className="text-sm font-bold text-slate-900">AI Document Extraction &mdash; {extractModal.job.job_no}</div>
-                <div className="text-xs text-slate-400">{extractModal.job.client}</div>
-              </div>
-              <button type="button" onClick={closeExtract}
-                className="h-8 w-8 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-700 text-lg leading-none">&times;</button>
-            </div>
 
-            <div className="p-6 space-y-6">
-              {/* Document list + Extract trigger */}
-              {!extracting && !extractedFields && !extractError && (
-                <div>
-                  <p className="text-sm font-semibold text-slate-700 mb-3">Documents to process ({extractModal.job.docs.length})</p>
-                  <div className="space-y-2">
-                    {extractModal.job.docs.map((doc) => (
-                      <div key={doc.id} className="flex items-center gap-2 text-sm text-slate-600 px-3 py-2 bg-slate-50 rounded-lg border border-slate-200">
-                        <span className="text-base">&#128196;</span>
-                        <span className="truncate">{doc.file_name}</span>
-                        <span className="text-[10px] text-slate-400 ml-auto">{doc.doc_type}</span>
-                      </div>
-                    ))}
-                  </div>
-                  <button type="button" onClick={runExtraction} disabled={extracting}
-                    className="mt-4 h-10 px-5 text-sm font-semibold rounded-lg bg-[#1e3a5f] text-white hover:bg-[#16304f] disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2">
-                    {extracting ? 'Extraction in progress...' : '\u2726 Extract'}
-                  </button>
-                </div>
-              )}
-
-              {/* Loading */}
-              {extracting && (
-                <div className="flex flex-col items-center justify-center py-16">
-                  <div className="h-10 w-10 border-4 border-[#1e3a5f] border-t-transparent rounded-full animate-spin mb-4" />
-                  <p className="text-sm font-semibold text-slate-700">{extractProgress || 'AI is extracting shipment data...'}</p>
-                  <p className="text-sm text-slate-400">This may take up to 2 minutes for large documents</p>
-                </div>
-              )}
-
-              {/* Error */}
-              {extractError && !extracting && (
-                <div className="flex flex-col items-center py-10">
-                  <p className="text-sm text-red-600 font-semibold mb-3">{extractError}</p>
-                  <button type="button" onClick={runExtraction}
-                    className="h-9 px-4 text-sm rounded-lg border border-slate-300 bg-slate-50 text-slate-700 hover:bg-slate-100 font-semibold">
-                    Retry
-                  </button>
-                </div>
-              )}
-
-              {/* Review Form */}
-              {extractedFields && extractEdits && (
-                <>
-                  {/* Summary */}
-                  <div className="flex items-center gap-3">
-                    <span className="text-sm font-semibold text-slate-600">Confidence:</span>
-                    {summary.high > 0 && (
-                      <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-bold bg-green-100 text-green-800">{summary.high}</span>
-                    )}
-                    {summary.needsReview > 0 && (
-                      <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-bold bg-amber-100 text-amber-800">{summary.needsReview}</span>
-                    )}
-                    {summary.notFound > 0 && (
-                      <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-bold bg-red-100 text-red-800">{summary.notFound}</span>
-                    )}
-                    <span className="text-[11px] text-slate-400">{summary.high} high &middot; {summary.needsReview} need review &middot; {summary.notFound} not found</span>
-                  </div>
-
-                  {/* Fields grid */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-5">
-                    {EXTRACT_FIELDS.map((k) => {
-                      const f = extractEdits[k] || {}
-                      const value = f.value ?? ''
-                      const confidence = f.confidence
-                      const borderCls = confidenceColor(value, confidence)
-                      return (
-                        <div key={k}>
-                          <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-1">{EXTRACT_LABELS[k] || k}</p>
-                          <input type="text" value={value} onChange={updateExtractField(k)}
-                            placeholder={value ? '' : 'Not found'}
-                            className={`w-full h-9 px-3 text-xs rounded-lg border border-slate-200 bg-slate-50 text-slate-900 outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-300 ${borderCls} border-l-4 ${!value ? 'text-red-600 placeholder:text-red-300' : ''}`} />
-                          {confidence && (
-                            <p className={`text-[10px] mt-0.5 font-medium ${confidence === 'high' ? 'text-green-600' : confidence === 'medium' ? 'text-amber-600' : 'text-red-600'}`}>
-                              {confidence} confidence
-                            </p>
-                          )}
-                        </div>
-                      )
-                    })}
-                  </div>
-                </>
-              )}
-            </div>
-
-            {/* Footer */}
-            {extractedFields && (
-              <div className="px-6 py-4 border-t border-slate-200 flex items-center gap-3 sticky bottom-0 bg-white">
-                <button type="button" onClick={closeExtract}
-                  className="h-9 px-4 text-sm rounded-lg border border-slate-300 bg-slate-50 text-slate-700 hover:bg-slate-100 font-semibold">
-                  Close
-                </button>
-                <button type="button" onClick={() => { setExtractedFields(null); setExtractEdits(null); setExtractError(null); }}
-                  className="h-9 px-4 text-sm rounded-lg border border-slate-300 bg-slate-50 text-slate-700 hover:bg-slate-100 font-semibold">
-                  Extract Again
-                </button>
-                <button type="button" onClick={downloadExcel}
-                  className="h-9 px-4 text-sm rounded-lg bg-[#1e3a5f] text-white hover:bg-[#16304f] font-semibold ml-auto">
-                  &#128229; Download Excel
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
     </div>
   )
 }
 
 const STATUS_STYLES = {
-  in_transit: 'bg-blue-100 text-blue-800',
-  arrived: 'bg-green-100 text-green-800',
-  customs_hold: 'bg-amber-100 text-amber-800',
-  delivered: 'bg-emerald-100 text-emerald-800',
-  empty_returned: 'bg-slate-100 text-slate-600',
-  at_cfs: 'bg-teal-100 text-teal-800',
-  on_rail: 'bg-indigo-100 text-indigo-800',
-  delayed: 'bg-red-100 text-red-800',
+  in_transit: 'bg-[#eff6ff] text-[#1e40af] border border-[#bfdbfe]',
+  arrived: 'bg-[#f0fdf4] text-[#15803d] border border-[#bbf7d0]',
+  customs_hold: 'bg-[#fffbeb] text-[#92400e] border border-[#fde68a]',
+  delivered: 'bg-[#ecfdf5] text-[#065f46] border border-[#a7f3d0]',
+  empty_returned: 'bg-[#f9fafb] text-[#4a5568] border border-[#d0d6e0]',
+  at_cfs: 'bg-[#f0fdfa] text-[#0f766e] border border-[#99f6e4]',
+  on_rail: 'bg-[#eef2ff] text-[#3730a3] border border-[#c7d2fe]',
+  delayed: 'bg-[#fef2f2] text-[#991b1b] border border-[#fecaca]',
 }
 
 function formatContainerDate(ts) {
@@ -1760,13 +1652,13 @@ function ContainerTrackingSection({ showToast }) {
       <div>
         <div className="flex items-center justify-between mb-4">
           <div>
-            <div className="text-lg font-bold text-slate-900">Container Tracking</div>
-            <div className="text-sm text-slate-400">On-demand &mdash; click "Check Status" per container</div>
+<div className="text-lg font-bold text-[#1a2233]">Container Tracking</div>
+            <div className="text-sm text-[#8a96a8]">On-demand &mdash; click "Check Status" per container</div>
           </div>
         </div>
-        <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-6 space-y-4">
+        <div className="bg-white border-[1.5px] border-[#e2e6ed] rounded-xl p-4 shadow-sm hover:shadow-md hover:border-[#d0d6e0] space-y-4">
           {[1, 2, 3, 4, 5].map((i) => (
-            <div key={i} className="h-14 bg-slate-100 rounded-lg animate-pulse" />
+            <div key={i} className="h-14 bg-[#e2e6ed] rounded-lg animate-pulse" />
           ))}
         </div>
       </div>
@@ -1778,14 +1670,14 @@ function ContainerTrackingSection({ showToast }) {
       <div>
         <div className="flex items-center justify-between mb-4">
           <div>
-            <div className="text-lg font-bold text-slate-900">Container Tracking</div>
-            <div className="text-sm text-slate-400">On-demand &mdash; click "Check Status" per container</div>
+            <div className="text-lg font-bold text-[#1a2233]">Container Tracking</div>
+            <div className="text-sm text-[#8a96a8]">On-demand &mdash; click "Check Status" per container</div>
           </div>
         </div>
         <div className="bg-white border border-red-200 rounded-xl shadow-sm p-10 text-center">
           <p className="text-red-600 font-semibold mb-2">Failed to load container data</p>
           <button type="button" onClick={() => loadData()}
-            className="h-8 px-4 text-xs font-semibold rounded-lg bg-[#1e3a5f] text-white hover:bg-[#16304f]">
+            className="h-8 px-4 text-xs font-semibold rounded-lg bg-[#1a4fa0] text-white hover:bg-[#153d82]">
             Retry
           </button>
         </div>
@@ -1795,18 +1687,18 @@ function ContainerTrackingSection({ showToast }) {
 
   return (
     <div>
-      <div className="flex flex-wrap items-center gap-2 mb-3 bg-white border border-slate-200 rounded-xl shadow-sm p-3">
+      <div className="flex flex-wrap items-center gap-2 mb-3 bg-white border-[1.5px] border-[#e2e6ed] rounded-xl p-4 shadow-sm hover:shadow-md hover:border-[#d0d6e0]">
         <input value={newContainerNo} onChange={(e) => setNewContainerNo(e.target.value.toUpperCase())}
           onKeyDown={(e) => e.key === 'Enter' && handleAddContainer()}
           placeholder="Enter container number (e.g. MAEU1234567)"
-          className="flex-1 min-w-[180px] h-7 px-2.5 text-xs border border-slate-200 rounded-lg outline-none focus:border-[#1e3a5f] placeholder:text-slate-400" />
+          className="flex-1 min-w-[180px] h-7 px-2.5 text-xs bg-[#f8f9fb] border-[1.5px] border-[#e2e6ed] rounded-lg outline-none focus:border-[#1a4fa0] text-[#1a2233] placeholder:text-[#8a96a8]" />
         <select value={newCarrier} onChange={(e) => setNewCarrier(e.target.value)}
-          className="h-7 px-2 text-xs border border-slate-200 rounded-lg outline-none focus:border-[#1e3a5f] bg-white text-slate-700">
+          className="h-7 px-2 text-xs bg-white border-[1.5px] border-[#e2e6ed] rounded-lg outline-none focus:border-[#1a4fa0] text-[#4a5568]">
           <option value="">Shipping line...</option>
           {carriers.map((c) => <option key={c} value={c}>{c}</option>)}
         </select>
         <button type="button" onClick={handleAddContainer} disabled={addingContainer || !newCarrier}
-          className="h-7 px-3 text-xs font-semibold rounded-lg bg-[#1e3a5f] text-white hover:bg-[#16304f] disabled:opacity-50 inline-flex items-center gap-1">
+          className="h-7 px-3 text-xs font-semibold rounded-lg bg-[#1a4fa0] text-white hover:bg-[#153d82] disabled:opacity-50 inline-flex items-center gap-1">
           {addingContainer ? <span className="h-3 w-3 border-2 border-white border-t-transparent rounded-full animate-spin" /> : '+'}
           {addingContainer ? 'Adding...' : 'Track'}
         </button>
@@ -1814,67 +1706,67 @@ function ContainerTrackingSection({ showToast }) {
 
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-4">
         <div>
-          <div className="text-lg font-bold text-slate-900">Container Tracking</div>
-          <div className="text-sm text-slate-400">On-demand &mdash; click "Check Status" per container</div>
+          <div className="text-lg font-bold text-[#1a2233]">Container Tracking</div>
+          <div className="text-sm text-[#8a96a8]">On-demand &mdash; click "Check Status" per container</div>
         </div>
         <div className="flex items-center gap-2">
-          <div className="flex items-center h-8 px-3 bg-white border border-slate-200 rounded-lg min-w-[200px]">
+          <div className="flex items-center h-8 px-3 bg-[#f8f9fb] border-[1.5px] border-[#e2e6ed] rounded-lg min-w-[200px]">
             <input value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search container, carrier, vessel..."
-              className="w-full bg-transparent outline-none text-xs text-slate-900 placeholder:text-slate-400" />
+              className="w-full bg-transparent outline-none text-xs text-[#1a2233] placeholder:text-[#8a96a8]" />
           </div>
         </div>
       </div>
 
       {filtered.length === 0 ? (
-        <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-10 text-center text-slate-400">
+        <div className="bg-white border-[1.5px] border-[#e2e6ed] rounded-xl shadow-sm p-10 text-center text-[#8a96a8]">
           {searchQuery.trim() ? 'No containers match your search.' : 'No container data available.'}
         </div>
       ) : (
-        <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+        <div className="bg-white border-[1.5px] border-[#e2e6ed] rounded-xl shadow-sm overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-xs">
               <thead>
-                <tr className="bg-slate-50 text-slate-500 border-b border-slate-200">
-                  <th className="text-left font-semibold uppercase tracking-wide text-[10px] px-3 py-2">Job #</th>
-                  <th className="text-left font-semibold uppercase tracking-wide text-[10px] px-3 py-2">Container</th>
-                  <th className="text-left font-semibold uppercase tracking-wide text-[10px] px-3 py-2">Status</th>
-                  <th className="text-left font-semibold uppercase tracking-wide text-[10px] px-3 py-2">Location</th>
-                  <th className="text-left font-semibold uppercase tracking-wide text-[10px] px-3 py-2">Last Update</th>
-                  <th className="text-center font-semibold uppercase tracking-wide text-[10px] px-3 py-2">Check</th>
-                  <th className="w-8 px-3 py-2"></th>
+                <tr className="bg-[#f8f9fb] text-[#8a96a8] border-b border-[#e2e6ed]">
+                  <th className="text-left font-semibold uppercase tracking-wide text-xs px-3 py-3">Job #</th>
+                  <th className="text-left font-semibold uppercase tracking-wide text-xs px-3 py-3">Container</th>
+                  <th className="text-left font-semibold uppercase tracking-wide text-xs px-3 py-3">Status</th>
+                  <th className="text-left font-semibold uppercase tracking-wide text-xs px-3 py-3">Location</th>
+                  <th className="text-left font-semibold uppercase tracking-wide text-xs px-3 py-3">Last Update</th>
+                  <th className="text-center font-semibold uppercase tracking-wide text-xs px-3 py-3">Check</th>
+                  <th className="w-8 px-3 py-3"></th>
                 </tr>
               </thead>
               <tbody>
                 {filtered.map((c) => {
                   const isExpanded = expandedContainer === c.containerNo
-                  const statusCls = STATUS_STYLES[c.status] || 'bg-slate-100 text-slate-700'
+                  const statusCls = STATUS_STYLES[c.status] || 'bg-[#f9fafb] text-[#4a5568] border border-[#d0d6e0]'
                   const isChecking = checkingContainers.has(c.containerNo)
                   return (
-                    <tr key={c.containerNo} className="border-b border-slate-100 last:border-b-0">
-                      <td className="px-3 py-2 text-slate-600 text-[11px] max-w-[80px] truncate" title={c.jobNumber}>{c.jobNumber || '\u2014'}</td>
-                      <td className="px-3 py-2">
+                    <tr key={c.containerNo} className="border-b border-[#e2e6ed] last:border-b-0">
+                      <td className="px-3 py-3 font-mono text-[#1a4fa0] text-xs max-w-[80px] truncate" title={c.jobNumber}>{c.jobNumber || '\u2014'}</td>
+                      <td className="px-3 py-3">
                         <div className="flex items-center gap-2">
-                          <span className="text-slate-900 font-bold text-sm">{c.containerNo}</span>
-                          <span className="text-[10px] text-slate-400 font-mono">{c.carrier}</span>
+                          <span className="text-[#1a2233] font-bold text-sm">{c.containerNo}</span>
+                          <span className="text-xs text-[#8a96a8] font-mono">{c.carrier}</span>
                         </div>
                       </td>
-                      <td className="px-3 py-2">
-                        <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold ${statusCls}`}>{c.statusText}</span>
+                      <td className="px-3 py-3">
+                        <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-bold ${statusCls}`}>{c.statusText}</span>
                       </td>
-                      <td className="px-3 py-2 text-slate-600 max-w-[120px] truncate text-[11px]" title={c.currentLocation}>{c.currentLocation || '\u2014'}</td>
-                      <td className="px-3 py-2 text-slate-400 whitespace-nowrap text-[10px]">{formatContainerDate(c.lastUpdate)}</td>
-                      <td className="px-3 py-2 text-center">
+                      <td className="px-3 py-3 text-[#4a5568] max-w-[120px] truncate text-xs" title={c.currentLocation}>{c.currentLocation || '\u2014'}</td>
+                      <td className="px-3 py-3 text-[#8a96a8] whitespace-nowrap text-xs">{formatContainerDate(c.lastUpdate)}</td>
+                      <td className="px-3 py-3 text-center">
                         <button type="button" onClick={() => handleCheckStatus(c.containerNo, c.carrier)} disabled={isChecking}
                           title={`Scrape ${c.carrier} website for live status`}
-                          className="h-6 px-2.5 text-[10px] font-semibold rounded-md bg-[#1e3a5f] text-white hover:bg-[#16304f] disabled:opacity-50 inline-flex items-center gap-1">
+                          className="bg-[#e8eef8] border border-[#bfdbfe] text-[#1a4fa0] hover:bg-[#1a4fa0] hover:text-white hover:border-[#1a4fa0] text-xs font-semibold rounded-lg px-3 py-1.5 disabled:opacity-50 inline-flex items-center gap-1">
                           {isChecking ? <span className="h-2.5 w-2.5 border-2 border-white border-t-transparent rounded-full animate-spin" /> : '\u25C9'}
                           {isChecking ? 'Checking...' : 'Check Status'}
                         </button>
                       </td>
-                      <td className="px-3 py-2">
+                      <td className="px-3 py-3">
                         <button type="button" onClick={() => setExpandedContainer(isExpanded ? null : c.containerNo)}
-                          className="text-slate-400 hover:text-slate-700 transition-colors text-xs">
+                          className="text-[#8a96a8] hover:text-[#1a2233] transition-colors text-xs">
                           {isExpanded ? '\u25B2' : '\u25BC'}
                         </button>
                       </td>
@@ -1894,7 +1786,7 @@ function ContainerTrackingSection({ showToast }) {
         </div>
       )}
 
-      <div className="mt-3 text-[10px] text-slate-400">
+      <div className="mt-3 text-xs text-[#8a96a8]">
         {filtered.length} container{filtered.length !== 1 ? 's' : ''} tracked &middot; Click "Check Status" to fetch live updates
       </div>
     </div>
@@ -1904,28 +1796,28 @@ function ContainerTrackingSection({ showToast }) {
 function ContainerTimeline({ container, onClose }) {
   if (!container) return null
   return (
-    <div className="border-t border-slate-200 bg-blue-50/30 px-4 sm:px-6 py-4">
+    <div className="border-t border-[#e2e6ed] bg-white px-4 sm:px-6 py-4">
       <div className="flex items-center justify-between mb-3">
-        <div className="text-sm font-bold text-slate-900">Milestones &mdash; {container.containerNo}</div>
+        <div className="text-sm font-bold text-[#1a2233]">Milestones &mdash; {container.containerNo}</div>
         <button type="button" onClick={onClose}
-          className="text-[11px] font-semibold text-blue-700 hover:text-blue-800">Close</button>
+          className="text-xs font-semibold text-blue-700 hover:text-blue-800">Close</button>
       </div>
       {container.milestones.length === 0 ? (
-        <p className="text-xs text-slate-400 py-4 text-center">No milestone data available.</p>
+        <p className="text-xs text-[#8a96a8] py-4 text-center">No milestone data available.</p>
       ) : (
         <div className="relative">
-          <div className="absolute left-[7px] top-2 bottom-2 w-0.5 bg-slate-200" />
+          <div className="absolute left-[7px] top-2 bottom-2 w-0.5 bg-[#e2e6ed]" />
           <div className="space-y-3">
             {container.milestones.map((m, i) => (
               <div key={i} className="flex items-start gap-3 relative">
                 <div className={`w-4 h-4 rounded-full border-2 shrink-0 mt-0.5 z-10 ${
                   i === container.milestones.length - 1
                     ? 'bg-blue-600 border-blue-600'
-                    : 'bg-white border-slate-300'
+                    : 'bg-white border-[#d0d6e0]'
                 }`} />
                 <div className="min-w-0 flex-1">
-                  <p className="text-xs font-semibold text-slate-900">{m.description}</p>
-                  <p className="text-[11px] text-slate-500">
+                  <p className="text-xs font-semibold text-[#1a2233]">{m.description}</p>
+                  <p className="text-xs text-[#8a96a8]">
                     {m.location} &middot; {formatContainerDate(m.date)}
                   </p>
                 </div>
@@ -1938,10 +1830,387 @@ function ContainerTimeline({ container, onClose }) {
   )
 }
 
+function OCRSection({ jobs, currentUserName, showToast, user: ocrUser, profile: ocrProfile }) {
+  const [step, setStep] = useState(1)
+  const [selectedJob, setSelectedJob] = useState(null)
+  const [selectedDocIds, setSelectedDocIds] = useState(new Set())
+  const [extracting, setExtracting] = useState(false)
+  const [extractProgress, setExtractProgress] = useState('')
+  const [extractError, setExtractError] = useState(null)
+  const [extractedData, setExtractedData] = useState(null)
+  const [extractEdits, setExtractEdits] = useState({})
+  const [savedExtraction, setSavedExtraction] = useState(null)
+  const [documents, setDocuments] = useState([])
+  const [loadingDocs, setLoadingDocs] = useState(true)
+  const [ocrSearch, setOcrSearch] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  const TEXTAREA_FIELDS = ['goods_description', 'goods_description_detailed', 'shipper_address', 'consignee_address', 'marks_and_numbers']
+
+  const filteredJobs = useMemo(() => {
+    const q = ocrSearch.trim().toLowerCase()
+    if (!q) return jobs || []
+    return (jobs || []).filter((j) =>
+      (j.job_no || '').toLowerCase().includes(q) ||
+      (j.client || '').toLowerCase().includes(q)
+    )
+  }, [jobs, ocrSearch])
+
+  const stepInfo = [
+    { num: 1, label: 'Select Job' },
+    { num: 2, label: 'Select Docs' },
+    { num: 3, label: 'Extract' },
+    { num: 4, label: 'Review' },
+    { num: 5, label: 'Save' },
+    { num: 6, label: 'Download' },
+    { num: 7, label: 'ICEGATE', manual: true },
+  ]
+
+  const fetchDocuments = async (job) => {
+    setLoadingDocs(true)
+    const { data, error } = await supabase.from('documents').select('*').eq('job_id', job.id)
+    if (!error) setDocuments(data ?? [])
+    setLoadingDocs(false)
+  }
+
+  const handleSelectJob = async (job) => {
+    setSelectedJob(job)
+    setSelectedDocIds(new Set())
+    setExtractedData(null)
+    setExtractEdits({})
+    setExtractError(null)
+    setSavedExtraction(null)
+    setDocuments([])
+    setLoadingDocs(true)
+    const { data: extraction } = await supabase.from('job_extractions').select('*').eq('job_id', job.id).maybeSingle()
+    if (extraction) {
+      setSavedExtraction(extraction)
+      setLoadingDocs(false)
+    } else {
+      await fetchDocuments(job)
+      setStep(2)
+    }
+  }
+
+  const handleViewSaved = () => {
+    if (!savedExtraction) return
+    setExtractedData({ result: savedExtraction.extracted_data, provider: 'saved' })
+    setExtractEdits({ ...savedExtraction.extracted_data })
+    setStep(4)
+  }
+
+  const handleExtractAgain = async () => {
+    setSavedExtraction(null)
+    await fetchDocuments(selectedJob)
+    setStep(2)
+  }
+
+  const toggleDoc = (id) => {
+    setSelectedDocIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id); else next.add(id)
+      return next
+    })
+  }
+
+  const toggleAll = () => {
+    if (selectedDocIds.size === documents.length) {
+      setSelectedDocIds(new Set())
+    } else {
+      setSelectedDocIds(new Set(documents.map((d) => d.id)))
+    }
+  }
+
+  const handleExtract = async () => {
+    const selectedDocs = documents.filter((d) => selectedDocIds.has(d.id))
+    if (selectedDocs.length === 0) { showToast('Select at least one document.', 'error'); return }
+    setStep(3)
+    setExtracting(true)
+    setExtractProgress('Preparing documents...')
+    setExtractError(null)
+    try {
+      setExtractProgress('Extracting data with AI...')
+      const { result, provider } = await extractWithFallback(selectedDocs, EXTRACTION_PROMPT)
+      setExtractedData({ result, provider })
+      setExtractEdits(JSON.parse(JSON.stringify(result)))
+      showToast('Extraction complete!', 'success')
+      setStep(4)
+    } catch (e) {
+      setExtractError(e?.message || 'Extraction failed.')
+      showToast(e?.message || 'Extraction failed.', 'error')
+    } finally {
+      setExtracting(false)
+      setExtractProgress('')
+    }
+  }
+
+  const handleSave = async () => {
+    if (!selectedJob || !extractedData) return
+    setSaving(true)
+    try {
+      const { error } = await supabase.from('job_extractions').upsert({
+        job_id: selectedJob.id,
+        job_no: selectedJob.job_no,
+        extracted_data: extractEdits,
+        extracted_by: ocrUser?.id || '',
+        extracted_by_name: currentUserName,
+        extracted_at: new Date().toISOString(),
+      })
+      if (error) throw error
+      showToast('Extraction saved to database.', 'success')
+      setSavedExtraction({ job_id: selectedJob.id, extracted_data: extractEdits })
+    } catch (e) {
+      showToast(e?.message || 'Save failed.', 'error')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleDownloadExcel = () => {
+    const wb = XLSX.utils.book_new()
+    const headers = Object.values(FIELD_LABELS_OCR)
+    const values = Object.keys(FIELD_LABELS_OCR).map((k) => {
+      const v = extractEdits?.[k]?.value
+      return v != null ? String(v) : ''
+    })
+    const data = [
+      ['JDS Logistics'],
+      [`AI Document Extraction \u2014 ${selectedJob?.job_no || ''}`],
+      [],
+      headers,
+      values,
+    ]
+    const ws = XLSX.utils.aoa_to_sheet(data)
+    ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: headers.length - 1 } }]
+    ws['!cols'] = headers.map(() => ({ wch: 20 }))
+    XLSX.utils.book_append_sheet(wb, ws, 'Extraction')
+    XLSX.writeFile(wb, `OCR_Extraction_${selectedJob?.job_no || 'export'}.xlsx`)
+  }
+
+  const btnBase = 'h-9 px-4 text-sm rounded-lg font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed'
+  const cardBase = 'bg-white border border-[#e2e6ed] rounded-xl shadow-sm'
+
+  const confidenceColor = (conf) => {
+    if (conf === 'high') return 'bg-[#f0fdf4] text-[#15803d] border border-[#bbf7d0]'
+    if (conf === 'medium') return 'bg-[#fffbeb] text-[#92400e] border border-[#fde68a]'
+    if (conf === 'low') return 'bg-[#fef2f2] text-[#991b1b] border border-[#fecaca]'
+    return 'bg-[#f9fafb] text-[#4a5568] border border-[#d0d6e0]'
+  }
+
+  const inputBase = 'w-full h-9 px-3 py-2 text-sm rounded-lg bg-white border-[1.5px] border-[#e2e6ed] text-[#1a2233] outline-none focus:border-[#1a4fa0] focus:ring-2 focus:ring-[#e8eef8]'
+  const textareaBase = 'w-full px-3 py-2 text-sm rounded-lg bg-white border-[1.5px] border-[#e2e6ed] text-[#1a2233] outline-none focus:border-[#1a4fa0] focus:ring-2 focus:ring-[#e8eef8] resize-none'
+
+  return (
+    <div>
+      <div className="flex items-center gap-1 mb-6">
+        {stepInfo.map((s, i) => {
+          let cls = ''
+          if (s.num < step) cls = 'bg-[#1a4fa0] text-white'
+          else if (s.num === step) cls = 'bg-white border-2 border-[#1a4fa0] text-[#1a4fa0]'
+          else cls = 'bg-[#f4f6f9] border-2 border-[#d0d6e0] text-[#8a96a8]'
+          return (
+            <div key={s.num} className="flex items-center gap-1 flex-1">
+              <div className={`h-7 w-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${cls}`}>
+                {s.num < step ? '\u2713' : s.num}
+              </div>
+              <span className={`text-xs font-semibold ${s.num <= step ? 'text-[#1a2233]' : 'text-[#8a96a8]'}`}>{s.label}</span>
+              {i < stepInfo.length - 1 && <div className="flex-1 h-[2px] bg-[#e2e6ed] mx-1" />}
+            </div>
+          )
+        })}
+      </div>
+
+      {step === 1 && (
+        <div>
+          <div className="flex items-center h-9 px-3 bg-[#f8f9fb] border-[1.5px] border-[#e2e6ed] rounded-lg min-w-[240px] mb-4">
+            <input value={ocrSearch} onChange={(e) => setOcrSearch(e.target.value)}
+              placeholder="Search by job no. or client..."
+              className="w-full bg-transparent outline-none text-sm text-[#1a2233] placeholder:text-[#8a96a8]" />
+          </div>
+          {savedExtraction && (
+            <div className="bg-green-50 border border-green-200 rounded-xl p-4 mb-4 flex items-center justify-between">
+              <div>
+                <p className="text-sm font-semibold text-green-800">Saved extraction found for {selectedJob?.job_no}</p>
+                <p className="text-xs text-green-600">Extracted on {new Date(savedExtraction.extracted_at).toLocaleDateString()}</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button type="button" onClick={handleViewSaved}
+                  className="h-8 px-3 text-xs font-semibold rounded-lg bg-green-600 text-white hover:bg-green-700">View Saved</button>
+                <button type="button" onClick={handleExtractAgain}
+                  className="h-8 px-3 text-xs font-semibold rounded-lg border border-green-300 bg-white text-green-700 hover:bg-green-50">Extract Again</button>
+              </div>
+            </div>
+          )}
+          <div className="space-y-2">
+            {filteredJobs.map((job) => (
+              <div key={job.id} role="button" tabIndex={0}
+                onClick={() => handleSelectJob(job)}
+                onKeyDown={(e) => e.key === 'Enter' && handleSelectJob(job)}
+                className={`${cardBase} p-4 cursor-pointer hover:border-blue-300 hover:shadow-md transition-all ${selectedJob?.id === job.id ? 'border-blue-400 ring-2 ring-blue-200' : ''}`}>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <span className="text-sm font-bold text-[#1a2233]">{job.job_no || '\u2014'}</span>
+                    <span className="text-xs text-[#8a96a8] ml-2">{job.client || ''}</span>
+                  </div>
+                  <span className="text-xs text-[#8a96a8]">{job.stage ? `Stage ${job.stage}` : ''}</span>
+                </div>
+              </div>
+            ))}
+            {filteredJobs.length === 0 && (
+              <div className={`${cardBase} p-10 text-center text-[#8a96a8]`}>
+                {ocrSearch.trim() ? 'No jobs match your search.' : 'No jobs available.'}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {step === 2 && (
+        <div>
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <span className="text-sm font-bold text-[#1a2233]">{selectedJob?.job_no}</span>
+              <span className="text-xs text-[#8a96a8] ml-2">{selectedJob?.client}</span>
+            </div>
+            <button type="button" onClick={() => setStep(1)}
+              className={`${btnBase} bg-white border-[1.5px] border-[#d0d6e0] text-[#4a5568] hover:border-[#1a4fa0] hover:text-[#1a4fa0] hover:bg-[#e8eef8]`}>Back</button>
+          </div>
+          {loadingDocs ? (
+            <div className={`${cardBase} p-10 flex justify-center`}>
+              <div className="h-8 w-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
+            </div>
+          ) : documents.length === 0 ? (
+            <div className={`${cardBase} p-10 text-center text-[#8a96a8]`}>No documents for this job.</div>
+          ) : (
+            <div>
+              <div className="mb-3">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" checked={selectedDocIds.size === documents.length} onChange={toggleAll}
+                    className="h-4 w-4 rounded border-[#d0d6e0] text-blue-600 focus:ring-blue-200" />
+                  <span className="text-sm font-semibold text-[#4a5568]">Select All ({documents.length} documents)</span>
+                </label>
+              </div>
+              <div className="space-y-1.5 mb-4">
+                {documents.map((doc) => (
+                  <label key={doc.id} className="flex items-center gap-3 p-2.5 rounded-lg hover:bg-[#e8eef8] cursor-pointer border border-transparent hover:border-[#e2e6ed] transition-all">
+                    <input type="checkbox" checked={selectedDocIds.has(doc.id)} onChange={() => toggleDoc(doc.id)}
+                      className="h-4 w-4 rounded border-[#d0d6e0] text-blue-600 focus:ring-blue-200" />
+                    <span className="text-sm text-[#1a2233] font-medium flex-1 truncate">{doc.file_name}</span>
+                    <span className="text-xs text-[#8a96a8]">{doc.doc_type || ''}</span>
+                  </label>
+                ))}
+              </div>
+              <button type="button" onClick={handleExtract} disabled={selectedDocIds.size === 0}
+                className={`${btnBase} bg-[#1a4fa0] text-white hover:bg-[#153d82] inline-flex items-center gap-2`}>
+                Continue to Extract ({selectedDocIds.size})
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {step === 3 && (
+        <div className={`${cardBase} p-10 text-center`}>
+          <div className="h-10 w-10 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+          <p className="text-sm font-semibold text-[#4a5568]">{extractProgress || 'Extracting data...'}</p>
+          <p className="text-xs text-[#8a96a8] mt-2">This may take a minute or two depending on document size.</p>
+          {extractError && (
+            <div className="mt-4">
+              <p className="text-xs text-red-600 mb-2">{extractError}</p>
+              <button type="button" onClick={handleExtract}
+                className={`${btnBase} bg-[#1a4fa0] text-white hover:bg-[#153d82]`}>Retry</button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {step === 4 && extractedData && (
+        <div>
+          <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-4 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-bold ${extractedData.provider === 'groq' ? 'bg-purple-100 text-purple-800' : extractedData.provider === 'gemini' ? 'bg-blue-100 text-blue-800' : 'bg-green-100 text-green-800'}`}>
+                {extractedData.provider === 'groq' ? 'Groq' : extractedData.provider === 'gemini' ? 'Gemini' : 'Saved'}
+              </span>
+              <div>
+                <span className="text-sm font-bold text-[#1a2233]">{selectedJob?.job_no}</span>
+                <span className="text-xs text-[#8a96a8] ml-2">{selectedJob?.client}</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-6 mb-6">
+            {OCR_SECTIONS.map((section) => (
+              <div key={section.title} className={`${cardBase} overflow-hidden`}>
+                <div className="px-4 py-2.5 bg-white border-b border-[#e2e6ed]">
+                  <span className="text-sm font-bold text-[#1a2233]">{section.title}</span>
+                </div>
+                <div className="px-4 py-3 space-y-3">
+                  {section.fields.map((key) => {
+                    const field = extractEdits?.[key] || {}
+                    const label = FIELD_LABELS_OCR[key] || key
+                    const isLong = TEXTAREA_FIELDS.includes(key)
+                    const isEmpty = field.value == null || field.value === ''
+                    return (
+                      <div key={key} className={`p-3 rounded-lg ${isEmpty ? 'border-l-4 border-l-red-400 bg-red-50/30' : 'bg-[#f8f9fb]'} border border-[#e2e6ed] ${field.confidence === 'high' ? 'border-l-4 border-l-[#16a34a]' : field.confidence === 'medium' ? 'border-l-4 border-l-[#f59e0b]' : field.confidence === 'low' || field.confidence === null ? 'border-l-4 border-l-[#dc2626] bg-[#fef2f2]' : ''}`}>
+                        <div className="flex items-center justify-between mb-1.5">
+                          <label className="text-xs font-semibold uppercase tracking-wide text-[#8a96a8]">{label}</label>
+                          <div className="flex items-center gap-1.5">
+                            {field.confidence && (
+                              <span className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[9px] font-bold ${confidenceColor(field.confidence)}`}>
+                                {field.confidence}
+                              </span>
+                            )}
+                            {field.source && (
+                              <span className="inline-flex items-center rounded-full px-1.5 py-0.5 text-[9px] font-bold bg-[#f9fafb] text-[#4a5568] border border-[#d0d6e0]">
+                                {field.source}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        {isEmpty ? (
+                          <p className="text-xs text-red-500 italic">Not found</p>
+                        ) : isLong ? (
+                          <textarea value={field.value || ''} onChange={(e) => setExtractEdits((prev) => ({ ...prev, [key]: { ...prev[key], value: e.target.value } }))}
+                            rows={2} className={textareaBase} />
+                        ) : (
+                          <input value={field.value || ''} onChange={(e) => setExtractEdits((prev) => ({ ...prev, [key]: { ...prev[key], value: e.target.value } }))}
+                            className={inputBase} />
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="flex items-center justify-between pt-4 border-t border-[#e2e6ed]">
+            <button type="button" onClick={() => { setStep(1); setSelectedJob(null); setExtractedData(null); setExtractEdits({}) }}
+              className={`${btnBase} bg-white border-[1.5px] border-[#d0d6e0] text-[#4a5568] hover:border-[#1a4fa0] hover:text-[#1a4fa0] hover:bg-[#e8eef8]`}>
+              Back to Step 1
+            </button>
+            <div className="flex items-center gap-2">
+              <button type="button" onClick={handleDownloadExcel}
+                className={`${btnBase} bg-white border-[1.5px] border-[#d0d6e0] text-[#4a5568] hover:border-[#1a4fa0] hover:text-[#1a4fa0] hover:bg-[#e8eef8]`}>
+                Download Excel
+              </button>
+              <button type="button" onClick={handleSave} disabled={saving}
+                className={`${btnBase} bg-[#1a4fa0] text-white hover:bg-[#153d82] inline-flex items-center gap-2`}>
+                {saving && <span className="h-4 w-4 border-2 border-white border-t-transparent rounded-full animate-spin" />}
+                {saving ? 'Saving...' : 'Save to Database'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function AdminDashboard() {
   const navigate = useNavigate()
   const location = useLocation()
-  const { profile } = useAuth()
+  const { user, profile } = useAuth()
   const [jobs, setJobs] = useState([])
   const [profiles, setProfiles] = useState({})
   const [loadingJobs, setLoadingJobs] = useState(true)
@@ -2166,25 +2435,25 @@ export default function AdminDashboard() {
   const jobWorkspace = (
     <>
       {!selectedJob && (
-        <div className="bg-white border border-slate-200 rounded-xl shadow-sm mb-2">
+        <div className="bg-[#f8f9fb] border-b border-[#e2e6ed] rounded-xl shadow-sm mb-2">
           <div className="p-2 flex flex-wrap gap-1 items-center">
-            <div className="flex items-center h-6 px-2 bg-slate-50 border border-slate-200 rounded-lg flex-1 min-w-[180px] max-w-[240px]">
+            <div className="flex items-center h-6 px-2 bg-[#f8f9fb] border-[1.5px] border-[#e2e6ed] rounded-lg flex-1 min-w-[180px] max-w-[240px]">
               <input value={search} onChange={(e) => setSearch(e.target.value)}
                 placeholder="Search by job number..."
-                className="w-full bg-transparent outline-none text-xs text-slate-900 placeholder:text-slate-400" />
+                className="w-full bg-transparent outline-none text-xs text-[#1a2233] placeholder:text-[#8a96a8]" />
             </div>
-            <span className="text-[10px] text-slate-400 whitespace-nowrap">{filteredJobs.length} shown</span>
-            <select value={filterStage} onChange={(e) => setFilterStage(e.target.value)} className="h-6 px-2 text-xs bg-slate-50 border border-slate-200 rounded-lg text-slate-700 outline-none">
+            <span className="text-xs text-[#8a96a8] whitespace-nowrap">{filteredJobs.length} shown</span>
+            <select value={filterStage} onChange={(e) => setFilterStage(e.target.value)} className="h-6 px-2 text-xs bg-white border-[1.5px] border-[#e2e6ed] rounded-lg text-[#4a5568] outline-none focus:border-[#1a4fa0]">
               {STAGE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
-            <select value={filterPriority} onChange={(e) => setFilterPriority(e.target.value)} className="h-6 px-2 text-xs bg-slate-50 border border-slate-200 rounded-lg text-slate-700 outline-none">
+            <select value={filterPriority} onChange={(e) => setFilterPriority(e.target.value)} className="h-6 px-2 text-xs bg-white border-[1.5px] border-[#e2e6ed] rounded-lg text-[#4a5568] outline-none focus:border-[#1a4fa0]">
               {PRIORITY_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
-            <select value={filterMode} onChange={(e) => setFilterMode(e.target.value)} className="h-6 px-2 text-xs bg-slate-50 border border-slate-200 rounded-lg text-slate-700 outline-none">
+            <select value={filterMode} onChange={(e) => setFilterMode(e.target.value)} className="h-6 px-2 text-xs bg-white border-[1.5px] border-[#e2e6ed] rounded-lg text-[#4a5568] outline-none focus:border-[#1a4fa0]">
               {MODE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
             <button type="button" onClick={() => { setSearch(''); setFilterStage(''); setFilterPriority(''); setFilterMode('') }}
-              className="h-6 px-2.5 text-xs rounded-lg border border-slate-300 bg-slate-50 text-slate-700 hover:bg-slate-100">
+              className="h-6 px-2.5 text-xs rounded-lg bg-white border-[1.5px] border-[#d0d6e0] text-[#4a5568] hover:border-[#1a4fa0] hover:text-[#1a4fa0] hover:bg-[#e8eef8]">
               Clear
             </button>
           </div>
@@ -2192,7 +2461,7 @@ export default function AdminDashboard() {
       )}
 
       {loadingJobs ? (
-        <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-10 flex justify-center">
+        <div className="bg-white border-[1.5px] border-[#e2e6ed] rounded-xl shadow-sm p-10 flex justify-center">
           <div className="h-9 w-9 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
         </div>
       ) : selectedJob ? (
@@ -2203,7 +2472,7 @@ export default function AdminDashboard() {
           onDelete={() => handleDeleteJob(selectedJob)}
         />
       ) : filteredJobs.length === 0 ? (
-        <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-10 text-center text-slate-400">
+        <div className="bg-white border-[1.5px] border-[#e2e6ed] rounded-xl shadow-sm p-10 text-center text-[#8a96a8]">
           No jobs match your search/filters.
         </div>
       ) : (
@@ -2218,51 +2487,81 @@ export default function AdminDashboard() {
   )
 
   return (
-    <div className="min-h-screen flex bg-slate-100 text-[14px]">
-      <aside className="w-[175px] bg-slate-900 border-r border-slate-700/60 text-slate-200 flex flex-col shrink-0">
-        <div className="px-4 py-3 border-b border-slate-700/60 flex items-center gap-2">
-          <div className="w-8 h-8 rounded-lg bg-blue-600 text-white flex items-center justify-center font-extrabold text-sm">JD</div>
+    <div className="min-h-screen flex bg-[#f4f6f9] text-[14px]">
+      <aside className="w-[230px] bg-[#1a4fa0] flex flex-col shrink-0 h-screen fixed left-0 top-0 z-50">
+        <div className="px-5 py-4 border-b border-white/15 flex items-center gap-3">
+          <div className="w-8 h-8 rounded-lg bg-white text-[#1a4fa0] flex items-center justify-center font-extrabold text-sm">JD</div>
           <div className="min-w-0">
-            <div className="text-sm font-bold text-slate-100 truncate">JDS Logistics</div>
-            <div className="text-[11px] text-slate-400 truncate">Command Center</div>
+            <div className="text-sm font-bold text-white truncate">JDS Logistics</div>
+            <div className="text-xs text-white/60 truncate">Command Center</div>
           </div>
         </div>
-        <div className="px-4 pt-3 pb-1 text-[11px] font-bold text-slate-400 uppercase tracking-wider">Operations</div>
-        <nav className="flex-1 py-1">
-          {NAV_ITEMS.map((item) => (
-            <button key={item.id} type="button" onClick={() => handleNavClick(item.id)}
-              className={classNames('w-full text-left px-3 py-2 text-sm flex items-center gap-1.5 border-l-4 transition-colors',
-                activeNav === item.id ? 'bg-slate-700 text-blue-300 border-l-blue-300 font-semibold' : 'text-slate-400 hover:bg-slate-700 hover:text-slate-100 border-l-transparent')}>
-              <span className="w-3.5 text-center shrink-0 opacity-90">{item.icon}</span>
-              <span className="truncate">{item.label}</span>
-            </button>
+        <nav className="flex-1 overflow-y-auto py-1">
+          {NAV_SECTIONS.map((section) => (
+            <div key={section.label}>
+              <div className="px-4 pt-4 pb-1 text-[10px] font-bold text-white/45 uppercase tracking-[0.1em]">
+                {section.label}
+              </div>
+              {section.items.map((item) => {
+                const isActive = activeNav === item.id
+                let badge = null
+                if (item.id === 'jobs' && stats?.active > 0)
+                  badge = <span className="ml-auto bg-white/20 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center">{stats.active}</span>
+                if (item.id === 'containers' && stats?.freeDaysAtRisk > 0)
+                  badge = <span className="ml-auto bg-amber-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center">{stats.freeDaysAtRisk}</span>
+                if (item.id === 'payments' && stats?.paymentsPending > 0)
+                  badge = <span className="ml-auto bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center">{stats.paymentsPending}</span>
+                if (item.id === 'compliance')
+                  badge = <span className="ml-auto bg-amber-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center">2</span>
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => handleNavClick(item.id)}
+                    className={[
+                      'w-full text-left px-5 py-2.5 text-sm flex items-center gap-2.5 border-l-2 transition-colors',
+                      isActive
+                        ? 'bg-white/15 text-white border-white font-semibold'
+                        : 'text-white/70 hover:bg-white/10 hover:text-white border-transparent'
+                    ].join(' ')}
+                  >
+                    <span className="w-4 text-center shrink-0 text-sm opacity-90">{item.icon}</span>
+                    <span className="truncate flex-1">{item.label}</span>
+                    {item.id === 'overview' && isActive
+                      ? <span className="ml-auto w-2 h-2 rounded-full bg-green-400 animate-pulse flex-shrink-0" />
+                      : badge
+                    }
+                  </button>
+                )
+              })}
+            </div>
           ))}
         </nav>
-        <div className="mt-auto border-t border-slate-700/60 px-4 py-3 flex items-center gap-2">
-          <div className="w-7 h-7 rounded-full bg-blue-700 text-white flex items-center justify-center text-[10px] font-bold">
+        <div className="mt-auto border-t border-white/15 px-5 py-3 flex items-center gap-3">
+          <div className="w-7 h-7 rounded-full bg-white/20 border-2 border-white/30 text-white flex items-center justify-center text-xs font-bold">
             {(profile?.name || 'A').slice(0,2).toUpperCase()}
           </div>
           <div className="min-w-0">
-            <div className="text-sm font-bold text-slate-100 truncate">{profile?.name || 'Admin'}</div>
-            <div className="text-[11px] text-slate-400 truncate">Administrator</div>
+            <div className="text-sm font-bold text-white truncate">{profile?.name || 'Admin'}</div>
+            <div className="text-xs text-white/55 truncate">Administrator</div>
           </div>
-          <span className="ml-auto w-2 h-2 rounded-full bg-green-500" title="Live" />
+          <span className="ml-auto w-2 h-2 rounded-full bg-green-400" title="Live" />
         </div>
       </aside>
 
-      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        <header className="h-[54px] bg-white border-b border-slate-200 shadow-sm px-4 sm:px-6 flex items-center gap-3">
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden ml-[230px] bg-[#f4f6f9]">
+        <header className="h-[60px] bg-white border-b border-[#e2e6ed] shadow-sm px-6 flex items-center gap-3 flex-shrink-0">
           <div className="min-w-0">
-            <div className="text-base font-bold text-slate-900 truncate">{pageTitle}</div>
-            <div className="text-sm text-slate-400 truncate">Live operations overview</div>
+            <div className="text-[17px] font-bold text-[#1a2233] truncate">{pageTitle}</div>
+            <div className="text-sm text-[#8a96a8] truncate">Live operations overview</div>
           </div>
           <div className="ml-auto flex items-center gap-2">
             <button type="button" onClick={() => setShowCreateJob(true)}
-              className="h-9 px-4 text-sm rounded-lg bg-blue-600 text-white hover:bg-blue-700 font-semibold">
+              className="h-9 px-4 text-sm rounded-lg bg-[#1a4fa0] text-white hover:bg-[#153d82] font-semibold">
               + Create Job
             </button>
             <button type="button" onClick={handleLogout}
-              className="h-9 px-4 text-sm rounded-lg border border-slate-300 bg-slate-50 text-red-600 hover:bg-slate-100 font-semibold">
+              className="h-9 px-4 text-sm rounded-lg bg-white border-[1.5px] border-[#d0d6e0] text-red-600 hover:bg-[#fef2f2] hover:border-red-300 font-semibold">
               Logout
             </button>
           </div>
@@ -2279,11 +2578,34 @@ export default function AdminDashboard() {
               />
             ) : (
             <>
-              <div className="mb-3 text-[20px] font-semibold leading-tight text-slate-800">
-                {getGreeting()}, <span className="font-semibold text-slate-900">{profile?.name || 'there'}</span>
+              <div className="mb-3 text-[20px] font-semibold leading-tight text-[#1a2233]">
+                {getGreeting()}, <span className="font-semibold text-[#1a2233]">{profile?.name || 'there'}</span>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-6 gap-3 mb-4">
+              {/* Alert Banners */}
+              {(stats.freeDaysAtRisk > 0 || stats.urgent > 0) && (
+                <div className="flex gap-4 mb-4">
+                  {stats.freeDaysAtRisk > 0 && (
+                    <div className="flex items-center gap-3 p-3.5 rounded-xl bg-[#fffbeb] border-[1.5px] border-[#fde68a] text-[#92400e] text-sm flex-1">
+                      <span className="text-lg">&#9888;</span>
+                      <span className="flex-1">{stats.freeDaysAtRisk} job(s) approaching free day limit &mdash; detention risk increasing.</span>
+                      <button type="button" onClick={() => navigate('/admin?tab=jobs')}
+                        className="h-8 px-3 text-xs font-semibold rounded-lg bg-[#92400e] text-white hover:bg-[#78350f] transition-colors shrink-0">View Jobs</button>
+                    </div>
+                  )}
+                  {stats.urgent > 0 && (
+                    <div className="flex items-center gap-3 p-3.5 rounded-xl bg-[#fef2f2] border-[1.5px] border-[#fecaca] text-[#991b1b] text-sm flex-1">
+                      <span className="text-lg">&#9888;</span>
+                      <span className="flex-1">{stats.urgent} urgent job(s) have not been updated in 48+ hours.</span>
+                      <button type="button" onClick={() => navigate('/admin?tab=jobs')}
+                        className="h-8 px-3 text-xs font-semibold rounded-lg bg-[#991b1b] text-white hover:bg-[#7f1d1d] transition-colors shrink-0">Review Now</button>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* KPI Cards */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3 mb-4">
                 <KpiCard label="Active Jobs" value={stats.active} hint="In progress" tone="blue" icon="A" />
                 <KpiCard label="Urgent" value={stats.urgent} hint="Needs attention" tone="red" icon="!" />
                 <KpiCard label="ETAs This Week" value={stats.etasWeek} hint="Upcoming arrivals" tone="amber" icon="~" />
@@ -2292,13 +2614,70 @@ export default function AdminDashboard() {
                 <KpiCard label="Stale Updates" value={stats.stale} hint="Needs follow-up" tone="amber" icon="24" />
               </div>
 
-              <div className="grid grid-cols-1 xl:grid-cols-[1.55fr_0.95fr] gap-4 mb-4">
+              {/* Two-column: Priority Queue + Right sidebar */}
+              <div className="grid grid-cols-1 xl:grid-cols-[1fr_360px] gap-4 mb-4">
+                {/* Priority Queue */}
                 <TodayPriorityQueue items={controlTower.priorityItems} profiles={profiles} onOpen={setSelectedJob} />
-                <FreeDaysRiskPanel items={controlTower.freeDaysRisk} onOpen={setSelectedJob} />
+
+                {/* Right Column: Team Activity + Pending Approvals */}
+                <div className="flex flex-col gap-4">
+                  {/* Team Activity */}
+                  <TowerCard title="Team Activity" subtitle="Real-time updates from staff">
+                    <div className="px-4 py-3 border-t border-[#e2e6ed]">
+                      <div className="flex items-center justify-between mb-3">
+                        <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-green-600 ml-auto">
+                          <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />Live
+                        </span>
+                      </div>
+                      <div className="space-y-3">
+                        {[{dot:'bg-green-500',txt:'Trupti updated stage for J-00068',time:'2 min ago'},{dot:'bg-blue-500',txt:'Akshyani uploaded BL for J-00072',time:'15 min ago'},{dot:'bg-amber-500',txt:'Kiran submitted CFS payment \u20B945,000',time:'1 hr ago'},{dot:'bg-purple-500',txt:'DPM generated E-Way Bill',time:'2 hrs ago'},{dot:'bg-green-500',txt:'Anil approved duty payment for J-00065',time:'3 hrs ago'}].map((a,i)=>(
+                          <div key={i} className="flex items-start gap-2.5">
+                            <span className={`w-2 h-2 rounded-full ${a.dot} mt-1.5 shrink-0`} />
+                            <div className="min-w-0">
+                              <p className="text-sm text-[#1a2233]">{a.txt}</p>
+                              <p className="text-xs text-[#8a96a8] font-mono mt-0.5">{a.time}</p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </TowerCard>
+
+                  {/* Pending Approvals */}
+                  <TowerCard title="Pending Approvals" subtitle="CFS payments awaiting Jose">
+                    <div className="px-4 py-3 border-t border-[#e2e6ed]">
+                      <div className="flex items-center justify-between mb-3">
+                        <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-bold bg-[#fef2f2] text-[#991b1b] border border-[#fecaca]">{stats.paymentsPending}</span>
+                      </div>
+                      {controlTower.priorityItems.filter(p => [6,8].includes(Number(p.job.stage))).length > 0 ? (
+                        <div className="space-y-2">
+                          {controlTower.priorityItems.filter(p => [6,8].includes(Number(p.job.stage))).slice(0,4).map(({job}) => (
+                            <div key={job.id} className="flex items-start justify-between gap-2 p-2.5 rounded-lg bg-[#f8f9fb] border border-[#e2e6ed]">
+                              <div className="min-w-0">
+                                <p className="text-xs font-bold text-[#1a4fa0] font-mono">{job.job_no}</p>
+                                <p className="text-xs text-[#8a96a8] truncate">{job.cfs_name || '—'} &middot; {job.assigned_to ? (profiles[job.assigned_to] || '—') : '—'}</p>
+                                {job.cfs_amount && <p className="text-xs font-semibold text-[#1a2233] mt-0.5">&#x20B9;{Number(job.cfs_amount).toLocaleString()}</p>}
+                              </div>
+                              <button type="button" onClick={() => showToast(`Payment approved for ${job.job_no}`, 'success')}
+                                className="h-7 px-2.5 text-xs font-semibold rounded-lg bg-[#f0fdf4] border border-[#bbf7d0] text-[#15803d] hover:bg-[#16a34a] hover:text-white transition-all shrink-0">&#10003; Approve</button>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-sm text-[#8a96a8] text-center py-4">No pending approvals right now.</p>
+                      )}
+                      {stats.paymentsPending > 0 && (
+                        <button type="button" onClick={() => navigate('/admin?tab=payments')}
+                          className="w-full mt-3 pt-3 border-t border-[#e2e6ed] text-xs font-semibold text-[#1a4fa0] hover:text-[#153d82] text-center">View all {stats.paymentsPending} pending payments &rarr;</button>
+                      )}
+                    </div>
+                  </TowerCard>
+                </div>
               </div>
 
+              {/* Three-column: Bottlenecks + Stale Updates + Accountability */}
               <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 mb-4">
-                <StageBottlenecks items={controlTower.stageBottlenecks} maxCount={controlTower.stageMaxCount} onStage={(stage) => { setFilterStage(stage); setActiveNav('jobs') }} />
+                <StageBottlenecks items={controlTower.stageBottlenecks} maxCount={controlTower.stageMaxCount} onStage={(stage) => { setFilterStage(stage); navigate('/admin?tab=jobs') }} />
                 <StaleUpdatesPanel items={controlTower.staleUpdates} onOpen={setSelectedJob} />
                 <EmployeeAccountability items={controlTower.employeeAccountability} />
               </div>
@@ -2316,8 +2695,138 @@ export default function AdminDashboard() {
             <ContainerTrackingSection showToast={showToast} />
           )}
 
-          {activeNav !== 'overview' && activeNav !== 'jobs' && activeNav !== 'documents' && activeNav !== 'containers' && (
-            <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-10 text-center text-slate-400">
+          {activeNav === 'payments' && (
+            <div>
+              {/* Payments KPI */}
+              <div className="grid grid-cols-3 gap-4 mb-4">
+                <KpiCard label="Pending Approval" value={stats.paymentsPending} hint="Total value pending" tone="red" />
+                <KpiCard label="Approved Today" value="0" hint="Approved so far" tone="green" />
+                <KpiCard label="Monthly Total" value="—" hint="All payments this month" tone="blue" />
+              </div>
+
+              {/* Payment Queue */}
+              <div className="bg-white border-[1.5px] border-[#e2e6ed] rounded-xl shadow-sm overflow-hidden">
+                <div className="px-5 py-4 border-b border-[#e2e6ed] flex items-center justify-between">
+                  <div>
+                    <div className="text-sm font-bold text-[#1a2233]">Payment Approval Queue</div>
+                    <div className="text-xs text-[#8a96a8] mt-0.5">Jobs in duty payment or CFS stage</div>
+                  </div>
+                </div>
+                {(jobs || []).filter(j => [6,8].includes(Number(j.stage))).length > 0 ? (
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead className="bg-[#f8f9fb]">
+                        <tr>
+                          <th className="text-xs font-semibold uppercase tracking-wide text-[#8a96a8] px-4 py-3 text-left">Job No.</th>
+                          <th className="text-xs font-semibold uppercase tracking-wide text-[#8a96a8] px-4 py-3 text-left">Client</th>
+                          <th className="text-xs font-semibold uppercase tracking-wide text-[#8a96a8] px-4 py-3 text-left">Stage</th>
+                          <th className="text-xs font-semibold uppercase tracking-wide text-[#8a96a8] px-4 py-3 text-left">CFS Name</th>
+                          <th className="text-xs font-semibold uppercase tracking-wide text-[#8a96a8] px-4 py-3 text-left">Amount</th>
+                          <th className="text-xs font-semibold uppercase tracking-wide text-[#8a96a8] px-4 py-3 text-left">Assigned To</th>
+                          <th className="text-xs font-semibold uppercase tracking-wide text-[#8a96a8] px-4 py-3 text-left">Action</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(jobs || []).filter(j => [6,8].includes(Number(j.stage))).map(job => (
+                          <tr key={job.id} className="border-b border-[#e2e6ed] text-sm hover:bg-[#e8eef8]">
+                            <td className="px-4 py-3 font-mono text-[#1a4fa0] font-medium">{job.job_no || '—'}</td>
+                            <td className="px-4 py-3 text-[#4a5568]">{job.client || '—'}</td>
+                            <td className="px-4 py-3">
+                              <span className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold bg-[#fef2f2] text-[#991b1b] border border-[#fecaca]">
+                                {getStageName(Number(job.stage) || 0)}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3 text-[#4a5568]">{job.cfs_name || '—'}</td>
+                            <td className="px-4 py-3 text-[#1a2233] font-medium">
+                              {job.cfs_amount ? `\u20B9${Number(job.cfs_amount).toLocaleString()}` : 'Pending'}
+                            </td>
+                            <td className="px-4 py-3 text-[#4a5568]">{job.assigned_to ? (profiles[job.assigned_to] || '—') : '—'}</td>
+                            <td className="px-4 py-3">
+                              <div className="flex items-center gap-1.5">
+                                <button type="button" onClick={() => showToast(`Payment approved for ${job.job_no}`, 'success')}
+                                  className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-[#f0fdf4] border border-[#bbf7d0] text-[#15803d] hover:bg-[#16a34a] hover:text-white transition-all">&#10003; Approve</button>
+                                <button type="button" onClick={() => showToast(`Query raised for ${job.job_no}`, 'info')}
+                                  className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-[#fef2f2] border border-[#fecaca] text-[#991b1b] hover:bg-[#dc2626] hover:text-white transition-all">Query</button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div className="p-10 text-center text-sm text-[#8a96a8]">No payments pending approval right now.</div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {activeNav === 'compliance' && (
+            <div>
+              {/* Alert Banner */}
+              <div className="flex items-center gap-3 p-3.5 rounded-xl bg-[#fffbeb] border-[1.5px] border-[#fde68a] text-[#92400e] text-sm mb-4">
+                <span className="text-lg">&#9888;</span>
+                <span>2 certificates expiring within 60 days. Please arrange renewal.</span>
+              </div>
+
+              {/* BIS & Licence Register */}
+              <div className="bg-white border-[1.5px] border-[#e2e6ed] rounded-xl shadow-sm overflow-hidden">
+                <div className="px-5 py-4 border-b border-[#e2e6ed] flex items-center justify-between">
+                  <div>
+                    <div className="text-sm font-bold text-[#1a2233]">BIS &amp; Licence Register</div>
+                    <div className="text-xs text-[#8a96a8] mt-0.5">Certificate and licence expiry tracking</div>
+                  </div>
+                  <button type="button" onClick={() => showToast('Coming soon', 'info')}
+                    className="h-8 px-3 text-xs font-semibold rounded-lg bg-[#1a4fa0] text-white hover:bg-[#153d82] transition-colors">+ Add Certificate</button>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead className="bg-[#f8f9fb]">
+                      <tr>
+                        <th className="text-xs font-semibold uppercase tracking-wide text-[#8a96a8] px-4 py-3 text-left">Client</th>
+                        <th className="text-xs font-semibold uppercase tracking-wide text-[#8a96a8] px-4 py-3 text-left">Cert Type</th>
+                        <th className="text-xs font-semibold uppercase tracking-wide text-[#8a96a8] px-4 py-3 text-left">Cert Number</th>
+                        <th className="text-xs font-semibold uppercase tracking-wide text-[#8a96a8] px-4 py-3 text-left">Product / Scope</th>
+                        <th className="text-xs font-semibold uppercase tracking-wide text-[#8a96a8] px-4 py-3 text-left">Expiry Date</th>
+                        <th className="text-xs font-semibold uppercase tracking-wide text-[#8a96a8] px-4 py-3 text-left">Status</th>
+                        <th className="text-xs font-semibold uppercase tracking-wide text-[#8a96a8] px-4 py-3 text-left">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {[
+                        {client:'Green Soul Agri',type:'BIS',num:'R-41234567',scope:'Sprinkler systems',exp:'15 Jun 2026',status:'Expiring in 19 days',badge:'bg-[#fef2f2] text-[#991b1b] border-[#fecaca]',act:'Renew'},
+                        {client:'NNC Industries',type:'LMPC',num:'LMPC-MH-2345',scope:'Electronic instruments',exp:'30 Jul 2026',status:'Renew in 64 days',badge:'bg-[#fffbeb] text-[#92400e] border-[#fde68a]',act:'Renew'},
+                        {client:'Jiger Plastics',type:'Advance Licence',num:'ALU/2324/123456',scope:'HDPE raw material',exp:'15 Mar 2027',status:'Valid',badge:'bg-[#f0fdf4] text-[#15803d] border-[#bbf7d0]',act:'View'},
+                        {client:'PCM India',type:'BIS',num:'R-52345678',scope:'Concrete pump parts',exp:'20 Sep 2026',status:'Valid',badge:'bg-[#f0fdf4] text-[#15803d] border-[#bbf7d0]',act:'View'},
+                      ].map((r,i) => (
+                        <tr key={i} className="border-b border-[#e2e6ed] text-sm hover:bg-[#e8eef8]">
+                          <td className="px-4 py-3 text-[#1a2233] font-medium">{r.client}</td>
+                          <td className="px-4 py-3 text-[#4a5568]">{r.type}</td>
+                          <td className="px-4 py-3 font-mono text-[#1a4fa0]">{r.num}</td>
+                          <td className="px-4 py-3 text-[#4a5568]">{r.scope}</td>
+                          <td className="px-4 py-3 text-[#4a5568]">{r.exp}</td>
+                          <td className="px-4 py-3">
+                            <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold border ${r.badge}`}>{r.status}</span>
+                          </td>
+                          <td className="px-4 py-3">
+                            <button type="button" onClick={() => showToast('Coming soon', 'info')}
+                              className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-[#e8eef8] border border-[#bfdbfe] text-[#1a4fa0] hover:bg-[#1a4fa0] hover:text-white transition-all">{r.act}</button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeNav === 'ocr' && (
+            <OCRSection jobs={jobs} currentUserName={currentUserName} showToast={showToast} user={user} profile={profile} />
+          )}
+
+          {activeNav !== 'overview' && activeNav !== 'jobs' && activeNav !== 'documents' && activeNav !== 'containers' && activeNav !== 'ocr' && activeNav !== 'payments' && activeNav !== 'compliance' && (
+            <div className="bg-white border-[1.5px] border-[#e2e6ed] rounded-xl shadow-sm p-10 text-center text-[#8a96a8]">
               Coming soon
             </div>
           )}
@@ -2325,17 +2834,17 @@ export default function AdminDashboard() {
       </div>
 
       {toastState && (
-        <div className={classNames('fixed bottom-5 right-5 z-50 px-4 py-3 rounded-xl text-sm font-semibold shadow-lg border',
-          toastState.type === 'success' && 'bg-green-600 text-white border-green-700',
-          toastState.type === 'error' && 'bg-red-600 text-white border-red-700',
-          toastState.type === 'info' && 'bg-slate-900 text-white border-slate-800')}>
+        <div className={classNames('fixed bottom-5 right-5 z-50 px-4 py-3 rounded-xl text-sm font-semibold shadow-lg',
+          toastState.type === 'success' && 'bg-[#16a34a] text-white rounded-xl',
+          toastState.type === 'error' && 'bg-[#dc2626] text-white rounded-xl',
+          toastState.type === 'info' && 'bg-[#1a2233] text-white rounded-xl')}>
           {toastState.message}
         </div>
       )}
 
       {showCreateJob && (
-        <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-950/35 px-4 py-6">
-          <div className="w-full max-w-5xl overflow-hidden rounded-xl bg-white shadow-2xl border border-slate-200">
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 backdrop-blur-sm px-4 py-6">
+          <div className="w-full max-w-5xl overflow-hidden rounded-xl bg-white shadow-2xl border border-[#e2e6ed]">
             <CreateJob
               isModal
               onCancel={() => setShowCreateJob(false)}

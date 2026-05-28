@@ -1,3 +1,37 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@layer base {
+  body {
+    font-family: 'Inter', sans-serif;
+    background-color: #f4f6f9;
+    color: #1a2233;
+    font-size: 14px;
+    line-height: 1.5;
+  }
+  
+  input, select, textarea, button {
+    font-family: 'Inter', sans-serif;
+  }
+}
+
+@layer utilities {
+  .font-mono {
+    font-family: 'JetBrains Mono', monospace;
+  }
+  
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 5px;
+    height: 5px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: #f4f6f9;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background: #d0d6e0;
+    border-radius: 5px;
+  }
+}
