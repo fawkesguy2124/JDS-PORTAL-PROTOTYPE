@@ -2001,208 +2001,475 @@ function OCRSection({ jobs, currentUserName, showToast, user: ocrUser, profile: 
   const textareaBase = 'w-full px-3 py-2 text-sm rounded-lg bg-white border-[1.5px] border-[#e2e6ed] text-[#1a2233] outline-none focus:border-[#1a4fa0] focus:ring-2 focus:ring-[#e8eef8] resize-none'
 
   return (
-    <div>
-      <div className="flex items-center gap-1 mb-6">
-        {stepInfo.map((s, i) => {
-          let cls = ''
-          if (s.num < step) cls = 'bg-[#1a4fa0] text-white'
-          else if (s.num === step) cls = 'bg-white border-2 border-[#1a4fa0] text-[#1a4fa0]'
-          else cls = 'bg-[#f4f6f9] border-2 border-[#d0d6e0] text-[#8a96a8]'
-          return (
-            <div key={s.num} className="flex items-center gap-1 flex-1">
-              <div className={`h-7 w-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${cls}`}>
-                {s.num < step ? '\u2713' : s.num}
-              </div>
-              <span className={`text-xs font-semibold ${s.num <= step ? 'text-[#1a2233]' : 'text-[#8a96a8]'}`}>{s.label}</span>
-              {i < stepInfo.length - 1 && <div className="flex-1 h-[2px] bg-[#e2e6ed] mx-1" />}
-            </div>
-          )
-        })}
-      </div>
+    <div className="flex gap-[18px] items-start">
 
-      {step === 1 && (
-        <div>
-          <div className="flex items-center h-9 px-3 bg-[#f8f9fb] border-[1.5px] border-[#e2e6ed] rounded-lg min-w-[240px] mb-4">
-            <input value={ocrSearch} onChange={(e) => setOcrSearch(e.target.value)}
-              placeholder="Search by job no. or client..."
-              className="w-full bg-transparent outline-none text-sm text-[#1a2233] placeholder:text-[#8a96a8]" />
-          </div>
-          {savedExtraction && (
-            <div className="bg-green-50 border border-green-200 rounded-xl p-4 mb-4 flex items-center justify-between">
-              <div>
-                <p className="text-sm font-semibold text-green-800">Saved extraction found for {selectedJob?.job_no}</p>
-                <p className="text-xs text-green-600">Extracted on {new Date(savedExtraction.extracted_at).toLocaleDateString()}</p>
-              </div>
-              <div className="flex items-center gap-2">
-                <button type="button" onClick={handleViewSaved}
-                  className="h-8 px-3 text-xs font-semibold rounded-lg bg-green-600 text-white hover:bg-green-700">View Saved</button>
-                <button type="button" onClick={handleExtractAgain}
-                  className="h-8 px-3 text-xs font-semibold rounded-lg border border-green-300 bg-white text-green-700 hover:bg-green-50">Extract Again</button>
-              </div>
-            </div>
-          )}
-          <div className="space-y-2">
-            {filteredJobs.map((job) => (
-              <div key={job.id} role="button" tabIndex={0}
-                onClick={() => handleSelectJob(job)}
-                onKeyDown={(e) => e.key === 'Enter' && handleSelectJob(job)}
-                className={`${cardBase} p-4 cursor-pointer hover:border-blue-300 hover:shadow-md transition-all ${selectedJob?.id === job.id ? 'border-blue-400 ring-2 ring-blue-200' : ''}`}>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <span className="text-sm font-bold text-[#1a2233]">{job.job_no || '\u2014'}</span>
-                    <span className="text-xs text-[#8a96a8] ml-2">{job.client || ''}</span>
+      {/* ── LEFT MAIN COLUMN ── */}
+      <div className="flex-1 min-w-0">
+
+        {/* ── STEP INDICATOR (shown on all steps) ── */}
+        <div className="bg-white border-[1.5px] border-[#e2e6ed] rounded-xl shadow-sm overflow-hidden mb-[18px]">
+          <div className="px-5 py-4 flex items-center gap-0">
+            {stepInfo.map((s, i) => {
+              const done   = s.num < step
+              const active = s.num === step
+              return (
+                <div key={s.num} className="flex items-center flex-1 min-w-0">
+                  <div className="flex flex-col items-center shrink-0">
+                    <div className={[
+                      'w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold border-2 transition-all',
+                      done    ? 'bg-[#1a4fa0] border-[#1a4fa0] text-white'
+                      : active ? 'bg-white border-[#1a4fa0] text-[#1a4fa0]'
+                               : 'bg-[#f4f6f9] border-[#d0d6e0] text-[#8a96a8]'
+                    ].join(' ')}>
+                      {done ? '\u2713' : s.num}
+                    </div>
+                    <span className={[
+                      'text-[10px] font-semibold mt-1 whitespace-nowrap',
+                      active ? 'text-[#1a4fa0]' : done ? 'text-[#1a2233]' : 'text-[#8a96a8]'
+                    ].join(' ')}>
+                      {s.label}
+                    </span>
                   </div>
-                  <span className="text-xs text-[#8a96a8]">{job.stage ? `Stage ${job.stage}` : ''}</span>
+                  {i < stepInfo.length - 1 && (
+                    <div className={[
+                      'flex-1 h-[2px] mx-1 mb-4',
+                      done ? 'bg-[#1a4fa0]' : 'bg-[#e2e6ed]'
+                    ].join(' ')} />
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        </div>
+
+        {/* ── STEP 1: SELECT JOB ── */}
+        {step === 1 && (
+          <div className="bg-white border-[1.5px] border-[#e2e6ed] rounded-xl shadow-sm overflow-hidden">
+            <div className="px-5 py-4 border-b border-[#e2e6ed] flex items-center justify-between">
+              <div>
+                <div className="text-sm font-bold text-[#1a2233]">AI Document Extraction</div>
+                <div className="text-xs text-[#8a96a8] mt-0.5">Select a job · Groq + Llama 4 Scout reads and extracts all fields</div>
+              </div>
+              <span className="inline-flex items-center rounded-full px-2.5 py-1 text-xs font-bold bg-[#f0fdf4] text-[#15803d] border border-[#bbf7d0]">✦ AI Ready</span>
+            </div>
+            <div className="p-5">
+              {/* Search */}
+              <div className="flex items-center gap-2 h-10 px-4 bg-[#f8f9fb] border-[1.5px] border-[#e2e6ed] rounded-lg mb-4 focus-within:border-[#1a4fa0] focus-within:bg-white transition-colors">
+                <span className="text-[#8a96a8] text-sm">🔍</span>
+                <input
+                  value={ocrSearch}
+                  onChange={(e) => setOcrSearch(e.target.value)}
+                  placeholder="Search by job no. or client..."
+                  className="flex-1 bg-transparent outline-none text-sm text-[#1a2233] placeholder:text-[#8a96a8]"
+                />
+              </div>
+
+              {/* Saved extraction banner */}
+              {savedExtraction && (
+                <div className="mb-4 bg-[#f0fdf4] border border-[#bbf7d0] rounded-xl p-4 flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-semibold text-[#15803d]">Saved extraction found for {selectedJob?.job_no}</p>
+                    <p className="text-xs text-[#166534] mt-0.5">
+                      Extracted on {savedExtraction.extracted_at ? new Date(savedExtraction.extracted_at).toLocaleDateString('en-IN') : '\u2014'}
+                      {savedExtraction.extracted_by_name ? ` · ${savedExtraction.extracted_by_name}` : ''}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button type="button" onClick={handleViewSaved}
+                      className="h-8 px-3 text-xs font-semibold rounded-lg bg-[#16a34a] text-white hover:bg-[#15803d] transition-colors">
+                      View Saved
+                    </button>
+                    <button type="button" onClick={handleExtractAgain}
+                      className="h-8 px-3 text-xs font-semibold rounded-lg bg-white border border-[#bbf7d0] text-[#15803d] hover:bg-[#f0fdf4] transition-colors">
+                      Extract Again
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Job list */}
+              <div className="border border-[#e2e6ed] rounded-xl overflow-hidden">
+                <div className="px-4 py-2.5 bg-[#f8f9fb] border-b border-[#e2e6ed] flex items-center justify-between">
+                  <span className="text-[11px] font-bold text-[#8a96a8] uppercase tracking-wider">Select Job</span>
+                  <span className="text-xs text-[#8a96a8]">{filteredJobs.length} jobs</span>
+                </div>
+                <div className="divide-y divide-[#e2e6ed] max-h-[400px] overflow-y-auto scrollbar-thin">
+                  {filteredJobs.map((job) => (
+                    <div
+                      key={job.id}
+                      role="button" tabIndex={0}
+                      onClick={() => handleSelectJob(job)}
+                      onKeyDown={(e) => e.key === 'Enter' && handleSelectJob(job)}
+                      className={[
+                        'px-4 py-3 flex items-center justify-between gap-3 cursor-pointer transition-colors',
+                        selectedJob?.id === job.id
+                          ? 'bg-[#e8eef8] border-l-[3px] border-l-[#1a4fa0]'
+                          : 'hover:bg-[#f8f9fb]'
+                      ].join(' ')}
+                    >
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-bold text-[#1a4fa0] font-mono">{job.job_no || '\u2014'}</span>
+                          <span className="text-xs text-[#8a96a8] truncate">{job.client || ''}</span>
+                        </div>
+                        <div className="text-xs text-[#8a96a8] mt-0.5">
+                          Stage {job.stage ?? 0} · {job.mode || '\u2014'} · {job.goods ? String(job.goods).slice(0, 32) : '\u2014'}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold bg-[#f0fdf4] text-[#15803d] border border-[#bbf7d0] ocr-saved-badge" data-jobid={job.id} style={{display:'none'}}>
+                          ✓ Saved
+                        </span>
+                        <span className="text-[#d0d6e0] text-xs">→</span>
+                      </div>
+                    </div>
+                  ))}
+                  {filteredJobs.length === 0 && (
+                    <div className="px-4 py-10 text-center text-sm text-[#8a96a8]">
+                      {ocrSearch.trim() ? 'No jobs match your search.' : 'No jobs available.'}
+                    </div>
+                  )}
                 </div>
               </div>
-            ))}
-            {filteredJobs.length === 0 && (
-              <div className={`${cardBase} p-10 text-center text-[#8a96a8]`}>
-                {ocrSearch.trim() ? 'No jobs match your search.' : 'No jobs available.'}
-              </div>
-            )}
+            </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {step === 2 && (
-        <div>
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <span className="text-sm font-bold text-[#1a2233]">{selectedJob?.job_no}</span>
-              <span className="text-xs text-[#8a96a8] ml-2">{selectedJob?.client}</span>
-            </div>
-            <button type="button" onClick={() => setStep(1)}
-              className={`${btnBase} bg-white border-[1.5px] border-[#d0d6e0] text-[#4a5568] hover:border-[#1a4fa0] hover:text-[#1a4fa0] hover:bg-[#e8eef8]`}>Back</button>
-          </div>
-          {loadingDocs ? (
-            <div className={`${cardBase} p-10 flex justify-center`}>
-              <div className="h-8 w-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
-            </div>
-          ) : documents.length === 0 ? (
-            <div className={`${cardBase} p-10 text-center text-[#8a96a8]`}>No documents for this job.</div>
-          ) : (
-            <div>
-              <div className="mb-3">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input type="checkbox" checked={selectedDocIds.size === documents.length} onChange={toggleAll}
-                    className="h-4 w-4 rounded border-[#d0d6e0] text-blue-600 focus:ring-blue-200" />
-                  <span className="text-sm font-semibold text-[#4a5568]">Select All ({documents.length} documents)</span>
-                </label>
-              </div>
-              <div className="space-y-1.5 mb-4">
-                {documents.map((doc) => (
-                  <label key={doc.id} className="flex items-center gap-3 p-2.5 rounded-lg hover:bg-[#e8eef8] cursor-pointer border border-transparent hover:border-[#e2e6ed] transition-all">
-                    <input type="checkbox" checked={selectedDocIds.has(doc.id)} onChange={() => toggleDoc(doc.id)}
-                      className="h-4 w-4 rounded border-[#d0d6e0] text-blue-600 focus:ring-blue-200" />
-                    <span className="text-sm text-[#1a2233] font-medium flex-1 truncate">{doc.file_name}</span>
-                    <span className="text-xs text-[#8a96a8]">{doc.doc_type || ''}</span>
-                  </label>
-                ))}
-              </div>
-              <button type="button" onClick={handleExtract} disabled={selectedDocIds.size === 0}
-                className={`${btnBase} bg-[#1a4fa0] text-white hover:bg-[#153d82] inline-flex items-center gap-2`}>
-                Continue to Extract ({selectedDocIds.size})
+        {/* ── STEP 2: SELECT DOCUMENTS ── */}
+        {step === 2 && (
+          <div className="bg-white border-[1.5px] border-[#e2e6ed] rounded-xl shadow-sm overflow-hidden">
+            <div className="px-5 py-4 border-b border-[#e2e6ed] flex items-center gap-3">
+              <button type="button" onClick={() => setStep(1)}
+                className="h-8 px-3 text-xs font-semibold rounded-lg bg-white border-[1.5px] border-[#d0d6e0] text-[#4a5568] hover:border-[#1a4fa0] hover:text-[#1a4fa0] hover:bg-[#e8eef8] transition-colors">
+                ← Back
               </button>
-            </div>
-          )}
-        </div>
-      )}
-
-      {step === 3 && (
-        <div className={`${cardBase} p-10 text-center`}>
-          <div className="h-10 w-10 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-          <p className="text-sm font-semibold text-[#4a5568]">{extractProgress || 'Extracting data...'}</p>
-          <p className="text-xs text-[#8a96a8] mt-2">This may take a minute or two depending on document size.</p>
-          {extractError && (
-            <div className="mt-4">
-              <p className="text-xs text-red-600 mb-2">{extractError}</p>
-              <button type="button" onClick={handleExtract}
-                className={`${btnBase} bg-[#1a4fa0] text-white hover:bg-[#153d82]`}>Retry</button>
-            </div>
-          )}
-        </div>
-      )}
-
-      {step === 4 && extractedData && (
-        <div>
-          <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-4 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-bold ${extractedData.provider === 'groq' ? 'bg-purple-100 text-purple-800' : extractedData.provider === 'gemini' ? 'bg-blue-100 text-blue-800' : 'bg-green-100 text-green-800'}`}>
-                {extractedData.provider === 'groq' ? 'Groq' : extractedData.provider === 'gemini' ? 'Gemini' : 'Saved'}
-              </span>
               <div>
                 <span className="text-sm font-bold text-[#1a2233]">{selectedJob?.job_no}</span>
                 <span className="text-xs text-[#8a96a8] ml-2">{selectedJob?.client}</span>
               </div>
             </div>
-          </div>
 
-          <div className="space-y-6 mb-6">
-            {OCR_SECTIONS.map((section) => (
-              <div key={section.title} className={`${cardBase} overflow-hidden`}>
-                <div className="px-4 py-2.5 bg-white border-b border-[#e2e6ed]">
-                  <span className="text-sm font-bold text-[#1a2233]">{section.title}</span>
+            {loadingDocs ? (
+              <div className="p-12 flex flex-col items-center gap-3">
+                <div className="h-9 w-9 border-4 border-[#1a4fa0] border-t-transparent rounded-full animate-spin" />
+                <p className="text-sm text-[#8a96a8]">Loading documents...</p>
+              </div>
+            ) : documents.length === 0 ? (
+              <div className="p-12 text-center">
+                <div className="text-3xl mb-3">📄</div>
+                <p className="text-sm font-semibold text-[#4a5568]">No documents uploaded for this job</p>
+                <p className="text-xs text-[#8a96a8] mt-1">Upload documents in the Documents tab first.</p>
+              </div>
+            ) : (
+              <>
+                <div className="px-5 py-3 border-b border-[#e2e6ed] bg-[#f8f9fb] flex items-center justify-between">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox"
+                      checked={selectedDocIds.size === documents.length && documents.length > 0}
+                      onChange={toggleAll}
+                      className="h-4 w-4 rounded border-[#d0d6e0] text-[#1a4fa0]" />
+                    <span className="text-[11px] font-bold text-[#8a96a8] uppercase tracking-wider">Select Documents to Extract</span>
+                  </label>
+                  <span className="text-xs text-[#8a96a8]">{selectedDocIds.size} / {documents.length} selected</span>
                 </div>
-                <div className="px-4 py-3 space-y-3">
-                  {section.fields.map((key) => {
-                    const field = extractEdits?.[key] || {}
-                    const label = FIELD_LABELS_OCR[key] || key
-                    const isLong = TEXTAREA_FIELDS.includes(key)
-                    const isEmpty = field.value == null || field.value === ''
-                    return (
-                      <div key={key} className={`p-3 rounded-lg ${isEmpty ? 'border-l-4 border-l-red-400 bg-red-50/30' : 'bg-[#f8f9fb]'} border border-[#e2e6ed] ${field.confidence === 'high' ? 'border-l-4 border-l-[#16a34a]' : field.confidence === 'medium' ? 'border-l-4 border-l-[#f59e0b]' : field.confidence === 'low' || field.confidence === null ? 'border-l-4 border-l-[#dc2626] bg-[#fef2f2]' : ''}`}>
-                        <div className="flex items-center justify-between mb-1.5">
-                          <label className="text-xs font-semibold uppercase tracking-wide text-[#8a96a8]">{label}</label>
-                          <div className="flex items-center gap-1.5">
-                            {field.confidence && (
-                              <span className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[9px] font-bold ${confidenceColor(field.confidence)}`}>
-                                {field.confidence}
-                              </span>
-                            )}
-                            {field.source && (
-                              <span className="inline-flex items-center rounded-full px-1.5 py-0.5 text-[9px] font-bold bg-[#f9fafb] text-[#4a5568] border border-[#d0d6e0]">
-                                {field.source}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                        {isEmpty ? (
-                          <p className="text-xs text-red-500 italic">Not found</p>
-                        ) : isLong ? (
-                          <textarea value={field.value || ''} onChange={(e) => setExtractEdits((prev) => ({ ...prev, [key]: { ...prev[key], value: e.target.value } }))}
-                            rows={2} className={textareaBase} />
-                        ) : (
-                          <input value={field.value || ''} onChange={(e) => setExtractEdits((prev) => ({ ...prev, [key]: { ...prev[key], value: e.target.value } }))}
-                            className={inputBase} />
-                        )}
-                      </div>
-                    )
-                  })}
+                <div className="divide-y divide-[#e2e6ed]">
+                  {documents.map((doc) => (
+                    <label key={doc.id}
+                      className="flex items-center gap-3 px-5 py-3 hover:bg-[#f8f9fb] cursor-pointer transition-colors">
+                      <input type="checkbox"
+                        checked={selectedDocIds.has(doc.id)}
+                        onChange={() => toggleDoc(doc.id)}
+                        className="h-4 w-4 rounded border-[#d0d6e0] text-[#1a4fa0] shrink-0" />
+                      <span className="text-sm">📄</span>
+                      <span className="text-sm text-[#1a2233] font-medium flex-1 truncate">{doc.file_name}</span>
+                      <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-[#eff6ff] text-[#1e40af] border border-[#bfdbfe] shrink-0">
+                        {doc.doc_type || 'Other'}
+                      </span>
+                    </label>
+                  ))}
+                </div>
+                <div className="px-5 py-4 border-t border-[#e2e6ed] bg-[#f8f9fb]">
+                  <button type="button" onClick={handleExtract} disabled={selectedDocIds.size === 0}
+                    className="h-9 px-5 text-sm font-semibold rounded-lg bg-[#1a4fa0] text-white hover:bg-[#153d82] disabled:opacity-50 disabled:cursor-not-allowed transition-colors inline-flex items-center gap-2">
+                    <span>✦</span>
+                    Extract with AI ({selectedDocIds.size} document{selectedDocIds.size !== 1 ? 's' : ''})
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
+        {/* ── STEP 3: EXTRACTING ── */}
+        {step === 3 && (
+          <div className="bg-white border-[1.5px] border-[#e2e6ed] rounded-xl shadow-sm p-12 text-center">
+            <div className="text-4xl mb-5">✦</div>
+            <div className="h-12 w-12 border-4 border-[#1a4fa0] border-t-transparent rounded-full animate-spin mx-auto mb-5" />
+            <p className="text-base font-bold text-[#1a2233] mb-1">Extracting Document Data</p>
+            <p className="text-sm text-[#4a5568] mb-1">{extractProgress || 'Processing documents with AI...'}</p>
+            <p className="text-xs text-[#8a96a8]">Groq Llama 4 Scout · Gemini 2.5 Flash fallback · This may take 30–60 seconds</p>
+            {extractError && (
+              <div className="mt-5 p-4 bg-[#fef2f2] border border-[#fecaca] rounded-xl text-left">
+                <p className="text-sm font-semibold text-[#991b1b] mb-2">{extractError}</p>
+                <button type="button" onClick={handleExtract}
+                  className="h-9 px-4 text-sm font-semibold rounded-lg bg-[#dc2626] text-white hover:bg-[#b91c1c] transition-colors">
+                  Retry
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── STEP 4: REVIEW EXTRACTED FIELDS ── */}
+        {step === 4 && extractedData && (
+          <div>
+            {/* Provider + job banner */}
+            <div className="bg-white border-[1.5px] border-[#e2e6ed] rounded-xl px-5 py-3 mb-4 flex items-center justify-between gap-3 shadow-sm">
+              <div className="flex items-center gap-3">
+                <span className={[
+                  'inline-flex items-center rounded-full px-2.5 py-1 text-xs font-bold',
+                  extractedData.provider === 'groq'   ? 'bg-[#f5f3ff] text-[#5b21b6] border border-[#ddd6fe]'
+                  : extractedData.provider === 'gemini' ? 'bg-[#eff6ff] text-[#1e40af] border border-[#bfdbfe]'
+                                                       : 'bg-[#f0fdf4] text-[#15803d] border border-[#bbf7d0]'
+                ].join(' ')}>
+                  {extractedData.provider === 'groq' ? '\u26A1 Groq' : extractedData.provider === 'gemini' ? '\u2726 Gemini' : '\u2713 Saved'}
+                </span>
+                <div>
+                  <span className="text-sm font-bold text-[#1a2233]">{selectedJob?.job_no}</span>
+                  <span className="text-xs text-[#8a96a8] ml-2">{selectedJob?.client}</span>
                 </div>
               </div>
-            ))}
-          </div>
+              {(() => {
+                const vals = Object.values(extractEdits || {})
+                const high = vals.filter(f => f?.confidence === 'high').length
+                const med  = vals.filter(f => f?.confidence === 'medium').length
+                const miss = vals.filter(f => !f?.value).length
+                return (
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className="px-2 py-0.5 rounded-full bg-[#f0fdf4] text-[#15803d] border border-[#bbf7d0] text-xs font-semibold">{high} high</span>
+                    <span className="px-2 py-0.5 rounded-full bg-[#fffbeb] text-[#92400e] border border-[#fde68a] text-xs font-semibold">{med} medium</span>
+                    <span className="px-2 py-0.5 rounded-full bg-[#fef2f2] text-[#991b1b] border border-[#fecaca] text-xs font-semibold">{miss} missing</span>
+                  </div>
+                )
+              })()}
+            </div>
 
-          <div className="flex items-center justify-between pt-4 border-t border-[#e2e6ed]">
-            <button type="button" onClick={() => { setStep(1); setSelectedJob(null); setExtractedData(null); setExtractEdits({}) }}
-              className={`${btnBase} bg-white border-[1.5px] border-[#d0d6e0] text-[#4a5568] hover:border-[#1a4fa0] hover:text-[#1a4fa0] hover:bg-[#e8eef8]`}>
-              Back to Step 1
-            </button>
-            <div className="flex items-center gap-2">
-              <button type="button" onClick={handleDownloadExcel}
-                className={`${btnBase} bg-white border-[1.5px] border-[#d0d6e0] text-[#4a5568] hover:border-[#1a4fa0] hover:text-[#1a4fa0] hover:bg-[#e8eef8]`}>
-                Download Excel
+            {/* Section cards with fields */}
+            <div className="space-y-4 mb-5">
+              {OCR_SECTIONS.map((section) => (
+                <div key={section.title} className="bg-white border-[1.5px] border-[#e2e6ed] rounded-xl shadow-sm overflow-hidden">
+                  <div className="px-5 py-3 border-b border-[#e2e6ed] bg-[#f8f9fb]">
+                    <span className="text-sm font-bold text-[#1a2233]">{section.title}</span>
+                  </div>
+                  <div className="p-4 grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {section.fields.map((key) => {
+                      const field = extractEdits?.[key] || {}
+                      const label = FIELD_LABELS_OCR[key] || key
+                      const isLong = TEXTAREA_FIELDS.includes(key)
+                      const isEmpty = field.value == null || field.value === ''
+                      const leftBorder =
+                        isEmpty                         ? 'border-l-[#dc2626]'
+                        : field.confidence === 'high'   ? 'border-l-[#16a34a]'
+                        : field.confidence === 'medium' ? 'border-l-[#f59e0b]'
+                                                        : 'border-l-[#dc2626]'
+                      const bgTint =
+                        isEmpty                         ? 'bg-[#fffafa]'
+                        : field.confidence === 'high'   ? 'bg-white'
+                                                        : 'bg-white'
+                      return (
+                        <div key={key}
+                          className={[
+                            'rounded-[7px] border-[1.5px] border-[#e2e6ed] border-l-4 p-[10px] transition-all',
+                            leftBorder, bgTint,
+                            isLong ? 'md:col-span-2' : ''
+                          ].join(' ')}>
+                          <div className="flex items-center justify-between mb-1.5 gap-2">
+                            <span className="text-[10px] font-bold uppercase tracking-widest text-[#8a96a8]">{label}</span>
+                            <div className="flex items-center gap-1 shrink-0">
+                              {field.confidence && (
+                                <span className={[
+                                  'inline-flex items-center rounded-full px-1.5 py-0.5 text-[9px] font-bold',
+                                  field.confidence === 'high'   ? 'bg-[#f0fdf4] text-[#15803d] border border-[#bbf7d0]'
+                                  : field.confidence === 'medium' ? 'bg-[#fffbeb] text-[#92400e] border border-[#fde68a]'
+                                                                 : 'bg-[#fef2f2] text-[#991b1b] border border-[#fecaca]'
+                                ].join(' ')}>
+                                  {field.confidence}
+                                </span>
+                              )}
+                              {field.source && (
+                                <span className="inline-flex items-center rounded-full px-1.5 py-0.5 text-[9px] font-medium bg-[#f8f9fb] text-[#4a5568] border border-[#d0d6e0]">
+                                  {field.source}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          {isEmpty ? (
+                            <p className="text-xs text-[#dc2626] italic">Not found — enter manually</p>
+                          ) : isLong ? (
+                            <textarea
+                              value={field.value || ''}
+                              onChange={(e) => setExtractEdits(prev => ({ ...prev, [key]: { ...prev[key], value: e.target.value } }))}
+                              rows={2}
+                              className="w-full px-3 py-2 text-sm rounded-lg bg-white border-[1.5px] border-[#e2e6ed] text-[#1a2233] outline-none focus:border-[#1a4fa0] resize-none"
+                            />
+                          ) : (
+                            <input
+                              value={field.value || ''}
+                              onChange={(e) => setExtractEdits(prev => ({ ...prev, [key]: { ...prev[key], value: e.target.value } }))}
+                              className="w-full h-9 px-3 text-sm rounded-lg bg-white border-[1.5px] border-[#e2e6ed] text-[#1a2233] outline-none focus:border-[#1a4fa0]"
+                            />
+                          )}
+                          {/* Confidence hint below field */}
+                          {!isEmpty && field.confidence && (
+                            <div className={[
+                              'text-[10px] mt-1',
+                              field.confidence === 'high'   ? 'text-[#16a34a]'
+                              : field.confidence === 'medium' ? 'text-[#b45309]'
+                                                             : 'text-[#dc2626]'
+                            ].join(' ')}>
+                              {field.confidence === 'high' ? '\u25CF High confidence' : field.confidence === 'medium' ? '\u25CF Medium \u2014 please verify' : '\u25CF Low confidence \u2014 check manually'}
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Action footer */}
+            <div className="bg-white border-[1.5px] border-[#e2e6ed] rounded-xl px-5 py-4 flex items-center justify-between shadow-sm">
+              <button type="button"
+                onClick={() => { setStep(1); setSelectedJob(null); setExtractedData(null); setExtractEdits({}) }}
+                className="h-9 px-4 text-sm font-semibold rounded-lg bg-white border-[1.5px] border-[#d0d6e0] text-[#4a5568] hover:border-[#1a4fa0] hover:text-[#1a4fa0] hover:bg-[#e8eef8] transition-colors">
+                ← Start Over
               </button>
-              <button type="button" onClick={handleSave} disabled={saving}
-                className={`${btnBase} bg-[#1a4fa0] text-white hover:bg-[#153d82] inline-flex items-center gap-2`}>
-                {saving && <span className="h-4 w-4 border-2 border-white border-t-transparent rounded-full animate-spin" />}
-                {saving ? 'Saving...' : 'Save to Database'}
-              </button>
+              <div className="flex items-center gap-2">
+                <button type="button" onClick={handleDownloadExcel}
+                  className="h-9 px-4 text-sm font-semibold rounded-lg bg-white border-[1.5px] border-[#d0d6e0] text-[#4a5568] hover:border-[#1a4fa0] hover:text-[#1a4fa0] hover:bg-[#e8eef8] transition-colors inline-flex items-center gap-1.5">
+                  ↓ Download Excel
+                </button>
+                <button type="button" onClick={handleSave} disabled={saving}
+                  className="h-9 px-5 text-sm font-semibold rounded-lg bg-[#1a4fa0] text-white hover:bg-[#153d82] disabled:opacity-50 transition-colors inline-flex items-center gap-2 justify-center"
+                  style={{minWidth:'160px'}}>
+                  {saving && <span className="h-4 w-4 border-2 border-white border-t-transparent rounded-full animate-spin" />}
+                  {saving ? 'Saving...' : '\u2193 Save to Database'}
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
+
+      </div>{/* end left column */}
+
+      {/* ── RIGHT SIDEBAR ── */}
+      <div className="w-[300px] shrink-0 flex flex-col gap-[16px]">
+
+        {/* Step 1\u20133: Recent Extractions */}
+        {step < 4 && (
+          <div className="bg-white border-[1.5px] border-[#e2e6ed] rounded-xl shadow-sm overflow-hidden">
+            <div className="px-5 py-4 border-b border-[#e2e6ed]">
+              <div className="text-sm font-bold text-[#1a2233]">Recent Extractions</div>
+            </div>
+            <div className="py-1">
+              {[
+                { jobNo: 'J-00071', desc: 'BL + Invoice · 19/21 fields', time: 'Today, 2:34 PM · Akshyani', dot: '#16a34a' },
+                { jobNo: 'J-00068', desc: 'BL + COO · All 21 fields', time: 'Today, 11:20 AM · Akshyani', dot: '#16a34a' },
+                { jobNo: 'J-00065', desc: 'Invoice only · 14/21 fields', time: 'Yesterday · Akshyani', dot: '#f59e0b' },
+              ].map((r) => (
+                <div key={r.jobNo} className="flex gap-3 px-5 py-3 border-b border-[#e2e6ed] last:border-b-0">
+                  <div className="w-2 h-2 rounded-full shrink-0 mt-1.5" style={{ backgroundColor: r.dot }} />
+                  <div>
+                    <div className="text-sm text-[#1a2233]"><strong className="text-[#1a4fa0] font-semibold">{r.jobNo}</strong> — {r.desc}</div>
+                    <div className="text-[11px] text-[#8a96a8] mt-0.5 font-mono">{r.time}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Step 1\u20133: Performance Stats */}
+        {step < 4 && (
+          <div className="bg-white border-[1.5px] border-[#e2e6ed] rounded-xl shadow-sm overflow-hidden">
+            <div className="px-5 py-4 border-b border-[#e2e6ed]">
+              <div className="text-sm font-bold text-[#1a2233]">Performance Stats</div>
+            </div>
+            <div className="p-4 flex flex-col gap-3">
+              {[
+                { label: 'Average accuracy',      value: '91.4%',    color: '#16a34a' },
+                { label: 'Documents processed',   value: '147',      color: '#1a4fa0' },
+                { label: 'Time saved per month',  value: '~18 hours', color: '#b45309' },
+              ].map((s) => (
+                <div key={s.label} className="flex items-center justify-between px-3 py-2.5 bg-[#f8f9fb] border-[1.5px] border-[#e2e6ed] rounded-lg">
+                  <span className="text-sm text-[#4a5568]">{s.label}</span>
+                  <span className="text-base font-bold" style={{ color: s.color }}>{s.value}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Step 4: Extraction Stats */}
+        {step === 4 && extractedData && (() => {
+          const vals  = Object.values(extractEdits || {})
+          const total = vals.length
+          const found = vals.filter(f => f?.value).length
+          const high  = vals.filter(f => f?.confidence === 'high').length
+          const med   = vals.filter(f => f?.confidence === 'medium').length
+          const low   = vals.filter(f => f?.confidence === 'low' && f?.value).length
+          const miss  = vals.filter(f => !f?.value).length
+          return (
+            <div className="bg-white border-[1.5px] border-[#e2e6ed] rounded-xl shadow-sm overflow-hidden">
+              <div className="px-5 py-4 border-b border-[#e2e6ed]">
+                <div className="text-sm font-bold text-[#1a2233]">Extraction Stats</div>
+              </div>
+              <div className="p-4 flex flex-col gap-3">
+                {/* Fill rate bar */}
+                <div>
+                  <div className="flex justify-between text-xs mb-1.5">
+                    <span className="text-[#8a96a8]">Fill rate</span>
+                    <span className="font-bold text-[#1a4fa0]">{total ? Math.round((found/total)*100) : 0}%</span>
+                  </div>
+                  <div className="h-2 bg-[#e2e6ed] rounded-full overflow-hidden">
+                    <div className="h-full bg-[#1a4fa0] rounded-full" style={{ width: `${total ? (found/total)*100 : 0}%` }} />
+                  </div>
+                </div>
+                {/* Stat rows */}
+                {[
+                  { label: 'Total fields',      value: total,  color: '#1a2233' },
+                  { label: 'Fields found',      value: found,  color: '#1a2233' },
+                  { label: '\u25CF High confidence', value: high,   color: '#16a34a' },
+                  { label: '\u25CF Medium',          value: med,    color: '#b45309' },
+                  { label: '\u25CF Low confidence',  value: low,    color: '#dc2626' },
+                  { label: '\u25CB Not found',       value: miss,   color: '#8a96a8' },
+                ].map((s) => (
+                  <div key={s.label} className="flex items-center justify-between px-3 py-2 bg-[#f8f9fb] border-[1.5px] border-[#e2e6ed] rounded-lg">
+                    <span className="text-sm" style={{ color: s.color }}>{s.label}</span>
+                    <span className="text-sm font-bold" style={{ color: s.color }}>{s.value}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )
+        })()}
+
+        {/* Step 4: Tips */}
+        {step === 4 && (
+          <div className="bg-[#eff6ff] border border-[#bfdbfe] rounded-xl p-4">
+            <p className="text-xs font-bold text-[#1e40af] mb-2">💡 Tips</p>
+            <ul className="text-xs text-[#1e40af] space-y-1.5 list-disc list-inside">
+              <li>Red border = not found or low confidence</li>
+              <li>Green border = high confidence extraction</li>
+              <li>Edit any field before saving</li>
+              <li>Download Excel for ICEGATE / Live Impex entry</li>
+            </ul>
+          </div>
+        )}
+
+      </div>{/* end right sidebar */}
+
     </div>
   )
 }
@@ -2411,12 +2678,53 @@ export default function AdminDashboard() {
   }
 
   const handleDeleteJob = async (job) => {
-    if (!window.confirm(`Delete job ${job.job_no || ''}?`)) return
-    const { error } = await supabase.from('jobs').delete().eq('id', job.id)
-    if (error) { window.alert(error.message || 'Delete failed.'); return }
-    setJobs((prev) => prev.filter((j) => j.id !== job.id))
-    if (selectedJob?.id === job.id) setSelectedJob(null)
-    showToast('Job deleted.', 'success')
+    if (!window.confirm(`Delete job ${job.job_no || ''}? This cannot be undone.`)) return
+
+    try {
+      // 1. Delete related documents from storage (best-effort — RLS may block)
+      try {
+        const { data: docs } = await supabase.from('documents').select('file_path').eq('job_id', job.id)
+        if (docs && docs.length > 0) {
+          const filePaths = docs.map((d) => d.file_path).filter(Boolean)
+          if (filePaths.length > 0) {
+            await supabase.storage.from('job-documents').remove(filePaths)
+          }
+        }
+      } catch { /* storage delete is best-effort */ }
+
+      // 2. Delete document records
+      await supabase.from('documents').delete().eq('job_id', job.id)
+
+      // 3. Delete job extractions
+      await supabase.from('job_extractions').delete().eq('job_id', job.id)
+
+      // 4. Delete the job itself — use .select() to verify the row was actually removed
+      const { data: deleted, error } = await supabase
+        .from('jobs')
+        .delete()
+        .eq('id', job.id)
+        .select()
+
+      if (error) {
+        showToast(error.message || 'Delete failed.', 'error')
+        return
+      }
+
+      if (!deleted || deleted.length === 0) {
+        showToast(
+          'Delete blocked by database permissions. Apply backend/src/db/migrations/002_jobs_rls.sql in Supabase SQL Editor.',
+          'error'
+        )
+        return
+      }
+
+      // 5. Update frontend state — remove from jobs list, clear selection
+      setJobs((prev) => prev.filter((j) => j.id !== job.id))
+      if (selectedJob?.id === job.id) setSelectedJob(null)
+      showToast('Job deleted.', 'success')
+    } catch (e) {
+      showToast(e?.message || 'Delete failed.', 'error')
+    }
   }
 
   const refreshJobs = async () => {
