@@ -1,16 +1,31 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { supabase } from '../supabase'
+import { fetchAllTracking } from '../services/trackingService'
 import { useAuth } from '../contexts/AuthContext'
 import { getStageName } from '../utils/jobHelpers'
 import CreateJob from './CreateJob'
 import * as XLSX from 'xlsx'
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
+import OCRSection from '../components/OCRSection'
 
-const NAV_ITEMS = [
-  { id: 'jobs', label: 'All Jobs', icon: '■' },
-  { id: 'documents', label: 'Documents', icon: '⌁' },
+const NAV_SECTIONS = [
+  {
+    label: 'OPERATIONS',
+    items: [
+      { id: 'jobs',       label: 'All Jobs',           icon: '≡'  },
+      { id: 'containers', label: 'Container Tracking',  icon: '⊟' },
+      { id: 'documents',  label: 'Documents',           icon: '📄' },
+    ],
+  },
+  {
+    label: 'AI TOOLS',
+    items: [
+      { id: 'ocr', label: 'OCR Extract', icon: '✦' },
+    ],
+  },
 ]
+const NAV_ITEMS = NAV_SECTIONS.flatMap(s => s.items)
 
 function getGreeting() {
   const hour = new Date().getHours()
@@ -23,6 +38,488 @@ function formatDateSlash(value) {
   if (!value) return '—'
   const d = new Date(value)
   return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`
+}
+
+function EmpContainerSection({ jobs, showToast }) {
+  const [trackingData, setTrackingData] = useState({})
+  const [loadingTracking, setLoadingTracking] = useState(true)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [expandedContainers, setExpandedContainers] = useState({})
+  const [detailJob, setDetailJob] = useState(null)
+
+  useEffect(() => {
+    const load = async () => {
+      setLoadingTracking(true)
+      try {
+        const { data } = await supabase.from('container_tracking').select('*')
+        const map = {}
+        for (const row of (data || [])) {
+          map[row.container_no] = {
+            status:          row.status || 'in_transit',
+            statusText:      row.status_text || 'In Transit',
+            currentLocation: row.current_location,
+            vessel:          row.vessel,
+            freeDays:        row.free_days,
+            notes:           row.notes,
+            lastUpdate:      row.last_update,
+            milestones:      row.milestones || [],
+            eta:             row.eta,
+            portIn:          row.port_in,
+            portOut:         row.port_out,
+            cfsGateIn:       row.cfs_gate_in,
+          }
+        }
+        setTrackingData(map)
+      } catch (e) {
+        console.warn('Could not load tracking data:', e)
+      } finally {
+        setLoadingTracking(false)
+      }
+    }
+    load()
+  }, [])
+
+  const parseContainers = (str) => {
+    if (!str || typeof str !== 'string') return []
+    return str.split(/[\s,;/]+/).map(s => s.trim().toUpperCase()).filter(s => s.length >= 4)
+  }
+
+  const allJobCards = useMemo(() => {
+    return (jobs || [])
+      .map(job => ({ job, cnList: parseContainers(job.containers) }))
+      .filter(({ cnList }) => cnList.length > 0)
+  }, [jobs])
+
+  const filteredJobCards = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase()
+    if (!q) return allJobCards
+    return allJobCards.filter(({ job, cnList }) =>
+      (job.job_no  || '').toLowerCase().includes(q) ||
+      (job.client  || '').toLowerCase().includes(q) ||
+      (job.bl_no   || '').toLowerCase().includes(q) ||
+      cnList.some(cn => cn.toLowerCase().includes(q))
+    )
+  }, [allJobCards, searchQuery])
+
+  const totalContainers = allJobCards.reduce((s, { cnList }) => s + cnList.length, 0)
+
+  const statusProgress = (status) => {
+    if (status === 'delivered' || status === 'empty_returned') return 100
+    if (status === 'at_cfs')       return 85
+    if (status === 'arrived')      return 75
+    if (status === 'customs_hold') return 70
+    if (status === 'on_rail')      return 90
+    if (status === 'delayed')      return 45
+    return 55
+  }
+
+  const progressColor = (status, freeDays) => {
+    if (freeDays != null && freeDays <= 2) return '#dc2626'
+    if (['delivered','arrived','at_cfs','on_rail'].includes(status)) return '#16a34a'
+    if (['customs_hold','delayed'].includes(status)) return '#dc2626'
+    return '#f59e0b'
+  }
+
+  const formatD = (d) => d
+    ? new Date(d).toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' })
+    : '—'
+
+  const STATUS_STYLES_MAP = {
+    in_transit:     { bg:'#fffbeb', color:'#92400e', border:'#fde68a' },
+    arrived:        { bg:'#f0fdf4', color:'#15803d', border:'#bbf7d0' },
+    at_cfs:         { bg:'#f0fdfa', color:'#0f766e', border:'#99f6e4' },
+    customs_hold:   { bg:'#fffbeb', color:'#92400e', border:'#fde68a' },
+    on_rail:        { bg:'#eef2ff', color:'#3730a3', border:'#c7d2fe' },
+    delivered:      { bg:'#f0fdf4', color:'#15803d', border:'#bbf7d0' },
+    empty_returned: { bg:'#f9fafb', color:'#4a5568', border:'#d0d6e0' },
+    delayed:        { bg:'#fef2f2', color:'#991b1b', border:'#fecaca' },
+  }
+
+  if (loadingTracking) return (
+    <div className="space-y-3">
+      {[1,2,3].map(i => (
+        <div key={i} className="bg-white border-[1.5px] border-[#e2e6ed] rounded-xl p-4 space-y-3">
+          <div className="h-5 w-32 bg-[#e2e6ed] rounded animate-pulse" />
+          <div className="h-12 bg-[#e2e6ed] rounded-lg animate-pulse" />
+        </div>
+      ))}
+    </div>
+  )
+
+  return (
+    <div className="space-y-4">
+
+      {/* Search */}
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="flex items-center h-9 px-3 bg-white border-[1.5px] border-[#e2e6ed] rounded-lg flex-1 min-w-[200px] max-w-[420px] focus-within:border-[#1a4fa0] transition-colors">
+          <span className="text-[#8a96a8] mr-2">🔍</span>
+          <input
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            placeholder="Search by job number, client, or container number..."
+            className="flex-1 bg-transparent outline-none text-sm text-[#1a2233] placeholder:text-[#8a96a8]"
+          />
+          {searchQuery && (
+            <button onClick={() => setSearchQuery('')} className="text-[#8a96a8] hover:text-[#1a2233] ml-1">✕</button>
+          )}
+        </div>
+        <span className="text-sm text-[#8a96a8] ml-auto">
+          {totalContainers} container{totalContainers !== 1 ? 's' : ''} across {allJobCards.length} job{allJobCards.length !== 1 ? 's' : ''}
+        </span>
+      </div>
+
+      {/* Info banner */}
+      <div className="bg-[#eff6ff] border border-[#bfdbfe] rounded-xl px-4 py-2.5 text-xs text-[#1e40af] flex items-center gap-2">
+        <span>💡</span>
+        <span>Containers are pulled from jobs. Status updates are made by admins — contact Jose or Durgesh to update a container's status.</span>
+      </div>
+
+      {/* Empty state */}
+      {filteredJobCards.length === 0 && (
+        <div className="bg-white border-[1.5px] border-[#e2e6ed] rounded-xl shadow-sm p-12 text-center">
+          <div className="text-3xl mb-3">⊟</div>
+          <p className="text-sm font-semibold text-[#4a5568]">
+            {searchQuery ? `No results for "${searchQuery}"` : 'No jobs with containers yet.'}
+          </p>
+        </div>
+      )}
+
+      {/* 3-column job card grid */}
+      <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:'14px', alignItems:'start' }}>
+        {filteredJobCards.map(({ job, cnList }) => {
+          const statuses   = cnList.map(cn => trackingData[cn]?.status || 'in_transit')
+          const worstStatus = statuses.includes('delayed') ? 'delayed'
+            : statuses.includes('customs_hold')  ? 'customs_hold'
+            : statuses.includes('in_transit')    ? 'in_transit'
+            : statuses.includes('arrived')       ? 'arrived'
+            : statuses.includes('at_cfs')        ? 'at_cfs'
+            : statuses.every(s => s === 'delivered') ? 'delivered'
+            : 'in_transit'
+
+          const stripeColor = ['delivered','arrived','at_cfs'].includes(worstStatus) ? '#16a34a'
+            : ['customs_hold','delayed'].includes(worstStatus) ? '#dc2626'
+            : worstStatus === 'in_transit' ? '#f59e0b'
+            : '#d0d6e0'
+
+          const etaCol = (() => {
+            if (!job.eta) return '#4a5568'
+            const days = Math.ceil((new Date(job.eta) - new Date()) / 86400000)
+            if (days < 0) return '#dc2626'
+            if (days <= 3) return '#b45309'
+            return '#4a5568'
+          })()
+
+          return (
+            <div
+              key={job.id}
+              onClick={() => setDetailJob(job)}
+              style={{
+                background:'white', border:'1.5px solid #e2e6ed', borderRadius:'12px',
+                padding:'16px', position:'relative', overflow:'hidden',
+                cursor:'pointer', transition:'all 0.2s', boxSizing:'border-box',
+              }}
+              onMouseEnter={e => { e.currentTarget.style.boxShadow='0 4px 16px rgba(0,0,0,0.09)'; e.currentTarget.style.borderColor='#d0d6e0' }}
+              onMouseLeave={e => { e.currentTarget.style.boxShadow='none'; e.currentTarget.style.borderColor='#e2e6ed' }}
+            >
+              <div style={{ position:'absolute', bottom:0, left:0, right:0, height:'3px', background:stripeColor }} />
+
+              {/* Job header */}
+              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:'12px' }}>
+                <div>
+                  <div style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:'13px', fontWeight:700, color:'#1a4fa0' }}>{job.job_no}</div>
+                  <div style={{ fontSize:'12px', fontWeight:600, color:'#1a2233', marginTop:'2px' }}>{job.client}</div>
+                  <div style={{ fontSize:'11px', color:'#8a96a8', marginTop:'1px' }}>{job.mode || '—'}</div>
+                </div>
+                <div style={{ textAlign:'right' }}>
+                  <div style={{ fontSize:'12px', fontWeight:600, color:'#4a5568' }}>{job.shipping_line || '—'}</div>
+                  <div style={{ fontSize:'11px', color:'#8a96a8', marginTop:'2px' }}>
+                    Stage {job.stage ?? 0}
+                  </div>
+                </div>
+              </div>
+
+              {/* Route */}
+              <div style={{ display:'flex', alignItems:'center', gap:'6px', fontSize:'12px', marginBottom:'12px' }}>
+                <span style={{ fontWeight:600, color:'#1a2233', maxWidth:'90px', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                  {job.vessel || 'Origin'}
+                </span>
+                <span style={{ color:'#d0d6e0', flex:1, textAlign:'center', fontSize:'10px', letterSpacing:'2px' }}>────→</span>
+                <span style={{ fontWeight:600, color:'#1a2233', maxWidth:'90px', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                  {job.destination || 'JNPT, IN'}
+                </span>
+              </div>
+
+              {/* Container rows */}
+              <div style={{ display:'flex', flexDirection:'column', gap:'6px', marginBottom:'12px' }}>
+                {cnList.map(cn => {
+                  const td     = trackingData[cn] || {}
+                  const status = td.status || 'in_transit'
+                  const st     = STATUS_STYLES_MAP[status] || STATUS_STYLES_MAP['in_transit']
+                  const isDetention = td.freeDays != null && td.freeDays <= 2
+                  const key    = `${job.id}-${cn}`
+                  const isOpen = !!expandedContainers[key]
+                  const pct    = statusProgress(status)
+                  const pColor = progressColor(status, td.freeDays)
+
+                  return (
+                    <div key={cn}>
+                      <div
+                        onClick={e => { e.stopPropagation(); setExpandedContainers(prev => ({ ...prev, [key]: !prev[key] })) }}
+                        style={{
+                          display:'flex', alignItems:'center', gap:'8px',
+                          padding:'8px 10px', borderRadius:'8px', cursor:'pointer',
+                          background: isOpen ? '#f0f4fb' : '#f8f9fb',
+                          border: `1.5px solid ${isOpen ? '#bfdbfe' : '#e2e6ed'}`,
+                          transition:'all 0.15s',
+                        }}
+                      >
+                        <span style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:'12px', fontWeight:600, color:'#1a2233', flex:1 }}>
+                          {cn}
+                        </span>
+                        <span style={{
+                          borderRadius:'9999px', padding:'2px 8px', fontSize:'10px', fontWeight:700,
+                          background: isDetention ? '#fef2f2' : st.bg,
+                          color:      isDetention ? '#991b1b' : st.color,
+                          border:     `1px solid ${isDetention ? '#fecaca' : st.border}`,
+                          whiteSpace:'nowrap',
+                        }}>
+                          {isDetention ? '⚠ Detention' : (td.statusText || 'Not Updated')}
+                        </span>
+                        <span style={{ color:'#8a96a8', fontSize:'10px' }}>{isOpen ? '▲' : '▼'}</span>
+                      </div>
+
+                      {isOpen && (
+                        <div style={{ margin:'4px 0 2px', padding:'10px 12px', background:'white', border:'1.5px solid #bfdbfe', borderRadius:'8px' }}>
+                          <div style={{ height:'5px', background:'#f4f6f9', borderRadius:'6px', overflow:'hidden', marginBottom:'3px' }}>
+                            <div style={{ height:'100%', borderRadius:'6px', width:`${pct}%`, background:pColor }} />
+                          </div>
+                          <div style={{ display:'flex', justifyContent:'space-between', fontSize:'10px', color:'#8a96a8', marginBottom:'8px' }}>
+                            <span>Loaded</span>
+                            <span style={{ color:pColor, fontWeight:600 }}>{pct}%</span>
+                            <span>Discharged</span>
+                          </div>
+                          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'8px', fontSize:'11px' }}>
+                            {[
+                              { label:'Location', value: td.currentLocation },
+                              { label:'Vessel',   value: td.vessel || job.vessel },
+                              { label:'ETA',      value: formatD(td.eta || job.eta) },
+                              { label:'Free Days', value: td.freeDays != null ? `${td.freeDays}d` : '—',
+                                color: td.freeDays != null && td.freeDays <= 2 ? '#dc2626' : td.freeDays != null && td.freeDays <= 5 ? '#b45309' : '#1a2233' },
+                            ].map(f => (
+                              <div key={f.label}>
+                                <div style={{ color:'#8a96a8', fontSize:'10px', textTransform:'uppercase', letterSpacing:'0.05em', marginBottom:'2px' }}>{f.label}</div>
+                                <div style={{ fontWeight:500, color: f.color || (f.value ? '#1a2233' : '#d0d6e0') }}>{f.value || '—'}</div>
+                              </div>
+                            ))}
+                          </div>
+                          {td.notes && (
+                            <div style={{ marginTop:'8px', padding:'5px 8px', background:'#fffbeb', border:'1px solid #fde68a', borderRadius:'5px', fontSize:'11px', color:'#92400e' }}>
+                              📝 {td.notes}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+
+              {/* Footer */}
+              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', borderTop:'1px solid #e2e6ed', paddingTop:'10px' }}>
+                <div>
+                  <div style={{ fontSize:'11px', color:'#8a96a8' }}>ETA JNPT</div>
+                  <div style={{ fontSize:'13px', fontWeight:700, fontFamily:"'JetBrains Mono',monospace", marginTop:'2px', color:etaCol }}>
+                    {formatD(job.eta)}
+                  </div>
+                </div>
+                <span style={{ fontSize:'11px', fontWeight:700, background:'#f8f9fb', color:'#4a5568', border:'1px solid #e2e6ed', borderRadius:'9999px', padding:'3px 10px' }}>
+                  {cnList.length} container{cnList.length !== 1 ? 's' : ''}
+                </span>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+
+      {/* Read-only job detail panel */}
+      {detailJob && (
+        <EmpJobDetailPanel
+          job={detailJob}
+          trackingData={trackingData}
+          onClose={() => setDetailJob(null)}
+        />
+      )}
+    </div>
+  )
+}
+
+function EmpJobDetailPanel({ job, trackingData, onClose }) {
+  const cnList = (job.containers || '')
+    .split(/[\s,;/]+/)
+    .map(s => s.trim().toUpperCase())
+    .filter(s => s.length >= 4)
+
+  const formatD  = (d) => d ? new Date(d).toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' }) : '—'
+  const formatDT = (d) => d ? new Date(d).toLocaleString('en-IN', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' }) : '—'
+
+  const STATUS_STYLES_MAP = {
+    in_transit:     { bg:'#fffbeb', color:'#92400e', border:'#fde68a' },
+    arrived:        { bg:'#f0fdf4', color:'#15803d', border:'#bbf7d0' },
+    at_cfs:         { bg:'#f0fdfa', color:'#0f766e', border:'#99f6e4' },
+    customs_hold:   { bg:'#fffbeb', color:'#92400e', border:'#fde68a' },
+    on_rail:        { bg:'#eef2ff', color:'#3730a3', border:'#c7d2fe' },
+    delivered:      { bg:'#f0fdf4', color:'#15803d', border:'#bbf7d0' },
+    empty_returned: { bg:'#f9fafb', color:'#4a5568', border:'#d0d6e0' },
+    delayed:        { bg:'#fef2f2', color:'#991b1b', border:'#fecaca' },
+  }
+
+  const statusProgress = (status) => {
+    if (status === 'delivered' || status === 'empty_returned') return 100
+    if (status === 'at_cfs')       return 85
+    if (status === 'arrived')      return 75
+    if (status === 'customs_hold') return 70
+    if (status === 'on_rail')      return 90
+    if (status === 'delayed')      return 45
+    return 55
+  }
+
+  const progressColor = (status, freeDays) => {
+    if (freeDays != null && freeDays <= 2) return '#dc2626'
+    if (['delivered','arrived','at_cfs','on_rail'].includes(status)) return '#16a34a'
+    if (['customs_hold','delayed'].includes(status)) return '#dc2626'
+    return '#f59e0b'
+  }
+
+  return (
+    <>
+      <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.35)', zIndex:199, cursor:'pointer' }} />
+      <div style={{
+        position:'fixed', right:0, top:0, bottom:0, width:'520px',
+        background:'white', borderLeft:'1.5px solid #e2e6ed',
+        zIndex:200, display:'flex', flexDirection:'column',
+        boxShadow:'-8px 0 32px rgba(0,0,0,0.12)',
+        animation:'slideInRight 0.25s cubic-bezier(0.16,1,0.3,1)',
+      }}>
+        <style>{`@keyframes slideInRight { from { transform:translateX(100%) } to { transform:translateX(0) } }`}</style>
+
+        {/* Header */}
+        <div style={{ padding:'18px 22px', borderBottom:'1.5px solid #e2e6ed', background:'#f8f9fb', display:'flex', alignItems:'flex-start', gap:'14px', flexShrink:0 }}>
+          <button onClick={onClose} style={{ width:'30px', height:'30px', borderRadius:'7px', background:'white', border:'1.5px solid #e2e6ed', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', fontSize:'14px', color:'#4a5568', flexShrink:0 }}
+            onMouseEnter={e => { e.currentTarget.style.background='#fef2f2'; e.currentTarget.style.color='#dc2626' }}
+            onMouseLeave={e => { e.currentTarget.style.background='white'; e.currentTarget.style.color='#4a5568' }}
+          >✕</button>
+          <div style={{ flex:1, minWidth:0 }}>
+            <div style={{ display:'flex', alignItems:'center', gap:'8px', flexWrap:'wrap' }}>
+              <span style={{ fontSize:'16px', fontWeight:700, color:'#1a2233', fontFamily:"'JetBrains Mono',monospace" }}>{job.job_no}</span>
+              {job.mode && <span style={{ borderRadius:'9999px', padding:'2px 8px', fontSize:'11px', fontWeight:600, background:'#eff6ff', color:'#1e40af', border:'1px solid #bfdbfe' }}>{job.mode}</span>}
+            </div>
+            <div style={{ fontSize:'13px', color:'#4a5568', marginTop:'3px' }}>
+              {job.client}{job.shipping_line ? ` · ${job.shipping_line}` : ''} · {cnList.length} container{cnList.length !== 1 ? 's' : ''}
+            </div>
+            <div style={{ fontSize:'12px', color:'#8a96a8', marginTop:'2px' }}>
+              Read-only view · Contact admin to update status
+            </div>
+          </div>
+        </div>
+
+        {/* Body */}
+        <div style={{ flex:1, overflowY:'auto', padding:'18px 22px' }}>
+          {cnList.length === 0 ? (
+            <div style={{ textAlign:'center', padding:'40px 0', color:'#8a96a8' }}>No container numbers found.</div>
+          ) : (
+            <div style={{ display:'flex', flexDirection:'column', gap:'16px' }}>
+              {cnList.map((cn, idx) => {
+                const td     = trackingData[cn] || {}
+                const status = td.status || 'in_transit'
+                const st     = STATUS_STYLES_MAP[status] || STATUS_STYLES_MAP['in_transit']
+                const pct    = statusProgress(status)
+                const pColor = progressColor(status, td.freeDays)
+                const isDetention = td.freeDays != null && td.freeDays <= 2
+
+                return (
+                  <div key={cn} style={{ border:'1.5px solid #e2e6ed', borderRadius:'12px', overflow:'hidden', borderTop:`3px solid ${pColor}` }}>
+                    {/* Container header */}
+                    <div style={{ padding:'12px 16px', background:'#f8f9fb', borderBottom:'1px solid #e2e6ed', display:'flex', alignItems:'center', justifyContent:'space-between', gap:'10px' }}>
+                      <div style={{ display:'flex', alignItems:'center', gap:'10px' }}>
+                        <span style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:'14px', fontWeight:700, color:'#1a2233' }}>{cn}</span>
+                        <span style={{ borderRadius:'9999px', padding:'2px 10px', fontSize:'11px', fontWeight:700, background: isDetention ? '#fef2f2' : st.bg, color: isDetention ? '#991b1b' : st.color, border:`1px solid ${isDetention ? '#fecaca' : st.border}` }}>
+                          {isDetention ? '⚠ Detention Risk' : (td.statusText || 'Not Updated')}
+                        </span>
+                      </div>
+                      <span style={{ fontSize:'11px', color:'#8a96a8' }}>#{idx+1} of {cnList.length}</span>
+                    </div>
+
+                    {/* Progress bar */}
+                    <div style={{ padding:'10px 16px', borderBottom:'1px solid #e2e6ed' }}>
+                      <div style={{ height:'5px', background:'#f4f6f9', borderRadius:'6px', overflow:'hidden' }}>
+                        <div style={{ height:'100%', borderRadius:'6px', width:`${pct}%`, background:pColor }} />
+                      </div>
+                      <div style={{ display:'flex', justifyContent:'space-between', fontSize:'10px', color:'#8a96a8', marginTop:'3px' }}>
+                        <span>Loaded</span>
+                        <span style={{ color:pColor, fontWeight:600 }}>{pct}%</span>
+                        <span>Discharged</span>
+                      </div>
+                    </div>
+
+                    {/* Fields grid */}
+                    <div style={{ padding:'14px 16px' }}>
+                      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'12px' }}>
+                        {[
+                          { label:'Current Location', value: td.currentLocation },
+                          { label:'Vessel',           value: td.vessel || job.vessel },
+                          { label:'Vessel Arrival',   value: formatD(td.eta || job.eta) },
+                          { label:'Port In',          value: td.portIn },
+                          { label:'Port Out',         value: td.portOut },
+                          { label:'CFS Gate In',      value: td.cfsGateIn },
+                          { label:'Free Days Left',   value: td.freeDays != null ? `${td.freeDays} days${td.freeDays <= 2 ? ' ⚠' : ''}` : '—',
+                            color: td.freeDays != null && td.freeDays <= 2 ? '#dc2626' : td.freeDays != null && td.freeDays <= 5 ? '#b45309' : '#1a2233' },
+                          { label:'Last Update',      value: formatDT(td.lastUpdate) },
+                        ].map(f => (
+                          <div key={f.label}>
+                            <div style={{ fontSize:'10px', fontWeight:600, textTransform:'uppercase', letterSpacing:'0.06em', color:'#8a96a8', marginBottom:'3px' }}>{f.label}</div>
+                            <div style={{ fontSize:'13px', fontWeight:500, color: f.color || (f.value ? '#1a2233' : '#d0d6e0') }}>{f.value || '—'}</div>
+                          </div>
+                        ))}
+                      </div>
+
+                      {td.notes && (
+                        <div style={{ marginTop:'12px', padding:'8px 10px', background:'#fffbeb', border:'1px solid #fde68a', borderRadius:'7px', fontSize:'12px', color:'#92400e' }}>
+                          📝 {td.notes}
+                        </div>
+                      )}
+
+                      {td.milestones?.length > 0 && (
+                        <div style={{ marginTop:'12px' }}>
+                          <div style={{ fontSize:'10px', fontWeight:600, textTransform:'uppercase', letterSpacing:'0.06em', color:'#8a96a8', marginBottom:'8px' }}>Event History</div>
+                          {td.milestones.map((m, i) => (
+                            <div key={i} style={{ display:'flex', gap:'10px', alignItems:'flex-start', marginBottom:'6px' }}>
+                              <div style={{ width:'8px', height:'8px', borderRadius:'50%', background: i===0 ? '#1a4fa0' : '#d0d6e0', marginTop:'4px', flexShrink:0 }} />
+                              <div>
+                                <div style={{ fontSize:'12px', fontWeight:600, color:'#1a2233' }}>{m.description}</div>
+                                <div style={{ fontSize:'11px', color:'#8a96a8' }}>
+                                  {m.location && `${m.location} · `}
+                                  {m.date ? new Date(m.date).toLocaleDateString('en-IN', { day:'2-digit', month:'short' }) : ''}
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Read-only note */}
+                      <div style={{ marginTop:'14px', padding:'8px 12px', background:'#f8f9fb', border:'1px solid #e2e6ed', borderRadius:'8px', fontSize:'11px', color:'#8a96a8', textAlign:'center' }}>
+                        🔒 Read-only · Only admins can update container status
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+    </>
+  )
 }
 
 export default function EmployeeDashboard() {
@@ -109,7 +606,7 @@ export default function EmployeeDashboard() {
 
   const currentUserName = profile?.name || '—'
 
-  const canCreateJob = ['Uphadhya', 'Akshyani', 'Durgesh'].includes(currentUserName)
+  const canCreateJob = ['Uphadhya', 'Akshyani'].includes(currentUserName)
   const canUpdateStage = ['Trupti', 'Uphadhya'].includes(currentUserName)
 
   const FIELD_LABELS = {
@@ -191,11 +688,14 @@ export default function EmployeeDashboard() {
       'rms_status',
       'bg_required',
     ],
-    Trupti: ['be_no', 'be_date', 'hs_code', 'rms_status', 'stage'],
+    Trupti: ['be_no', 'be_date', 'hs_code', 'rms_status'],
     Kiran: ['cfs_amount'],
     Virendra: ['cfs_amount'],
     Mayur: ['cfs_amount'],
     Anil: ['cfs_amount', 'bg_required'],
+    Pramod: [],
+    Samita: [],
+    'Rabina Chauhan': [],
   }
 
   const ALL_EMPLOYEE_FIELDS = [
@@ -925,43 +1425,51 @@ export default function EmployeeDashboard() {
   return (
     <div className="min-h-screen flex bg-[#f4f6f9] text-[14px]">
       <aside className="w-[230px] bg-[#1a4fa0] flex flex-col shrink-0 h-screen fixed left-0 top-0 z-50">
-        <div className="px-4 py-3 border-b border-white/15 flex items-center gap-2">
-          <div className="w-8 h-8 rounded-lg bg-white text-[#1a4fa0] flex items-center justify-center font-extrabold text-sm">
-            JD
-          </div>
+        <div className="px-5 py-4 border-b border-white/15 flex items-center gap-3">
+          <div className="w-8 h-8 rounded-lg bg-white text-[#1a4fa0] flex items-center justify-center font-extrabold text-sm">JD</div>
           <div className="min-w-0">
-            <div className="text-white font-bold truncate">JDS Logistics</div>
-            <div className="text-white/60 truncate">Employee — Command Center</div>
+            <div className="text-sm font-bold text-white truncate">JDS Logistics</div>
+            <div className="text-xs text-white/60 truncate">Command Center</div>
           </div>
         </div>
-        <div className="px-4 pt-3 pb-1 text-xs font-bold text-white/45 uppercase tracking-wider">
-          Operations
-        </div>
-        <nav className="flex-1 py-1">
-          {NAV_ITEMS.filter((item) => item.id !== 'documents' || isAkshyani).map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              onClick={() => handleNavClick(item.id)}
-              className={classNames(
-                'w-full text-left px-5 py-2.5 text-sm flex items-center gap-1.5 border-l-2 transition-colors',
-                activeNav === item.id
-                  ? 'bg-white/15 text-white border-l-2 border-white font-semibold'
-                  : 'text-white/70 hover:bg-white/10 hover:text-white border-l-2 border-transparent'
-              )}
-            >
-              <span className="w-3.5 text-center shrink-0 opacity-90">{item.icon}</span>
-              <span className="truncate">{item.label}</span>
-            </button>
-          ))}
+        <nav className="flex-1 overflow-y-auto py-1">
+          {NAV_SECTIONS.map((section) => {
+            if (section.label === 'AI TOOLS' && !isAkshyani) return null
+            return (
+              <div key={section.label}>
+                <div className="px-4 pt-4 pb-1 text-[10px] font-bold text-white/45 uppercase tracking-[0.1em]">
+                  {section.label}
+                </div>
+                {section.items.map((item) => {
+                  const isActive = activeNav === item.id
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => handleNavClick(item.id)}
+                      className={[
+                        'w-full text-left px-5 py-2.5 text-sm flex items-center gap-2.5 border-l-2 transition-colors',
+                        isActive
+                          ? 'bg-white/15 text-white border-white font-semibold'
+                          : 'text-white/70 hover:bg-white/10 hover:text-white border-transparent',
+                      ].join(' ')}
+                    >
+                      <span className="w-4 text-center shrink-0 text-sm opacity-90">{item.icon}</span>
+                      <span className="truncate flex-1">{item.label}</span>
+                    </button>
+                  )
+                })}
+              </div>
+            )
+          })}
         </nav>
-        <div className="mt-auto border-t border-white/15 px-4 py-3 flex items-center gap-2">
+        <div className="mt-auto border-t border-white/15 px-5 py-3 flex items-center gap-3">
           <div className="w-7 h-7 rounded-full bg-white/20 border-2 border-white/30 text-white flex items-center justify-center text-xs font-bold">
             {(profile?.name || 'E').slice(0, 2).toUpperCase()}
           </div>
           <div className="min-w-0">
-            <div className="text-white font-semibold truncate">{profile?.name || 'Employee'}</div>
-            <div className="text-white/55 truncate">Employee</div>
+            <div className="text-sm font-semibold text-white truncate">{profile?.name || 'Employee'}</div>
+            <div className="text-xs text-white/55 truncate">Employee</div>
           </div>
           <span className="ml-auto w-2 h-2 rounded-full bg-green-400" title="Live" />
         </div>
@@ -971,9 +1479,14 @@ export default function EmployeeDashboard() {
         <header className="h-[60px] bg-white border-b border-[#e2e6ed] shadow-sm px-6 flex items-center gap-3 flex-shrink-0">
           <div className="min-w-0">
             <div className="text-[17px] font-bold text-[#1a2233] truncate">
-              {NAV_ITEMS.find((n) => n.id === activeNav)?.label ?? 'All Jobs'}
+              {activeNav === 'documents' ? 'Documents'
+              : activeNav === 'containers' ? 'Container Tracking'
+              : activeNav === 'ocr' ? 'OCR Extract'
+              : 'All Jobs'}
             </div>
-            <div className="text-sm text-[#8a96a8] truncate">Employee Command Center</div>
+            <div className="text-sm text-[#8a96a8] truncate">
+              {getGreeting()}, {profile?.name || 'there'}
+            </div>
           </div>
           <div className="ml-auto flex items-center gap-2">
             {canCreateJob && (
@@ -988,7 +1501,7 @@ export default function EmployeeDashboard() {
             <button
               type="button"
               onClick={handleLogout}
-              className="h-9 px-4 text-sm rounded-lg bg-white border-[1.5px] border-[#d0d6e0] text-[#dc2626] hover:border-[#fecaca] hover:bg-[#fef2f2] font-semibold"
+              className="h-9 px-4 text-sm rounded-lg bg-white border-[1.5px] border-[#d0d6e0] text-red-600 hover:bg-[#fef2f2] hover:border-red-300 font-semibold"
             >
               Logout
             </button>
@@ -998,12 +1511,8 @@ export default function EmployeeDashboard() {
         <main className="flex-1 overflow-y-auto p-4 sm:p-6">
           {activeNav === 'jobs' && (
             <>
-              <div className="mb-4 text-sm text-[#8a96a8]">
-                {getGreeting()}, <span className="font-semibold text-[#4a5568]">{profile?.name || 'there'}</span>
-              </div>
-
-              <div className="bg-white border border-[#e2e6ed] rounded-xl shadow-sm mb-4">
-                <div className="px-4 py-3 bg-[#f8f9fb] border-b border-[#e2e6ed] flex items-center justify-between">
+              <div className="bg-white border-[1.5px] border-[#e2e6ed] rounded-xl shadow-sm mb-4">
+                <div className="px-5 py-3 bg-[#f8f9fb] border-b border-[#e2e6ed] flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <div className="text-sm font-semibold text-[#1a2233]">Jobs</div>
                     <button
@@ -1082,7 +1591,7 @@ export default function EmployeeDashboard() {
 
               {loading ? (
                 <div className="bg-white border border-[#e2e6ed] rounded-xl shadow-sm p-10 flex justify-center">
-                  <div className="h-9 w-9 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
+                  <div className="h-9 w-9 border-4 border-[#1a4fa0] border-t-transparent rounded-full animate-spin" />
                 </div>
               ) : filteredJobs.length === 0 ? (
                 <div className="bg-white border border-[#e2e6ed] rounded-xl shadow-sm p-10 text-center text-[#8a96a8]">
@@ -1115,8 +1624,8 @@ export default function EmployeeDashboard() {
                         onKeyDown={(e) => handleCardKeyDown(e, job.id)}
                         className={classNames(
                           'bg-white border-[1.5px] border-[#e2e6ed] rounded-xl shadow-sm p-4 mb-3 cursor-pointer transition-all',
-                          'hover:border-[#d0d6e0] hover:shadow-md',
-                          'border-l-4',
+                          'hover:border-[#d0d6e0] hover:shadow-md hover:bg-[#fafbfc]',
+                          'border-l-[4px]',
                           String(job.priority || '').toLowerCase() === 'urgent'
                             ? 'border-l-[#dc2626]'
                             : String(job.priority || '').toLowerCase() === 'high'
@@ -1433,7 +1942,7 @@ export default function EmployeeDashboard() {
               <div className="text-lg font-bold text-[#1a2233] mb-4">Documents</div>
               {loadingDocs ? (
                 <div className="bg-white border border-[#e2e6ed] rounded-xl shadow-sm p-10 flex justify-center">
-                  <div className="h-9 w-9 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
+                  <div className="h-9 w-9 border-4 border-[#1a4fa0] border-t-transparent rounded-full animate-spin" />
                 </div>
               ) : documents.length === 0 ? (
                 <div className="bg-white border border-[#e2e6ed] rounded-xl shadow-sm p-10 text-center text-[#8a96a8]">
@@ -1531,6 +2040,20 @@ export default function EmployeeDashboard() {
                 </div>
               )}
             </div>
+          )}
+
+          {activeNav === 'ocr' && isAkshyani && (
+            <OCRSection
+              jobs={jobs}
+              currentUserName={currentUserName}
+              showToast={showToast}
+              user={user}
+              profile={profile}
+            />
+          )}
+
+          {activeNav === 'containers' && (
+            <EmpContainerSection jobs={jobs} showToast={showToast} />
           )}
         </main>
       </div>

@@ -1,0 +1,655 @@
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { supabase } from '../supabase'
+import { getStageName } from '../utils/jobHelpers'
+import OCRSection, { FIELD_LABELS_OCR, OCR_SECTIONS } from '../components/OCRSection'
+
+function classNames(...xs) { return xs.filter(Boolean).join(' ') }
+
+const STAGE_LIST = Array.from({ length: 11 }).map((_, i) => ({
+  value: i,
+  label: getStageName(i),
+}))
+
+const FIELD_LABELS = {
+  job_no: 'Job Number',
+  client: 'Client',
+  mode: 'Mode',
+  bl_no: 'BL Number',
+  containers: 'Containers',
+  shipping_line: 'Shipping Line',
+  vessel: 'Vessel / Flight',
+  eta: 'ETA',
+  cfs_name: 'CFS Name',
+  be_no: 'BE Number',
+  be_date: 'BE Date',
+  hs_code: 'HS Code',
+  container_size: 'Container Size',
+  rms_status: 'RMS Status',
+  bg_required: 'BG Required',
+  cfs_amount: 'CFS Amount',
+  destination: 'Destination',
+  priority: 'Priority',
+  goods: 'Goods',
+  free_days: 'Free Days',
+  detention_risk: 'Detention Risk',
+  stage: 'Current Stage',
+  delay_reason: 'Delay Reason',
+  notes: 'Notes',
+  assigned_to: 'Assigned To',
+  created_by: 'Created By',
+  created_at: 'Created At',
+  updated_at: 'Updated At',
+}
+
+const FIELD_PERMS = {
+  job_no: { can: ['Uphadhya', 'Akshyani', 'Durgesh'] },
+  client: { can: ['Uphadhya', 'Akshyani', 'Durgesh'] },
+  mode: { can: ['Uphadhya', 'Akshyani', 'Durgesh'] },
+  bl_no: { can: ['Uphadhya', 'Akshyani', 'Durgesh'] },
+  containers: { can: ['Uphadhya', 'Akshyani', 'Durgesh'] },
+  shipping_line: { can: ['Uphadhya', 'Akshyani', 'Durgesh'] },
+  vessel: { can: ['Uphadhya', 'Akshyani', 'Durgesh'] },
+  eta: { can: ['Uphadhya', 'Akshyani', 'Durgesh'] },
+  cfs_name: { can: ['Uphadhya', 'Akshyani', 'Durgesh'] },
+  be_no: { can: ['Akshyani', 'Trupti'] },
+  be_date: { can: ['Akshyani', 'Trupti'] },
+  container_size: { can: ['Uphadhya', 'Akshyani', 'Durgesh'] },
+  hs_code: { can: ['Akshyani', 'Trupti', 'Durgesh'] },
+  rms_status: { can: ['Akshyani', 'Trupti', 'Durgesh'] },
+  bg_required: { can: ['Anil', 'Akshyani', 'Durgesh'] },
+  cfs_amount: { can: ['Kiran', 'Virendra', 'Mayur', 'Anil'] },
+  destination: { can: 'all' },
+  priority: { can: 'all' },
+  goods: { can: 'all' },
+  free_days: { can: 'all' },
+  detention_risk: { can: 'all' },
+  delay_reason: { can: 'all' },
+  notes: { can: 'all' },
+  stage: { can: ['Trupti', 'Uphadhya'] },
+}
+
+function formatDateSlash(value) {
+  if (!value) return '—'
+  const d = new Date(value)
+  return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`
+}
+
+function formatDateTime(value) {
+  if (!value) return '—'
+  return new Date(value).toLocaleString('en-IN', {
+    timeZone: 'Asia/Kolkata',
+    day: '2-digit', month: 'short', year: 'numeric',
+    hour: '2-digit', minute: '2-digit',
+  })
+}
+
+function displayValue(v) {
+  if (v === null || v === undefined || v === '') return '—'
+  if (typeof v === 'boolean') return v ? 'Yes' : 'No'
+  if (typeof v === 'object') return JSON.stringify(v)
+  return String(v)
+}
+
+function priorityChip(priority) {
+  const p = String(priority || 'normal').toLowerCase()
+  if (p === 'urgent') return { text: 'Urgent', cls: 'bg-[#fef2f2] text-[#991b1b] border border-[#fecaca]' }
+  if (p === 'high') return { text: 'High', cls: 'bg-[#fffbeb] text-[#92400e] border border-[#fde68a]' }
+  return { text: 'Normal', cls: 'bg-[#f9fafb] text-[#4a5568] border border-[#d0d6e0]' }
+}
+
+function modeChip(mode) {
+  const m = String(mode || '').trim()
+  if (m === 'Air') return { text: 'Air', cls: 'bg-[#f5f3ff] text-[#5b21b6] border border-[#ddd6fe]' }
+  if (m === 'BPT/MBPT') return { text: 'BPT', cls: 'bg-purple-100 text-purple-800' }
+  if (m === 'Sea LCL') return { text: 'LCL', cls: 'bg-[#f0fdfa] text-[#0f766e] border border-[#99f6e4]' }
+  if (m === 'Sea FCL') return { text: 'FCL', cls: 'bg-[#eff6ff] text-[#1e40af] border border-[#bfdbfe]' }
+  return { text: m || '—', cls: 'bg-[#f9fafb] text-[#4a5568] border border-[#d0d6e0]' }
+}
+
+function normalizeMetaTs(ts) {
+  if (!ts) return null
+  const n = Number(ts)
+  if (!Number.isFinite(n)) return null
+  return n < 1e12 ? n * 1000 : n
+}
+
+function timeAgo(ts) {
+  const ms = normalizeMetaTs(ts)
+  if (!ms) return '—'
+  const diff = Math.max(0, Date.now() - ms)
+  const sec = Math.floor(diff / 1000)
+  if (sec < 60) return `${sec}s ago`
+  const min = Math.floor(sec / 60)
+  if (min < 60) return `${min}m ago`
+  const hr = Math.floor(min / 60)
+  if (hr < 24) return `${hr}h ago`
+  const day = Math.floor(hr / 24)
+  if (day < 30) return `${day}d ago`
+  const mo = Math.floor(day / 30)
+  if (mo < 12) return `${mo}mo ago`
+  return `${Math.floor(mo / 12)}y ago`
+}
+
+function formatAccountabilityWhen(ts) {
+  const ms = normalizeMetaTs(ts)
+  if (!ms) return '-'
+  const diff = Math.max(0, Date.now() - ms)
+  const minutes = Math.floor(diff / (1000 * 60))
+  if (minutes < 1) return 'Just now'
+  if (minutes < 60) return `${minutes} ${minutes === 1 ? 'minute' : 'minutes'} ago`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours} ${hours === 1 ? 'hour' : 'hours'} ago`
+  return new Date(ms).toLocaleString('en-IN', {
+    timeZone: 'Asia/Kolkata',
+    day: '2-digit', month: 'short', year: 'numeric',
+    hour: '2-digit', minute: '2-digit',
+  })
+}
+
+function progressColor(stage) {
+  const s = Number(stage) || 0
+  if (s <= 3) return 'bg-red-600'
+  if (s <= 6) return 'bg-amber-500'
+  if (s <= 9) return 'bg-blue-600'
+  return 'bg-green-600'
+}
+
+function FieldMetaChip({ meta, profiles }) {
+  if (!meta || typeof meta !== 'object') return null
+  const { by, ts } = meta
+  if (!by && !ts) return null
+  const name = by && profiles && profiles[by] ? profiles[by] : by
+  return (
+    <span className="ml-2 inline-flex items-center rounded-full bg-[#f9fafb] text-[#4a5568] border border-[#d0d6e0] px-2 py-0.5 text-xs font-medium">
+      {name || '—'} · {ts ? timeAgo(ts) : '—'}
+    </span>
+  )
+}
+
+function MiniStatus({ title, value, tone }) {
+  const tones = { blue: 'border-t-blue-500', amber: 'border-t-amber-500', green: 'border-t-green-500', gray: 'border-t-[#8a96a8]' }
+  return (
+    <div className={classNames('bg-white border-[1.5px] border-[#e2e6ed] rounded-xl shadow-sm p-3 border-t-4', tones[tone] || tones.blue)}>
+      <p className="text-xs font-semibold uppercase tracking-wide text-[#8a96a8]">{title}</p>
+      <p className="text-sm font-semibold text-[#1a2233] mt-1 truncate" title={value}>{value}</p>
+    </div>
+  )
+}
+
+function DetailField({ label, value, meta, profiles }) {
+  return (
+    <div>
+      <div className="flex items-center flex-wrap gap-1">
+        <p className="text-xs uppercase tracking-wide text-[#8a96a8] font-medium">{label}</p>
+        <FieldMetaChip meta={meta} profiles={profiles} />
+      </div>
+      <p className="text-sm text-[#1a2233] font-medium mt-0.5">{value}</p>
+    </div>
+  )
+}
+
+function JobProgress({ stage }) {
+  const s = Number(stage) || 0
+  const pct = Math.min(100, Math.round((s / 10) * 100))
+  return (
+    <div className="mt-1.5">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-sm font-medium text-[#4a5568] truncate">Stage {s}: {getStageName(s)}</span>
+        <span className="text-xs text-[#8a96a8]">{pct}%</span>
+      </div>
+      <div className="mt-0.5 h-0.5 bg-[#e2e6ed] border border-[#e2e6ed] rounded overflow-hidden">
+        <div className="h-full bg-[#1a4fa0] rounded" style={{ width: `${pct}%` }} />
+      </div>
+    </div>
+  )
+}
+
+function JobDetailView({ job, profiles, currentUserName, isAdmin, canUpdateStage, onBack, onSaved, toast, onDelete }) {
+  const [editMode, setEditMode] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [stageUpdating, setStageUpdating] = useState(false)
+  const [showFullAccountability, setShowFullAccountability] = useState(false)
+  const [detailTab, setDetailTab] = useState('details')
+  const [extractedFields, setExtractedFields] = useState(null)
+  const [loadingExtracted, setLoadingExtracted] = useState(false)
+  const [form, setForm] = useState(() => ({ ...job }))
+  const meta = job.field_meta && typeof job.field_meta === 'object' ? job.field_meta : {}
+
+  useEffect(() => {
+    if (!job.id) return
+    ;(async () => {
+      setLoadingExtracted(true)
+      try {
+        const { data } = await supabase
+          .from('job_extractions')
+          .select('id, job_id, job_no, extracted_data, extracted_at, extracted_by_name')
+          .eq('job_id', job.id)
+          .order('extracted_at', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+        setExtractedFields(data || null)
+      } catch { setExtractedFields(null) }
+      finally { setLoadingExtracted(false) }
+    })()
+  }, [job.id])
+
+  useEffect(() => {
+    setEditMode(false); setSaving(false); setStageUpdating(false); setForm({ ...job })
+  }, [job?.id])
+
+  const stage = Number(job.stage) || 0
+  const pct = Math.min(100, Math.round((stage / 10) * 100))
+  const stageName = getStageName(stage)
+  const priority = priorityChip(job.priority)
+  const mode = modeChip(job.mode)
+  const assignedName = job.assigned_to ? profiles[job.assigned_to] ?? '—' : '—'
+  const cfsDisplay = job.cfs_amount !== null && job.cfs_amount !== undefined && job.cfs_amount !== ''
+    ? `Rs. ${Number(job.cfs_amount).toLocaleString('en-IN')}` : 'Pending'
+
+  const canEditField = (fieldKey) => {
+    if (isAdmin) return true
+    if (['assigned_to','created_by','created_at','updated_at'].includes(fieldKey)) return false
+    const rule = FIELD_PERMS[fieldKey]
+    if (!rule) return false
+    if (rule.can === 'all') return true
+    return Array.isArray(rule.can) && rule.can.includes(currentUserName)
+  }
+
+  const fieldRows = [
+    { key: 'job_no', label: 'Job Number', value: displayValue(job.job_no) },
+    { key: 'client', label: 'Client', value: displayValue(job.client) },
+    { key: 'mode', label: 'Mode', value: displayValue(job.mode) },
+    { key: 'priority', label: 'Priority', value: displayValue(job.priority) },
+    { key: 'goods', label: 'Goods', value: displayValue(job.goods) },
+    { key: 'bl_no', label: 'BL Number', value: displayValue(job.bl_no) },
+    { key: 'be_no', label: 'BE Number', value: displayValue(job.be_no) },
+    { key: 'be_date', label: 'BE Date', value: formatDateSlash(job.be_date) },
+    { key: 'containers', label: 'Containers', value: displayValue(job.containers) },
+    { key: 'container_size', label: 'Container Size', value: displayValue(job.container_size) },
+    { key: 'shipping_line', label: 'Shipping Line', value: displayValue(job.shipping_line) },
+    { key: 'vessel', label: 'Vessel / Flight', value: displayValue(job.vessel) },
+    { key: 'eta', label: 'ETA', value: formatDateSlash(job.eta) },
+    { key: 'cfs_name', label: 'CFS Name', value: displayValue(job.cfs_name) },
+    { key: 'cfs_amount', label: 'CFS Amount', value: cfsDisplay },
+    { key: 'hs_code', label: 'HS Code', value: displayValue(job.hs_code) },
+    { key: 'rms_status', label: 'RMS Status', value: displayValue(job.rms_status) },
+    { key: 'bg_required', label: 'BG Required', value: displayValue(job.bg_required) },
+    { key: 'destination', label: 'Destination', value: displayValue(job.destination) },
+    { key: 'free_days', label: 'Free Days', value: displayValue(job.free_days) },
+    { key: 'detention_risk', label: 'Detention Risk', value: displayValue(job.detention_risk) },
+    { key: 'stage', label: 'Current Stage', value: `${stage} — ${stageName}` },
+    { key: 'delay_reason', label: 'Delay Reason', value: displayValue(job.delay_reason) },
+    { key: 'created_by', label: 'Created By', value: job.created_by ? profiles[job.created_by] ?? job.created_by : '—' },
+    { key: 'created_at', label: 'Created At', value: formatDateTime(job.created_at) },
+    { key: 'updated_at', label: 'Updated At', value: formatDateTime(job.updated_at) },
+  ]
+
+  const metaEntries = useMemo(() => {
+    return Object.entries(meta || {})
+      .filter(([, v]) => v && typeof v === 'object' && (v.by || v.ts))
+      .map(([k, v]) => ({ key: k, label: FIELD_LABELS[k] || k, by: v.by || '—', ts: v.ts || null }))
+      .sort((a, b) => (normalizeMetaTs(b.ts) || 0) - (normalizeMetaTs(a.ts) || 0))
+  }, [meta])
+
+  const updateForm = (key) => (e) => setForm((prev) => ({ ...prev, [key]: e.target.value }))
+
+  const handleSave = async () => {
+    setSaving(true)
+    try {
+      const updates = {}
+      const newMeta = { ...(meta || {}) }
+      const candidates = ['job_no','client','mode','bl_no','containers','container_size','shipping_line','vessel','eta','cfs_name','be_no','be_date','hs_code','rms_status','bg_required','cfs_amount','destination','priority','goods','free_days','detention_risk','delay_reason','notes']
+      candidates.forEach((k) => {
+        if (!canEditField(k)) return
+        const prev = job[k]
+        let next = form[k]
+        if (k === 'free_days' || k === 'cfs_amount') next = next === '' || next === null || next === undefined ? null : Number(next)
+        if (k === 'eta' || k === 'be_date') next = next ? next : null
+        if (typeof next === 'string') { next = next.trim(); if (next === '') next = null }
+        if ((prev ?? null) !== (next ?? null)) { updates[k] = next; newMeta[k] = { by: currentUserName, ts: Date.now() } }
+      })
+      if (Object.keys(updates).length === 0) { toast('No changes to save.', 'info'); setEditMode(false); return }
+      updates.field_meta = newMeta
+      updates.updated_at = new Date().toISOString()
+      const { error } = await supabase.from('jobs').update(updates).eq('id', job.id)
+      if (error) throw error
+      toast('Saved successfully.', 'success')
+      setEditMode(false)
+      await onSaved()
+    } catch (e) {
+      toast(e?.message || 'Save failed.', 'error')
+    } finally { setSaving(false) }
+  }
+
+  const handleStageChange = async (e) => {
+    const nextStage = Number(e.target.value)
+    if (!Number.isFinite(nextStage)) return
+    if (!canUpdateStage) { toast('You do not have permission to update stage.', 'error'); return }
+    setStageUpdating(true)
+    try {
+      const newMeta = { ...(meta || {}), stage: { by: currentUserName, ts: Date.now() } }
+      const { error } = await supabase.from('jobs').update({ stage: nextStage, field_meta: newMeta, updated_at: new Date().toISOString() }).eq('id', job.id)
+      if (error) throw error
+      toast(`Stage updated to: ${getStageName(nextStage)}`, 'success')
+      await onSaved()
+    } catch (e2) { toast(e2?.message || 'Stage update failed.', 'error') }
+    finally { setStageUpdating(false) }
+  }
+
+  const inputBase = 'w-full h-9 px-3 py-2 text-xs rounded-lg bg-white border-[1.5px] border-[#e2e6ed] text-[#1a2233] outline-none focus:border-[#1a4fa0] focus:ring-2 focus:ring-[#e8eef8] disabled:opacity-60 disabled:cursor-not-allowed'
+
+  const renderFieldInput = (key) => {
+    const disabled = !canEditField(key) || saving
+    const value = form[key] ?? ''
+    if (key === 'mode') return <select value={value||''} onChange={updateForm(key)} disabled={disabled} className={inputBase}><option value="">—</option><option value="Sea FCL">Sea FCL</option><option value="Sea LCL">Sea LCL</option><option value="Air">Air</option><option value="BPT/MBPT">BPT/MBPT</option></select>
+    if (key === 'priority') return <select value={value||'normal'} onChange={updateForm(key)} disabled={disabled} className={inputBase}><option value="normal">Normal</option><option value="high">High</option><option value="urgent">Urgent</option></select>
+    if (key === 'rms_status') return <select value={value||'pending'} onChange={updateForm(key)} disabled={disabled} className={inputBase}><option value="pending">pending</option><option value="rms">rms</option><option value="apr">apr</option><option value="acl">acl</option><option value="check">check</option><option value="hold">hold</option></select>
+    if (key === 'bg_required') return <select value={value||'no'} onChange={updateForm(key)} disabled={disabled} className={inputBase}><option value="no">no</option><option value="yes">yes</option><option value="100percent">100percent</option></select>
+    if (key === 'detention_risk') return <select value={value||'low'} onChange={updateForm(key)} disabled={disabled} className={inputBase}><option value="low">low</option><option value="medium">medium</option><option value="high">high</option></select>
+    if (key === 'be_date') return <input type="date" value={value||''} onChange={updateForm(key)} disabled={disabled} className={inputBase} />
+    if (key === 'container_size') {
+      return (
+        <select value={value || ''} onChange={updateForm(key)} disabled={disabled} className={inputBase}>
+          <option value="">— Select —</option>
+          <option value="20 Feet">20 Feet</option>
+          <option value="40 Feet">40 Feet</option>
+        </select>
+      )
+    }
+    if (key === 'eta') return <input type="date" value={value||''} onChange={updateForm(key)} disabled={disabled} className={inputBase} />
+    if (key === 'free_days' || key === 'cfs_amount') return <input type="number" value={value??''} onChange={updateForm(key)} disabled={disabled} className={inputBase} />
+    if (key === 'shipping_line') {
+      return (
+        <select value={value || ''} onChange={updateForm(key)} disabled={disabled} className={inputBase}>
+          <option value="">— Select —</option>
+          <option value="Maersk">Maersk</option>
+          <option value="MSC">MSC</option>
+          <option value="Hapag-Lloyd">Hapag-Lloyd</option>
+          <option value="CMA-CGM">CMA-CGM</option>
+          <option value="Evergreen">Evergreen</option>
+          <option value="ONE">ONE</option>
+          <option value="OOCL">OOCL</option>
+          <option value="COSCO">COSCO</option>
+          <option value="ZIM">ZIM</option>
+          <option value="HMM">HMM</option>
+          <option value="Yang Ming">Yang Ming</option>
+          <option value="Wan Hai">Wan Hai</option>
+          <option value="TS Line">TS Line</option>
+          <option value="Interasia">Interasia</option>
+          <option value="Emirates">Emirates</option>
+          <option value="Akkon">Akkon</option>
+          <option value="Other">Other</option>
+        </select>
+      )
+    }
+    if (key === 'notes') return <textarea value={value||''} onChange={updateForm(key)} disabled={disabled} rows={3} className={classNames(inputBase,'h-auto py-2')} />
+    return <input type="text" value={value||''} onChange={updateForm(key)} disabled={disabled} className={inputBase} />
+  }
+
+  return (
+    <div className="bg-white border-[1.5px] border-[#e2e6ed] rounded-xl shadow-sm overflow-hidden">
+      <div className="px-4 sm:px-6 py-4 border-b border-[#e2e6ed] flex flex-wrap items-center justify-between gap-3">
+        <button type="button" onClick={onBack} className="h-9 px-3 text-xs rounded-lg bg-white border-[1.5px] border-[#d0d6e0] text-[#4a5568] hover:border-[#1a4fa0] hover:text-[#1a4fa0] hover:bg-[#e8eef8] font-semibold">
+          &larr; Back to Jobs
+        </button>
+        <div className="flex-1 min-w-0">
+          <div className="text-sm sm:text-base font-extrabold text-[#1a2233] truncate">{job.job_no} &mdash; {job.client}</div>
+          <div className="mt-1 flex flex-wrap gap-2">
+            <span className={classNames('inline-flex items-center rounded-full px-2 py-0.5 text-xs font-bold', priority.cls)}>{priority.text}</span>
+            <span className={classNames('inline-flex items-center rounded-full px-2 py-0.5 text-xs font-bold', mode.cls)}>{mode.text}</span>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          {!editMode ? (
+            <>
+              <button type="button" onClick={() => setEditMode(true)} className="h-9 px-4 text-xs rounded-lg bg-[#1a4fa0] text-white hover:bg-[#153d82] font-semibold">Edit</button>
+              <select disabled={!canUpdateStage||stageUpdating} value={stage} onChange={handleStageChange}
+                className={classNames('h-9 px-3 text-xs rounded-lg bg-white border-[1.5px] border-[#e2e6ed] text-[#4a5568] outline-none focus:border-[#1a4fa0]', (!canUpdateStage||stageUpdating)?'opacity-60 cursor-not-allowed':'hover:border-[#1a4fa0]')}>
+                {STAGE_LIST.map((s) => <option key={s.value} value={s.value}>{s.value} — {s.label}</option>)}
+              </select>
+              <span className="text-xs text-[#8a96a8] font-semibold">Update Stage</span>
+            </>
+          ) : (
+            <>
+              <button type="button" disabled={saving} onClick={() => { setEditMode(false); setForm({...job}) }}
+                className="h-9 px-4 text-xs rounded-lg bg-white border-[1.5px] border-[#d0d6e0] text-[#4a5568] hover:border-[#1a4fa0] hover:text-[#1a4fa0] hover:bg-[#e8eef8] font-semibold disabled:opacity-60">Cancel</button>
+              <button type="button" disabled={saving} onClick={handleSave}
+                className="h-9 px-4 text-xs rounded-lg bg-[#1a4fa0] text-white hover:bg-[#153d82] font-semibold disabled:opacity-60 inline-flex items-center gap-2">
+                {saving && <span className="h-3.5 w-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />}
+                Save
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+
+      <div className="px-4 sm:px-6 border-b border-[#e2e6ed] bg-[#f8f9fb]">
+        <div className="flex gap-1 py-2">
+          <button type="button" onClick={() => setDetailTab('details')}
+            className={classNames('px-4 py-1.5 text-xs font-bold rounded-lg transition-colors', detailTab === 'details' ? 'bg-white text-[#1a4fa0] shadow-sm border border-[#e2e6ed]' : 'text-[#8a96a8] hover:text-[#1a4fa0]')}>
+            Job Details
+          </button>
+          <button type="button" onClick={() => setDetailTab('fields')}
+            className={classNames('px-4 py-1.5 text-xs font-bold rounded-lg transition-colors', detailTab === 'fields' ? 'bg-white text-[#1a4fa0] shadow-sm border border-[#e2e6ed]' : 'text-[#8a96a8] hover:text-[#1a4fa0]')}>
+            ✦ Extracted Fields
+          </button>
+        </div>
+      </div>
+
+      {detailTab === 'details' && (
+      <>
+      <div className="px-4 sm:px-6 py-4 border-b border-[#e2e6ed] bg-[#f8f9fb]">
+        <div className="flex items-center justify-between gap-3 mb-2">
+          <div className="text-sm font-medium text-[#4a5568] truncate">{stageName}</div>
+          <div className="text-xs text-[#8a96a8]">{pct}%</div>
+        </div>
+        <div className="h-2 bg-[#e2e6ed] border border-[#e2e6ed] rounded overflow-hidden">
+          <div className={classNames('h-full rounded', progressColor(stage))} style={{ width: `${pct}%` }} />
+        </div>
+      </div>
+
+      <div className="px-4 sm:px-6 py-4 border-b border-[#e2e6ed]">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          <MiniStatus title="CUSTOMS" value={job.rms_status ? String(job.rms_status).toUpperCase() : '—'} tone="blue" />
+          <MiniStatus title="CFS" value={cfsDisplay} tone="amber" />
+          <MiniStatus title="TRANSPORT" value={job.vessel?.trim() ? job.vessel : 'Not Yet'} tone="gray" />
+          <MiniStatus title="DELIVERY" value={job.destination?.trim() ? job.destination : 'Pending'} tone="green" />
+        </div>
+      </div>
+
+      <div className="px-4 sm:px-6 py-5">
+        <h3 className="text-sm font-semibold text-[#1a2233] mb-3">Job Details</h3>
+        {!editMode ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-5">
+            {fieldRows.map((f) => <DetailField key={f.key} label={f.label} value={f.value} meta={meta?.[f.key]} profiles={profiles} />)}
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-5">
+            {['job_no','client','mode','priority','goods','bl_no','be_no','be_date','containers','container_size','shipping_line','vessel','eta','cfs_name','cfs_amount','hs_code','rms_status','bg_required','destination','free_days','detention_risk','delay_reason','notes'].map((k) => (
+              <div key={k} className={k === 'notes' ? 'md:col-span-2' : ''}>
+                <div className="flex items-center flex-wrap gap-1 mb-1">
+                  <p className="text-xs text-[#8a96a8] font-medium uppercase tracking-wide">{FIELD_LABELS[k] || k}</p>
+                  <FieldMetaChip meta={meta?.[k]} profiles={profiles} />
+                </div>
+                {renderFieldInput(k)}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="px-4 sm:px-6 pb-6">
+        <div className="bg-white border border-[#e2e6ed] rounded-xl overflow-hidden shadow-sm w-full">
+          <div className="px-4 py-3 border-b border-[#e2e6ed] flex items-center justify-between gap-3">
+<div className="text-sm font-semibold text-[#1a2233]">Field Accountability</div>
+            <div className="flex items-center gap-3">
+              <div className="text-xs text-[#8a96a8]">Who updated what</div>
+              {metaEntries.length > 5 && (
+                <button type="button" onClick={() => setShowFullAccountability(true)} className="text-xs font-semibold text-blue-700 hover:text-blue-800">
+                  View Full List
+                </button>
+              )}
+            </div>
+          </div>
+          <div className="max-h-[228px] overflow-y-auto">
+          <table className="w-full table-fixed text-xs">
+            <thead className="sticky top-0 z-10 bg-[#f8f9fb] text-[#8a96a8]">
+              <tr>
+                <th className="w-[36%] text-left px-4 py-3 font-semibold uppercase tracking-wide text-xs">Field Name</th>
+                <th className="w-[32%] text-left px-4 py-3 font-semibold uppercase tracking-wide text-xs">Updated By</th>
+                <th className="w-[32%] text-left px-4 py-3 font-semibold uppercase tracking-wide text-xs">When</th>
+              </tr>
+            </thead>
+            <tbody>
+              {metaEntries.length ? metaEntries.map((m) => (
+                <tr key={m.key} className="border-t border-[#e2e6ed]">
+                  <td className="px-4 py-2 text-[#4a5568] truncate" title={m.label}>{m.label}</td>
+                  <td className="px-4 py-2 text-[#1a2233] font-semibold truncate" title={profiles[m.by] || m.by}>{profiles[m.by] || m.by}</td>
+                  <td className="px-4 py-2 text-[#8a96a8]">{formatAccountabilityWhen(m.ts)}</td>
+                </tr>
+              )) : (
+                <tr><td colSpan={3} className="px-4 py-8 text-center text-[#8a96a8]">No field updates logged yet</td></tr>
+              )}
+            </tbody>
+          </table>
+          </div>
+        </div>
+      </div>
+
+      {showFullAccountability && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm px-4">
+          <div className="w-full max-w-3xl max-h-[82vh] overflow-hidden rounded-xl bg-white shadow-2xl border border-[#e2e6ed]">
+            <div className="px-5 py-4 border-b border-[#e2e6ed] flex items-center justify-between gap-3">
+              <div>
+                <div className="text-base font-semibold text-[#1a2233]">Field Accountability</div>
+                <div className="text-xs text-[#8a96a8]">{metaEntries.length} updates shown in IST</div>
+              </div>
+              <button type="button" onClick={() => setShowFullAccountability(false)}
+                className="h-8 px-3 text-xs rounded-lg bg-white border-[1.5px] border-[#d0d6e0] text-[#4a5568] hover:border-[#1a4fa0] hover:text-[#1a4fa0] hover:bg-[#e8eef8] font-semibold">
+                Close
+              </button>
+            </div>
+            <div className="max-h-[68vh] overflow-y-auto">
+              <table className="w-full table-fixed text-xs">
+                <thead className="sticky top-0 z-10 bg-[#f8f9fb] text-[#8a96a8]">
+                  <tr>
+                    <th className="w-[36%] text-left px-5 py-3 font-semibold uppercase tracking-wide text-xs">Field Name</th>
+                    <th className="w-[32%] text-left px-5 py-3 font-semibold uppercase tracking-wide text-xs">Updated By</th>
+                    <th className="w-[32%] text-left px-5 py-3 font-semibold uppercase tracking-wide text-xs">When</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {metaEntries.map((m) => (
+                    <tr key={m.key} className="border-t border-[#e2e6ed]">
+                      <td className="px-5 py-2 text-[#4a5568]">{m.label}</td>
+                      <td className="px-5 py-2 text-[#1a2233] font-semibold">{profiles[m.by] || m.by}</td>
+                      <td className="px-5 py-2 text-[#8a96a8]">{formatAccountabilityWhen(m.ts)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {job.delay_reason?.trim() && (
+        <div className="mx-4 sm:mx-6 mb-5 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          <span className="font-semibold">Delay:</span> {job.delay_reason}
+        </div>
+      )}
+      {job.notes?.trim() && (
+        <div className="mx-4 sm:mx-6 mb-6 rounded-lg border border-[#e2e6ed] bg-white px-4 py-3">
+          <p className="text-xs font-semibold text-[#8a96a8] uppercase tracking-wide mb-1">Notes</p>
+          <p className="text-sm text-[#4a5568] whitespace-pre-wrap">{job.notes}</p>
+        </div>
+      )}
+
+      <div className="px-4 sm:px-6 pb-6">
+        <button type="button" onClick={() => onDelete && onDelete()}
+          className="h-9 px-5 text-xs rounded-lg border border-red-300 bg-red-50 text-red-700 hover:bg-red-100 font-semibold">
+          Delete Job
+        </button>
+      </div>
+      </>
+      )}
+
+      {detailTab === 'fields' && (
+        <div className="px-4 sm:px-6 py-5">
+          {loadingExtracted ? (
+            <div className="flex items-center justify-center py-12">
+              <span className="h-5 w-5 border-2 border-[#1a4fa0] border-t-transparent rounded-full animate-spin" />
+              <span className="ml-3 text-sm text-[#8a96a8]">Loading extracted fields...</span>
+            </div>
+          ) : extractedFields ? (
+            <div>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-sm font-semibold text-[#1a2233]">✦ Extracted Fields</h3>
+                {extractedFields.extracted_at && (
+                  <span className="text-xs text-[#8a96a8]">
+                    Extracted {new Date(extractedFields.extracted_at).toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' })}
+                    {extractedFields.extracted_by_name ? ` · by ${extractedFields.extracted_by_name}` : ''}
+                  </span>
+                )}
+              </div>
+              {OCR_SECTIONS.map((section) => {
+                const data = extractedFields.extracted_data || {}
+                const relevant = section.fields.filter((k) => data[k] !== undefined)
+                if (!relevant.length) return null
+                return (
+                  <div key={section.title} className="mb-5">
+                    <h4 className="text-xs font-bold uppercase tracking-wide text-[#8a96a8] mb-2 border-b border-[#e2e6ed] pb-1">{section.title}</h4>
+                    <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
+                      {relevant.map((k) => {
+                        const field = data[k] || {}
+                        let borderColor = 'border-gray-200'
+                        if (!field.value) borderColor = 'border-red-300 bg-red-50'
+                        else if (field.confidence === 'high') borderColor = 'border-green-400'
+                        else if (field.confidence === 'medium') borderColor = 'border-amber-400'
+                        else borderColor = 'border-red-300'
+                        const label = FIELD_LABELS_OCR?.[k] || k.replace(/_/g, ' ')
+                        return (
+                          <div key={k} className={'rounded-lg border-l-4 px-3 py-2 bg-white border-[1.5px] ' + borderColor}>
+                            <p className="text-[10px] font-bold uppercase tracking-widest text-[#8a96a8]">{label}</p>
+                            <p className="text-sm font-semibold text-[#1a2233] mt-0.5">{field.value || '—'}</p>
+                            {field.source && <p className="text-[10px] text-[#8a96a8] mt-0.5">Source: {field.source}</p>}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )
+              })}
+              {(() => {
+                const data = extractedFields.extracted_data || {}
+                const otherKeys = Object.keys(data).filter((k) => !OCR_SECTIONS.some(s => s.fields.includes(k)))
+                if (!otherKeys.length) return null
+                return (
+                  <div className="mb-5">
+                    <h4 className="text-xs font-bold uppercase tracking-wide text-[#8a96a8] mb-2 border-b border-[#e2e6ed] pb-1">Other Fields</h4>
+                    <div className="flex flex-wrap gap-2">
+                      {otherKeys.map((k) => {
+                        const label = FIELD_LABELS_OCR?.[k] || k.replace(/_/g, ' ')
+                        return (
+                          <span key={k} className="inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium bg-[#f4f6f9] text-[#8a96a8] border border-[#e2e6ed]">{label}: {data[k]?.value || '—'}</span>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )
+              })()}
+            </div>
+          ) : (
+            <div className="flex flex-col items-center justify-center py-12 text-center">
+              <p className="text-sm text-[#8a96a8] mb-2">No extracted fields found for this job</p>
+              <p className="text-xs text-[#8a96a8]">Go to the <strong>OCR Extract</strong> tab to extract fields from uploaded documents</p>
+            </div>
+          )}
+        </div>
+      )}
+
+    </div>
+  )
+}
+
+export default JobDetailView
