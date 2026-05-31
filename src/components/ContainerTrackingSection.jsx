@@ -278,7 +278,7 @@ function UpdateStatusModal({ container, statusOptions, onClose, onSaved, showToa
         style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.35)', zIndex:299, cursor:'pointer' }}
       />
       <div style={{
-        position:'fixed', right:0, top:0, bottom:0, width:'480px',
+        position:'fixed', right:0, top:0, bottom:0, width:'min(480px, 100vw)',
         background:'white', borderLeft:'1.5px solid #e2e6ed',
         zIndex:300, display:'flex', flexDirection:'column',
         boxShadow:'-8px 0 32px rgba(0,0,0,0.12)',
@@ -453,7 +453,7 @@ function AddMilestoneModal({ container, onClose, onSaved, showToast }) {
         style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.35)', zIndex:299, cursor:'pointer' }}
       />
       <div style={{
-        position:'fixed', right:0, top:0, bottom:0, width:'480px',
+        position:'fixed', right:0, top:0, bottom:0, width:'min(480px, 100vw)',
         background:'white', borderLeft:'1.5px solid #e2e6ed',
         zIndex:300, display:'flex', flexDirection:'column',
         boxShadow:'-8px 0 32px rgba(0,0,0,0.12)',
@@ -954,7 +954,7 @@ function ContainerTrackingSection({ showToast, jobs }) {
   return (
     <div style={{ display:'flex', flexDirection:'column', gap:'16px' }}>
 
-      <style>{`@media (min-width:640px) { .kpi-grid { grid-template-columns:repeat(3,1fr) !important } } @media (min-width:1024px) { .kpi-grid { grid-template-columns:repeat(5,1fr) !important } }`}</style>
+      <style>{`.ct-table{min-width:700px}@media(max-width:640px){.ct-job-row{grid-template-columns:24px 1fr auto 60px !important}.ct-cn-row{grid-template-columns:24px 1fr auto !important}.ct-col-hide{display:none !important}}@media(min-width:640px){.kpi-grid{grid-template-columns:repeat(3,1fr)!important}}@media(min-width:1024px){.kpi-grid{grid-template-columns:repeat(5,1fr)!important}}`}</style>
 
       {/* ── KPI STRIP ─────────────────────────────────────────────── */}
       <div className="kpi-grid" style={{ display:'grid', gridTemplateColumns:'repeat(2,1fr)', gap:'10px' }}>
@@ -1043,13 +1043,13 @@ function ContainerTrackingSection({ showToast, jobs }) {
           </p>
         </div>
       ) : (
-        <div style={{ overflowX:'auto', WebkitOverflowScrolling:'touch' }}>
+        <div className="ct-table" style={{ overflowX:'auto', WebkitOverflowScrolling:'touch' }}>
         <div style={{ background:'white', border:'1.5px solid #e2e6ed', borderRadius:'12px', overflow:'hidden', minWidth:'700px' }}>
 
           {/* Table column headers */}
-          <div style={{ display:'grid', gridTemplateColumns:'32px 120px 1fr 110px 130px 100px 80px 70px', gap:'12px', alignItems:'center', padding:'8px 16px', background:'#f8f9fb', borderBottom:'1.5px solid #e2e6ed' }}>
+          <div className="ct-job-row" style={{ display:'grid', gridTemplateColumns:'32px 120px 1fr 110px 130px 100px 80px 70px', gap:'12px', alignItems:'center', padding:'8px 16px', background:'#f8f9fb', borderBottom:'1.5px solid #e2e6ed' }}>
             {['', 'Job', 'Client', 'Shipping Line', 'Status', 'ETA', 'Containers', ''].map((h, i) => (
-              <div key={i} style={{ fontSize:'10px', fontWeight:500, textTransform:'uppercase', letterSpacing:'0.07em', color:'#8a96a8' }}>{h}</div>
+              <div key={i} className={[3,5,6].includes(i) ? 'ct-col-hide' : ''} style={{ fontSize:'10px', fontWeight:500, textTransform:'uppercase', letterSpacing:'0.07em', color:'#8a96a8' }}>{h}</div>
             ))}
           </div>
 
@@ -1088,6 +1088,7 @@ function ContainerTrackingSection({ showToast, jobs }) {
 
                 {/* ── Job row ── */}
                 <div
+                  className="ct-job-row"
                   onClick={() => setExpandedContainers(prev => ({ ...prev, [`job_${job.id}`]: !prev[`job_${job.id}`] }))}
                   style={{
                     display:'grid', gridTemplateColumns:'32px 120px 1fr 110px 130px 100px 80px 70px',
@@ -1108,7 +1109,7 @@ function ContainerTrackingSection({ showToast, jobs }) {
                   <span style={{ fontSize:'13px', color:'#1a2233', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{job.client}</span>
 
                   {/* Shipping line */}
-                  <span style={{ fontSize:'12px', color:'#8a96a8', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{job.shipping_line || '—'}</span>
+                  <span className="ct-col-hide" style={{ fontSize:'12px', color:'#8a96a8', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{job.shipping_line || '—'}</span>
 
                   {/* Status badge */}
                   <span style={{ display:'inline-flex', alignItems:'center', padding:'2px 8px', borderRadius:'9999px', fontSize:'11px', fontWeight:500, border:`1.5px solid ${jobBadge.border}`, background:jobBadge.bg, color:jobBadge.color, whiteSpace:'nowrap' }}>
@@ -1116,10 +1117,10 @@ function ContainerTrackingSection({ showToast, jobs }) {
                   </span>
 
                   {/* ETA */}
-                  <span style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:'12px', fontWeight:500, color:etaColor }}>{displayEta}</span>
+                  <span className="ct-col-hide" style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:'12px', fontWeight:500, color:etaColor }}>{displayEta}</span>
 
                   {/* Container count */}
-                  <span style={{ fontSize:'12px', color:'#8a96a8' }}>{cnList.length} container{cnList.length !== 1 ? 's' : ''}</span>
+                  <span className="ct-col-hide" style={{ fontSize:'12px', color:'#8a96a8' }}>{cnList.length} container{cnList.length !== 1 ? 's' : ''}</span>
 
                   {/* View button */}
                   <button
@@ -1137,9 +1138,9 @@ function ContainerTrackingSection({ showToast, jobs }) {
                   <div style={{ borderTop:'1.5px solid #e2e6ed', background:'#f8f9fb' }}>
 
                     {/* Container column headers */}
-                    <div style={{ display:'grid', gridTemplateColumns:'48px 180px 120px 1fr 100px 80px 100px', gap:'12px', alignItems:'center', padding:'6px 16px 6px 48px', borderBottom:'1.5px solid #e2e6ed' }}>
+                    <div className="ct-cn-row" style={{ display:'grid', gridTemplateColumns:'48px 180px 120px 1fr 100px 80px 100px', gap:'12px', alignItems:'center', padding:'6px 16px 6px 48px', borderBottom:'1.5px solid #e2e6ed' }}>
                       {['', 'Container', 'Status', 'Progress', 'Location', 'Free Days', ''].map((h, i) => (
-                        <div key={i} style={{ fontSize:'9px', fontWeight:500, textTransform:'uppercase', letterSpacing:'0.07em', color:'#8a96a8' }}>{h}</div>
+                        <div key={i} className={[2,3,4,5].includes(i) ? 'ct-col-hide' : ''} style={{ fontSize:'9px', fontWeight:500, textTransform:'uppercase', letterSpacing:'0.07em', color:'#8a96a8' }}>{h}</div>
                       ))}
                     </div>
 
@@ -1154,6 +1155,7 @@ function ContainerTrackingSection({ showToast, jobs }) {
 
                       return (
                         <div
+                          className="ct-cn-row"
                           key={cn}
                           onClick={() => {
                             const key = `${job.id}-${cn}`
@@ -1184,12 +1186,12 @@ function ContainerTrackingSection({ showToast, jobs }) {
                           <span style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:'12px', fontWeight:500, color:'#1a2233' }}>{cn}</span>
 
                           {/* Status badge */}
-                          <span style={{ display:'inline-flex', alignItems:'center', padding:'2px 8px', borderRadius:'9999px', fontSize:'10px', fontWeight:500, border:`1.5px solid ${isDetention ? '#fecaca' : st.border}`, background: isDetention ? '#fef2f2' : st.bg, color: isDetention ? '#991b1b' : st.color, whiteSpace:'nowrap' }}>
+                          <span className="ct-col-hide" style={{ display:'inline-flex', alignItems:'center', padding:'2px 8px', borderRadius:'9999px', fontSize:'10px', fontWeight:500, border:`1.5px solid ${isDetention ? '#fecaca' : st.border}`, background: isDetention ? '#fef2f2' : st.bg, color: isDetention ? '#991b1b' : st.color, whiteSpace:'nowrap' }}>
                             {isDetention ? '⚠ Detention' : (td.statusText || 'Not Updated')}
                           </span>
 
                           {/* Progress bar */}
-                          <div>
+                          <div className="ct-col-hide">
                             <div style={{ height:'4px', background:'#e2e6ed', borderRadius:'4px', overflow:'hidden', marginBottom:'3px' }}>
                               <div style={{ height:'100%', borderRadius:'4px', width:`${pct}%`, background:pColor }} />
                             </div>
@@ -1197,12 +1199,12 @@ function ContainerTrackingSection({ showToast, jobs }) {
                           </div>
 
                           {/* Location */}
-                          <span style={{ fontSize:'11px', color:'#8a96a8', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                          <span className="ct-col-hide" style={{ fontSize:'11px', color:'#8a96a8', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
                             {td.currentLocation || '—'}
                           </span>
 
                           {/* Free days */}
-                          <span style={{ fontSize:'12px', fontWeight:500, color: isDetention ? '#991b1b' : td.freeDays != null && td.freeDays <= 5 ? '#b45309' : '#8a96a8' }}>
+                          <span className="ct-col-hide" style={{ fontSize:'12px', fontWeight:500, color: isDetention ? '#991b1b' : td.freeDays != null && td.freeDays <= 5 ? '#b45309' : '#8a96a8' }}>
                             {td.freeDays != null ? `${td.freeDays}d` : '—'}
                           </span>
 
@@ -1210,7 +1212,7 @@ function ContainerTrackingSection({ showToast, jobs }) {
                           <div style={{ display:'flex', gap:'5px' }}>
                             <button
                               onClick={e => { e.stopPropagation(); handleOpenUpdate(job, cn) }}
-                              style={{ padding:'3px 8px', background:'#E6F1FB', border:'1.5px solid #B5D4F4', borderRadius:'5px', fontSize:'10px', fontWeight:500, color:'#185FA5', cursor:'pointer' }}
+                              style={{ padding:'7px 10px', background:'#E6F1FB', border:'1.5px solid #B5D4F4', borderRadius:'5px', fontSize:'11px', fontWeight:500, color:'#185FA5', cursor:'pointer', minHeight:'36px' }}
                               onMouseEnter={e => { e.currentTarget.style.background='#185FA5'; e.currentTarget.style.color='white' }}
                               onMouseLeave={e => { e.currentTarget.style.background='#E6F1FB'; e.currentTarget.style.color='#185FA5' }}
                             >Update</button>

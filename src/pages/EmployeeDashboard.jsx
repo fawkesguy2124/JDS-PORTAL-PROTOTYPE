@@ -184,8 +184,10 @@ function EmpContainerSection({ jobs, showToast }) {
         </div>
       )}
 
-      {/* 3-column job card grid */}
-      <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:'14px', alignItems:'start' }}>
+      <style>{`@media(min-width:640px){ .emp-card-grid { grid-template-columns:repeat(2,1fr) !important } } @media(min-width:1024px){ .emp-card-grid { grid-template-columns:repeat(3,1fr) !important } }`}</style>
+
+      {/* Responsive job card grid */}
+      <div className="emp-card-grid" style={{ display:'grid', gridTemplateColumns:'1fr', gap:'14px', alignItems:'start' }}>
         {filteredJobCards.map(({ job, cnList }) => {
           const statuses   = cnList.map(cn => trackingData[cn]?.status || 'in_transit')
           const worstStatus = statuses.includes('delayed') ? 'delayed'
@@ -394,7 +396,7 @@ function EmpJobDetailPanel({ job, trackingData, onClose }) {
     <>
       <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.35)', zIndex:199, cursor:'pointer' }} />
       <div style={{
-        position:'fixed', right:0, top:0, bottom:0, width:'520px',
+        position:'fixed', right:0, top:0, bottom:0, width:'min(520px, 100vw)',
         background:'white', borderLeft:'1.5px solid #e2e6ed',
         zIndex:200, display:'flex', flexDirection:'column',
         boxShadow:'-8px 0 32px rgba(0,0,0,0.12)',
@@ -2015,8 +2017,8 @@ export default function EmployeeDashboard() {
                           </div>
                         </button>
                         {isExpanded && (
-                          <div className="overflow-x-auto">
-                            <table className="w-full text-xs">
+                            <div className="overflow-x-auto">
+                              <table className="w-full text-xs" style={{ minWidth:'500px' }}>
                               <thead>
                                 <tr className="text-[#8a96a8] border-b border-[#e2e6ed] bg-[#f8f9fb]">
                                   <th className="text-left font-semibold uppercase tracking-wide text-xs px-4 py-3">File Name</th>
