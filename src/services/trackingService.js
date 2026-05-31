@@ -42,6 +42,9 @@ export async function updateContainerStatus(containerNo, updates) {
       eta:              updates.eta,
       free_days:        updates.freeDays,
       notes:            updates.notes,
+      port_in:          updates.portIn    || null,
+      port_out:         updates.portOut   || null,
+      cfs_gate_in:      updates.cfsGateIn || null,
       last_update:      new Date().toISOString(),
       updated_at:       new Date().toISOString(),
     })
@@ -128,6 +131,9 @@ function rowToContainer(row) {
     freeDays:        row.free_days,
     notes:           row.notes,
     lastUpdate:      row.last_update,
+    portIn:          row.port_in,
+    portOut:         row.port_out,
+    cfsGateIn:       row.cfs_gate_in,
     milestones:      row.milestones || [],
   }
 }

@@ -197,8 +197,12 @@ export default function CreateJob({ isModal = false, onCancel, onCreated }) {
       .single()
 
     if (insertError) {
+      if (insertError.code === '23505' || insertError.message?.includes('unique constraint') || insertError.message?.includes('job_no_key')) {
+        setError(`Job number "${payload.job_no}" already exists. Please use a different job number.`)
+      } else {
+        setError(insertError.message || 'Failed to create job. Please try again.')
+      }
       setSaving(false)
-      setError(insertError.message || 'Failed to create job. Please try again.')
       return
     }
 
@@ -303,13 +307,18 @@ export default function CreateJob({ isModal = false, onCancel, onCreated }) {
               </Field>
 
               <Field label="Client Name" required>
-                <input
-                  type="text"
-                  required
-                  value={form.client}
-                  onChange={set('client')}
-                  className={inputClass}
-                />
+                {form.client === '__other__' ? (
+                  <div className="flex gap-2">
+                    <input type="text" required value={form.clientOther || ''} onChange={(e) => { setForm(p => ({ ...p, clientOther: e.target.value, client: e.target.value })); setError('') }} className={inputClass} placeholder="Enter client name" />
+                    <button type="button" onClick={() => setForm(p => ({ ...p, client: '', clientOther: '' }))} className="shrink-0 px-3 py-2 text-xs font-semibold rounded-lg bg-gray-100 border border-gray-300 text-gray-600 hover:bg-gray-200">↩ List</button>
+                  </div>
+                ) : (
+                  <select value={form.client} onChange={(e) => { const v = e.target.value; setForm(p => ({ ...p, client: v === '__other__' ? '__other__' : v, clientOther: v === '__other__' ? '' : p.clientOther })); setError('') }} className={inputClass} required>
+                    <option value="">Select client</option>
+                    {['PCM','Adorn (ALS Series)','Deepa Traders','Divine / NNC','Eboney','Limitless Components EXIM','Infinite EXIM','Uddaybharat Techno Pvt. Ltd.','Leon International','Green Soul','Enkay Machinery','TRW','Grupo','Integral','Maxlord','Gefit','REAL','Mahalaxmi','Macksmatec','Finearc','Electrica','Ishita','Cotswold','INTO','Rivaan','Nikam',].map(c => <option key={c} value={c}>{c}</option>)}
+                    <option value="__other__">Other...</option>
+                  </select>
+                )}
               </Field>
 
               <Field label="Mode" required>
@@ -356,8 +365,8 @@ export default function CreateJob({ isModal = false, onCancel, onCreated }) {
                 <input type="text" value={form.bl_no} onChange={set('bl_no')} className={inputClass} />
               </Field>
 
-              <Field label="Carrier / Shipping Line">
-                <select value={form.carrier} onChange={set('carrier')} className={inputClass}>
+              <Field label="Carrier / Shipping Line" required>
+                <select value={form.carrier} onChange={set('carrier')} className={inputClass} required>
                   <option value="">Select shipping line</option>
                   {SHIPPING_LINES.map((s) => <option key={s} value={s}>{s}</option>)}
                 </select>
