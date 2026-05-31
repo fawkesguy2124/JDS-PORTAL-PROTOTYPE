@@ -954,8 +954,10 @@ function ContainerTrackingSection({ showToast, jobs }) {
   return (
     <div style={{ display:'flex', flexDirection:'column', gap:'16px' }}>
 
+      <style>{`@media (min-width:640px) { .kpi-grid { grid-template-columns:repeat(3,1fr) !important } } @media (min-width:1024px) { .kpi-grid { grid-template-columns:repeat(5,1fr) !important } }`}</style>
+
       {/* ── KPI STRIP ─────────────────────────────────────────────── */}
-      <div style={{ display:'grid', gridTemplateColumns:'repeat(5,1fr)', gap:'10px' }}>
+      <div className="kpi-grid" style={{ display:'grid', gridTemplateColumns:'repeat(2,1fr)', gap:'10px' }}>
         {[
           { label:'Total Containers', value: kpis.total,            bg:'#f8f9fb',                           color:'#1a2233',                     sub:'across all jobs' },
           { label:'In Transit',       value: kpis.inTransit,        bg:'#FAEEDA',                           color:'#633806',                     sub:'on the water' },
@@ -1041,7 +1043,8 @@ function ContainerTrackingSection({ showToast, jobs }) {
           </p>
         </div>
       ) : (
-        <div style={{ background:'white', border:'1.5px solid #e2e6ed', borderRadius:'12px', overflow:'hidden' }}>
+        <div style={{ overflowX:'auto', WebkitOverflowScrolling:'touch' }}>
+        <div style={{ background:'white', border:'1.5px solid #e2e6ed', borderRadius:'12px', overflow:'hidden', minWidth:'700px' }}>
 
           {/* Table column headers */}
           <div style={{ display:'grid', gridTemplateColumns:'32px 120px 1fr 110px 130px 100px 80px 70px', gap:'12px', alignItems:'center', padding:'8px 16px', background:'#f8f9fb', borderBottom:'1.5px solid #e2e6ed' }}>
@@ -1227,6 +1230,7 @@ function ContainerTrackingSection({ showToast, jobs }) {
               </div>
             )
           })}
+        </div>
         </div>
       )}
 

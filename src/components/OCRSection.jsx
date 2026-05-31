@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '../supabase'
 import * as XLSX from 'xlsx'
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
@@ -312,6 +312,10 @@ export default function OCRSection({ jobs, currentUserName, showToast, user: ocr
   const [saving, setSaving] = useState(false)
   const [recentExtractions, setRecentExtractions] = useState([])
   const [loadingRecent, setLoadingRecent]         = useState(true)
+  const [uploading, setUploading]         = useState(false)
+  const [uploadDocType, setUploadDocType] = useState('BL')
+  const [dragOver, setDragOver]           = useState(false)
+  const uploadInputRef                     = useRef(null)
 
   useEffect(() => {
     loadRecentExtractions()
@@ -521,6 +525,79 @@ export default function OCRSection({ jobs, currentUserName, showToast, user: ocr
     XLSX.writeFile(wb, `OCR_Extraction_${selectedJob?.job_no || 'export'}.xlsx`)
   }
 
+  const DOC_TYPES = [
+    'BL', 'Invoice', 'Packing List', 'Certificate of Origin',
+    'Insurance', 'BIS Certificate', 'LMPC Certificate',
+    'SIMS Registration', 'NFMIMS Registration', 'Delivery Order',
+    'Bill of Entry', 'OOC', 'Duty Challan', 'e-Way Bill', 'Other',
+  ]
+
+  const handleUploadDocument = async (file) => {
+    if (!selectedJob) {
+      showToast('Select a job first before uploading.', 'error')
+      return
+    }
+    if (!file) return
+
+    setUploading(true)
+    try {
+      const ext      = file.name.split('.').pop()
+      const filePath = `${selectedJob.id}/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`
+
+      const { error: upErr } = await supabase.storage
+        .from('job-documents')
+        .upload(filePath, file, { cacheControl: '3600', upsert: false })
+
+      if (upErr) throw upErr
+
+      const { data: { publicUrl } } = supabase.storage
+        .from('job-documents')
+        .getPublicUrl(filePath)
+
+      const { error: insErr } = await supabase.from('documents').insert({
+        job_id:           selectedJob.id,
+        job_no:           selectedJob.job_no,
+        file_name:        file.name,
+        file_path:        filePath,
+        doc_type:         uploadDocType,
+        file_url:         publicUrl,
+        uploaded_by:      ocrUser?.id || '',
+        uploaded_by_name: ocrProfile?.name || currentUserName,
+        file_size:        file.size,
+      })
+
+      if (insErr) throw insErr
+
+      showToast(`${file.name} uploaded successfully.`, 'success')
+
+      const { data: freshDocs } = await supabase
+        .from('documents')
+        .select('*')
+        .eq('job_id', selectedJob.id)
+      setDocuments(freshDocs || [])
+      if (freshDocs?.length) {
+        setSelectedDocIds(prev => new Set([...prev, freshDocs[freshDocs.length - 1].id]))
+      }
+    } catch (e) {
+      showToast(`Upload failed: ${e.message}`, 'error')
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  const handleFileDrop = (e) => {
+    e.preventDefault()
+    setDragOver(false)
+    const file = e.dataTransfer.files[0]
+    if (file) handleUploadDocument(file)
+  }
+
+  const handleFileInput = (e) => {
+    const file = e.target.files[0]
+    if (file) handleUploadDocument(file)
+    e.target.value = ''
+  }
+
   const btnBase = 'h-9 px-4 text-sm rounded-lg font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed'
   const cardBase = 'bg-white border border-[#e2e6ed] rounded-xl shadow-sm'
 
@@ -695,22 +772,74 @@ export default function OCRSection({ jobs, currentUserName, showToast, user: ocr
                 <p className="text-sm text-[#8a96a8]">Loading documents...</p>
               </div>
             ) : documents.length === 0 ? (
-              <div className="p-12 text-center">
+              <div className="p-8 text-center">
                 <div className="text-3xl mb-3">📄</div>
-                <p className="text-sm font-semibold text-[#4a5568]">No documents uploaded for this job</p>
-                <p className="text-xs text-[#8a96a8] mt-1">Upload documents in the Documents tab first.</p>
+                <p className="text-sm font-semibold text-[#4a5568] mb-1">No documents uploaded for this job</p>
+                <p className="text-xs text-[#8a96a8] mb-5">Upload a BL, Invoice, or Packing List to get started.</p>
+                <div className="flex flex-col items-center gap-3">
+                  <select
+                    value={uploadDocType}
+                    onChange={e => setUploadDocType(e.target.value)}
+                    className="h-9 px-3 text-sm border-[1.5px] border-[#e2e6ed] rounded-lg bg-white outline-none focus:border-[#1a4fa0] text-[#4a5568]"
+                  >
+                    {DOC_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                  <button
+                    type="button"
+                    onClick={() => uploadInputRef.current?.click()}
+                    disabled={uploading}
+                    className="h-9 px-5 text-sm font-semibold rounded-lg bg-[#1a4fa0] text-white hover:bg-[#153d82] disabled:opacity-50 inline-flex items-center gap-2"
+                  >
+                    {uploading
+                      ? <><span className="h-3.5 w-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" /> Uploading...</>
+                      : '📎 Upload Document'}
+                  </button>
+                  <input ref={uploadInputRef} type="file" accept=".pdf,.jpg,.jpeg,.png,.webp" className="hidden" onChange={handleFileInput} />
+                </div>
               </div>
             ) : (
               <>
-                <div className="px-5 py-3 border-b border-[#e2e6ed] bg-[#f8f9fb] flex items-center justify-between">
+                <div className="px-5 py-3 border-b border-[#e2e6ed] bg-[#f8f9fb] flex items-center justify-between gap-3">
                   <label className="flex items-center gap-2 cursor-pointer">
                     <input type="checkbox"
                       checked={selectedDocIds.size === documents.length && documents.length > 0}
                       onChange={toggleAll}
                       className="h-4 w-4 rounded border-[#d0d6e0] text-[#1a4fa0]" />
-                    <span className="text-[11px] font-bold text-[#8a96a8] uppercase tracking-wider">Select Documents to Extract</span>
+                    <span className="text-[11px] font-bold text-[#8a96a8] uppercase tracking-wider">Select Documents</span>
                   </label>
-                  <span className="text-xs text-[#8a96a8]">{selectedDocIds.size} / {documents.length} selected</span>
+                  <div className="flex items-center gap-2 ml-auto">
+                    <span className="text-xs text-[#8a96a8]">{selectedDocIds.size} / {documents.length} selected</span>
+                    <select
+                      value={uploadDocType}
+                      onChange={e => setUploadDocType(e.target.value)}
+                      className="h-7 px-2 text-xs border-[1.5px] border-[#e2e6ed] rounded-lg bg-white outline-none text-[#4a5568]"
+                    >
+                      {DOC_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                    </select>
+                    <button
+                      type="button"
+                      onClick={() => uploadInputRef.current?.click()}
+                      disabled={uploading}
+                      className="h-7 px-3 text-xs font-semibold rounded-lg bg-[#e8eef8] border border-[#bfdbfe] text-[#1a4fa0] hover:bg-[#1a4fa0] hover:text-white disabled:opacity-50 inline-flex items-center gap-1.5 transition-colors"
+                    >
+                      {uploading
+                        ? <span className="h-3 w-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                        : '📎'}
+                      {uploading ? 'Uploading...' : 'Upload'}
+                    </button>
+                    <input ref={uploadInputRef} type="file" accept=".pdf,.jpg,.jpeg,.png,.webp" className="hidden" onChange={handleFileInput} />
+                  </div>
+                </div>
+
+                {/* Drag and drop zone */}
+                <div
+                  onDragOver={e => { e.preventDefault(); setDragOver(true) }}
+                  onDragLeave={() => setDragOver(false)}
+                  onDrop={handleFileDrop}
+                  className={`mx-4 my-3 border-2 border-dashed rounded-xl p-4 text-center text-xs transition-colors cursor-pointer ${dragOver ? 'border-[#1a4fa0] bg-[#eff6ff] text-[#1a4fa0]' : 'border-[#e2e6ed] bg-[#f8f9fb] text-[#8a96a8]'}`}
+                  onClick={() => uploadInputRef.current?.click()}
+                >
+                  {dragOver ? '📂 Drop to upload' : '📎 Drag & drop a file here, or click to upload'}
                 </div>
                 <div className="divide-y divide-[#e2e6ed]">
                   {documents.map((doc) => (

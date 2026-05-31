@@ -555,6 +555,7 @@ export default function EmployeeDashboard() {
   const [uploadFile, setUploadFile] = useState(null)
   const [uploading, setUploading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState(0)
+  const [sidebarOpen, setSidebarOpen] = useState(false)
 
   const activeNav = useMemo(() => {
     const params = new URLSearchParams(location.search)
@@ -1424,17 +1425,27 @@ export default function EmployeeDashboard() {
 
   return (
     <div className="min-h-screen flex bg-[#f4f6f9] text-[14px]">
-      <aside className="w-[230px] bg-[#1a4fa0] flex flex-col shrink-0 h-screen fixed left-0 top-0 z-50">
+      {sidebarOpen && (
+        <div className="fixed inset-0 bg-black/50 z-40 lg:hidden" onClick={() => setSidebarOpen(false)} />
+      )}
+
+      <aside className={[
+        'w-[230px] bg-[#1a4fa0] flex flex-col h-screen fixed left-0 top-0 z-50 transition-transform duration-300',
+        'lg:translate-x-0',
+        sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0',
+      ].join(' ')}>
+
         <div className="px-5 py-4 border-b border-white/15 flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-white text-[#1a4fa0] flex items-center justify-center font-extrabold text-sm">JD</div>
+          <div className="w-8 h-8 rounded-lg bg-white text-[#1a4fa0] flex items-center justify-center font-extrabold text-sm">JDS</div>
           <div className="min-w-0">
             <div className="text-sm font-bold text-white truncate">JDS Logistics</div>
-            <div className="text-xs text-white/60 truncate">Command Center</div>
+            <div className="text-xs text-white/60 truncate">Operations Portal</div>
           </div>
+          <button type="button" onClick={() => setSidebarOpen(false)} className="ml-auto lg:hidden text-white/70 hover:text-white p-1">✕</button>
         </div>
         <nav className="flex-1 overflow-y-auto py-1">
           {NAV_SECTIONS.map((section) => {
-            if (section.label === 'AI TOOLS' && !isAkshyani) return null
+            if (false) return null // AI TOOLS visible to all employees
             return (
               <div key={section.label}>
                 <div className="px-4 pt-4 pb-1 text-[10px] font-bold text-white/45 uppercase tracking-[0.1em]">
@@ -1446,7 +1457,7 @@ export default function EmployeeDashboard() {
                     <button
                       key={item.id}
                       type="button"
-                      onClick={() => handleNavClick(item.id)}
+                      onClick={() => { handleNavClick(item.id); setSidebarOpen(false) }}
                       className={[
                         'w-full text-left px-5 py-2.5 text-sm flex items-center gap-2.5 border-l-2 transition-colors',
                         isActive
@@ -1475,8 +1486,17 @@ export default function EmployeeDashboard() {
         </div>
       </aside>
 
-      <div className="bg-[#f4f6f9] flex-1 flex flex-col min-w-0 overflow-hidden ml-[230px]">
-        <header className="h-[60px] bg-white border-b border-[#e2e6ed] shadow-sm px-6 flex items-center gap-3 flex-shrink-0">
+      <div className="bg-[#f4f6f9] flex-1 flex flex-col min-w-0 overflow-hidden lg:ml-[230px]">
+        <header className="h-[60px] bg-white border-b border-[#e2e6ed] shadow-sm px-4 sm:px-6 flex items-center gap-3 flex-shrink-0">
+
+          <button type="button" onClick={() => setSidebarOpen(true)}
+            className="lg:hidden flex flex-col justify-center items-center w-9 h-9 rounded-lg hover:bg-[#f4f6f9] gap-1.5 shrink-0"
+            aria-label="Open menu">
+            <span className="w-5 h-0.5 bg-[#1a2233] rounded-full" />
+            <span className="w-5 h-0.5 bg-[#1a2233] rounded-full" />
+            <span className="w-3.5 h-0.5 bg-[#1a2233] rounded-full" />
+          </button>
+
           <div className="min-w-0">
             <div className="text-[17px] font-bold text-[#1a2233] truncate">
               {activeNav === 'documents' ? 'Documents'
@@ -1493,17 +1513,19 @@ export default function EmployeeDashboard() {
               <button
                 type="button"
                 onClick={() => setShowCreateJob(true)}
-                className="h-9 px-4 text-sm rounded-lg bg-[#1a4fa0] text-white hover:bg-[#153d82] font-semibold"
+                className="h-9 px-3 sm:px-4 text-sm rounded-lg bg-[#1a4fa0] text-white hover:bg-[#153d82] font-semibold"
               >
-                + Create Job
+                <span className="hidden sm:inline">+ Create Job</span>
+                <span className="sm:hidden">+</span>
               </button>
             )}
             <button
               type="button"
               onClick={handleLogout}
-              className="h-9 px-4 text-sm rounded-lg bg-white border-[1.5px] border-[#d0d6e0] text-red-600 hover:bg-[#fef2f2] hover:border-red-300 font-semibold"
+              className="h-9 px-3 sm:px-4 text-sm rounded-lg bg-white border-[1.5px] border-[#d0d6e0] text-red-600 hover:bg-[#fef2f2] hover:border-red-300 font-semibold"
             >
-              Logout
+              <span className="hidden sm:inline">Logout</span>
+              <span className="sm:hidden">⏻</span>
             </button>
           </div>
         </header>
@@ -2042,7 +2064,7 @@ export default function EmployeeDashboard() {
             </div>
           )}
 
-          {activeNav === 'ocr' && isAkshyani && (
+          {activeNav === 'ocr' && (
             <OCRSection
               jobs={jobs}
               currentUserName={currentUserName}
