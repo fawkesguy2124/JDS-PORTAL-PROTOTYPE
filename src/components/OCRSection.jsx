@@ -1033,7 +1033,7 @@ export default function OCRSection({ jobs, currentUserName, showToast, user: ocr
       </div>{/* end left column */}
 
       {/* ── RIGHT SIDEBAR ── */}
-      <div className="w-full lg:w-[300px] shrink-0 flex flex-col gap-[16px]">
+      <div className="hidden lg:flex w-[300px] shrink-0 flex-col gap-[16px]">
 
         {/* Step 1–3: Recent Extractions */}
         {step < 4 && (
