@@ -8,6 +8,17 @@ export default function Login() {
   const [loading, setLoading]   = useState(false)
   const [showPassword, setShowPassword] = useState(false)
 
+  const getGreeting = () => {
+    const now = new Date()
+    const utc = now.getTime() + now.getTimezoneOffset() * 60000
+    const ist = new Date(utc + 5.5 * 3600000)
+    const hour = ist.getHours()
+    if (hour >= 5 && hour < 12)  return 'Good Morning 🌅'
+    if (hour >= 12 && hour < 17) return 'Good Afternoon ☀️'
+    if (hour >= 17 && hour < 21) return 'Good Evening 🌆'
+    return 'Good Evening 🌙'
+  }
+
   const handleSubmit = async (e) => {
     e.preventDefault()
     setError('')
@@ -157,7 +168,7 @@ export default function Login() {
 
           <div style={{ marginBottom: '28px' }}>
             <div style={{ fontSize: '20px', fontWeight: 700, color: '#0f1e35', marginBottom: '6px' }}>
-              Welcome back 👋
+              {getGreeting()}
             </div>
             <div style={{ fontSize: '13px', color: '#8a96a8', lineHeight: 1.5 }}>
               Enter your registered phone number and password to access the portal.
