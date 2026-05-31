@@ -2,24 +2,34 @@ import { useState } from 'react'
 import { supabase } from '../supabase'
 
 export default function Login() {
-  const [email, setEmail] = useState('')
+  const [phone, setPhone]       = useState('')
   const [password, setPassword] = useState('')
-  const [error, setError] = useState('')
-  const [loading, setLoading] = useState(false)
+  const [error, setError]       = useState('')
+  const [loading, setLoading]   = useState(false)
+  const [showPassword, setShowPassword] = useState(false)
 
   const handleSubmit = async (e) => {
     e.preventDefault()
     setError('')
-    setLoading(true)
 
+    const digits = phone.replace(/\D/g, '')
+    if (digits.length !== 10) {
+      setError('Please enter a valid 10-digit phone number.')
+      return
+    }
+
+    setLoading(true)
     try {
+      // Convert phone number to internal email format
+      const email = `${digits}@jds.local`
+
       const { data, error: signInError } = await supabase.auth.signInWithPassword({
-        email: email.trim(),
+        email,
         password,
       })
 
       if (signInError) {
-        setError(signInError.message || 'Invalid email or password')
+        setError('Incorrect phone number or password. Contact Jose if you need help.')
         return
       }
 
@@ -35,7 +45,7 @@ export default function Login() {
         .single()
 
       if (profileError || !profile) {
-        setError('Profile not found. Contact your administrator.')
+        setError('Account not set up. Contact Jose.')
         await supabase.auth.signOut()
         return
       }
@@ -50,7 +60,7 @@ export default function Login() {
         return
       }
 
-      setError('Invalid role assigned to your account.')
+      setError('Invalid role. Contact Jose.')
       await supabase.auth.signOut()
     } catch (err) {
       setError(err?.message || 'Something went wrong. Please try again.')
@@ -59,59 +69,308 @@ export default function Login() {
     }
   }
 
+  // Format phone number as user types — adds spaces: 98765 43210
+  const handlePhoneChange = (e) => {
+    const digits = e.target.value.replace(/\D/g, '').slice(0, 10)
+    let formatted = digits
+    if (digits.length > 5) {
+      formatted = digits.slice(0, 5) + ' ' + digits.slice(5)
+    }
+    setPhone(formatted)
+  }
+
   return (
-    <div className="min-h-screen bg-gray-100 flex flex-col">
-      <header className="bg-[#1e3a5f] text-white px-6 py-4 shadow-md">
-        <h1 className="text-xl font-semibold">JDS Logistics</h1>
-        <p className="text-sm text-blue-200 mt-0.5">Internal Operations Portal</p>
-      </header>
-      <main className="flex-1 flex items-center justify-center p-6">
-        <div className="w-full max-w-md bg-white rounded-lg shadow-lg p-8">
-          <h2 className="text-2xl font-semibold text-gray-800 mb-6 text-center">
-            Sign in
-          </h2>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Email
-              </label>
-              <input
-                type="email"
-                required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#1e3a5f]"
-                placeholder="you@jdslogistics.com"
-              />
+    <div style={{
+      minHeight: '100vh',
+      background: '#0f1e35',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      padding: '24px',
+      fontFamily: 'Inter, system-ui, sans-serif',
+      position: 'relative',
+      overflow: 'hidden',
+    }}>
+
+      {/* Background subtle pattern */}
+      <div style={{
+        position: 'absolute', inset: 0,
+        backgroundImage: 'radial-gradient(circle at 20% 20%, rgba(26,79,160,0.3) 0%, transparent 50%), radial-gradient(circle at 80% 80%, rgba(21,101,192,0.2) 0%, transparent 50%)',
+        pointerEvents: 'none',
+      }} />
+
+      {/* Card */}
+      <div style={{
+        width: '100%', maxWidth: '420px',
+        background: 'white',
+        borderRadius: '20px',
+        boxShadow: '0 32px 80px rgba(0,0,0,0.4)',
+        overflow: 'hidden',
+        position: 'relative',
+        zIndex: 1,
+      }}>
+
+        {/* Top header strip */}
+        <div style={{
+          background: 'linear-gradient(135deg, #0f2744 0%, #1a4fa0 100%)',
+          padding: '36px 36px 32px',
+          textAlign: 'center',
+          position: 'relative',
+        }}>
+          {/* Decorative circles */}
+          <div style={{ position:'absolute', top:'-20px', right:'-20px', width:'100px', height:'100px', borderRadius:'50%', background:'rgba(255,255,255,0.04)', pointerEvents:'none' }} />
+          <div style={{ position:'absolute', bottom:'-30px', left:'-10px', width:'80px', height:'80px', borderRadius:'50%', background:'rgba(255,255,255,0.03)', pointerEvents:'none' }} />
+
+          {/* Logo */}
+          <div style={{
+            width: '60px', height: '60px',
+            background: 'rgba(255,255,255,0.12)',
+            borderRadius: '16px',
+            border: '1.5px solid rgba(255,255,255,0.2)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            margin: '0 auto 18px',
+          }}>
+            <span style={{ fontSize: '16px', fontWeight: 800, color: 'white', letterSpacing: '-0.5px' }}>JDS</span>
+          </div>
+
+          <div style={{ fontSize: '22px', fontWeight: 800, color: 'white', marginBottom: '6px', letterSpacing: '-0.3px' }}>
+            JDS Logistics
+          </div>
+          <div style={{
+            display: 'inline-flex', alignItems: 'center', gap: '6px',
+            background: 'rgba(255,255,255,0.1)',
+            border: '1px solid rgba(255,255,255,0.15)',
+            borderRadius: '9999px',
+            padding: '3px 12px',
+            fontSize: '11px', fontWeight: 500,
+            color: 'rgba(255,255,255,0.7)',
+            letterSpacing: '0.05em',
+            textTransform: 'uppercase',
+          }}>
+            <span style={{ width:'5px', height:'5px', borderRadius:'50%', background:'#4ade80', display:'inline-block' }} />
+            Operations Portal
+          </div>
+        </div>
+
+        {/* Form area */}
+        <div style={{ padding: '36px' }}>
+
+          <div style={{ marginBottom: '28px' }}>
+            <div style={{ fontSize: '20px', fontWeight: 700, color: '#0f1e35', marginBottom: '6px' }}>
+              Welcome back 👋
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+            <div style={{ fontSize: '13px', color: '#8a96a8', lineHeight: 1.5 }}>
+              Enter your registered phone number and password to access the portal.
+            </div>
+          </div>
+
+          <form onSubmit={handleSubmit}>
+
+            {/* Phone field */}
+            <div style={{ marginBottom: '18px' }}>
+              <label style={{
+                display: 'block', fontSize: '11px', fontWeight: 700,
+                color: '#4a5568', marginBottom: '7px',
+                textTransform: 'uppercase', letterSpacing: '0.07em',
+              }}>
+                Phone Number
+              </label>
+              <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                {/* +91 prefix box */}
+                <div style={{
+                  position: 'absolute', left: '1.5px', top: '1.5px', bottom: '1.5px',
+                  width: '48px',
+                  background: '#f1f5f9',
+                  borderRight: '1.5px solid #e2e6ed',
+                  borderRadius: '8px 0 0 8px',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: '13px', fontWeight: 700, color: '#4a5568',
+                  pointerEvents: 'none', userSelect: 'none',
+                }}>
+                  +91
+                </div>
+                <input
+                  type="tel"
+                  required
+                  value={phone}
+                  onChange={handlePhoneChange}
+                  placeholder=""
+                  autoComplete="tel"
+                  inputMode="numeric"
+                  style={{
+                    width: '100%', height: '48px',
+                    paddingLeft: '62px', paddingRight: '14px',
+                    border: '1.5px solid #e2e6ed',
+                    borderRadius: '10px',
+                    fontSize: '16px',
+                    fontFamily: "'JetBrains Mono', monospace",
+                    fontWeight: 600,
+                    color: '#0f1e35',
+                    outline: 'none',
+                    background: '#f8fafc',
+                    letterSpacing: '0.08em',
+                    boxSizing: 'border-box',
+                    transition: 'border-color 0.15s, box-shadow 0.15s',
+                  }}
+                  onFocus={e => {
+                    e.target.style.borderColor = '#1a4fa0'
+                    e.target.style.boxShadow = '0 0 0 3px rgba(26,79,160,0.1)'
+                  }}
+                  onBlur={e => {
+                    e.target.style.borderColor = '#e2e6ed'
+                    e.target.style.boxShadow = 'none'
+                  }}
+                />
+              </div>
+            </div>
+
+            {/* Password field */}
+            <div style={{ marginBottom: '24px' }}>
+              <label style={{
+                display: 'block', fontSize: '11px', fontWeight: 700,
+                color: '#4a5568', marginBottom: '7px',
+                textTransform: 'uppercase', letterSpacing: '0.07em',
+              }}>
                 Password
               </label>
-              <input
-                type="password"
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#1e3a5f]"
-              />
+              <div style={{ position: 'relative' }}>
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  required
+                  value={password}
+                  onChange={e => setPassword(e.target.value)}
+                  placeholder="Enter your password"
+                  autoComplete="current-password"
+                  style={{
+                    width: '100%', height: '48px',
+                    padding: '0 48px 0 14px',
+                    border: '1.5px solid #e2e6ed',
+                    borderRadius: '10px',
+                    fontSize: '14px',
+                    color: '#0f1e35',
+                    outline: 'none',
+                    background: '#f8fafc',
+                    boxSizing: 'border-box',
+                    transition: 'border-color 0.15s, box-shadow 0.15s',
+                  }}
+                  onFocus={e => {
+                    e.target.style.borderColor = '#1a4fa0'
+                    e.target.style.boxShadow = '0 0 0 3px rgba(26,79,160,0.1)'
+                  }}
+                  onBlur={e => {
+                    e.target.style.borderColor = '#e2e6ed'
+                    e.target.style.boxShadow = 'none'
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(p => !p)}
+                  style={{
+                    position: 'absolute', right: '14px', top: '50%',
+                    transform: 'translateY(-50%)',
+                    background: 'none', border: 'none',
+                    cursor: 'pointer', fontSize: '15px',
+                    color: '#8a96a8', padding: '2px', lineHeight: 1,
+                  }}
+                >
+                  {showPassword ? '🙈' : '👁'}
+                </button>
+              </div>
             </div>
+
+            {/* Error */}
+            {error && (
+              <div style={{
+                background: '#fef2f2', border: '1.5px solid #fecaca',
+                borderRadius: '10px', padding: '12px 14px',
+                fontSize: '13px', color: '#991b1b',
+                marginBottom: '18px',
+                display: 'flex', alignItems: 'flex-start', gap: '8px',
+              }}>
+                <span style={{ flexShrink: 0, marginTop: '1px' }}>⚠</span>
+                <span>{error}</span>
+              </div>
+            )}
+
+            {/* Submit button */}
             <button
               type="submit"
               disabled={loading}
-              className="w-full bg-[#1e3a5f] text-white py-2.5 rounded-md font-medium hover:bg-[#16304f] disabled:opacity-70 flex items-center justify-center gap-2"
+              style={{
+                width: '100%', height: '50px',
+                background: loading
+                  ? '#94a3b8'
+                  : 'linear-gradient(135deg, #1a4fa0 0%, #1565c0 100%)',
+                color: 'white', border: 'none',
+                borderRadius: '12px',
+                fontSize: '15px', fontWeight: 700,
+                cursor: loading ? 'not-allowed' : 'pointer',
+                display: 'flex', alignItems: 'center',
+                justifyContent: 'center', gap: '8px',
+                boxShadow: loading ? 'none' : '0 6px 20px rgba(26,79,160,0.35)',
+                transition: 'all 0.2s',
+                letterSpacing: '0.02em',
+              }}
+              onMouseEnter={e => {
+                if (!loading) {
+                  e.currentTarget.style.transform = 'translateY(-1px)'
+                  e.currentTarget.style.boxShadow = '0 8px 24px rgba(26,79,160,0.45)'
+                }
+              }}
+              onMouseLeave={e => {
+                e.currentTarget.style.transform = 'translateY(0)'
+                e.currentTarget.style.boxShadow = loading ? 'none' : '0 6px 20px rgba(26,79,160,0.35)'
+              }}
             >
               {loading && (
-                <span className="h-4 w-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                <span style={{
+                  width: '18px', height: '18px',
+                  border: '2.5px solid rgba(255,255,255,0.35)',
+                  borderTopColor: 'white', borderRadius: '50%',
+                  animation: 'loginSpin 0.7s linear infinite',
+                  flexShrink: 0,
+                }} />
               )}
-              {loading ? 'Signing in...' : 'Login'}
+              {loading ? 'Signing in...' : 'Sign In →'}
             </button>
-            {error && (
-              <p className="text-red-600 text-sm text-center">{error}</p>
-            )}
+
           </form>
+
+          {/* Footer */}
+          <div style={{
+            marginTop: '24px',
+            paddingTop: '20px',
+            borderTop: '1px solid #f1f5f9',
+            display: 'flex', alignItems: 'center',
+            justifyContent: 'space-between',
+          }}>
+            <span style={{ fontSize: '12px', color: '#8a96a8' }}>
+              Having trouble signing in?
+            </span>
+            <span style={{
+              fontSize: '12px', fontWeight: 600, color: '#1a4fa0',
+              cursor: 'pointer',
+            }}>
+              Contact Jose
+            </span>
+          </div>
+          {/* Copyright inside card */}
+          <div style={{
+            marginTop: '20px',
+            textAlign: 'center',
+            fontSize: '11px',
+            color: '#c4cad4',
+            letterSpacing: '0.02em',
+          }}>
+            © 2026 JDS Logistics Pvt Ltd · CBD Belapur, Navi Mumbai
+          </div>
         </div>
-      </main>
+      </div>
+
+      <style>{`
+        @keyframes loginSpin { to { transform: rotate(360deg) } }
+      `}</style>
+
     </div>
   )
 }
