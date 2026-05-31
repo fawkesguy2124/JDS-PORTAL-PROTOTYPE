@@ -612,7 +612,7 @@ export default function OCRSection({ jobs, currentUserName, showToast, user: ocr
   const textareaBase = 'w-full px-3 py-2 text-sm rounded-lg bg-white border-[1.5px] border-[#e2e6ed] text-[#1a2233] outline-none focus:border-[#1a4fa0] focus:ring-2 focus:ring-[#e8eef8] resize-none'
 
   return (
-    <div className="flex gap-[18px] items-start">
+    <div className="flex flex-col-reverse lg:flex-row gap-[18px] items-start">
 
       {/* ── LEFT MAIN COLUMN ── */}
       <div className="flex-1 min-w-0">
@@ -1033,7 +1033,7 @@ export default function OCRSection({ jobs, currentUserName, showToast, user: ocr
       </div>{/* end left column */}
 
       {/* ── RIGHT SIDEBAR ── */}
-      <div className="w-[300px] shrink-0 flex flex-col gap-[16px]">
+      <div className="w-full lg:w-[300px] shrink-0 flex flex-col gap-[16px]">
 
         {/* Step 1–3: Recent Extractions */}
         {step < 4 && (

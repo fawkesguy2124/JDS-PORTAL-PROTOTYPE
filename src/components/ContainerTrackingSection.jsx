@@ -76,7 +76,7 @@ function JobDetailPanel({ job, trackingData, onClose, onUpdate, onAddEvent, show
       />
 
       <div style={{
-        position:'fixed', right:0, top:0, bottom:0, width:'520px',
+        position:'fixed', right:0, top:0, bottom:0, width:'min(520px, 100vw)',
         background:'white', borderLeft:'1.5px solid #e2e6ed',
         zIndex:200, display:'flex', flexDirection:'column',
         boxShadow:'-8px 0 32px rgba(0,0,0,0.12)',
