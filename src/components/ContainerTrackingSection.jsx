@@ -955,8 +955,7 @@ function ContainerTrackingSection({ showToast, jobs }) {
     <div style={{ display:'flex', flexDirection:'column', gap:'16px' }}>
 
       <style>{`
-  .kpi-grid { grid-template-columns: repeat(2,1fr); }
-  @media(min-width:640px){ .kpi-grid { grid-template-columns: repeat(3,1fr); } }
+  @media(min-width:768px){ .kpi-grid { grid-template-columns: repeat(3,1fr); } }
   @media(min-width:1024px){ .kpi-grid { grid-template-columns: repeat(5,1fr); } }
   .ct-desktop { display: none; }
   .ct-mobile  { display: block; }
@@ -967,7 +966,7 @@ function ContainerTrackingSection({ showToast, jobs }) {
 `}</style>
 
       {/* ── KPI STRIP ─────────────────────────────────────────────── */}
-      <div className="kpi-grid" style={{ display:'grid', gridTemplateColumns:'repeat(2,1fr)', gap:'10px' }}>
+      <div className="kpi-grid hidden md:grid" style={{ gap:'10px' }}>
         {[
           { label:'Total Containers', value: kpis.total,            bg:'#f8f9fb',                           color:'#1a2233',                     sub:'across all jobs' },
           { label:'In Transit',       value: kpis.inTransit,        bg:'#FAEEDA',                           color:'#633806',                     sub:'on the water' },
