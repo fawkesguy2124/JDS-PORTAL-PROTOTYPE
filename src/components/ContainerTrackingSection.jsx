@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '../supabase'
 import { updateContainerStatus, addMilestone, checkContainerStatus } from '../services/trackingService'
+import ContainerTrackingMobile  from './ContainerTrackingMobile'
+import ContainerTrackingDesktop from './ContainerTrackingDesktop'
 
 function formatContainerDate(ts) {
   if (!ts) return '\u2014'
@@ -951,376 +953,60 @@ function ContainerTrackingSection({ showToast, jobs }) {
     </div>
   )
 
-  return (
-    <div style={{ display:'flex', flexDirection:'column', gap:'16px' }}>
-
-      <style>{`
-  @media(min-width:768px){ .kpi-grid { grid-template-columns: repeat(3,1fr); } }
-  @media(min-width:1024px){ .kpi-grid { grid-template-columns: repeat(5,1fr); } }
-  .ct-desktop { display: none; }
-  .ct-mobile  { display: block; }
-  @media(min-width:768px){
-    .ct-desktop { display: block; }
-    .ct-mobile  { display: none; }
+  // ── Shared refresh handler ────────────────────────────────────────
+  const handleRefreshAll = async () => {
+    showToast('Refreshing all containers...', 'info')
+    const supported = ['MSC','ONE','Evergreen','CMA-CGM','Hapag-Lloyd']
+    const tasks = allJobCards.flatMap(({ job, cnList }) =>
+      cnList
+        .filter(() => supported.some(s => (job.shipping_line||'').toLowerCase().includes(s.toLowerCase())))
+        .map(cn => checkContainerStatus(cn, job.shipping_line).catch(e => ({ error: e.message, cn })))
+    )
+    const results = await Promise.allSettled(tasks)
+    const failed  = results.filter(r => r.status === 'rejected').length
+    await refreshTracking()
+    showToast(
+      failed > 0 ? `Refreshed. ${failed} container(s) failed.` : `All containers refreshed.`,
+      failed > 0 ? 'error' : 'success'
+    )
   }
-`}</style>
 
-      {/* ── KPI STRIP ─────────────────────────────────────────────── */}
-      <div className="kpi-grid hidden md:grid" style={{ gap:'10px' }}>
-        {[
-          { label:'Total Containers', value: kpis.total,            bg:'#f8f9fb',                           color:'#1a2233',                     sub:'across all jobs' },
-          { label:'In Transit',       value: kpis.inTransit,        bg:'#FAEEDA',                           color:'#633806',                     sub:'on the water' },
-          { label:'At CFS / Arrived', value: kpis.atCFS,            bg:'#EAF3DE',                           color:'#27500A',                     sub:'at destination' },
-          { label:'Detention Risk',   value: kpis.detained,         bg: kpis.detained > 0 ? '#FCEBEB' : '#f8f9fb', color: kpis.detained > 0 ? '#791F1F' : '#1a2233', sub: kpis.detained > 0 ? 'act immediately' : 'none' },
-          { label:'ETA This Week',    value: kpis.arrivingThisWeek, bg:'#E6F1FB',                           color:'#0C447C',                     sub:'arriving soon' },
-        ].map(k => (
-          <div key={k.label} style={{ background:k.bg, borderRadius:'10px', padding:'12px 14px' }}>
-            <div style={{ fontSize:'10px', fontWeight:500, textTransform:'uppercase', letterSpacing:'0.07em', color:k.color, opacity:0.75, marginBottom:'4px' }}>{k.label}</div>
-            <div style={{ fontSize:'26px', fontWeight:500, color:k.color, lineHeight:1 }}>{k.value}</div>
-            <div style={{ fontSize:'11px', color:k.color, opacity:0.65, marginTop:'3px' }}>{k.sub}</div>
-          </div>
-        ))}
+  // ── Shared props passed to both views ────────────────────────────
+  const sharedProps = {
+    sortedJobCards,
+    trackingData,
+    searchQuery, setSearchQuery,
+    filterLine,  setFilterLine,
+    filterStatus, setFilterStatus,
+    carriers,
+    STATUS_OPTIONS,
+    expandedContainers, setExpandedContainers,
+    setDetailJob,
+    handleOpenUpdate,
+    openCarrierTracking,
+    statusProgress,
+    getProgressColor,
+    STATUS_STYLES_MAP,
+    kpis,
+    showToast,
+    refreshAll: handleRefreshAll,
+    activeContainer,
+    setActiveContainer,
+  }
+
+  return (
+    <div>
+      {/* Mobile — hidden on md+ */}
+      <div className="block md:hidden">
+        <ContainerTrackingMobile {...sharedProps} />
       </div>
 
-      {/* ── FILTER / SEARCH BAR ───────────────────────────────────── */}
-      <div style={{ display:'flex', flexDirection:'column', gap:'8px' }}>
-        {/* Row 1: Search full width */}
-        <div style={{ display:'flex', alignItems:'center', gap:'8px', background:'white', border:'1.5px solid #e2e6ed', borderRadius:'8px', padding:'0 12px', height:'42px', width:'100%' }}>
-          <span style={{ fontSize:'14px', color:'#8a96a8' }}>🔍</span>
-          <input
-            value={searchQuery}
-            onChange={e => setSearchQuery(e.target.value)}
-            placeholder="Search job, client, container, BL..."
-            style={{ border:'none', outline:'none', background:'transparent', fontSize:'16px', color:'#1a2233', width:'100%' }}
-          />
-          {searchQuery && (
-            <button onClick={() => setSearchQuery('')} style={{ background:'none', border:'none', cursor:'pointer', color:'#8a96a8', fontSize:'16px', padding:'4px' }}>✕</button>
-          )}
-        </div>
-
-        {/* Row 2: Filters + Refresh + Count */}
-        <div style={{ display:'flex', alignItems:'center', gap:'8px', flexWrap:'wrap' }}>
-          <select value={filterLine} onChange={e => setFilterLine(e.target.value)}
-            style={{ flex:1, minWidth:'120px', height:'38px', padding:'0 10px', border:'1.5px solid #e2e6ed', borderRadius:'8px', fontSize:'14px', color:'#4a5568', background:'white', outline:'none' }}>
-            <option value="">All Lines</option>
-            {carriers.map(c => <option key={c} value={c}>{c}</option>)}
-          </select>
-          <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
-            style={{ flex:1, minWidth:'120px', height:'38px', padding:'0 10px', border:'1.5px solid #e2e6ed', borderRadius:'8px', fontSize:'14px', color:'#4a5568', background:'white', outline:'none' }}>
-            <option value="">All Status</option>
-            {STATUS_OPTIONS.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
-          </select>
-          <button
-            onClick={async () => {
-              showToast('Refreshing all containers...', 'info')
-              const supported = ['MSC','ONE','Evergreen','CMA-CGM','Hapag-Lloyd']
-              const tasks = allJobCards.flatMap(({ job, cnList }) =>
-                cnList
-                  .filter(() => supported.some(s => (job.shipping_line||'').toLowerCase().includes(s.toLowerCase())))
-                  .map(cn => checkContainerStatus(cn, job.shipping_line).catch(e => ({ error: e.message, cn })))
-              )
-              const results = await Promise.allSettled(tasks)
-              const failed  = results.filter(r => r.status === 'rejected').length
-              await refreshTracking()
-              showToast(
-                failed > 0
-                  ? `Refreshed. ${failed} container(s) failed — check manually.`
-                  : `All containers refreshed successfully.`,
-                failed > 0 ? 'error' : 'success'
-              )
-            }}
-            style={{ height:'38px', padding:'0 14px', background:'#1a4fa0', border:'none', borderRadius:'8px', color:'white', fontSize:'13px', fontWeight:600, cursor:'pointer', whiteSpace:'nowrap' }}
-          >
-            ↻ Refresh
-          </button>
-          <span style={{ fontSize:'12px', color:'#8a96a8', whiteSpace:'nowrap' }}>
-            {sortedJobCards.length} jobs · {kpis.total} ctrs
-          </span>
-        </div>
+      {/* Desktop — hidden below md */}
+      <div className="hidden md:block">
+        <ContainerTrackingDesktop {...sharedProps} />
       </div>
-      {/* ── ACCORDION TABLE ───────────────────────────────────────── */}
-      {sortedJobCards.length === 0 ? (
-        <div style={{ background:'white', border:'1.5px solid #e2e6ed', borderRadius:'12px', padding:'48px 24px', textAlign:'center' }}>
-          <div style={{ fontSize:'32px', color:'#8a96a8', marginBottom:'12px' }}>⊟</div>
-          <p style={{ fontSize:'14px', fontWeight:500, color:'#1a2233' }}>
-            {searchQuery || filterLine || filterStatus ? 'No jobs match your filters.' : 'No jobs with containers yet.'}
-          </p>
-          <p style={{ fontSize:'12px', color:'#8a96a8', marginTop:'6px' }}>
-            Go to All Jobs → open a job → Edit → add container numbers.
-          </p>
-        </div>
-      ) : (
-        <>
-          {/* ── MOBILE VIEW: stacked cards ──────────────────────────── */}
-          <div className="ct-mobile" style={{ display:'flex', flexDirection:'column', gap:'10px' }}>
-            {sortedJobCards.map(({ job, cnList }) => {
-              const statuses     = cnList.map(cn => trackingData[cn]?.status || 'in_transit')
-              const hasDetention = cnList.some(cn => (trackingData[cn]?.freeDays ?? 99) <= 2)
-              const allDelivered = statuses.every(s => s === 'delivered')
-              const anyDelayed   = statuses.includes('delayed') || statuses.includes('customs_hold')
-              const isExpanded   = !!expandedContainers[`job_${job.id}`]
 
-              const jobBadge = hasDetention
-                ? { text:'⚠ Detention', bg:'#FCEBEB', color:'#991b1b', border:'#fecaca' }
-                : allDelivered
-                ? { text:'Delivered',    bg:'#f0fdf4', color:'#15803d', border:'#bbf7d0' }
-                : anyDelayed
-                ? { text:'Delayed',      bg:'#fef2f2', color:'#991b1b', border:'#fecaca' }
-                : statuses.includes('at_cfs') || statuses.includes('arrived')
-                ? { text:'At CFS',       bg:'#f0fdfa', color:'#0f766e', border:'#99f6e4' }
-                : { text:'In Transit',   bg:'#fffbeb', color:'#92400e', border:'#fde68a' }
-
-              const stripeColor = hasDetention ? '#dc2626'
-                : allDelivered ? '#16a34a'
-                : anyDelayed ? '#dc2626'
-                : statuses.includes('at_cfs') || statuses.includes('arrived') ? '#16a34a'
-                : '#f59e0b'
-
-              return (
-                <div key={job.id} style={{ background:'white', border:'1.5px solid #e2e6ed', borderRadius:'12px', overflow:'hidden', position:'relative' }}>
-                  {/* colored top stripe */}
-                  <div style={{ position:'absolute', top:0, left:0, right:0, height:'3px', background:stripeColor }} />
-
-                  {/* Job header — tappable */}
-                  <div
-                    onClick={() => setExpandedContainers(prev => ({ ...prev, [`job_${job.id}`]: !prev[`job_${job.id}`] }))}
-                    style={{ padding:'14px 16px 12px', cursor:'pointer', userSelect:'none' }}
-                  >
-                    <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:'8px' }}>
-                      <div>
-                        <div style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:'15px', fontWeight:700, color:'#1a4fa0' }}>{job.job_no}</div>
-                        <div style={{ fontSize:'13px', fontWeight:600, color:'#1a2233', marginTop:'2px' }}>{job.client}</div>
-                        <div style={{ fontSize:'11px', color:'#8a96a8', marginTop:'1px' }}>{job.shipping_line || '—'} · {job.mode || '—'}</div>
-                      </div>
-                      <div style={{ display:'flex', flexDirection:'column', alignItems:'flex-end', gap:'6px' }}>
-                        <span style={{ display:'inline-flex', alignItems:'center', padding:'3px 10px', borderRadius:'9999px', fontSize:'11px', fontWeight:600, border:`1px solid ${jobBadge.border}`, background:jobBadge.bg, color:jobBadge.color, whiteSpace:'nowrap' }}>
-                          {jobBadge.text}
-                        </span>
-                        <span style={{ fontSize:'11px', color:'#8a96a8' }}>
-                          {cnList.length} container{cnList.length !== 1 ? 's' : ''} {isExpanded ? '▲' : '▼'}
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* ETA + Details button row */}
-                    <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
-                      <div>
-                        <span style={{ fontSize:'10px', color:'#8a96a8', textTransform:'uppercase', letterSpacing:'0.05em' }}>ETA JNPT </span>
-                        <span style={{ fontSize:'13px', fontWeight:700, fontFamily:"'JetBrains Mono',monospace", color: !job.eta ? '#8a96a8' : Math.ceil((new Date(job.eta)-new Date())/86400000) < 0 ? '#dc2626' : Math.ceil((new Date(job.eta)-new Date())/86400000) <= 3 ? '#b45309' : '#1a2233' }}>
-                          {job.eta ? new Date(job.eta).toLocaleDateString('en-IN', { day:'2-digit', month:'short' }) : '—'}
-                        </span>
-                      </div>
-                      <button
-                        onClick={e => { e.stopPropagation(); setDetailJob(job) }}
-                        style={{ padding:'6px 14px', background:'#f0f4fb', border:'1px solid #bfdbfe', borderRadius:'8px', fontSize:'12px', fontWeight:600, color:'#1a4fa0', cursor:'pointer' }}
-                      >
-                        View Details →
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Expanded container list */}
-                  {isExpanded && (
-                    <div style={{ borderTop:'1px solid #e2e6ed' }}>
-                      {cnList.map((cn, cnIdx) => {
-                        const td     = trackingData[cn] || {}
-                        const status = td.status || 'in_transit'
-                        const st     = STATUS_STYLES_MAP[status] || STATUS_STYLES_MAP['in_transit']
-                        const pct    = statusProgress(status)
-                        const pColor = getProgressColor(status, td.freeDays)
-                        const isDetention = td.freeDays != null && td.freeDays <= 2
-                        const isLastCn    = cnIdx === cnList.length - 1
-
-                        return (
-                          <div key={cn} style={{ padding:'12px 16px', borderBottom: isLastCn ? 'none' : '1px solid #f4f6f9', background:'#fafbfc' }}>
-                            {/* Container number + status */}
-                            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'8px' }}>
-                              <span style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:'13px', fontWeight:700, color:'#1a2233' }}>{cn}</span>
-                              <span style={{ display:'inline-flex', alignItems:'center', padding:'2px 10px', borderRadius:'9999px', fontSize:'11px', fontWeight:600, background: isDetention ? '#fef2f2' : st.bg, color: isDetention ? '#991b1b' : st.color, border:`1px solid ${isDetention ? '#fecaca' : st.border}`, whiteSpace:'nowrap' }}>
-                                {isDetention ? '⚠ Detention' : (td.statusText || 'Not Updated')}
-                              </span>
-                            </div>
-
-                            {/* Progress bar */}
-                            <div style={{ height:'4px', background:'#e2e6ed', borderRadius:'4px', overflow:'hidden', marginBottom:'4px' }}>
-                              <div style={{ height:'100%', borderRadius:'4px', width:`${pct}%`, background:pColor }} />
-                            </div>
-                            <div style={{ display:'flex', justifyContent:'space-between', fontSize:'10px', color:'#8a96a8', marginBottom:'10px' }}>
-                              <span>Loaded</span>
-                              <span style={{ color:pColor, fontWeight:600 }}>{pct}%</span>
-                              <span>Discharged</span>
-                            </div>
-
-                            {/* Key fields — 2 col */}
-                            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'8px', marginBottom:'10px' }}>
-                              {[
-                                { label:'Location', value: td.currentLocation },
-                                { label:'ETA', value: td.eta || job.eta ? new Date(td.eta || job.eta).toLocaleDateString('en-IN', { day:'2-digit', month:'short' }) : null },
-                                { label:'Free Days', value: td.freeDays != null ? `${td.freeDays}d` : null, color: td.freeDays <= 2 ? '#dc2626' : td.freeDays <= 5 ? '#b45309' : '#1a2233' },
-                                { label:'Last Update', value: td.lastUpdate ? new Date(td.lastUpdate).toLocaleDateString('en-IN', { day:'2-digit', month:'short' }) : null },
-                              ].map(f => (
-                                <div key={f.label}>
-                                  <div style={{ fontSize:'9px', fontWeight:600, textTransform:'uppercase', letterSpacing:'0.06em', color:'#8a96a8', marginBottom:'2px' }}>{f.label}</div>
-                                  <div style={{ fontSize:'12px', fontWeight:500, color: f.color || (f.value ? '#1a2233' : '#d0d6e0') }}>{f.value || '—'}</div>
-                                </div>
-                              ))}
-                            </div>
-
-                            {/* Action buttons — full width on mobile */}
-                            <div style={{ display:'flex', gap:'8px' }}>
-                              <button
-                                onClick={() => handleOpenUpdate(job, cn)}
-                                style={{ flex:1, padding:'9px 0', background:'#e8eef8', border:'1.5px solid #bfdbfe', color:'#1a4fa0', borderRadius:'8px', fontSize:'13px', fontWeight:600, cursor:'pointer' }}
-                              >
-                                Update Status
-                              </button>
-                              <button
-                                onClick={() => openCarrierTracking(cn, job.shipping_line, showToast)}
-                                style={{ width:'44px', height:'44px', background:'#f8f9fb', border:'1.5px solid #e2e6ed', color:'#4a5568', borderRadius:'8px', fontSize:'18px', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}
-                                title="Open carrier tracking"
-                              >
-                                🌐
-                              </button>
-                            </div>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  )}
-                </div>
-              )
-            })}
-          </div>
-
-          {/* ── DESKTOP VIEW: accordion table ───────────────────────── */}
-          <div className="ct-desktop" style={{ overflowX:'auto', WebkitOverflowScrolling:'touch' }}>
-            <div style={{ background:'white', border:'1.5px solid #e2e6ed', borderRadius:'12px', overflow:'hidden', minWidth:'700px' }}>
-
-              {/* Table column headers */}
-              <div className="ct-job-row" style={{ display:'grid', gridTemplateColumns:'32px 120px 1fr 110px 130px 100px 80px 70px', gap:'12px', alignItems:'center', padding:'8px 16px', background:'#f8f9fb', borderBottom:'1.5px solid #e2e6ed' }}>
-                {['', 'Job', 'Client', 'Shipping Line', 'Status', 'ETA', 'Containers', ''].map((h, i) => (
-                  <div key={i} style={{ fontSize:'10px', fontWeight:500, textTransform:'uppercase', letterSpacing:'0.07em', color:'#8a96a8' }}>{h}</div>
-                ))}
-              </div>
-              {/* Job rows — desktop accordion */}
-              {sortedJobCards.map(({ job, cnList }, jobIdx) => {
-                const isExpanded   = !!expandedContainers[`job_${job.id}`]
-                const statuses     = cnList.map(cn => trackingData[cn]?.status || 'in_transit')
-                const hasDetention = cnList.some(cn => (trackingData[cn]?.freeDays ?? 99) <= 2)
-                const allDelivered = statuses.every(s => s === 'delivered')
-                const anyDelayed   = statuses.includes('delayed') || statuses.includes('customs_hold')
-                const isLast       = jobIdx === sortedJobCards.length - 1
-
-                const jobBadge = hasDetention
-                  ? { text:'⚠ Detention Risk', bg:'#FCEBEB', color:'#991b1b', border:'#fecaca' }
-                  : allDelivered
-                  ? { text:'Delivered',         bg:'#f0fdf4', color:'#15803d', border:'#bbf7d0' }
-                  : anyDelayed
-                  ? { text:'Delayed / Hold',    bg:'#fef2f2', color:'#991b1b', border:'#fecaca' }
-                  : statuses.includes('at_cfs') || statuses.includes('arrived')
-                  ? { text:'At CFS / Arrived',  bg:'#f0fdfa', color:'#0f766e', border:'#99f6e4' }
-                  : { text:'In Transit',        bg:'#fffbeb', color:'#92400e', border:'#fde68a' }
-
-                const displayEta = job.eta ? new Date(job.eta).toLocaleDateString('en-IN', { day:'2-digit', month:'short' }) : '—'
-                const etaColor = (() => {
-                  if (!job.eta) return '#8a96a8'
-                  const days = Math.ceil((new Date(job.eta) - new Date()) / 86400000)
-                  if (days < 0) return '#991b1b'
-                  if (days <= 3) return '#b45309'
-                  return '#1a2233'
-                })()
-
-                return (
-                  <div key={job.id} style={{ borderBottom: isLast ? 'none' : '0.5px solid #e2e6ed' }}>
-                    {/* Job row */}
-                    <div
-                      className="ct-job-row"
-                      onClick={() => setExpandedContainers(prev => ({ ...prev, [`job_${job.id}`]: !prev[`job_${job.id}`] }))}
-                      style={{ display:'grid', gridTemplateColumns:'32px 120px 1fr 110px 130px 100px 80px 70px', gap:'12px', alignItems:'center', padding:'11px 16px', cursor:'pointer', background: hasDetention ? '#fff8f8' : 'white' }}
-                      onMouseEnter={e => { e.currentTarget.style.background = hasDetention ? '#fff0f0' : '#f8f9fb' }}
-                      onMouseLeave={e => { e.currentTarget.style.background = hasDetention ? '#fff8f8' : 'white' }}
-                    >
-                      <span style={{ fontSize:'11px', color:'#8a96a8', display:'inline-block', transform: isExpanded ? 'rotate(90deg)' : 'none', transition:'transform 0.15s' }}>▶</span>
-                      <span style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:'13px', fontWeight:600, color:'#1a4fa0' }}>{job.job_no}</span>
-                      <span style={{ fontSize:'13px', color:'#1a2233', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{job.client}</span>
-                      <span style={{ fontSize:'12px', color:'#8a96a8', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{job.shipping_line || '—'}</span>
-                      <span style={{ display:'inline-flex', alignItems:'center', padding:'2px 8px', borderRadius:'9999px', fontSize:'11px', fontWeight:500, border:`0.5px solid ${jobBadge.border}`, background:jobBadge.bg, color:jobBadge.color, whiteSpace:'nowrap' }}>
-                        {jobBadge.text}
-                      </span>
-                      <span style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:'12px', fontWeight:500, color:etaColor }}>{displayEta}</span>
-                      <span style={{ fontSize:'12px', color:'#8a96a8' }}>{cnList.length} ctr{cnList.length !== 1 ? 's' : ''}</span>
-                      <button
-                        onClick={e => { e.stopPropagation(); setDetailJob(job) }}
-                        style={{ padding:'4px 10px', background:'#f8f9fb', border:'0.5px solid #e2e6ed', borderRadius:'6px', fontSize:'11px', fontWeight:500, color:'#8a96a8', cursor:'pointer', whiteSpace:'nowrap' }}
-                        onMouseEnter={e => { e.currentTarget.style.borderColor='#1a4fa0'; e.currentTarget.style.color='#1a4fa0' }}
-                        onMouseLeave={e => { e.currentTarget.style.borderColor='#e2e6ed'; e.currentTarget.style.color='#8a96a8' }}
-                      >
-                        Details
-                      </button>
-                    </div>
-
-                    {/* Expanded container rows — desktop */}
-                    {isExpanded && (
-                      <div style={{ borderTop:'0.5px solid #e2e6ed', background:'#f8f9fb' }}>
-                        <div className="ct-cn-row" style={{ display:'grid', gridTemplateColumns:'48px 180px 120px 1fr 100px 80px 100px', gap:'12px', alignItems:'center', padding:'6px 16px 6px 48px', borderBottom:'1px solid #e2e6ed' }}>
-                          {['', 'Container', 'Status', 'Progress', 'Location', 'Free Days', ''].map((h, i) => (
-                            <div key={i} style={{ fontSize:'9px', fontWeight:500, textTransform:'uppercase', letterSpacing:'0.07em', color:'#8a96a8' }}>{h}</div>
-                          ))}
-                        </div>
-                        {cnList.map((cn, cnIdx) => {
-                          const td     = trackingData[cn] || {}
-                          const status = td.status || 'in_transit'
-                          const st     = STATUS_STYLES_MAP[status] || STATUS_STYLES_MAP['in_transit']
-                          const pct    = statusProgress(status)
-                          const pColor = getProgressColor(status, td.freeDays)
-                          const isDetention = td.freeDays != null && td.freeDays <= 2
-                          const isLastCn    = cnIdx === cnList.length - 1
-
-                          return (
-                            <div key={cn} className="ct-cn-row" style={{ display:'grid', gridTemplateColumns:'48px 180px 120px 1fr 100px 80px 100px', gap:'12px', alignItems:'center', padding:'10px 16px 10px 48px', borderBottom: isLastCn ? 'none' : '0.5px solid #e2e6ed', background:'white' }}>
-                              <span style={{ fontSize:'11px', color:'#8a96a8' }}>#{cnIdx+1}</span>
-                              <span style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:'12px', fontWeight:600, color:'#1a2233' }}>{cn}</span>
-                              <span style={{ display:'inline-flex', alignItems:'center', padding:'2px 8px', borderRadius:'9999px', fontSize:'10px', fontWeight:500, border:`0.5px solid ${isDetention ? '#fecaca' : st.border}`, background: isDetention ? '#fef2f2' : st.bg, color: isDetention ? '#991b1b' : st.color, whiteSpace:'nowrap' }}>
-                                {isDetention ? '⚠ Detention' : (td.statusText || 'Not Updated')}
-                              </span>
-                              <div>
-                                <div style={{ height:'4px', background:'#e2e6ed', borderRadius:'4px', overflow:'hidden', marginBottom:'3px' }}>
-                                  <div style={{ height:'100%', borderRadius:'4px', width:`${pct}%`, background:pColor }} />
-                                </div>
-                                <div style={{ fontSize:'10px', color:pColor, fontWeight:600 }}>{pct}%</div>
-                              </div>
-                              <span style={{ fontSize:'11px', color:'#8a96a8', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{td.currentLocation || '—'}</span>
-                              <span style={{ fontSize:'12px', fontWeight:500, color: isDetention ? '#991b1b' : td.freeDays != null && td.freeDays <= 5 ? '#b45309' : '#8a96a8' }}>
-                                {td.freeDays != null ? `${td.freeDays}d` : '—'}
-                              </span>
-                              <div style={{ display:'flex', gap:'5px' }}>
-                                <button onClick={() => handleOpenUpdate(job, cn)}
-                                  style={{ padding:'5px 8px', background:'#e8eef8', border:'0.5px solid #bfdbfe', borderRadius:'5px', fontSize:'11px', fontWeight:500, color:'#1a4fa0', cursor:'pointer', minHeight:'32px' }}
-                                  onMouseEnter={e => { e.currentTarget.style.background='#1a4fa0'; e.currentTarget.style.color='white' }}
-                                  onMouseLeave={e => { e.currentTarget.style.background='#e8eef8'; e.currentTarget.style.color='#1a4fa0' }}>
-                                  Update
-                                </button>
-                                <button onClick={() => openCarrierTracking(cn, job.shipping_line, showToast)}
-                                  style={{ padding:'5px 8px', background:'#f8f9fb', border:'0.5px solid #e2e6ed', borderRadius:'5px', fontSize:'13px', color:'#4a5568', cursor:'pointer', minHeight:'32px', minWidth:'32px' }}
-                                  onMouseEnter={e => { e.currentTarget.style.borderColor='#1a4fa0'; e.currentTarget.style.color='#1a4fa0' }}
-                                  onMouseLeave={e => { e.currentTarget.style.borderColor='#e2e6ed'; e.currentTarget.style.color='#4a5568' }}
-                                  title="Open carrier tracking">
-                                  🌐
-                                </button>
-                              </div>
-                            </div>
-                          )
-                        })}
-                      </div>
-                    )}
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-        </>
-      )}
-      {/* ── MODALS ────────────────────────────────────────────────── */}
+      {/* Modals — shared */}
       {updateModal && (
         <UpdateStatusModal
           container={updateModal}
@@ -1349,7 +1035,6 @@ function ContainerTrackingSection({ showToast, jobs }) {
           onAddEvent={(job, cn) => { setDetailJob(null); setActiveContainer(null); handleOpenMilestone(job, cn) }}
         />
       )}
-
     </div>
   )
 }
