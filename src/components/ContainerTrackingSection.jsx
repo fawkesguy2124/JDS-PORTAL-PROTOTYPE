@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '../supabase'
 import { updateContainerStatus, addMilestone, checkContainerStatus } from '../services/trackingService'
-import ContainerTrackingMobile  from './ContainerTrackingMobile'
-import ContainerTrackingDesktop from './ContainerTrackingDesktop'
+import ContainerTrackingMobile  from './mobile/ContainerTrackingMobile'
+import ContainerTrackingDesktop from './desktop/ContainerTrackingDesktop'
 
 function formatContainerDate(ts) {
   if (!ts) return '\u2014'

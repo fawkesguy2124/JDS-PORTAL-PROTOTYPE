@@ -7,6 +7,8 @@ import ControlTowerSection from '../components/ControlTower'
 import JobDetailView from '../components/JobDetailView'
 import DocumentsSection from '../components/DocumentsSection'
 import ContainerTrackingSection from '../components/ContainerTrackingSection'
+import AllJobsMobile from '../components/mobile/AllJobsMobile'
+import AllJobsDesktop from '../components/desktop/AllJobsDesktop'
 import PaymentsSection from '../components/PaymentsSection'
 import ComplianceSection from '../components/ComplianceSection'
 import OCRSection from '../components/OCRSection'
@@ -528,59 +530,48 @@ export default function AdminDashboard() {
   const isAdmin = profile?.role === 'admin'
   const canUpdateStage = isAdmin || ['Trupti', 'Uphadhya'].includes(currentUserName)
   const pageTitle = NAV_ITEMS.find((n) => n.id === activeNav)?.label ?? 'Control Tower'
-  const jobWorkspace = (
-    <>
-      {!selectedJob && (
-        <div className="bg-[#f8f9fb] border-b border-[#e2e6ed] rounded-xl shadow-sm mb-2">
-          <div className="p-2 flex flex-wrap gap-1 items-center">
-            <div className="flex items-center h-6 px-2 bg-[#f8f9fb] border-[1.5px] border-[#e2e6ed] rounded-lg flex-1 min-w-[180px] max-w-[240px]">
-              <input value={search} onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search by job number..."
-                className="w-full bg-transparent outline-none text-xs text-[#1a2233] placeholder:text-[#8a96a8]" />
-            </div>
-            <span className="text-xs text-[#8a96a8] whitespace-nowrap">{filteredJobs.length} shown</span>
-            <select value={filterStage} onChange={(e) => setFilterStage(e.target.value)} className="h-6 px-2 text-xs bg-white border-[1.5px] border-[#e2e6ed] rounded-lg text-[#4a5568] outline-none focus:border-[#1a4fa0]">
-              {STAGE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-            </select>
-            <select value={filterPriority} onChange={(e) => setFilterPriority(e.target.value)} className="h-6 px-2 text-xs bg-white border-[1.5px] border-[#e2e6ed] rounded-lg text-[#4a5568] outline-none focus:border-[#1a4fa0]">
-              {PRIORITY_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-            </select>
-            <select value={filterMode} onChange={(e) => setFilterMode(e.target.value)} className="h-6 px-2 text-xs bg-white border-[1.5px] border-[#e2e6ed] rounded-lg text-[#4a5568] outline-none focus:border-[#1a4fa0]">
-              {MODE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-            </select>
-            <button type="button" onClick={() => { setSearch(''); setFilterStage(''); setFilterPriority(''); setFilterMode('') }}
-              className="h-6 px-2.5 text-xs rounded-lg bg-white border-[1.5px] border-[#d0d6e0] text-[#4a5568] hover:border-[#1a4fa0] hover:text-[#1a4fa0] hover:bg-[#e8eef8]">
-              Clear
-            </button>
-          </div>
+  const desktopFilters = (
+    <div className="bg-[#f8f9fb] border-b border-[#e2e6ed] rounded-xl shadow-sm mb-2">
+      <div className="p-2 flex flex-wrap gap-1 items-center">
+        <div className="flex items-center h-6 px-2 bg-[#f8f9fb] border-[1.5px] border-[#e2e6ed] rounded-lg flex-1 min-w-[180px] max-w-[240px]">
+          <input value={search} onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search by job number..."
+            className="w-full bg-transparent outline-none text-xs text-[#1a2233] placeholder:text-[#8a96a8]" />
         </div>
-      )}
-
-      {loadingJobs ? (
-        <div className="bg-white border-[1.5px] border-[#e2e6ed] rounded-xl shadow-sm p-10 flex justify-center">
-          <div className="h-9 w-9 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
-        </div>
-      ) : selectedJob ? (
-        <JobDetailView
-          job={selectedJob} profiles={profiles} currentUserName={currentUserName}
-          isAdmin={isAdmin} canUpdateStage={canUpdateStage}
-          onBack={() => setSelectedJob(null)} onSaved={refreshJobs} toast={showToast}
-          onDelete={() => handleDeleteJob(selectedJob)}
-        />
-      ) : filteredJobs.length === 0 ? (
-        <div className="bg-white border-[1.5px] border-[#e2e6ed] rounded-xl shadow-sm p-10 text-center text-[#8a96a8]">
-          No jobs match your search/filters.
-        </div>
-      ) : (
-        <div>
-          {filteredJobs.map((job) => (
-            <JobCard key={job.id} job={job} profiles={profiles}
-              onOpen={() => setSelectedJob(job)} />
-          ))}
-        </div>
-      )}
-    </>
+        <span className="text-xs text-[#8a96a8] whitespace-nowrap">{filteredJobs.length} shown</span>
+        <select value={filterStage} onChange={(e) => setFilterStage(e.target.value)} className="h-6 px-2 text-xs bg-white border-[1.5px] border-[#e2e6ed] rounded-lg text-[#4a5568] outline-none focus:border-[#1a4fa0]">
+          {STAGE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+        </select>
+        <select value={filterPriority} onChange={(e) => setFilterPriority(e.target.value)} className="h-6 px-2 text-xs bg-white border-[1.5px] border-[#e2e6ed] rounded-lg text-[#4a5568] outline-none focus:border-[#1a4fa0]">
+          {PRIORITY_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+        </select>
+        <select value={filterMode} onChange={(e) => setFilterMode(e.target.value)} className="h-6 px-2 text-xs bg-white border-[1.5px] border-[#e2e6ed] rounded-lg text-[#4a5568] outline-none focus:border-[#1a4fa0]">
+          {MODE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+        </select>
+        <button type="button" onClick={() => { setSearch(''); setFilterStage(''); setFilterPriority(''); setFilterMode('') }}
+          className="h-6 px-2.5 text-xs rounded-lg bg-white border-[1.5px] border-[#d0d6e0] text-[#4a5568] hover:border-[#1a4fa0] hover:text-[#1a4fa0] hover:bg-[#e8eef8]">
+          Clear
+        </button>
+      </div>
+    </div>
   )
+
+  const allJobsProps = {
+    jobs: filteredJobs,
+    searchQuery: search, setSearchQuery: setSearch,
+    stageFilter: filterStage, setStageFilter: setFilterStage,
+    priorityFilter: filterPriority, setPriorityFilter: setFilterPriority,
+    onOpenJob: setSelectedJob,
+    getStageName,
+    canCreateJob: true,
+    onCreateJob: () => setShowCreateJob(true),
+    profiles,
+    currentUserName,
+    isAdmin,
+    filteredJobs,
+    loadingJobs,
+    selectedJob,
+  }
 
   return (
     <div className="min-h-screen flex bg-[#f4f6f9] text-[14px]">
@@ -704,7 +695,50 @@ export default function AdminDashboard() {
             )
           )}
 
-          {activeNav === 'jobs' && jobWorkspace}
+          {activeNav === 'jobs' && (
+            selectedJob ? (
+              <JobDetailView
+                job={selectedJob} profiles={profiles} currentUserName={currentUserName}
+                isAdmin={isAdmin} canUpdateStage={canUpdateStage}
+                onBack={() => setSelectedJob(null)} onSaved={refreshJobs} toast={showToast}
+                onDelete={() => handleDeleteJob(selectedJob)}
+              />
+            ) : (
+              <>
+                <div className="block md:hidden">
+                  <AllJobsMobile
+                    jobs={filteredJobs}
+                    searchQuery={search} setSearchQuery={setSearch}
+                    stageFilter={filterStage} setStageFilter={setFilterStage}
+                    priorityFilter={filterPriority} setPriorityFilter={setFilterPriority}
+                    onOpenJob={setSelectedJob}
+                    getStageName={getStageName}
+                    canCreateJob={true}
+                    onCreateJob={() => setShowCreateJob(true)}
+                  />
+                </div>
+                <div className="hidden md:block">
+                  {desktopFilters}
+                  <AllJobsDesktop
+                    jobs={filteredJobs}
+                    filteredJobs={filteredJobs}
+                    loadingJobs={loadingJobs}
+                    selectedJob={selectedJob}
+                    onOpenJob={setSelectedJob}
+                    profiles={profiles}
+                    currentUserName={currentUserName}
+                    isAdmin={isAdmin}
+                    getStageName={getStageName}
+                    searchQuery={search} setSearchQuery={setSearch}
+                    stageFilter={filterStage} setStageFilter={setFilterStage}
+                    priorityFilter={filterPriority} setPriorityFilter={setFilterPriority}
+                    canCreateJob={true}
+                    onCreateJob={() => setShowCreateJob(true)}
+                  />
+                </div>
+              </>
+            )
+          )}
 
           {activeNav === 'documents' && (
             <DocumentsSection jobs={jobs} profiles={profiles} currentUserName={currentUserName} showToast={showToast} />

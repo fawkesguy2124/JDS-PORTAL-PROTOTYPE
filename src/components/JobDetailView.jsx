@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '../supabase'
 import { getStageName } from '../utils/jobHelpers'
 import OCRSection, { FIELD_LABELS_OCR, OCR_SECTIONS } from '../components/OCRSection'
+import JobDetailMobile from './mobile/JobDetailMobile'
+import JobDetailDesktop from './desktop/JobDetailDesktop'
 
 function classNames(...xs) { return xs.filter(Boolean).join(' ') }
 
@@ -386,7 +388,7 @@ function JobDetailView({ job, profiles, currentUserName, isAdmin, canUpdateStage
     return <input type="text" value={value||''} onChange={updateForm(key)} disabled={disabled} className={inputBase} />
   }
 
-  return (
+  const content = (
     <div className="bg-white border-[1.5px] border-[#e2e6ed] rounded-xl shadow-sm overflow-hidden">
       <div className="px-4 sm:px-6 py-4 border-b border-[#e2e6ed] flex flex-wrap items-center justify-between gap-3">
         <button type="button" onClick={onBack} className="h-9 px-3 text-xs rounded-lg bg-white border-[1.5px] border-[#d0d6e0] text-[#4a5568] hover:border-[#1a4fa0] hover:text-[#1a4fa0] hover:bg-[#e8eef8] font-semibold">
@@ -649,6 +651,17 @@ function JobDetailView({ job, profiles, currentUserName, isAdmin, canUpdateStage
       )}
 
     </div>
+  )
+
+  return (
+    <>
+      <div className="block md:hidden">
+        <JobDetailMobile job={job} onBack={onBack}>{content}</JobDetailMobile>
+      </div>
+      <div className="hidden md:block">
+        {content}
+      </div>
+    </>
   )
 }
 
