@@ -110,7 +110,7 @@ export default function DocumentsDesktop({
                               <th className="text-left font-semibold uppercase tracking-wide text-xs pb-3 pr-3">File Name</th>
                               <th className="text-left font-semibold uppercase tracking-wide text-xs pb-3 pr-3">Doc Type</th>
                               <th className="text-left font-semibold uppercase tracking-wide text-xs pb-3 pr-3">Uploaded By</th>
-                              <th className="text-left font-semibold uppercase tracking-wide text-xs pb-3 pr-3">Date &amp; Time</th>
+                              <th className="text-left font-semibold uppercase tracking-wide text-xs pb-3 pr-3">Date & Time</th>
                               <th className="text-left font-semibold uppercase tracking-wide text-xs pb-3 pr-3">Size</th>
                               <th className="text-left font-semibold uppercase tracking-wide text-xs pb-3">Actions</th>
                             </tr>

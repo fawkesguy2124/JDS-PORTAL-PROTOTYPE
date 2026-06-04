@@ -94,8 +94,8 @@ export default function ContainerTrackingDesktop({
           <div style={{ background:'white', border:'1.5px solid #e2e6ed', borderRadius:'12px', overflow:'hidden', minWidth:'700px' }}>
 
             {/* Column headers */}
-            <div style={{ display:'grid', gridTemplateColumns:'32px 100px 140px 1fr 110px 130px 80px 70px', gap:'12px', alignItems:'center', padding:'8px 16px', background:'#f8f9fb', borderBottom:'1.5px solid #e2e6ed' }}>
-              {['', 'Job', 'Client', 'Containers', 'Shipping Line', 'Status', 'ETA', ''].map((h, i) => (
+            <div style={{ display:'grid', gridTemplateColumns:'32px 100px 140px 1fr 110px 130px 80px', gap:'12px', alignItems:'center', padding:'8px 16px', background:'#f8f9fb', borderBottom:'1.5px solid #e2e6ed' }}>
+              {['', 'Job', 'Client', 'Containers', 'Shipping Line', 'Status', 'ETA'].map((h, i) => (
                 <div key={i} style={{ fontSize:'10px', fontWeight:500, textTransform:'uppercase', letterSpacing:'0.07em', color:'#8a96a8' }}>{h}</div>
               ))}
             </div>
@@ -136,7 +136,7 @@ export default function ContainerTrackingDesktop({
                   {/* Job row */}
                   <div
                     onClick={() => setExpandedContainers(prev => ({ ...prev, [`job_${job.id}`]: !prev[`job_${job.id}`] }))}
-                    style={{ display:'grid', gridTemplateColumns:'32px 100px 140px 1fr 110px 130px 80px 70px', gap:'12px', alignItems:'center', padding:'11px 16px', cursor:'pointer', background: hasDetention ? '#fff8f8' : 'white', transition:'background 0.15s' }}
+                    style={{ display:'grid', gridTemplateColumns:'32px 100px 140px 1fr 110px 130px 80px', gap:'12px', alignItems:'center', padding:'11px 16px', cursor:'pointer', background: hasDetention ? '#fff8f8' : 'white', transition:'background 0.15s' }}
                     onMouseEnter={e => { e.currentTarget.style.background = hasDetention ? '#fff0f0' : '#f8f9fb' }}
                     onMouseLeave={e => { e.currentTarget.style.background = hasDetention ? '#fff8f8' : 'white' }}
                   >
@@ -145,7 +145,38 @@ export default function ContainerTrackingDesktop({
                     <span style={{ fontSize:'13px', color:'#1a2233', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{job.client}</span>
                     <div style={{ display:'flex', flexWrap:'wrap', gap:'4px', alignItems:'center' }}>
                       {cnList.slice(0, 3).map(cn => (
-                        <span key={cn} style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:'10px', color:'#4a5568', background:'#f4f6f9', border:'0.5px solid #e2e6ed', borderRadius:'4px', padding:'2px 6px', whiteSpace:'nowrap' }}>{cn}</span>
+                        <span
+                          key={cn}
+                          onClick={e => {
+                            e.stopPropagation()
+                            setActiveContainer({ jobId: job.id, cn })
+                            setDetailJob(job)
+                          }}
+                          style={{
+                            fontFamily:"'JetBrains Mono',monospace",
+                            fontSize:'10px', color:'#1a4fa0',
+                            background:'#eff6ff',
+                            border:'0.5px solid #bfdbfe',
+                            borderRadius:'4px',
+                            padding:'2px 6px',
+                            whiteSpace:'nowrap',
+                            cursor:'pointer',
+                            transition:'all 0.15s',
+                          }}
+                          onMouseEnter={e => {
+                            e.currentTarget.style.background = '#1a4fa0'
+                            e.currentTarget.style.color = 'white'
+                            e.currentTarget.style.borderColor = '#1a4fa0'
+                          }}
+                          onMouseLeave={e => {
+                            e.currentTarget.style.background = '#eff6ff'
+                            e.currentTarget.style.color = '#1a4fa0'
+                            e.currentTarget.style.borderColor = '#bfdbfe'
+                          }}
+                          title={`Click to view ${cn} details`}
+                        >
+                          {cn}
+                        </span>
                       ))}
                       {cnList.length > 3 && (
                         <span style={{ fontSize:'10px', color:'#8a96a8' }}>+{cnList.length - 3}</span>
@@ -156,14 +187,6 @@ export default function ContainerTrackingDesktop({
                       {jobBadge.text}
                     </span>
                     <span style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:'12px', fontWeight:500, color:etaColor }}>{displayEta}</span>
-                    <button
-                      onClick={e => { e.stopPropagation(); setDetailJob(job) }}
-                      style={{ padding:'4px 10px', background:'#f8f9fb', border:'0.5px solid #e2e6ed', borderRadius:'6px', fontSize:'11px', fontWeight:500, color:'#8a96a8', cursor:'pointer', whiteSpace:'nowrap' }}
-                      onMouseEnter={e => { e.currentTarget.style.borderColor='#1a4fa0'; e.currentTarget.style.color='#1a4fa0' }}
-                      onMouseLeave={e => { e.currentTarget.style.borderColor='#e2e6ed'; e.currentTarget.style.color='#8a96a8' }}
-                    >
-                      Details
-                    </button>
                   </div>
 
                   {/* Expanded container rows */}

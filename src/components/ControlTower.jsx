@@ -1,4 +1,5 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { supabase } from '../supabase'
 import { getStageName, isEtaThisWeek } from '../utils/jobHelpers'
 import JobDetailView from './JobDetailView'
 import ControlTowerMobile from './mobile/ControlTowerMobile'
@@ -24,6 +25,23 @@ function ControlTowerSection({ jobs, profiles, currentUserName, selectedJob, onO
     }).length || 0,
   }), [jobs])
 
+  const [activityLog, setActivityLog] = useState([])
+
+  useEffect(() => {
+    const load = async () => {
+      const { data } = await supabase
+        .from('activity_log')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(20)
+      setActivityLog(data || [])
+    }
+    load()
+
+    const interval = setInterval(load, 60000)
+    return () => clearInterval(interval)
+  }, [])
+
   return (
     <>
       {selectedJob ? (
@@ -36,7 +54,7 @@ function ControlTowerSection({ jobs, profiles, currentUserName, selectedJob, onO
       ) : (
         <>
           <div className="block md:hidden">
-            <ControlTowerMobile jobs={jobs} profiles={profiles} onOpenJob={onOpenJob} />
+            <ControlTowerMobile jobs={jobs} profiles={profiles} onOpenJob={onOpenJob} activityLog={activityLog} />
           </div>
           <div className="hidden md:block">
             <ControlTowerDesktop
@@ -46,6 +64,7 @@ function ControlTowerSection({ jobs, profiles, currentUserName, selectedJob, onO
               onOpenJob={onOpenJob}
               onStageFilter={onStageFilter}
               showToast={showToast}
+              activityLog={activityLog}
             />
           </div>
         </>

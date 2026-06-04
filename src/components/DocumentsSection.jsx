@@ -115,6 +115,13 @@ function DocumentsSection({ jobs, profiles, currentUserName, showToast }) {
       setUploadDocType('BL')
       const { data: newDocs } = await supabase.from('documents').select('*').order('created_at', { ascending: false })
       setDocuments(newDocs ?? [])
+      await supabase.from('activity_log').insert({
+        job_id: job.id,
+        job_no: job.job_no,
+        user_name: profile?.name || currentUserName,
+        action: 'upload',
+        description: `uploaded ${uploadFile.name}`,
+      }).maybeSingle()
     } catch (e) {
       clearInterval(sim)
       setUploadProgress(0)
@@ -191,9 +198,9 @@ function DocumentsSection({ jobs, profiles, currentUserName, showToast }) {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm px-4">
           <div className="w-full max-w-lg bg-white rounded-xl shadow-2xl border border-[#e2e6ed] overflow-hidden">
             <div className="px-5 py-4 border-b border-[#e2e6ed] flex items-center justify-between">
-              <div className="text-sm font-semibold text-[#1a2233]">Upload Document &mdash; {uploadModal.job.job_no} {uploadModal.job.client}</div>
+              <div className="text-sm font-semibold text-[#1a2233]">Upload Document — {uploadModal.job.job_no} {uploadModal.job.client}</div>
               <button type="button" onClick={() => { setUploadModal({ open: false, job: null }); setUploadFile(null); setUploadDocType('BL'); setUploadProgress(0) }}
-                className="h-8 w-8 flex items-center justify-center rounded-lg bg-white border border-[#e2e6ed] hover:bg-[#fef2f2] hover:border-[#fecaca] hover:text-[#dc2626] text-[#8a96a8] transition-colors text-lg leading-none">&times;</button>
+                className="h-8 w-8 flex items-center justify-center rounded-lg bg-white border border-[#e2e6ed] hover:bg-[#fef2f2] hover:border-[#fecaca] hover:text-[#dc2626] text-[#8a96a8] transition-colors text-lg leading-none">✕</button>
             </div>
             <div className="px-5 py-4 space-y-4">
               <div>
@@ -219,8 +226,8 @@ function DocumentsSection({ jobs, profiles, currentUserName, showToast }) {
                     </div>
                   ) : (
                     <div>
-                      <p className="text-sm font-semibold text-[#8a96a8]">Click to select or drag &amp; drop</p>
-                      <p className="text-xs text-[#8a96a8] mt-1">PDF, JPG, PNG &mdash; max 10MB</p>
+                      <p className="text-sm font-semibold text-[#8a96a8]">Click to select or drag & drop</p>
+                      <p className="text-xs text-[#8a96a8] mt-1">PDF, JPG, PNG — max 10MB</p>
                     </div>
                   )}
                 </div>
@@ -258,7 +265,7 @@ function DocumentsSection({ jobs, profiles, currentUserName, showToast }) {
                 <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-bold ${DOC_TYPE_COLORS[previewModal.doc.doc_type] || 'bg-[#f9fafb] text-[#4a5568] border border-[#d0d6e0]'}`}>{previewModal.doc.doc_type}</span>
               </div>
               <button type="button" onClick={() => setPreviewModal({ open: false, doc: null })}
-                className="h-8 w-8 flex items-center justify-center rounded-lg bg-white border border-[#e2e6ed] hover:bg-[#fef2f2] hover:border-[#fecaca] hover:text-[#dc2626] text-[#8a96a8] transition-colors text-lg leading-none shrink-0">&times;</button>
+                className="h-8 w-8 flex items-center justify-center rounded-lg bg-white border border-[#e2e6ed] hover:bg-[#fef2f2] hover:border-[#fecaca] hover:text-[#dc2626] text-[#8a96a8] transition-colors text-lg leading-none shrink-0">✕</button>
             </div>
             <div className="flex-1 overflow-auto bg-[#f4f6f9] p-4 flex items-center justify-center min-h-[300px]">
               {['pdf'].includes((previewModal.doc.file_type || '').toLowerCase()) ? (

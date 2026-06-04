@@ -560,7 +560,7 @@ function ContainerTimeline({ container, onClose }) {
   return (
     <div className="border-t border-[#e2e6ed] bg-white px-4 sm:px-6 py-4">
       <div className="flex items-center justify-between mb-3">
-        <div className="text-sm font-bold text-[#1a2233]">Milestones &mdash; {container.containerNo}</div>
+        <div className="text-sm font-bold text-[#1a2233]">Milestones — {container.containerNo}</div>
         <button type="button" onClick={onClose}
           className="text-xs font-semibold text-blue-700 hover:text-blue-800">Close</button>
       </div>
@@ -580,7 +580,7 @@ function ContainerTimeline({ container, onClose }) {
                 <div className="min-w-0 flex-1">
                   <p className="text-xs font-semibold text-[#1a2233]">{m.description}</p>
                   <p className="text-xs text-[#8a96a8]">
-                    {m.location} &middot; {formatContainerDate(m.date)}
+                    {m.location} · {formatContainerDate(m.date)}
                   </p>
                 </div>
               </div>

@@ -156,15 +156,48 @@ function progressColor(stage) {
   return 'bg-green-600'
 }
 
-function FieldMetaChip({ meta, profiles }) {
+function FieldProvenance({ meta, profiles }) {
   if (!meta || typeof meta !== 'object') return null
-  const { by, ts } = meta
-  if (!by && !ts) return null
-  const name = by && profiles && profiles[by] ? profiles[by] : by
+
+  const { by, ts, autoFill } = meta
+  const hasManual   = by && ts
+  const hasAutoFill = autoFill?.ts
+
+  if (!hasManual && !hasAutoFill) return null
+
+  const manualTs   = normalizeMetaTs(ts)
+  const autoFillTs = normalizeMetaTs(autoFill?.ts)
+  const lastWasManual = hasManual && (!hasAutoFill || manualTs >= autoFillTs)
+
+  const name   = by && profiles?.[by] ? profiles[by] : by
+  const afName = autoFill?.by && profiles?.[autoFill.by] ? profiles[autoFill.by] : autoFill?.by
+
+  if (lastWasManual) {
+    return (
+      <div className="flex flex-wrap items-center gap-1 mt-1">
+        <span className="text-[10px] font-semibold text-[#b45309]">✎ Manually entered</span>
+        <span className="text-[10px] text-[#8a96a8]">·</span>
+        <span className="text-[10px] text-[#8a96a8]">{timeAgo(ts)}</span>
+        <span className="text-[10px] text-[#8a96a8]">·</span>
+        <span className="text-[10px] text-[#8a96a8]">by {name || '—'}</span>
+      </div>
+    )
+  }
+
   return (
-    <span className="ml-2 inline-flex items-center rounded-full bg-[#f9fafb] text-[#4a5568] border border-[#d0d6e0] px-2 py-0.5 text-xs font-medium">
-      {name || '—'} · {ts ? timeAgo(ts) : '—'}
-    </span>
+    <div className="flex flex-wrap items-center gap-1 mt-1">
+      <span className="text-[10px] font-semibold text-[#15803d]">✓ Auto Filled</span>
+      <span className="text-[10px] text-[#8a96a8]">·</span>
+      <span className="text-[10px] text-[#8a96a8]">{timeAgo(autoFill.ts)}</span>
+      <span className="text-[10px] text-[#8a96a8]">·</span>
+      <span className="text-[10px] text-[#8a96a8]">by {afName || '—'}</span>
+      {autoFill.source && (
+        <>
+          <span className="text-[10px] text-[#8a96a8]">·</span>
+          <span className="text-[10px] text-[#1a4fa0] font-medium">📄 {autoFill.source}</span>
+        </>
+      )}
+    </div>
   )
 }
 
@@ -178,14 +211,15 @@ function MiniStatus({ title, value, tone }) {
   )
 }
 
-function DetailField({ label, value, meta, profiles }) {
+function DetailField({ label, value, meta, profiles, showProvenance = true }) {
+  const hasValue = value && value !== '—' && value !== '-' && String(value).trim() !== ''
   return (
     <div>
       <div className="flex items-center flex-wrap gap-1">
         <p className="text-xs uppercase tracking-wide text-[#8a96a8] font-medium">{label}</p>
-        <FieldMetaChip meta={meta} profiles={profiles} />
       </div>
       <p className="text-sm text-[#1a2233] font-medium mt-0.5">{value}</p>
+      {showProvenance && hasValue && meta && <FieldProvenance meta={meta} profiles={profiles} />}
     </div>
   )
 }
@@ -206,6 +240,32 @@ function JobProgress({ stage }) {
   )
 }
 
+const OCR_FIELD_MAP = {
+  bl_no:          'bl_number',
+  vessel:         'vessel_name',
+  containers:     'container_numbers',
+  container_size: 'container_size',
+  goods:          'goods_description',
+  hs_code:        'hs_code',
+  client:         'consignee_name',
+  destination:    'place_of_delivery',
+  be_no:          null,
+  eta:            null,
+  shipping_line:  null,
+  cfs_name:       null,
+  cfs_amount:     null,
+  free_days:      null,
+  notes:          null,
+  bg_required:    null,
+  rms_status:     null,
+  detention_risk: null,
+  delay_reason:   null,
+  priority:       null,
+  mode:           null,
+}
+
+const MULTI_VALUE_FIELDS = ['containers']
+
 function JobDetailView({ job, profiles, currentUserName, isAdmin, canUpdateStage, onBack, onSaved, toast, onDelete }) {
   const [editMode, setEditMode] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -214,7 +274,11 @@ function JobDetailView({ job, profiles, currentUserName, isAdmin, canUpdateStage
   const [detailTab, setDetailTab] = useState('details')
   const [extractedFields, setExtractedFields] = useState(null)
   const [loadingExtracted, setLoadingExtracted] = useState(false)
+  const [extractedData, setExtractedData] = useState(null)
+  const [importedFields, setImportedFields] = useState({})
+  const [summarising, setSummarising] = useState(false)
   const [form, setForm] = useState(() => ({ ...job }))
+  const notesRef = useRef(null)
   const meta = job.field_meta && typeof job.field_meta === 'object' ? job.field_meta : {}
 
   useEffect(() => {
@@ -230,7 +294,8 @@ function JobDetailView({ job, profiles, currentUserName, isAdmin, canUpdateStage
           .limit(1)
           .maybeSingle()
         setExtractedFields(data || null)
-      } catch { setExtractedFields(null) }
+        setExtractedData(data?.extracted_data || null)
+      } catch { setExtractedFields(null); setExtractedData(null) }
       finally { setLoadingExtracted(false) }
     })()
   }, [job.id])
@@ -340,6 +405,60 @@ function JobDetailView({ job, profiles, currentUserName, isAdmin, canUpdateStage
 
   const inputBase = 'w-full h-9 px-3 py-2 text-xs rounded-lg bg-white border-[1.5px] border-[#e2e6ed] text-[#1a2233] outline-none focus:border-[#1a4fa0] focus:ring-2 focus:ring-[#e8eef8] disabled:opacity-60 disabled:cursor-not-allowed'
 
+  const handleAutoFill = async (fieldKey) => {
+    const ocrKey = OCR_FIELD_MAP[fieldKey]
+
+    if (!ocrKey) {
+      toast(`No extracted data available for ${FIELD_LABELS[fieldKey] || fieldKey}.`, 'info')
+      return
+    }
+    if (!extractedData) {
+      toast('No extracted data found. Run OCR Extract on this job first.', 'info')
+      return
+    }
+
+    const extracted = extractedData[ocrKey]
+    if (!extracted?.value) {
+      toast(`No extracted value for ${FIELD_LABELS[fieldKey] || fieldKey}.`, 'info')
+      return
+    }
+
+    const extractedValue = extracted.value.trim()
+    const sourceDoc = extracted.source || null
+    const now = Date.now()
+
+    if (MULTI_VALUE_FIELDS.includes(fieldKey)) {
+      const existing = (form[fieldKey] || '')
+        .split(/[\s,;/]+/).map(s => s.trim().toUpperCase()).filter(Boolean)
+      const incoming = extractedValue
+        .split(/[\s,;/]+/).map(s => s.trim().toUpperCase()).filter(Boolean)
+      const merged = [...new Set([...existing, ...incoming])]
+      setForm(prev => ({ ...prev, [fieldKey]: merged.join(', ') }))
+      toast(`✓ Added ${incoming.length} container(s) to ${FIELD_LABELS[fieldKey]}.`, 'success')
+    } else {
+      setForm(prev => ({ ...prev, [fieldKey]: extractedValue }))
+      toast(`✓ Auto Filled ${FIELD_LABELS[fieldKey] || fieldKey}${sourceDoc ? ` from ${sourceDoc}` : ''}.`, 'success')
+    }
+
+    // Persist auto-fill record to field_meta
+    const newMeta = {
+      ...(meta || {}),
+      [fieldKey]: {
+        ...(meta?.[fieldKey] || {}),
+        autoFill: { ts: now, by: currentUserName, source: sourceDoc },
+      }
+    }
+    try {
+      await supabase.from('jobs').update({ field_meta: newMeta }).eq('id', job.id)
+      await onSaved()
+    } catch (e) {
+      console.warn('Could not persist auto-fill record:', e)
+    }
+
+    setImportedFields(prev => ({ ...prev, [fieldKey]: true }))
+    setTimeout(() => setImportedFields(prev => ({ ...prev, [fieldKey]: false })), 2500)
+  }
+
   const renderFieldInput = (key) => {
     const disabled = !canEditField(key) || saving
     const value = form[key] ?? ''
@@ -384,18 +503,121 @@ function JobDetailView({ job, profiles, currentUserName, isAdmin, canUpdateStage
         </select>
       )
     }
-    if (key === 'notes') return <textarea value={value||''} onChange={updateForm(key)} disabled={disabled} rows={3} className={classNames(inputBase,'h-auto py-2')} />
+    if (key === 'notes') {
+      const adjustRows = (el) => {
+        el.rows = 6
+        const h = el.scrollHeight - 16
+        const rowH = (el.clientHeight - 16) / 6
+        el.rows = Math.min(8, Math.max(6, Math.ceil(h / rowH)))
+      }
+      return <textarea ref={notesRef} value={value||''} onChange={e => { updateForm(key)(e); adjustRows(e.target) }} disabled={disabled} rows={6} className={classNames(inputBase,'h-auto py-2 overflow-y-auto')} style={{ fontSize:'15px', lineHeight:'1.7', letterSpacing:'0.01em', resize:'none', maxHeight: `${8 * 1.7 * 15 + 16}px` }} />
+    }
     return <input type="text" value={value||''} onChange={updateForm(key)} disabled={disabled} className={inputBase} />
+  }
+
+  const handleAISummary = async () => {
+    if (!job?.id) return
+
+    if (!extractedData || Object.keys(extractedData).length === 0) {
+      toast('No extracted data found. Run OCR Extract on this job first.', 'info')
+      return
+    }
+
+    setSummarising(true)
+    try {
+      const fieldLines = Object.entries(extractedData)
+        .filter(([, v]) => v?.value)
+        .map(([k, v]) => `${k.replace(/_/g, ' ')}: ${v.value}`)
+        .join('\n')
+
+      const prompt = `You are a customs clearance assistant for JDS Logistics, a licensed CHA at JNPT, Navi Mumbai.
+
+Based on the extracted document fields below, write a concise 2-3 sentence operational summary for the job notes.
+Focus on: what goods are being imported, by whom, from where, and any key customs details.
+Be factual, professional, and brief. No greetings or sign-offs.
+
+Job: ${job.job_no} | Client: ${job.client || '\u2014'} | Stage: ${getStageName(Number(job.stage) || 0)}
+
+Extracted Fields:
+${fieldLines}
+
+Write the summary:`
+
+      let summary = null
+      let usedGroq = false
+
+      try {
+        const geminiKey = import.meta.env.VITE_GEMINI_API_KEY
+        if (geminiKey) {
+          const res = await fetch(
+            `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiKey}`,
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                contents: [{ parts: [{ text: prompt }] }],
+                generationConfig: { temperature: 0.3, maxOutputTokens: 200 },
+              }),
+            }
+          )
+          if (res.ok) {
+            const data = await res.json()
+            summary = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || null
+          } else {
+            console.warn(`Gemini ${res.status} \u2014 trying Groq`)
+          }
+        }
+      } catch (e) {
+        console.warn('Gemini error:', e.message)
+      }
+
+      if (!summary) {
+        const groqKey = import.meta.env.VITE_GROQ_API_KEY
+        if (!groqKey) throw new Error('No AI API key configured.')
+        const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${groqKey}`,
+          },
+          body: JSON.stringify({
+            model: 'meta-llama/llama-4-scout-17b-16e-instruct',
+            temperature: 0.3,
+            max_tokens: 200,
+            messages: [{ role: 'user', content: prompt }],
+          }),
+        })
+        if (!res.ok) throw new Error(`Groq returned ${res.status}`)
+        const data = await res.json()
+        summary = data?.choices?.[0]?.message?.content?.trim() || null
+        if (summary) usedGroq = true
+      }
+
+      if (!summary) throw new Error('No summary returned from either provider')
+
+      const existing = form.notes ? form.notes.trim() : ''
+      const separator = existing ? '\n\n' : ''
+      const dateStamp = new Date().toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' })
+      const provider = usedGroq ? 'Groq \u00b7 Llama 4' : 'Gemini 2.0 Flash'
+      const newNotes = `${existing}${separator}[AI Summary \u2014 ${dateStamp} \u00b7 ${provider}]\n${summary}`
+
+      setForm(prev => ({ ...prev, notes: newNotes }))
+      toast('AI summary added to notes. Review and save when ready.', 'success')
+    } catch (e) {
+      toast(`Summary failed: ${e.message}`, 'error')
+    } finally {
+      setSummarising(false)
+    }
   }
 
   const content = (
     <div className="bg-white border-[1.5px] border-[#e2e6ed] rounded-xl shadow-sm overflow-hidden">
       <div className="px-4 sm:px-6 py-4 border-b border-[#e2e6ed] flex flex-wrap items-center justify-between gap-3">
         <button type="button" onClick={onBack} className="h-9 px-3 text-xs rounded-lg bg-white border-[1.5px] border-[#d0d6e0] text-[#4a5568] hover:border-[#1a4fa0] hover:text-[#1a4fa0] hover:bg-[#e8eef8] font-semibold">
-          &larr; Back to Jobs
+          ← Back to Jobs
         </button>
         <div className="flex-1 min-w-0">
-          <div className="text-sm sm:text-base font-extrabold text-[#1a2233] truncate">{job.job_no} &mdash; {job.client}</div>
+          <div className="text-sm sm:text-base font-extrabold text-[#1a2233] truncate">{job.job_no} — {job.client}</div>
           <div className="mt-1 flex flex-wrap gap-2">
             <span className={classNames('inline-flex items-center rounded-full px-2 py-0.5 text-xs font-bold', priority.cls)}>{priority.text}</span>
             <span className={classNames('inline-flex items-center rounded-full px-2 py-0.5 text-xs font-bold', mode.cls)}>{mode.text}</span>
@@ -463,19 +685,66 @@ function JobDetailView({ job, profiles, currentUserName, isAdmin, canUpdateStage
         <h3 className="text-sm font-semibold text-[#1a2233] mb-3">Job Details</h3>
         {!editMode ? (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-5">
-            {fieldRows.map((f) => <DetailField key={f.key} label={f.label} value={f.value} meta={meta?.[f.key]} profiles={profiles} />)}
+            {fieldRows.map((f) => <DetailField key={f.key} label={f.label} value={f.value} meta={meta?.[f.key]} profiles={profiles} showProvenance={f.key !== 'notes'} />)}
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-5">
-            {['job_no','client','mode','priority','goods','bl_no','be_no','be_date','containers','container_size','shipping_line','vessel','eta','cfs_name','cfs_amount','hs_code','rms_status','bg_required','destination','free_days','detention_risk','delay_reason','notes'].map((k) => (
-              <div key={k} className={k === 'notes' ? 'md:col-span-2' : ''}>
-                <div className="flex items-center flex-wrap gap-1 mb-1">
-                  <p className="text-xs text-[#8a96a8] font-medium uppercase tracking-wide">{FIELD_LABELS[k] || k}</p>
-                  <FieldMetaChip meta={meta?.[k]} profiles={profiles} />
+            {['job_no','client','mode','priority','goods','bl_no','be_no','be_date','containers','container_size','shipping_line','vessel','eta','cfs_name','cfs_amount','hs_code','rms_status','bg_required','destination','free_days','detention_risk','delay_reason','notes'].map((k) => {
+              const hasOcrValue   = OCR_FIELD_MAP[k] !== undefined && OCR_FIELD_MAP[k] !== null && !!extractedData?.[OCR_FIELD_MAP[k]]?.value
+              const isEditable    = canEditField(k)
+              const showAutoFill  = isEditable && k in OCR_FIELD_MAP && k !== 'notes'
+              const wasJustFilled = importedFields[k]
+
+              return (
+                <div key={k} className={k === 'notes' ? 'md:col-span-2' : ''}>
+                  <div className="flex items-center gap-1 mb-1 flex-wrap">
+                    <p className="text-xs text-[#8a96a8] font-medium uppercase tracking-wide">{FIELD_LABELS[k] || k}</p>
+                    {showAutoFill && (
+                      <button
+                        type="button"
+                        onClick={() => handleAutoFill(k)}
+                        title={hasOcrValue ? `Fill from OCR: "${extractedData[OCR_FIELD_MAP[k]].value}"${extractedData[OCR_FIELD_MAP[k]].source ? ` · Source: ${extractedData[OCR_FIELD_MAP[k]].source}` : ''}` : 'No extracted value available for this field'}
+                        className={classNames('ml-auto inline-flex items-center gap-1 h-5 px-1.5 rounded text-[10px] font-semibold transition-all border', wasJustFilled ? 'bg-[#f0fdf4] text-[#15803d] border-[#bbf7d0]' : hasOcrValue ? 'bg-[#eff6ff] text-[#1a4fa0] border-[#bfdbfe] hover:bg-[#1a4fa0] hover:text-white cursor-pointer' : 'bg-[#f4f6f9] text-[#8a96a8] border-[#e2e6ed] cursor-not-allowed opacity-50')}
+                      >
+                        {wasJustFilled ? '✓ Filled' : '✨ Auto Fill'}
+                      </button>
+                    )}
+                  </div>
+                  <div className={classNames('rounded-lg transition-all duration-500', wasJustFilled ? 'ring-2 ring-[#1a4fa0]/30 ring-offset-1' : '')}>
+                    {k === 'notes' ? (
+                      <div>
+                        {renderFieldInput(k)}
+                        <div style={{ display:'flex', justifyContent:'flex-end', marginTop:'6px' }}>
+                          <button
+                            type="button"
+                            onClick={handleAISummary}
+                            disabled={summarising}
+                            style={{
+                              display:'inline-flex', alignItems:'center', gap:'5px',
+                              height:'26px', padding:'0 10px', borderRadius:'6px',
+                              fontSize:'11px', fontWeight:600,
+                              border:'1px solid #ddd6fe', background:'#f5f3ff', color:'#5b21b6',
+                              cursor: summarising ? 'not-allowed' : 'pointer',
+                              opacity: summarising ? 0.6 : 1, transition:'all 0.15s',
+                            }}
+                            onMouseEnter={e => { if (!summarising) { e.currentTarget.style.background='#5b21b6'; e.currentTarget.style.color='white' }}}
+                            onMouseLeave={e => { e.currentTarget.style.background='#f5f3ff'; e.currentTarget.style.color='#5b21b6' }}
+                            title="Generate AI summary from extracted fields"
+                          >
+                            {summarising ? (
+                              <><span style={{ width:'10px', height:'10px', border:'2px solid currentColor', borderTopColor:'transparent', borderRadius:'50%', animation:'spin 0.7s linear infinite', display:'inline-block' }} /> Summarising...</>
+                            ) : <>✦ AI Summary</>}
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      renderFieldInput(k)
+                    )}
+                  </div>
+                  {k !== 'notes' && form[k] && String(form[k]).trim() !== '' && <FieldProvenance meta={meta?.[k]} profiles={profiles} />}
                 </div>
-                {renderFieldInput(k)}
-              </div>
-            ))}
+              )
+            })}
           </div>
         )}
       </div>
@@ -555,12 +824,12 @@ function JobDetailView({ job, profiles, currentUserName, isAdmin, canUpdateStage
         </div>
       )}
 
-      {job.delay_reason?.trim() && (
+      {!editMode && job.delay_reason?.trim() && (
         <div className="mx-4 sm:mx-6 mb-5 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
           <span className="font-semibold">Delay:</span> {job.delay_reason}
         </div>
       )}
-      {job.notes?.trim() && (
+      {!editMode && job.notes?.trim() && (
         <div className="mx-4 sm:mx-6 mb-6 rounded-lg border border-[#e2e6ed] bg-white px-4 py-3">
           <p className="text-xs font-semibold text-[#8a96a8] uppercase tracking-wide mb-1">Notes</p>
           <p className="text-sm text-[#4a5568] whitespace-pre-wrap">{job.notes}</p>

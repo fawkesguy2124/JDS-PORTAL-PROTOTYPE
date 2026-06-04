@@ -11,7 +11,7 @@ export default function ComplianceDesktop({ showToast }) {
       <div className="bg-white border-[1.5px] border-[#e2e6ed] rounded-xl shadow-sm overflow-hidden">
         <div className="px-5 py-4 border-b border-[#e2e6ed] flex items-center justify-between">
           <div>
-            <div className="text-sm font-bold text-[#1a2233]">BIS &amp; Licence Register</div>
+            <div className="text-sm font-bold text-[#1a2233]">BIS & Licence Register</div>
             <div className="text-xs text-[#8a96a8] mt-0.5">Certificate and licence expiry tracking</div>
           </div>
           <button type="button" onClick={() => showToast('Coming soon', 'info')}

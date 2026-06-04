@@ -25,6 +25,7 @@ const INITIAL_FORM = {
   bl_no: '',
   containers: '',
   carrier: '',
+  carrierOther: '',
   vessel: '',
   eta: '',
   cfs_name: '',
@@ -366,10 +367,50 @@ export default function CreateJob({ isModal = false, onCancel, onCreated }) {
               </Field>
 
               <Field label="Carrier / Shipping Line" required>
-                <select value={form.carrier} onChange={set('carrier')} className={inputClass} required>
-                  <option value="">Select shipping line</option>
-                  {SHIPPING_LINES.map((s) => <option key={s} value={s}>{s}</option>)}
-                </select>
+                {form.carrier === '__other__' ? (
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      required
+                      value={form.carrierOther || ''}
+                      onChange={e => {
+                        setForm(p => ({ ...p, carrierOther: e.target.value, carrier: e.target.value }))
+                        setError('')
+                      }}
+                      className={inputClass}
+                      placeholder="Enter shipping line name"
+                      autoFocus
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setForm(p => ({ ...p, carrier: '', carrierOther: '' }))}
+                      className="shrink-0 px-3 py-2 text-xs font-semibold rounded-lg bg-gray-100 border border-gray-300 text-gray-600 hover:bg-gray-200"
+                    >
+                      ↩ List
+                    </button>
+                  </div>
+                ) : (
+                  <select
+                    value={form.carrier}
+                    onChange={e => {
+                      const v = e.target.value
+                      setForm(p => ({
+                        ...p,
+                        carrier: v === '__other__' ? '__other__' : v,
+                        carrierOther: v === '__other__' ? '' : p.carrierOther,
+                      }))
+                      setError('')
+                    }}
+                    className={inputClass}
+                    required
+                  >
+                    <option value="">Select shipping line</option>
+                    {SHIPPING_LINES.filter(s => s !== 'Other').map(s => (
+                      <option key={s} value={s}>{s}</option>
+                    ))}
+                    <option value="__other__">Other...</option>
+                  </select>
+                )}
               </Field>
 
               <Field label="Container Numbers (comma separated)">

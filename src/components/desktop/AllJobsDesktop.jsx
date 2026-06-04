@@ -92,16 +92,16 @@ function JobCard({ job, profiles, onOpen }) {
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="text-sm font-extrabold text-[#1a2233] truncate font-mono text-[#1a4fa0]">{job.job_no || '—'}</div>
-          <div className="text-xs text-[#4a5568]">{job.client || '—'} <span className="text-[#8a96a8]">&middot; {job.goods || '—'}</span></div>
+          <div className="text-xs text-[#4a5568]">{job.client || '—'} <span className="text-[#8a96a8]">· {job.goods || '—'}</span></div>
           <div className="text-xs text-[#8a96a8] font-mono mt-0.5">
             {job.be_no ? `BE:${job.be_no}` : ''}
-            {job.bl_no ? `${job.be_no ? ' &middot; ' : ''}BL:${job.bl_no}` : ''}
-            {job.containers ? `${job.be_no || job.bl_no ? ' &middot; ' : ''}${(job.containers || '').split(',').map(c => c.trim()).filter(Boolean).join(' &middot; ')}` : ''}
+            {job.bl_no ? `${job.be_no ? ' · ' : ''}BL:${job.bl_no}` : ''}
+            {job.containers ? `${job.be_no || job.bl_no ? ' · ' : ''}${(job.containers || '').split(',').map(c => c.trim()).filter(Boolean).join(' · ')}` : ''}
             {!job.be_no && !job.bl_no && !job.containers ? '—' : ''}
           </div>
           <div className="text-xs text-[#8a96a8] mt-0.5">
             {lastUpdatedName || lastUpdatedTs ? (
-              <>Last updated by: <span className="text-[#4a5568] font-medium">{lastUpdatedName || '—'}</span> &middot; <span>{lastUpdatedTs ? timeAgo(lastUpdatedTs) : '—'}</span></>
+              <>Last updated by: <span className="text-[#4a5568] font-medium">{lastUpdatedName || '—'}</span> · <span>{lastUpdatedTs ? timeAgo(lastUpdatedTs) : '—'}</span></>
             ) : <span>Last updated by: —</span>}
           </div>
         </div>
@@ -127,9 +127,9 @@ function JobCard({ job, profiles, onOpen }) {
       </div>
       <div className="mt-2 flex items-center justify-between gap-2 flex-wrap">
         <div className="text-xs text-[#8a96a8]">
-          <span className="text-[#4a5568] font-medium">{assignedName}</span> &middot; {job.destination || '—'} &middot;{' '}
+          <span className="text-[#4a5568] font-medium">{assignedName}</span> · {job.destination || '—'} ·{' '}
           <span className={classNames(daysOld >= 4 ? 'text-red-600 font-semibold' : daysOld >= 2 ? 'text-amber-700 font-semibold' : '')}>{daysOld}d old</span>
-          {job.delay_reason ? <> &middot; <span className="text-amber-700 font-semibold">{job.delay_reason}</span></> : null}
+          {job.delay_reason ? <> · <span className="text-amber-700 font-semibold">{job.delay_reason}</span></> : null}
         </div>
       </div>
     </div>

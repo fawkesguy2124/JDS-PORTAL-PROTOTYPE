@@ -38,7 +38,7 @@ export default function AllJobsMobile({
           style={{ flex:1, height:'40px', padding:'0 10px', border:'1.5px solid #e2e6ed', borderRadius:'8px', fontSize:'14px', color:'#4a5568', background:'white', outline:'none' }}>
           <option value="">All Stages</option>
           {Array.from({length:11},(_,i)=>i).map(i => (
-            <option key={i} value={i}>Stage {i} &mdash; {getStageName(i)}</option>
+            <option key={i} value={i}>Stage {i} — {getStageName(i)}</option>
           ))}
         </select>
         <select value={priorityFilter} onChange={e => setPriorityFilter(e.target.value)}
@@ -98,7 +98,7 @@ export default function AllJobsMobile({
                 <div>
                   <div style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:'15px', fontWeight:700, color:'#1a4fa0' }}>{job.job_no}</div>
                   <div style={{ fontSize:'14px', fontWeight:600, color:'#1a2233', marginTop:'2px' }}>{job.client}</div>
-                  <div style={{ fontSize:'12px', color:'#8a96a8', marginTop:'1px' }}>{job.mode || '—'} &middot; {job.shipping_line || '—'}</div>
+                  <div style={{ fontSize:'12px', color:'#8a96a8', marginTop:'1px' }}>{job.mode || '—'} · {job.shipping_line || '—'}</div>
                 </div>
                 <div style={{ display:'flex', flexDirection:'column', alignItems:'flex-end', gap:'6px' }}>
                   <span style={{ display:'inline-flex', alignItems:'center', padding:'3px 10px', borderRadius:'9999px', fontSize:'11px', fontWeight:600, background:p.bg, color:p.color, border:`1px solid ${p.border}` }}>
@@ -115,7 +115,7 @@ export default function AllJobsMobile({
                 <div style={{ height:'100%', borderRadius:'4px', width:`${pct}%`, background:'#1a4fa0' }} />
               </div>
               <div style={{ display:'flex', justifyContent:'space-between', fontSize:'11px', color:'#8a96a8' }}>
-                <span>Stage {stage} &mdash; {getStageName(stage)}</span>
+                <span>Stage {stage} — {getStageName(stage)}</span>
                 <span>{pct}%</span>
               </div>
             </div>
@@ -142,7 +142,7 @@ export default function AllJobsMobile({
                   onClick={e => { e.stopPropagation(); onOpenJob(job) }}
                   style={{ width:'100%', padding:'10px 0', background:'#1a4fa0', border:'none', borderRadius:'8px', color:'white', fontSize:'13px', fontWeight:600, cursor:'pointer' }}
                 >
-                  Open Job &rarr;
+                  Open Job →
                 </button>
               </div>
             )}

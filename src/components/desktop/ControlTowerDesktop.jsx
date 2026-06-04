@@ -135,7 +135,7 @@ function TodayPriorityQueue({ items, profiles, onOpen }) {
       ) : <EmptyTowerState>No urgent operational actions right now.</EmptyTowerState>}
       {items.length > 0 && (
         <button type="button" onClick={() => nav('/admin?tab=jobs')}
-          className="w-full px-4 py-2.5 text-xs font-semibold text-[#1a4fa0] hover:text-[#153d82] hover:bg-[#e8eef8] border-t border-[#e2e6ed] text-center transition-colors">View all jobs &rarr;</button>
+          className="w-full px-4 py-2.5 text-xs font-semibold text-[#1a4fa0] hover:text-[#153d82] hover:bg-[#e8eef8] border-t border-[#e2e6ed] text-center transition-colors">View all jobs →</button>
       )}
     </TowerCard>
   )
@@ -147,8 +147,8 @@ function FreeDaysRiskPanel({ items, onOpen }) {
       {items.length ? items.map(({ job, days, tone }) => (
         <button key={job.id} type="button" onClick={() => onOpen(job)} className="w-full px-4 py-3 border-t border-[#e2e6ed] text-left grid grid-cols-[1fr_auto] gap-3 hover:bg-[#e8eef8]">
           <span className="min-w-0">
-            <span className="block text-sm font-bold text-[#1a2233] truncate">{job.job_no || '\u2014'} &middot; {job.client || '\u2014'}</span>
-            <span className="block text-xs text-[#8a96a8] truncate">{job.containers || 'No containers'} &middot; {job.cfs_name || 'CFS pending'}</span>
+            <span className="block text-sm font-bold text-[#1a2233] truncate">{job.job_no || '\u2014'} · {job.client || '\u2014'}</span>
+            <span className="block text-xs text-[#8a96a8] truncate">{job.containers || 'No containers'} · {job.cfs_name || 'CFS pending'}</span>
           </span>
           <RiskBadge tone={tone}>{dayLabel(days)}</RiskBadge>
         </button>
@@ -184,7 +184,7 @@ function StaleUpdatesPanel({ items, onOpen }) {
       {items.length ? items.map(({ job, hours, tone }) => (
         <button key={job.id} type="button" onClick={() => onOpen(job)} className="w-full px-4 py-3 border-t border-[#e2e6ed] text-left grid grid-cols-[1fr_auto] gap-3 hover:bg-[#e8eef8]">
           <span className="min-w-0">
-            <span className="block text-sm font-bold text-[#1a2233] truncate">{job.job_no || '\u2014'} &middot; {job.client || '\u2014'}</span>
+            <span className="block text-sm font-bold text-[#1a2233] truncate">{job.job_no || '\u2014'} · {job.client || '\u2014'}</span>
             <span className="block text-xs text-[#8a96a8] truncate">{getStageName(Number(job.stage) || 0)}</span>
           </span>
           <RiskBadge tone={tone}>{hours >= 48 ? `${Math.floor(hours / 24)} days` : `${hours} hours`}</RiskBadge>
@@ -216,6 +216,7 @@ export default function ControlTowerDesktop({
   onOpenJob,
   onStageFilter,
   showToast,
+  activityLog = [],
 }) {
   const navigate = useNavigate()
 
@@ -249,7 +250,7 @@ export default function ControlTowerDesktop({
           {stats.freeDaysAtRisk > 0 && (
             <div className="flex items-center gap-3 p-3.5 rounded-xl bg-[#fffbeb] border-[1.5px] border-[#fde68a] text-[#92400e] text-sm flex-1">
               <span className="text-lg">&#9888;</span>
-              <span className="flex-1">{stats.freeDaysAtRisk} job(s) approaching free day limit &mdash; detention risk increasing.</span>
+              <span className="flex-1">{stats.freeDaysAtRisk} job(s) approaching free day limit — detention risk increasing.</span>
               <button type="button" onClick={() => navigate('/admin?tab=jobs')}
                 className="h-8 px-3 text-xs font-semibold rounded-lg bg-[#92400e] text-white hover:bg-[#78350f] transition-colors shrink-0">View Jobs</button>
             </div>
@@ -288,15 +289,42 @@ export default function ControlTowerDesktop({
                 </span>
               </div>
               <div className="space-y-3">
-                {[{dot:'bg-green-500',txt:'Trupti updated stage for J-00068',time:'2 min ago'},{dot:'bg-blue-500',txt:'Akshyani uploaded BL for J-00072',time:'15 min ago'},{dot:'bg-amber-500',txt:'Kiran submitted CFS payment \u20B945,000',time:'1 hr ago'},{dot:'bg-purple-500',txt:'DPM generated E-Way Bill',time:'2 hrs ago'},{dot:'bg-green-500',txt:'Anil approved duty payment for J-00065',time:'3 hrs ago'}].map((a,i)=>(
-                  <div key={i} className="flex items-start gap-2.5">
-                    <span className={`w-2 h-2 rounded-full ${a.dot} mt-1.5 shrink-0`} />
-                    <div className="min-w-0">
-                      <p className="text-sm text-[#1a2233]">{a.txt}</p>
-                      <p className="text-xs text-[#8a96a8] font-mono mt-0.5">{a.time}</p>
+                {activityLog.length === 0 ? (
+                  <div className="text-xs text-[#8a96a8] py-4 text-center">No recent activity.</div>
+                ) : activityLog.slice(0, 8).map((a, i) => {
+                  const dotColor =
+                    a.action?.includes('stage')    ? 'bg-green-500'
+                    : a.action?.includes('upload') ? 'bg-blue-500'
+                    : a.action?.includes('payment')? 'bg-amber-500'
+                    : a.action?.includes('delete') ? 'bg-red-500'
+                    : a.action?.includes('create') ? 'bg-purple-500'
+                    : 'bg-[#8a96a8]'
+
+                  const relTime = (() => {
+                    if (!a.created_at) return ''
+                    const diff = Date.now() - new Date(a.created_at).getTime()
+                    const mins = Math.floor(diff / 60000)
+                    if (mins < 1)  return 'just now'
+                    if (mins < 60) return `${mins}m ago`
+                    const hrs = Math.floor(mins / 60)
+                    if (hrs < 24)  return `${hrs}h ago`
+                    return `${Math.floor(hrs / 24)}d ago`
+                  })()
+
+                  return (
+                    <div key={a.id || i} className="flex items-start gap-2.5">
+                      <span className={`w-2 h-2 rounded-full ${dotColor} mt-1.5 shrink-0`} />
+                      <div className="min-w-0">
+                        <p className="text-sm text-[#1a2233]">
+                          {a.user_name && <span className="font-semibold">{a.user_name} </span>}
+                          {a.description || a.action || 'updated a job'}
+                          {a.job_no && <span className="font-mono text-[#1a4fa0]"> {a.job_no}</span>}
+                        </p>
+                        <p className="text-xs text-[#8a96a8] font-mono mt-0.5">{relTime}</p>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             </div>
           </TowerCard>
@@ -312,7 +340,7 @@ export default function ControlTowerDesktop({
                     <div key={job.id} className="flex items-start justify-between gap-2 p-2.5 rounded-lg bg-[#f8f9fb] border border-[#e2e6ed]">
                       <div className="min-w-0">
                         <p className="text-xs font-bold text-[#1a4fa0] font-mono">{job.job_no}</p>
-                        <p className="text-xs text-[#8a96a8] truncate">{job.cfs_name || '\u2014'} &middot; {job.assigned_to ? (profiles[job.assigned_to] || '\u2014') : '\u2014'}</p>
+                        <p className="text-xs text-[#8a96a8] truncate">{job.cfs_name || '\u2014'} · {job.assigned_to ? (profiles[job.assigned_to] || '\u2014') : '\u2014'}</p>
                         {job.cfs_amount && <p className="text-xs font-semibold text-[#1a2233] mt-0.5">&#x20B9;{Number(job.cfs_amount).toLocaleString()}</p>}
                       </div>
                       <button type="button" onClick={() => showToast(`Payment approved for ${job.job_no}`, 'success')}
@@ -325,7 +353,7 @@ export default function ControlTowerDesktop({
               )}
               {stats.paymentsPending > 0 && (
                 <button type="button" onClick={() => navigate('/admin?tab=payments')}
-                  className="w-full mt-3 pt-3 border-t border-[#e2e6ed] text-xs font-semibold text-[#1a4fa0] hover:text-[#153d82] text-center">View all {stats.paymentsPending} pending payments &rarr;</button>
+                  className="w-full mt-3 pt-3 border-t border-[#e2e6ed] text-xs font-semibold text-[#1a4fa0] hover:text-[#153d82] text-center">View all {stats.paymentsPending} pending payments →</button>
               )}
             </div>
           </TowerCard>

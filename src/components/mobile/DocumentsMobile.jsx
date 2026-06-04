@@ -65,7 +65,7 @@ export default function DocumentsMobile({
                   <div key={doc.id} style={{ padding:'12px 16px', borderBottom:'1px solid #f4f6f9', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
                     <div style={{ minWidth:0, flex:1 }}>
                       <div style={{ fontSize:'13px', fontWeight:500, color:'#1a2233', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{doc.file_name}</div>
-                      <div style={{ fontSize:'11px', color:'#8a96a8', marginTop:'2px' }}>{doc.doc_type} &middot; {doc.uploaded_by_name}</div>
+                      <div style={{ fontSize:'11px', color:'#8a96a8', marginTop:'2px' }}>{doc.doc_type} · {doc.uploaded_by_name}</div>
                     </div>
                     <div style={{ display:'flex', gap:'6px', marginLeft:'10px', flexShrink:0 }}>
                       <button onClick={() => onPreview(doc)}
