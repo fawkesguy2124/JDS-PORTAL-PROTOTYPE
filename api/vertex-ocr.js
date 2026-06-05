@@ -1,36 +1,55 @@
-export const config = { runtime: 'nodejs' }
+export const config = { runtime: 'edge' }
 
 const VERTEX_REGION = 'asia-south1'
 const MODEL = 'gemini-2.0-flash-001'
 
 async function getAccessToken(clientEmail, privateKey) {
   const now = Math.floor(Date.now() / 1000)
-  const header = { alg: 'RS256', typ: 'JWT' }
-  const payload = {
-    iss: clientEmail,
-    scope: 'https://www.googleapis.com/auth/cloud-platform',
-    aud: 'https://oauth2.googleapis.com/token',
-    iat: now,
-    exp: now + 3600,
-  }
 
   const base64url = (obj) =>
-    Buffer.from(JSON.stringify(obj))
-      .toString('base64')
+    btoa(JSON.stringify(obj))
       .replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_')
+
+  const header  = { alg: 'RS256', typ: 'JWT' }
+  const payload = {
+    iss:  clientEmail,
+    scope: 'https://www.googleapis.com/auth/cloud-platform',
+    aud:  'https://oauth2.googleapis.com/token',
+    iat:  now,
+    exp:  now + 3600,
+  }
 
   const signingInput = `${base64url(header)}.${base64url(payload)}`
 
-  const crypto = await import('crypto')
-  const sign = crypto.createSign('RSA-SHA256')
-  sign.update(signingInput)
-  const signature = sign
-    .sign(privateKey, 'base64')
+  // Import private key for signing
+  const pemContents = privateKey
+    .replace('-----BEGIN PRIVATE KEY-----', '')
+    .replace('-----END PRIVATE KEY-----', '')
+    .replace(/\s/g, '')
+
+  const binaryKey = Uint8Array.from(atob(pemContents), c => c.charCodeAt(0))
+
+  const cryptoKey = await crypto.subtle.importKey(
+    'pkcs8',
+    binaryKey,
+    { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
+    false,
+    ['sign']
+  )
+
+  const encoder = new TextEncoder()
+  const signatureBuffer = await crypto.subtle.sign(
+    'RSASSA-PKCS1-v1_5',
+    cryptoKey,
+    encoder.encode(signingInput)
+  )
+
+  const signature = btoa(String.fromCharCode(...new Uint8Array(signatureBuffer)))
     .replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_')
 
   const jwt = `${signingInput}.${signature}`
 
-  const res = await fetch('https://oauth2.googleapis.com/token', {
+  const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
@@ -39,9 +58,9 @@ async function getAccessToken(clientEmail, privateKey) {
     }),
   })
 
-  const data = await res.json()
-  if (!data.access_token) throw new Error(`Token error: ${JSON.stringify(data)}`)
-  return data.access_token
+  const tokenData = await tokenRes.json()
+  if (!tokenData.access_token) throw new Error(`Token error: ${JSON.stringify(tokenData)}`)
+  return tokenData.access_token
 }
 
 export default async function handler(req) {
@@ -66,7 +85,7 @@ export default async function handler(req) {
       return new Response(JSON.stringify({ error: 'Missing images or prompt' }), { status: 400, headers: corsHeaders })
     }
 
-    const projectId  = process.env.VITE_VERTEX_PROJECT_ID
+    const projectId   = process.env.VITE_VERTEX_PROJECT_ID
     const clientEmail = process.env.VITE_VERTEX_CLIENT_EMAIL
     const privateKey  = process.env.VITE_VERTEX_PRIVATE_KEY?.replace(/\\n/g, '\n')
 
