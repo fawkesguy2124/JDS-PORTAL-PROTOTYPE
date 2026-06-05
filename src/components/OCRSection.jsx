@@ -79,6 +79,107 @@ Return ONLY a valid JSON object with the structure below. If a field is not foun
   ]
 }`
 
+export const BE_EXTRACTION_PROMPT = `You are an expert Indian Customs document parser. Extract ALL fields from this Bill of Entry (BE) issued by Indian Customs / ICEGATE.
+
+A Bill of Entry has multiple parts — extract from all visible parts. Return ONLY valid JSON, no markdown, no explanation.
+
+{
+  "be_number": "BE number from top right e.g. 9301277",
+  "be_date": "BE date in DD-MMM-YYYY format e.g. 16-May-2026",
+  "be_type": "H for Home Consumption, W for Warehouse, E for Ex-Bond",
+  "port_code": "Port code e.g. INNSA1",
+  "cb_code": "Customs Broker code e.g. AADCJ9119RCH001",
+  "iec": "IEC number e.g. 1705001432",
+  "gstin": "15-digit GSTIN e.g. 30AACCD2090G1Z8/G",
+
+  "importer_name": "Full importer name",
+  "importer_address": "Full importer address",
+  "cb_name": "Customs Broker name e.g. JDS LOGISTICS PVT LTD",
+
+  "igm_number": "IGM number e.g. 1187267",
+  "igm_date": "IGM date in DD-MMM-YYYY",
+  "inw_date": "Into Warehouse date",
+  "mawb_number": "MAWB/BL number",
+  "mawb_date": "MAWB/BL date",
+
+  "country_of_origin": "Country of origin",
+  "country_of_consignment": "Country of consignment",
+  "port_of_loading": "Port of loading",
+  "port_of_shipment": "Port of shipment",
+
+  "package_count": "Total number of packages as number",
+  "gross_weight": "Total gross weight in KGS as number",
+
+  "invoice_number": "Invoice number",
+  "invoice_date": "Invoice date in DD-MMM-YYYY",
+  "invoice_amount": "Invoice amount as number",
+  "invoice_currency": "Invoice currency code e.g. EUR USD",
+  "freight_amount": "Freight amount as number",
+  "freight_currency": "Freight currency code",
+  "payment_terms": "FOB CIF CNF etc",
+  "valuation_method": "e.g. Rule 3",
+  "ad_code": "AD Code number",
+  "svb_flag": "true if SVB case else false",
+  "svb_reference": "SVB reference number if present",
+
+  "supplier_name": "Seller/supplier name",
+  "supplier_address": "Seller/supplier full address",
+  "supplier_country": "Seller country",
+
+  "exchange_rates": {"EUR": 111.95, "USD": 95.15},
+
+  "assessable_value": "Total assessable value in INR as number",
+  "bcd_amount": "Basic Customs Duty amount in INR as number",
+  "bcd_rate": "BCD rate as number e.g. 7.5",
+  "sws_amount": "Social Welfare Surcharge amount in INR as number",
+  "igst_amount": "IGST amount in INR as number",
+  "igst_rate": "IGST rate as number e.g. 18",
+  "total_duty": "Total duty payable in INR as number",
+  "total_amount": "Total amount paid in INR as number",
+
+  "ooc_number": "Out of Charge number",
+  "ooc_date": "OOC date in DD-MMM-YYYY",
+
+  "processing_events": {
+    "submission_date": "DD-MMM-YYYY",
+    "assessment_date": "DD-MMM-YYYY",
+    "examination_date": "DD-MMM-YYYY",
+    "ooc_date": "DD-MMM-YYYY"
+  },
+
+  "line_items": [
+    {
+      "sno": 1,
+      "cth": "8-digit CTH code e.g. 84571010",
+      "description": "Item description",
+      "quantity": 1.0,
+      "uqc": "NOS KGS MTR etc",
+      "unit_price": 254000.0,
+      "amount": 254000.0,
+      "currency": "EUR",
+      "country_of_origin": "DE"
+    }
+  ],
+
+  "containers": [
+    {
+      "container_number": "e.g. BMOU4978572",
+      "seal_number": "e.g. 0675120",
+      "fcl_lcl": "F for FCL L for LCL"
+    }
+  ],
+
+  "supporting_documents": [
+    {
+      "type": "document type",
+      "reference_no": "document reference",
+      "date": "DD-MMM-YYYY"
+    }
+  ]
+}
+
+Extract every field visible in the document. For arrays extract ALL items — do not truncate container lists or line items. If a field is not found set it to null.`
+
 export const FIELD_LABELS_OCR = {
   // Shipment identifiers
   bl_number: 'BL / AWB Number',
@@ -247,11 +348,11 @@ async function pdfToImages(base64) {
   pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl
   const data = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0))
   const pdf = await pdfjsLib.getDocument({ data }).promise
-  const maxPages = Math.min(pdf.numPages, 3)
+  const maxPages = Math.min(pdf.numPages, 8)
   const images = []
   for (let i = 1; i <= maxPages; i++) {
     const page = await pdf.getPage(i)
-    const viewport = page.getViewport({ scale: 0.9 })
+    const viewport = page.getViewport({ scale: 1.2 })
     const canvas = document.createElement('canvas')
     canvas.width = Math.min(viewport.width, 900)
     canvas.height = Math.round(viewport.height * (Math.min(viewport.width, 900) / viewport.width))
@@ -412,6 +513,16 @@ function normalizeResult(flat) {
 }
 
 async function extractWithFallback(docs, prompt) {
+  // Auto-detect BE documents from doc_type or file_name
+  const isBE = docs.some(d =>
+    (d.doc_type || '').toLowerCase().includes('bill of entry') ||
+    (d.doc_type || '').toLowerCase().includes('be') ||
+    (d.doc_type || '').toLowerCase().includes('ooc') ||
+    (d.file_name || '').toLowerCase().includes('ooc') ||
+    (d.file_name || '').toLowerCase().includes('bill_of_entry') ||
+    (d.file_name || '').toLowerCase().includes('be_')
+  )
+  const activePrompt = isBE ? BE_EXTRACTION_PROMPT : prompt
   const allImages = []
   for (const doc of docs) {
     const { base64, mimeType } = await urlToBase64(doc.file_url)
@@ -434,7 +545,7 @@ async function extractWithFallback(docs, prompt) {
     const allResults = []
     for (let ci = 0; ci < chunks.length; ci++) {
       if (ci > 0) await new Promise((r) => setTimeout(r, 800 + Math.random() * 400))
-      const parsed = await withRetry(() => vertexExtract(chunks[ci], prompt), 2, 1500)
+      const parsed = await withRetry(() => vertexExtract(chunks[ci], activePrompt), 2, 1500)
       allResults.push(normalizeResult(parsed))
     }
     return { result: mergeResults(allResults), provider: 'vertex-gemini' }
@@ -447,7 +558,7 @@ async function extractWithFallback(docs, prompt) {
     const allResults = []
     for (let ci = 0; ci < chunks.length; ci++) {
       if (ci > 0) await new Promise((r) => setTimeout(r, 1000 + Math.random() * 1000))
-      const parsed = await withRetry(() => geminiExtract(chunks[ci], prompt), 2, 1500)
+      const parsed = await withRetry(() => geminiExtract(chunks[ci], activePrompt), 2, 1500)
       allResults.push(normalizeResult(parsed))
     }
     return { result: mergeResults(allResults), provider: 'gemini' }
@@ -458,7 +569,7 @@ async function extractWithFallback(docs, prompt) {
       const allResults = []
       for (let ci = 0; ci < chunks.length; ci++) {
         if (ci > 0) await new Promise((r) => setTimeout(r, 2000 + Math.random() * 2000))
-        const parsed = await withRetry(() => groqExtract(chunks[ci], prompt), 2, 2000)
+        const parsed = await withRetry(() => groqExtract(chunks[ci], activePrompt), 2, 2000)
         allResults.push(normalizeResult(parsed))
       }
       return { result: mergeResults(allResults), provider: 'groq' }
@@ -468,7 +579,7 @@ async function extractWithFallback(docs, prompt) {
   }
 }
 
-export default function OCRSection({ job: preselectedJob, jobs, currentUserName, showToast, user: ocrUser, profile: ocrProfile, preloadedExtraction }) {
+export default function OCRSection({ job: preselectedJob, jobs, currentUserName, showToast, user: ocrUser, profile: ocrProfile, preloadedExtraction, onSaved }) {
   const [step, setStep] = useState(1)
   const [selectedJob, setSelectedJob] = useState(null)
   const [selectedDocIds, setSelectedDocIds] = useState(new Set())
@@ -687,13 +798,14 @@ export default function OCRSection({ job: preselectedJob, jobs, currentUserName,
         job_id: selectedJob.id,
         job_no: selectedJob.job_no,
         extracted_data: extractEdits,
-        extracted_by: ocrUser?.id || '',
+        extracted_by: ocrUser?.id || null,
         extracted_by_name: currentUserName,
         extracted_at: new Date().toISOString(),
       })
       if (error) throw error
       showToast('Extraction saved to database.', 'success')
       await loadRecentExtractions()
+      if (onSaved) await onSaved()
       setSavedExtraction({ job_id: selectedJob.id, extracted_data: extractEdits })
     } catch (e) {
       showToast(e?.message || 'Save failed.', 'error')

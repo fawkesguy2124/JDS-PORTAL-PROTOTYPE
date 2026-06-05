@@ -13,7 +13,7 @@ function formatContainerDate(ts) {
   })
 }
 
-function JobDetailPanel({ job, trackingData, onClose, onUpdate, onAddEvent, onRefresh, showToast, activeContainer }) {
+function JobDetailPanel({ job, trackingData, onClose, onUpdate, onAddEvent, onRefresh, showToast, activeContainer, onCloseRef }) {
   const cnList = (job.containers || '')
     .split(/[\s,;/]+/)
     .map(s => s.trim().toUpperCase())
@@ -24,6 +24,10 @@ function JobDetailPanel({ job, trackingData, onClose, onUpdate, onAddEvent, onRe
     : 0
 
   const [activeCnIdx, setActiveCnIdx] = useState(initialIdx)
+  const tabsRef = useRef(null)
+  const activeTabRef = useRef(null)
+  const [closing, setClosing] = useState(false)
+  const [refreshing, setRefreshing] = useState(false)
 
   useEffect(() => {
     if (activeContainer) {
@@ -32,254 +36,371 @@ function JobDetailPanel({ job, trackingData, onClose, onUpdate, onAddEvent, onRe
     }
   }, [activeContainer])
 
-  const formatD  = (d) => d ? new Date(d).toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' }) : '\u2014'
-  const formatDT = (d) => d ? new Date(d).toLocaleString('en-IN', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit', timeZone:'Asia/Kolkata' }) : '\u2014'
+  useEffect(() => {
+    if (activeTabRef.current && tabsRef.current) {
+      activeTabRef.current.scrollIntoView({
+        behavior: 'smooth',
+        block: 'nearest',
+        inline: 'center',
+      })
+    }
+  }, [activeCnIdx])
+
+  const handleClose = () => {
+    setClosing(true)
+    setTimeout(() => {
+      setClosing(false)
+      onClose()
+    }, 220)
+  }
+
+  useEffect(() => {
+    if (onCloseRef) onCloseRef.current = handleClose
+  }, [handleClose, onCloseRef])
+
+  const formatDT = (d) => d ? new Date(d).toLocaleString('en-IN', {
+    day:'2-digit', month:'short', year:'numeric',
+    hour:'2-digit', minute:'2-digit', timeZone:'Asia/Kolkata'
+  }) : '—'
+  const formatD = (d) => d ? new Date(d).toLocaleDateString('en-IN', {
+    day:'2-digit', month:'short', year:'numeric', timeZone:'Asia/Kolkata'
+  }) : '—'
 
   const STATUS_STYLES_MAP = {
-    in_transit:     { bg:'#fffbeb', color:'#92400e', border:'#fde68a' },
-    arrived:        { bg:'#f0fdf4', color:'#15803d', border:'#bbf7d0' },
-    at_cfs:         { bg:'#f0fdfa', color:'#0f766e', border:'#99f6e4' },
-    customs_hold:   { bg:'#fffbeb', color:'#92400e', border:'#fde68a' },
-    on_rail:        { bg:'#eef2ff', color:'#3730a3', border:'#c7d2fe' },
-    delivered:      { bg:'#f0fdf4', color:'#15803d', border:'#bbf7d0' },
-    empty_returned: { bg:'#f9fafb', color:'#4a5568', border:'#d0d6e0' },
-    delayed:        { bg:'#fef2f2', color:'#991b1b', border:'#fecaca' },
+    in_transit:     { bg:'#FAEEDA', color:'#633806', border:'#FAC775',  header:'#0f1e35' },
+    arrived:        { bg:'#EAF3DE', color:'#27500A', border:'#C0DD97',  header:'#0d2b1e' },
+    at_cfs:         { bg:'#E1F5EE', color:'#085041', border:'#9FE1CB',  header:'#0a2420' },
+    customs_hold:   { bg:'#FAEEDA', color:'#633806', border:'#FAC775',  header:'#1f1505' },
+    on_rail:        { bg:'#EEEDFE', color:'#26215C', border:'#AFA9EC',  header:'#150d2b' },
+    delivered:      { bg:'#EAF3DE', color:'#173404', border:'#639922',  header:'#0d1f0d' },
+    empty_returned: { bg:'#F1EFE8', color:'#2C2C2A', border:'#B4B2A9', header:'#1a1a1a' },
+    delayed:        { bg:'#FCEBEB', color:'#791F1F', border:'#F7C1C1',  header:'#1f0808' },
   }
 
-  const statusProgress = (status) => {
-    if (status === 'delivered' || status === 'empty_returned') return 100
-    if (status === 'at_cfs')       return 85
-    if (status === 'arrived')      return 75
-    if (status === 'customs_hold') return 70
-    if (status === 'on_rail')      return 90
-    if (status === 'delayed')      return 45
-    return 55
-  }
+  const cn = cnList[activeCnIdx]
+  const td = trackingData[cn] || {}
+  const status = td.status || 'in_transit'
+  const isDetention = td.freeDays != null && td.freeDays <= 2
+  const effectiveStatus = isDetention ? 'delayed' : status
+  const st = STATUS_STYLES_MAP[effectiveStatus] || STATUS_STYLES_MAP['in_transit']
+  const headerBg = st.header
 
-  const progressColor = (status, freeDays) => {
-    if (freeDays != null && freeDays <= 2) return '#dc2626'
-    if (['delivered','arrived','at_cfs','on_rail'].includes(status)) return '#16a34a'
-    if (['customs_hold','delayed'].includes(status)) return '#dc2626'
-    return '#f59e0b'
-  }
-
-  const priorityBadge = job.priority === 'urgent'
-    ? { label:'URGENT', bg:'#fef2f2', color:'#991b1b', border:'#fecaca' }
-    : job.priority === 'high'
-    ? { label:'HIGH',   bg:'#fffbeb', color:'#92400e', border:'#fde68a' }
+  const freePct = td.freeDays != null ? Math.max(0, Math.min(100, ((14 - td.freeDays) / 14) * 100)) : 0
+  const detentionDate = td.portIn
+    ? new Date(new Date(td.portIn).getTime() + (td.freeDays || 14) * 86400000)
+        .toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric', timeZone:'Asia/Kolkata' })
     : null
 
-  if (cnList.length === 0) return (
-    <>
-      <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.35)', zIndex:199, cursor:'pointer' }} />
-      <div style={{ position:'fixed', right:0, top:0, bottom:0, width:'min(520px,100vw)', background:'white', borderLeft:'1.5px solid #e2e6ed', zIndex:200, display:'flex', alignItems:'center', justifyContent:'center' }}>
-        <div style={{ color:'#8a96a8', fontSize:'14px' }}>No containers found.</div>
-      </div>
-    </>
-  )
+  const getEventStyle = (desc) => {
+    const d = (desc || '').toUpperCase()
+    if (d.includes('GATE CROSSED') || d.includes('GATE OUT')) return { color:'#185FA5', dot:'blue' }
+    if (d.includes('PORT IN') || d.includes('PORTIN'))         return { color:'#185FA5', dot:'blue' }
+    if (d.includes('PORT OUT') || d.includes('PORTOUT'))       return { color:'#0F6E56', dot:'green' }
+    if (d.includes('CFS') || d.includes('DPD'))                return { color:'#854F0B', dot:'amber' }
+    if (d.includes('VESSEL') || d.includes('LOADING'))         return { color:'#0F6E56', dot:'green' }
+    if (d.includes('CUSTOMS') || d.includes('HOLD'))           return { color:'#A32D2D', dot:'red' }
+    return { color:'var(--color-text-primary)', dot:'gray' }
+  }
 
-  const cn  = cnList[activeCnIdx]
-  const td  = trackingData[cn] || {}
-  const status = td.status || 'in_transit'
-  const st     = STATUS_STYLES_MAP[status] || STATUS_STYLES_MAP['in_transit']
-  const pct    = statusProgress(status)
-  const pColor = progressColor(status, td.freeDays)
-  const isDetention = td.freeDays != null && td.freeDays <= 2
+  const dotStyles = {
+    blue:  { bg:'#E6F1FB', border:'#185FA5', inner:'#185FA5' },
+    green: { bg:'#EAF3DE', border:'#1D9E75', inner:'#1D9E75' },
+    amber: { bg:'#FAEEDA', border:'#EF9F27', inner:'#EF9F27' },
+    red:   { bg:'#FCEBEB', border:'#E24B4A', inner:'#E24B4A' },
+    gray:  { bg:'var(--color-background-secondary)', border:'var(--color-border-tertiary)', inner:'var(--color-border-tertiary)' },
+  }
+
+  if (cnList.length === 0) return null
 
   return (
     <>
-      <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.35)', zIndex:199, cursor:'pointer' }} />
-      <div style={{
-        position:'fixed', right:0, top:0, bottom:0, width:'min(520px,100vw)',
-        background:'white', borderLeft:'1.5px solid #e2e6ed',
-        zIndex:200, display:'flex', flexDirection:'column',
-        boxShadow:'-8px 0 32px rgba(0,0,0,0.12)',
-        animation:'slideInRight 0.25s cubic-bezier(0.16,1,0.3,1)',
-      }}>
-        <style>{`@keyframes slideInRight { from { transform:translateX(100%) } to { transform:translateX(0) } }`}</style>
+      <style>{`
+        @keyframes slideInRight { from { transform:translateX(100%) } to { transform:translateX(0) } }
+        @keyframes slideOutRight { from { transform:translateX(0) } to { transform:translateX(100%) } }
+        @keyframes spin { from { transform:rotate(0deg) } to { transform:rotate(360deg) } }
+      `}</style>
 
-        {/* Header: job info + close */}
-        <div style={{ padding:'14px 18px', borderBottom:'1.5px solid #e2e6ed', background:'#f8f9fb', display:'flex', alignItems:'flex-start', gap:'12px', flexShrink:0 }}>
-          <button onClick={onClose}
-            style={{ width:'28px', height:'28px', borderRadius:'7px', background:'white', border:'1.5px solid #e2e6ed', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', fontSize:'13px', color:'#4a5568', flexShrink:0 }}
-            onMouseEnter={e => { e.currentTarget.style.background='#fef2f2'; e.currentTarget.style.color='#dc2626' }}
-            onMouseLeave={e => { e.currentTarget.style.background='white'; e.currentTarget.style.color='#4a5568' }}
+      <div style={{
+        position:'fixed', right:0, top:0, bottom:0, width:'min(680px,100vw)',
+        background:'#ffffff',
+        borderLeft:'1.5px solid #d0d9e8',
+        zIndex:300, display:'flex', flexDirection:'column',
+        boxShadow:'-16px 0 48px rgba(0,0,0,0.18)',
+        animation: closing
+          ? 'slideOutRight 0.22s cubic-bezier(0.4,0,1,1) forwards'
+          : 'slideInRight 0.25s cubic-bezier(0.16,1,0.3,1)',
+      }}>
+
+        {/* ── Header — status color ── */}
+        <div style={{ padding:'14px 16px', background:headerBg, display:'flex', alignItems:'flex-start', gap:'10px', flexShrink:0 }}>
+          <button
+            onClick={handleClose}
+            style={{ width:'26px', height:'26px', borderRadius:'6px', border:'0.5px solid rgba(255,255,255,0.15)', background:'rgba(255,255,255,0.08)', color:'rgba(255,255,255,0.7)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'12px', flexShrink:0, cursor:'pointer' }}
           >✕</button>
           <div style={{ flex:1, minWidth:0 }}>
-            <div style={{ display:'flex', alignItems:'center', gap:'8px', flexWrap:'wrap' }}>
-              <span style={{ fontSize:'15px', fontWeight:700, color:'#1a2233', fontFamily:"'JetBrains Mono',monospace" }}>{job.job_no}</span>
-              {priorityBadge && (
-                <span style={{ borderRadius:'9999px', padding:'2px 8px', fontSize:'11px', fontWeight:700, background:priorityBadge.bg, color:priorityBadge.color, border:`1px solid ${priorityBadge.border}` }}>
-                  {priorityBadge.label}
-                </span>
-              )}
+            <div style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:'15px', fontWeight:500, color:'white' }}>{job.job_no}</div>
+            <div style={{ fontSize:'11px', color:'rgba(255,255,255,0.5)', marginTop:'2px' }}>
+              {job.client}{job.shipping_line ? ` · ${job.shipping_line}` : ''}
+            </div>
+            <div style={{ display:'flex', gap:'4px', marginTop:'6px', flexWrap:'wrap' }}>
               {job.mode && (
-                <span style={{ borderRadius:'9999px', padding:'2px 8px', fontSize:'11px', fontWeight:600, background:'#eff6ff', color:'#1e40af', border:'1px solid #bfdbfe' }}>
+                <span style={{ display:'inline-flex', alignItems:'center', padding:'2px 7px', borderRadius:'9999px', fontSize:'10px', fontWeight:500, background:'rgba(255,255,255,0.1)', color:'rgba(255,255,255,0.8)', border:'0.5px solid rgba(255,255,255,0.15)' }}>
                   {job.mode}
                 </span>
               )}
-            </div>
-            <div style={{ fontSize:'12px', color:'#4a5568', marginTop:'2px' }}>
-              {job.client}{job.shipping_line ? ` \u00b7 ${job.shipping_line}` : ''}
+              <span style={{ display:'inline-flex', alignItems:'center', padding:'2px 7px', borderRadius:'9999px', fontSize:'10px', fontWeight:500, background:'rgba(255,255,255,0.18)', color:'white', border:'0.5px solid rgba(255,255,255,0.25)' }}>
+                {isDetention ? '⚠ Detention Risk' : (td.statusText || 'Not Updated')}
+              </span>
+              {td.dpdFlag && (
+                <span style={{ display:'inline-flex', alignItems:'center', padding:'2px 7px', borderRadius:'9999px', fontSize:'10px', fontWeight:500, background:'rgba(255,255,255,0.18)', color:'white', border:'0.5px solid rgba(255,255,255,0.25)' }}>
+                  DPD
+                </span>
+              )}
             </div>
           </div>
         </div>
 
-        {/* Container navigator */}
-        <div style={{ padding:'10px 18px', borderBottom:'1.5px solid #e2e6ed', background:'white', display:'flex', alignItems:'center', gap:'8px', flexShrink:0 }}>
+        {/* ── Container nav ── */}
+        <div style={{ padding:'8px 12px', borderBottom:'0.5px solid var(--color-border-tertiary)', display:'flex', alignItems:'center', gap:'5px', background:'var(--color-background-secondary)', flexShrink:0 }}>
           <button
             onClick={() => setActiveCnIdx(i => Math.max(0, i - 1))}
             disabled={activeCnIdx === 0}
-            style={{ width:'28px', height:'28px', borderRadius:'6px', border:'1.5px solid #e2e6ed', background: activeCnIdx === 0 ? '#f8f9fb' : 'white', color: activeCnIdx === 0 ? '#d0d6e0' : '#4a5568', cursor: activeCnIdx === 0 ? 'default' : 'pointer', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'14px', flexShrink:0 }}
+            style={{ width:'24px', height:'24px', borderRadius:'6px', border:'0.5px solid var(--color-border-tertiary)', background:'var(--color-background-primary)', color:'var(--color-text-secondary)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'11px', opacity: activeCnIdx === 0 ? 0.3 : 1, cursor: activeCnIdx === 0 ? 'default' : 'pointer' }}
           >{'<'}</button>
-
-          <div style={{ flex:1, display:'flex', gap:'6px', overflowX:'auto', scrollbarWidth:'none' }}>
+          <div ref={tabsRef} style={{ flex:1, display:'flex', gap:'4px', overflowX:'auto', scrollbarWidth:'none' }}>
             {cnList.map((c, i) => {
               const ctd = trackingData[c] || {}
+              const cStatus = ctd.status || 'in_transit'
+              const cDet = (ctd.freeDays ?? 99) <= 2
+              const cEffective = cDet ? 'delayed' : cStatus
+              const cSt = STATUS_STYLES_MAP[cEffective] || STATUS_STYLES_MAP['in_transit']
               const isActive = i === activeCnIdx
-              const hasDet = ctd.freeDays != null && ctd.freeDays <= 2
               return (
                 <button
                   key={c}
+                  ref={i === activeCnIdx ? activeTabRef : null}
                   onClick={() => setActiveCnIdx(i)}
                   style={{
-                    padding:'4px 10px', borderRadius:'6px', fontSize:'11px', fontWeight:600,
-                    fontFamily:"'JetBrains Mono',monospace", whiteSpace:'nowrap', cursor:'pointer',
-                    border: isActive ? '1.5px solid #1a4fa0' : '1.5px solid #e2e6ed',
-                    background: isActive ? '#1a4fa0' : hasDet ? '#fef2f2' : '#f8f9fb',
-                    color: isActive ? 'white' : hasDet ? '#991b1b' : '#4a5568',
-                    flexShrink:0,
+                    fontFamily:"'JetBrains Mono',monospace", fontSize:'10px', fontWeight:500,
+                    padding:'3px 8px', borderRadius:'5px', whiteSpace:'nowrap', cursor:'pointer', flexShrink:0,
+                    background: isActive ? headerBg : 'var(--color-background-primary)',
+                    color: isActive ? 'white' : cDet ? '#A32D2D' : 'var(--color-text-secondary)',
+                    border: isActive ? `0.5px solid ${headerBg}` : cDet ? '0.5px solid #F7C1C1' : '0.5px solid var(--color-border-tertiary)',
                   }}
-                >
-                  {hasDet ? '\u26a0 ' : ''}{c}
-                </button>
+                >{cDet ? '⚠ ' : ''}{c}</button>
               )
             })}
           </div>
-
           <button
             onClick={() => setActiveCnIdx(i => Math.min(cnList.length - 1, i + 1))}
             disabled={activeCnIdx === cnList.length - 1}
-            style={{ width:'28px', height:'28px', borderRadius:'6px', border:'1.5px solid #e2e6ed', background: activeCnIdx === cnList.length - 1 ? '#f8f9fb' : 'white', color: activeCnIdx === cnList.length - 1 ? '#d0d6e0' : '#4a5568', cursor: activeCnIdx === cnList.length - 1 ? 'default' : 'pointer', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'14px', flexShrink:0 }}
+            style={{ width:'24px', height:'24px', borderRadius:'6px', border:'0.5px solid var(--color-border-tertiary)', background:'var(--color-background-primary)', color:'var(--color-text-secondary)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'11px', opacity: activeCnIdx === cnList.length - 1 ? 0.3 : 1, cursor: activeCnIdx === cnList.length - 1 ? 'default' : 'pointer' }}
           >{'>'}</button>
-
-          <span style={{ fontSize:'11px', color:'#8a96a8', flexShrink:0 }}>{activeCnIdx + 1}/{cnList.length}</span>
-          <button
-            onClick={() => onRefresh(job, cn)}
-            style={{ width:'28px', height:'28px', borderRadius:'6px', border:'0.5px solid var(--color-border-tertiary)', background:'var(--color-background-primary)', color:'var(--color-text-secondary)', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'14px', flexShrink:0 }}
-            onMouseEnter={e => { e.currentTarget.style.background='#185FA5'; e.currentTarget.style.color='white'; e.currentTarget.style.borderColor='#185FA5' }}
-            onMouseLeave={e => { e.currentTarget.style.background='var(--color-background-primary)'; e.currentTarget.style.color='var(--color-text-secondary)'; e.currentTarget.style.borderColor='var(--color-border-tertiary)' }}
-            title="Refresh"
-          >↻</button>
+          <span style={{ fontSize:'10px', color:'var(--color-text-secondary)', flexShrink:0 }}>{activeCnIdx + 1}/{cnList.length}</span>
         </div>
 
-        {/* Container detail — scrollable */}
-        <div style={{ flex:1, overflowY:'auto', padding:'16px 18px' }}>
+        {/* ── Scrollable body ── */}
+        <div style={{ flex:1, overflowY:'auto' }}>
 
-          {/* CN + status badge */}
-          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'12px' }}>
-            <span style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:'16px', fontWeight:700, color:'#1a2233' }}>{cn}</span>
-            <span style={{ borderRadius:'9999px', padding:'3px 12px', fontSize:'12px', fontWeight:700, background: isDetention ? '#fef2f2' : st.bg, color: isDetention ? '#991b1b' : st.color, border:`1px solid ${isDetention ? '#fecaca' : st.border}` }}>
-              {isDetention ? '\u26a0 Detention Risk' : (td.statusText || 'Not Updated')}
-            </span>
-          </div>
-
-          {/* Progress bar */}
-          <div style={{ marginBottom:'16px' }}>
-            <div style={{ height:'6px', background:'#f4f6f9', border:'1px solid #e2e6ed', borderRadius:'6px', overflow:'hidden' }}>
-              <div style={{ height:'100%', borderRadius:'6px', width:`${pct}%`, background:pColor, transition:'width 0.4s ease' }} />
+          {/* Container hero + free days */}
+          <div style={{ padding:'14px 18px', borderBottom:'0.5px solid var(--color-border-tertiary)' }}>
+            <div style={{ display:'flex', alignItems:'center', gap:'6px', marginBottom:'10px' }}>
+              <span style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:'16px', fontWeight:500, color:'var(--color-text-primary)' }}>{cn}</span>
+              <button
+                onClick={async () => {
+                  setRefreshing(true)
+                  try {
+                    await onRefresh(job, cn)
+                  } finally {
+                    setRefreshing(false)
+                  }
+                }}
+                disabled={refreshing}
+                style={{ width:'28px', height:'28px', borderRadius:'6px', border:'0.5px solid var(--color-border-tertiary)', background:'var(--color-background-secondary)', color:'var(--color-text-secondary)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'15px', cursor:'pointer' }}
+                onMouseEnter={e => { e.currentTarget.style.background = headerBg; e.currentTarget.style.color = 'white'; e.currentTarget.style.borderColor = headerBg }}
+                onMouseLeave={e => { e.currentTarget.style.background = 'var(--color-background-secondary)'; e.currentTarget.style.color = 'var(--color-text-secondary)'; e.currentTarget.style.borderColor = 'var(--color-border-tertiary)' }}
+                title="Refresh"
+              >
+                <span style={{ display:'inline-block', animation: refreshing ? 'spin 0.7s linear infinite' : 'none' }}>↻</span>
+              </button>
+              {td.lastUpdate && (
+                <span style={{ fontSize:'10px', color:'var(--color-text-secondary)', fontStyle:'italic' }}>
+                  {new Date(td.lastUpdate).toLocaleString('en-IN', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit', timeZone:'Asia/Kolkata' })}
+                </span>
+              )}
+              <span style={{ marginLeft:'auto', display:'inline-flex', alignItems:'center', padding:'2px 8px', borderRadius:'9999px', fontSize:'10px', fontWeight:500, background: isDetention ? '#FCEBEB' : st.bg, color: isDetention ? '#791F1F' : st.color, border:`0.5px solid ${isDetention ? '#F7C1C1' : st.border}` }}>
+                {isDetention ? '⚠ Detention' : (td.statusText || 'Not Updated')}
+              </span>
             </div>
-            <div style={{ display:'flex', justifyContent:'space-between', fontSize:'10px', color:'#8a96a8', marginTop:'3px' }}>
-              <span>Loaded</span>
-              <span style={{ color:pColor, fontWeight:600 }}>{pct}% complete</span>
-              <span>Discharged</span>
-            </div>
-          </div>
 
-          {/* Fields grid */}
-          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'12px', marginBottom:'14px' }}>
-            {[
-              { label:'Current Location', value: td.currentLocation, full: true },
-              { label:'Terminal',         value: td.terminal, full: true },
-              { label:'Vessel',           value: td.vessel || job.vessel },
-              { label:'Vessel Arrival',   value: formatDT(td.eta || job.eta) },
-              { label:'Shipping Line',    value: td.shippingLineLdb || job.shipping_line },
-              { label:'Vessel IMO',       value: td.vesselImo },
-              { label:'Size',             value: td.containerSize },
-              { label:'Laden/Empty',      value: td.isEmpty === true ? 'Empty' : td.isEmpty === false ? 'Full / Laden' : null },
-              { label:'Port In',          value: formatDT(td.portIn) },
-              { label:'Port Out',         value: formatDT(td.portOut) },
-              { label:'Est. Dwell End',   value: td.expectedPortOut ? `~${formatD(td.expectedPortOut)}` : null,
-                color: '#8a96a8' },
-              { label:'CFS Gate In',      value: formatDT(td.cfsGateIn) },
-              { label:'DPD',              value: td.dpdFlag ? '\u2713 Yes' : td.dpdFlag === false ? 'No' : null,
-                color: td.dpdFlag ? '#15803d' : '#8a96a8' },
-              { label:'Free Days Left',   value: td.freeDays != null ? `${td.freeDays} days${td.freeDays <= 2 ? ' \u26a0' : ''}` : null,
-                color: td.freeDays != null && td.freeDays <= 2 ? '#dc2626' : td.freeDays != null && td.freeDays <= 5 ? '#b45309' : '#1a2233' },
-              { label:'Last Update',      value: formatDT(td.lastUpdate), full: true },
-            ].map(f => (
-              <div key={f.label} style={f.full ? { gridColumn:'1 / -1' } : {}}>
-                <div style={{ fontSize:'10px', fontWeight:600, textTransform:'uppercase', letterSpacing:'0.06em', color:'#8a96a8', marginBottom:'3px' }}>
-                  {f.label}
+            {td.freeDays != null && (
+              <div style={{ background: isDetention ? '#FCEBEB' : '#EAF3DE', border:`0.5px solid ${isDetention ? '#F7C1C1' : '#C0DD97'}`, borderRadius:'8px', padding:'10px 12px' }}>
+                <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'6px' }}>
+                  <span style={{ fontSize:'10px', fontWeight:500, textTransform:'uppercase', letterSpacing:'0.06em', color: isDetention ? '#791F1F' : '#27500A' }}>Free days remaining</span>
+                  <span style={{ fontSize:'20px', fontWeight:500, color: isDetention ? '#A32D2D' : '#0F6E56', lineHeight:1 }}>{td.freeDays} days</span>
                 </div>
-                <div style={{ fontSize:'13px', fontWeight:500, color: f.color || (f.value ? '#1a2233' : '#d0d6e0') }}>
-                  {f.value || '\u2014'}
+                <div style={{ height:'4px', background: isDetention ? 'rgba(162,45,45,0.2)' : 'rgba(15,110,86,0.2)', borderRadius:'4px', overflow:'hidden' }}>
+                  <div style={{ height:'100%', borderRadius:'4px', width:`${freePct}%`, background: isDetention ? '#E24B4A' : '#1D9E75' }} />
                 </div>
+                {detentionDate && (
+                  <div style={{ fontSize:'10px', color: isDetention ? '#A32D2D' : '#3B6D11', marginTop:'4px', fontWeight: isDetention ? 500 : 400 }}>
+                    {isDetention ? `⚠ Arrange delivery immediately — detention from ${detentionDate}` : `Detention from ${detentionDate}`}
+                  </div>
+                )}
               </div>
-            ))}
+            )}
+
+            {isDetention && (
+              <div style={{ display:'flex', alignItems:'flex-start', gap:'7px', padding:'8px 10px', borderRadius:'7px', marginTop:'8px', background:'#FCEBEB', border:'0.5px solid #F7C1C1' }}>
+                <span style={{ fontSize:'13px', flexShrink:0, marginTop:'1px' }}>🚨</span>
+                <span style={{ fontSize:'11px', fontWeight:500, color:'#791F1F', lineHeight:1.4 }}>Only {td.freeDays} free day{td.freeDays !== 1 ? 's' : ''} left — contact client and arrange transport today</span>
+              </div>
+            )}
+
+            {!isDetention && td.dpdFlag && (
+              <div style={{ display:'flex', alignItems:'flex-start', gap:'7px', padding:'8px 10px', borderRadius:'7px', marginTop:'8px', background:'#EAF3DE', border:'0.5px solid #C0DD97' }}>
+                <span style={{ fontSize:'13px', flexShrink:0, marginTop:'1px' }}>✅</span>
+                <span style={{ fontSize:'11px', fontWeight:500, color:'#27500A', lineHeight:1.4 }}>DPD applicable — eligible for direct port delivery</span>
+              </div>
+            )}
+
+            {status === 'customs_hold' && (
+              <div style={{ display:'flex', alignItems:'flex-start', gap:'7px', padding:'8px 10px', borderRadius:'7px', marginTop:'8px', background:'#FAEEDA', border:'0.5px solid #FAC775' }}>
+                <span style={{ fontSize:'13px', flexShrink:0, marginTop:'1px' }}>🔒</span>
+                <span style={{ fontSize:'11px', fontWeight:500, color:'#633806', lineHeight:1.4 }}>Container under customs hold — check examination status</span>
+              </div>
+            )}
           </div>
 
-          {/* Notes */}
-          {td.notes && (
-            <div style={{ marginBottom:'14px', padding:'8px 10px', background:'#fffbeb', border:'1px solid #fde68a', borderRadius:'7px', fontSize:'12px', color:'#92400e' }}>
-              📝 {td.notes}
+          {/* Location & Vessel */}
+          <div style={{ padding:'14px 18px', borderBottom:'0.5px solid var(--color-border-tertiary)', background:'var(--color-background-secondary)', borderLeft:'3px solid #185FA5' }}>
+            <div style={{ fontSize:'11px', fontWeight:500, textTransform:'uppercase', letterSpacing:'0.07em', color:'var(--color-text-secondary)', marginBottom:'8px', display:'flex', alignItems:'center', gap:'5px' }}>
+              Location & vessel
+              <span style={{ flex:1, height:'0.5px', background:'var(--color-border-tertiary)', display:'block' }} />
             </div>
-          )}
-
-          {/* Event history */}
-          {td.milestones?.length > 0 && (
-            <div style={{ marginBottom:'14px' }}>
-              <div style={{ fontSize:'10px', fontWeight:600, textTransform:'uppercase', letterSpacing:'0.06em', color:'#8a96a8', marginBottom:'8px' }}>
-                Event History
-              </div>
-              {td.milestones.map((m, i) => (
-                <div key={i} style={{ display:'flex', gap:'10px', alignItems:'flex-start', marginBottom:'8px' }}>
-                  <div style={{ width:'8px', height:'8px', borderRadius:'50%', flexShrink:0, marginTop:'4px', background: i === 0 ? '#1a4fa0' : '#d0d6e0' }} />
-                  <div>
-                    <div style={{ fontSize:'12px', fontWeight:600, color:'#1a2233' }}>{m.description}</div>
-                    <div style={{ fontSize:'11px', color:'#8a96a8', marginTop:'1px' }}>
-                      {m.location && `${m.location} \u00b7 `}
-                      {m.date ? new Date(m.date).toLocaleString('en-IN', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit', timeZone:'Asia/Kolkata' }) : ''}
-                      {m.transportMode ? ` \u00b7 ${m.transportMode}` : ''}
-                    </div>
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'12px' }}>
+              {[
+                { label:'Current location', value: td.currentLocation, full: false },
+                { label:'Terminal',         value: td.terminal,        full: false },
+                { label:'Vessel',           value: td.vessel || job.vessel },
+                { label:'Vessel arrival',   value: formatD(td.eta || job.eta) },
+                { label:'Shipping line',    value: td.shippingLineLdb || job.shipping_line },
+                { label:'Vessel IMO',       value: td.vesselImo,       mono: true, muted: true },
+              ].map(f => (
+                <div key={f.label} style={f.full ? { gridColumn:'1/-1' } : {}}>
+                  <div style={{ fontSize:'10px', fontWeight:500, textTransform:'uppercase', letterSpacing:'0.06em', color:'var(--color-text-secondary)', marginBottom:'4px' }}>{f.label}</div>
+                    <div style={{ color: f.muted ? 'var(--color-text-secondary)' : 'var(--color-text-primary)', fontFamily: f.mono ? "'JetBrains Mono',monospace" : 'inherit', fontSize:'13px' }}>
+                    {f.value || '—'}
                   </div>
                 </div>
               ))}
             </div>
-          )}
+          </div>
 
+          {/* Container */}
+          <div style={{ padding:'14px 18px', borderBottom:'0.5px solid var(--color-border-tertiary)', borderLeft:'3px solid #0F6E56' }}>
+            <div style={{ fontSize:'11px', fontWeight:500, textTransform:'uppercase', letterSpacing:'0.07em', color:'var(--color-text-secondary)', marginBottom:'8px', display:'flex', alignItems:'center', gap:'5px' }}>
+              Container
+              <span style={{ flex:1, height:'0.5px', background:'var(--color-border-tertiary)', display:'block' }} />
+            </div>
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'12px' }}>
+              {[
+                { label:'Size',           value: td.containerSize },
+                { label:'Laden / empty',  value: td.isEmpty === true ? 'Empty' : td.isEmpty === false ? 'Full / laden' : null, ok: td.isEmpty === false },
+                ...(!td.dpdFlag ? [{ label:'DPD', value:'No', ok: false }] : []),
+                { label:'Est. dwell end', value: td.expectedPortOut ? `~${formatD(td.expectedPortOut)}` : null, muted: true },
+              ].map(f => (
+                <div key={f.label}>
+                  <div style={{ fontSize:'10px', fontWeight:500, textTransform:'uppercase', letterSpacing:'0.06em', color:'var(--color-text-secondary)', marginBottom:'4px' }}>{f.label}</div>
+                    <div style={{ fontSize:'13px', fontWeight: f.ok ? 500 : 400, color: f.ok ? '#0F6E56' : f.muted ? 'var(--color-text-secondary)' : 'var(--color-text-primary)' }}>
+                    {f.value || '—'}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Port events */}
+          <div style={{ padding:'14px 18px', borderBottom:'0.5px solid var(--color-border-tertiary)', background:'var(--color-background-secondary)', borderLeft:'3px solid #EF9F27' }}>
+            <div style={{ fontSize:'11px', fontWeight:500, textTransform:'uppercase', letterSpacing:'0.07em', color:'var(--color-text-secondary)', marginBottom:'8px', display:'flex', alignItems:'center', gap:'5px' }}>
+              Port events
+              <span style={{ flex:1, height:'0.5px', background:'var(--color-border-tertiary)', display:'block' }} />
+            </div>
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'12px' }}>
+              {[
+                { label:'Port in',      value: formatDT(td.portIn) },
+                { label:'Port out',     value: formatDT(td.portOut) },
+                { label:'CFS gate in',  value: formatDT(td.cfsGateIn) },
+              ].map(f => (
+                <div key={f.label}>
+                  <div style={{ fontSize:'10px', fontWeight:500, textTransform:'uppercase', letterSpacing:'0.06em', color:'var(--color-text-secondary)', marginBottom:'4px' }}>{f.label}</div>
+                    <div style={{ fontSize:'13px', color: f.muted ? 'var(--color-text-secondary)' : f.value && f.value !== '—' ? 'var(--color-text-primary)' : 'var(--color-text-secondary)' }}>
+                    {f.value || '—'}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Event history */}
+          {td.milestones?.length > 0 && (
+            <div style={{ padding:'14px 18px', borderLeft:'3px solid #534AB7' }}>
+              <div style={{ fontSize:'11px', fontWeight:500, textTransform:'uppercase', letterSpacing:'0.07em', color:'var(--color-text-secondary)', marginBottom:'10px', display:'flex', alignItems:'center', gap:'5px' }}>
+                Event history
+                <span style={{ flex:1, height:'0.5px', background:'var(--color-border-tertiary)', display:'block' }} />
+              </div>
+              {td.milestones.map((m, i) => {
+                const es = getEventStyle(m.description)
+                const ds = dotStyles[es.dot] || dotStyles.gray
+                const isLast = i === td.milestones.length - 1
+                return (
+                  <div key={i} style={{ display:'flex', gap:'8px', alignItems:'flex-start', paddingBottom: isLast ? 0 : '10px' }}>
+                    <div style={{ display:'flex', flexDirection:'column', alignItems:'center', width:'18px', flexShrink:0 }}>
+                      <div style={{ width:'18px', height:'18px', borderRadius:'50%', display:'flex', alignItems:'center', justifyContent:'center', background:ds.bg, border:`1.5px solid ${ds.border}`, flexShrink:0 }}>
+                        <div style={{ width:'7px', height:'7px', borderRadius:'50%', background:ds.inner }} />
+                      </div>
+                      {!isLast && <div style={{ width:'1px', flex:1, background:'var(--color-border-tertiary)', minHeight:'10px', marginTop:'2px' }} />}
+                    </div>
+                    <div style={{ flex:1, minWidth:0, paddingBottom:'2px' }}>
+                      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:'4px', marginBottom:'2px' }}>
+                        <span style={{ fontSize:'11px', fontWeight:500, color: i === 0 ? es.color : 'var(--color-text-primary)' }}>{m.description}</span>
+                        <div style={{ display:'flex', gap:'3px', alignItems:'center', flexShrink:0 }}>
+                          {m.transportMode && (
+                            <span style={{ fontSize:'8px', fontWeight:500, padding:'1px 4px', borderRadius:'9999px', background: m.transportMode === 'VESSEL' ? '#E6F1FB' : '#FAEEDA', color: m.transportMode === 'VESSEL' ? '#0C447C' : '#633806', border:`0.5px solid ${m.transportMode === 'VESSEL' ? '#B5D4F4' : '#FAC775'}` }}>
+                              {m.transportMode}
+                            </span>
+                          )}
+                          <span style={{ fontSize:'9px', color:'var(--color-text-secondary)', whiteSpace:'nowrap' }}>
+                            {m.date ? new Date(m.date).toLocaleString('en-IN', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit', timeZone:'Asia/Kolkata' }) : ''}
+                          </span>
+                        </div>
+                      </div>
+                      <div style={{ fontSize:'10px', color:'var(--color-text-secondary)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{m.location}</div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
         </div>
 
-        {/* Action buttons — pinned to bottom */}
-        <div style={{ padding:'10px 14px', borderTop:'0.5px solid var(--color-border-tertiary)', display:'flex', gap:'6px', flexShrink:0, background:'var(--color-background-primary)' }}>
-
+        {/* ── Footer ── */}
+        <div style={{ padding:'10px 12px', borderTop:'0.5px solid var(--color-border-tertiary)', display:'flex', gap:'6px', flexShrink:0, background:'var(--color-background-primary)' }}>
           <button
             onClick={() => onUpdate(job, cn)}
-            style={{ flex:1, padding:'9px 0', background:'#E6F1FB', border:'0.5px solid #B5D4F4', color:'#185FA5', borderRadius:'8px', fontSize:'13px', fontWeight:500, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:'5px' }}
-            onMouseEnter={e => { e.currentTarget.style.background='#185FA5'; e.currentTarget.style.color='white' }}
-            onMouseLeave={e => { e.currentTarget.style.background='#E6F1FB'; e.currentTarget.style.color='#185FA5' }}
+            style={{ flex:1, padding:'9px 0', borderRadius:'7px', fontSize:'12px', fontWeight:500, cursor:'pointer', border:'none', background:headerBg, color:'white', display:'flex', alignItems:'center', justifyContent:'center', gap:'5px' }}
           >✎ Update</button>
           <button
             onClick={() => onAddEvent(job, cn)}
-            style={{ flex:1, padding:'9px 0', background:'var(--color-background-primary)', border:'0.5px solid var(--color-border-tertiary)', color:'var(--color-text-secondary)', borderRadius:'8px', fontSize:'13px', fontWeight:500, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:'5px' }}
-            onMouseEnter={e => { e.currentTarget.style.borderColor='#185FA5'; e.currentTarget.style.color='#185FA5' }}
-            onMouseLeave={e => { e.currentTarget.style.borderColor='var(--color-border-tertiary)'; e.currentTarget.style.color='var(--color-text-secondary)' }}
+            style={{ flex:1, padding:'9px 0', borderRadius:'7px', fontSize:'12px', fontWeight:500, cursor:'pointer', border:'0.5px solid var(--color-border-tertiary)', background:'var(--color-background-secondary)', color:'var(--color-text-secondary)', display:'flex', alignItems:'center', justifyContent:'center', gap:'5px' }}
+            onMouseEnter={e => { e.currentTarget.style.borderColor = headerBg; e.currentTarget.style.color = headerBg }}
+            onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--color-border-tertiary)'; e.currentTarget.style.color = 'var(--color-text-secondary)' }}
           >+ Add event</button>
           <button
             onClick={() => openCarrierTracking(cn, job.shipping_line, showToast)}
-            style={{ flex:1, padding:'9px 0', background:'var(--color-background-primary)', border:'0.5px solid var(--color-border-tertiary)', color:'var(--color-text-secondary)', borderRadius:'8px', fontSize:'13px', fontWeight:500, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:'5px' }}
-            onMouseEnter={e => { e.currentTarget.style.borderColor='#0F6E56'; e.currentTarget.style.color='#0F6E56' }}
-            onMouseLeave={e => { e.currentTarget.style.borderColor='var(--color-border-tertiary)'; e.currentTarget.style.color='var(--color-text-secondary)' }}
+            style={{ flex:1, padding:'9px 0', borderRadius:'7px', fontSize:'12px', fontWeight:500, cursor:'pointer', border:'0.5px solid var(--color-border-tertiary)', background:'var(--color-background-secondary)', color:'var(--color-text-secondary)', display:'flex', alignItems:'center', justifyContent:'center', gap:'5px' }}
+            onMouseEnter={e => { e.currentTarget.style.borderColor = headerBg; e.currentTarget.style.color = headerBg }}
+            onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--color-border-tertiary)'; e.currentTarget.style.color = 'var(--color-text-secondary)' }}
           >🌐 Carrier</button>
         </div>
 
@@ -643,7 +764,7 @@ function ContainerTimeline({ container, onClose }) {
 
 const AUTO_FILL_CARRIERS = [
   'one', 'evergreen', 'zim', 'yang ming', 'yangming',
-  'hmm', 'cosco', 'oocl', 'wan hai', 'wanhai', 'pil', 'sinokor',
+  'hmm', 'oocl', 'wan hai', 'wanhai', 'pil', 'sinokor',
 ]
 
 function getCarrierUrl(containerNo, shippingLine) {
@@ -669,11 +790,11 @@ function getCarrierUrl(containerNo, shippingLine) {
   if (sl.includes('hmm'))
     return `https://www.hmm21.com/cms/business/ebiz/trackTrace/trackTrace/index.jsp?trackingType=CNTR&trackingNo=${cn}`
   if (sl.includes('cosco'))
-    return `https://elines.coscoshipping.com/ebtracking/public/container/searchNo?containerNo=${cn}`
+    return `https://elines.coscoshipping.com/ebusiness/cargoTracking?trackingType=CONTAINER&number=${cn}`
   if (sl.includes('oocl'))
     return `https://www.oocl.com/eng/ourservices/eservices/cargotracking/Pages/cargotracking.aspx?ContainerNo=${cn}`
   if (sl.includes('wan hai') || sl.includes('wanhai'))
-    return `https://www.wanhai.com/views/cargoTrack/CargoTrack.xhtml?blNo=${cn}`
+    return `https://www.wanhai.com/views/cargoTrack/CargoTrack.xhtml?cntrNo=${cn}`
   if (sl.includes('pil'))
     return `https://www.pilship.com/en-PIL-Container-Tracking/114.html?number=${cn}`
   if (sl.includes('ts line') || sl.includes('tsline'))
@@ -749,6 +870,7 @@ function ContainerTrackingSection({ showToast, jobs }) {
   const [searchQuery, setSearchQuery]           = useState('')
   const [expandedContainers, setExpandedContainers] = useState({})
   const [detailJob, setDetailJob]               = useState(null)
+  const closeSidebarRef = useRef(null)
   const [activeContainer, setActiveContainer]   = useState(null) // { jobId, cn }
   const [updateModal, setUpdateModal]           = useState(null)
   const [milestoneModal, setMilestoneModal]     = useState(null)
@@ -1143,6 +1265,15 @@ function ContainerTrackingSection({ showToast, jobs }) {
     activeContainer,
     setActiveContainer,
     handleLDBRefresh,
+    handleChipClick: (jobId, cn, job) => {
+      if (activeContainer?.jobId === jobId && activeContainer?.cn === cn) {
+        if (closeSidebarRef.current) closeSidebarRef.current()
+        else { setDetailJob(null); setActiveContainer(null) }
+      } else {
+        setActiveContainer({ jobId, cn })
+        setDetailJob(job)
+      }
+    },
   }
 
   return (
@@ -1177,15 +1308,17 @@ function ContainerTrackingSection({ showToast, jobs }) {
       )}
       {detailJob && (
         <JobDetailPanel
-          job={detailJob}
-          trackingData={trackingData}
-          showToast={showToast}
-          activeContainer={activeContainer?.cn || null}
-          onClose={() => { setDetailJob(null); setActiveContainer(null) }}
-          onUpdate={(job, cn) => { setDetailJob(null); setActiveContainer(null); handleOpenUpdate(job, cn) }}
-          onAddEvent={(job, cn) => { setDetailJob(null); setActiveContainer(null); handleOpenMilestone(job, cn)       }}
-          onRefresh={handleLDBRefresh}
-        />
+            job={detailJob}
+            trackingData={trackingData}
+            showToast={showToast}
+            activeContainer={activeContainer?.cn || null}
+            onClose={() => { setDetailJob(null); setActiveContainer(null) }}
+            onCloseRef={closeSidebarRef}
+
+            onUpdate={(job, cn) => { setDetailJob(null); setActiveContainer(null); handleOpenUpdate(job, cn) }}
+            onAddEvent={(job, cn) => { setDetailJob(null); setActiveContainer(null); handleOpenMilestone(job, cn)       }}
+            onRefresh={handleLDBRefresh}
+          />
       )}
     </div>
   )

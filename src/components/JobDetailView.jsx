@@ -213,12 +213,26 @@ function MiniStatus({ title, value, tone }) {
 
 function DetailField({ label, value, meta, profiles, showProvenance = true }) {
   const hasValue = value && value !== '—' && value !== '-' && String(value).trim() !== ''
+  const isContainers = label === 'Containers'
   return (
     <div>
       <div className="flex items-center flex-wrap gap-1">
         <p className="text-xs uppercase tracking-wide text-[#8a96a8] font-medium">{label}</p>
       </div>
-      <p className="text-sm text-[#1a2233] font-medium mt-0.5">{value}</p>
+      {isContainers && hasValue ? (
+        <div style={{ display:'flex', flexWrap:'wrap', gap:'4px', marginTop:'2px' }}>
+          {String(value).split(/[\s,;/]+/).map(s => s.trim().toUpperCase()).filter(s => s.length >= 4).map(cn => (
+            <span key={cn} style={{
+              fontFamily:"'JetBrains Mono',monospace", fontSize:'11px', fontWeight:500,
+              padding:'2px 8px', borderRadius:'5px',
+              background:'#E6F1FB', color:'#185FA5', border:'0.5px solid #B5D4F4',
+              display:'inline-flex', alignItems:'center',
+            }}>{cn}</span>
+          ))}
+        </div>
+      ) : (
+        <p className="text-sm text-[#1a2233] font-medium mt-0.5">{value}</p>
+      )}
       {showProvenance && hasValue && meta && <FieldProvenance meta={meta} profiles={profiles} />}
     </div>
   )
@@ -240,12 +254,79 @@ function JobProgress({ stage }) {
   )
 }
 
+function ContainerChipInput({ value, onChange }) {
+  const [inputVal, setInputVal] = useState('')
+
+  const chips = (value || '')
+    .split(/[\s,;/]+/)
+    .map(s => s.trim().toUpperCase())
+    .filter(s => s.length >= 4)
+
+  const addChip = (raw) => {
+    const newChips = raw.split(/[\s,;/]+/).map(s => s.trim().toUpperCase()).filter(s => s.length >= 4)
+    const merged = [...new Set([...chips, ...newChips])]
+    onChange(merged.join(' '))
+    setInputVal('')
+  }
+
+  const removeChip = (cn) => {
+    onChange(chips.filter(c => c !== cn).join(' '))
+  }
+
+  return (
+    <div className="rounded-lg border border-[#e2e6ed] bg-white px-3 py-2 flex flex-wrap gap-2 cursor-text min-h-[42px]"
+      onClick={() => document.getElementById('container-chip-input')?.focus()}>
+      {chips.map(cn => (
+        <span key={cn} style={{
+          display:'inline-flex', alignItems:'center', gap:'4px',
+          fontFamily:"'JetBrains Mono',monospace", fontSize:'11px', fontWeight:500,
+          padding:'2px 8px', borderRadius:'5px',
+          background:'#E6F1FB', color:'#185FA5', border:'0.5px solid #B5D4F4',
+        }}>
+          {cn}
+          <button
+            type="button"
+            onClick={e => { e.stopPropagation(); removeChip(cn) }}
+            style={{ background:'none', border:'none', cursor:'pointer', color:'#185FA5', fontSize:'12px', lineHeight:1, padding:'0 0 0 2px', opacity:0.7 }}
+            onMouseEnter={e => e.currentTarget.style.opacity = '1'}
+            onMouseLeave={e => e.currentTarget.style.opacity = '0.7'}
+          >✕</button>
+        </span>
+      ))}
+      <input
+        id="container-chip-input"
+        value={inputVal}
+        onChange={e => setInputVal(e.target.value.toUpperCase())}
+        onKeyDown={e => {
+          if ((e.key === 'Enter' || e.key === ' ' || e.key === ',') && inputVal.trim()) {
+            e.preventDefault()
+            addChip(inputVal.trim())
+          }
+          if (e.key === 'Backspace' && !inputVal && chips.length > 0) {
+            removeChip(chips[chips.length - 1])
+          }
+        }}
+        onBlur={() => { if (inputVal.trim()) addChip(inputVal.trim()) }}
+        placeholder={chips.length === 0 ? 'Type container number, press Space or Enter...' : ''}
+        style={{
+          border:'none', outline:'none', background:'transparent',
+          fontFamily:"'JetBrains Mono',monospace", fontSize:'11px',
+          color:'#1a2233', minWidth:'200px', flex:1,
+        }}
+      />
+    </div>
+  )
+}
+
 function JobDetailView({ job, profiles, currentUserName, isAdmin, canUpdateStage, onBack, onSaved, toast, onDelete }) {
   const [editMode, setEditMode] = useState(false)
   const [saving, setSaving] = useState(false)
   const [stageUpdating, setStageUpdating] = useState(false)
   const [showFullAccountability, setShowFullAccountability] = useState(false)
-  const [detailTab, setDetailTab] = useState('details')
+  const [detailTab, setDetailTab] = useState(() => {
+    const hash = window.location.hash.replace('#', '')
+    return ['details', 'ocr', 'fields'].includes(hash) ? hash : 'details'
+  })
   const [extractedFields, setExtractedFields] = useState(null)
   const [loadingExtracted, setLoadingExtracted] = useState(false)
   const [extractedData, setExtractedData] = useState(null)
@@ -253,30 +334,51 @@ function JobDetailView({ job, profiles, currentUserName, isAdmin, canUpdateStage
   const [fieldConfidence, setFieldConfidence] = useState({})
   const [summarising, setSummarising] = useState(false)
   const [form, setForm] = useState(() => ({ ...job }))
+  const [hasUnsavedNotes, setHasUnsavedNotes] = useState(false)
   const notesRef = useRef(null)
   const meta = job.field_meta && typeof job.field_meta === 'object' ? job.field_meta : {}
 
+
+  const loadExtractedFields = async () => {
+    setLoadingExtracted(true)
+    try {
+      const { data } = await supabase
+        .from('job_extractions')
+        .select('id, job_id, job_no, extracted_data, extracted_at, extracted_by_name')
+        .eq('job_id', job.id)
+        .order('extracted_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      setExtractedFields(data || null)
+      setExtractedData(data?.extracted_data || null)
+    } catch {
+      setExtractedFields(null)
+      setExtractedData(null)
+    } finally {
+      setLoadingExtracted(false)
+    }
+  }
+
   useEffect(() => {
     if (!job.id) return
-    ;(async () => {
-      setLoadingExtracted(true)
-      try {
-        const { data } = await supabase
-          .from('job_extractions')
-          .select('id, job_id, job_no, extracted_data, extracted_at, extracted_by_name')
-          .eq('job_id', job.id)
-          .order('extracted_at', { ascending: false })
-          .limit(1)
-          .maybeSingle()
-        setExtractedFields(data || null)
-        setExtractedData(data?.extracted_data || null)
-      } catch { setExtractedFields(null); setExtractedData(null) }
-      finally { setLoadingExtracted(false) }
-    })()
+    loadExtractedFields()
   }, [job.id])
 
   useEffect(() => {
-    setEditMode(false); setSaving(false); setStageUpdating(false); setForm({ ...job })
+    setEditMode(false)
+    setSaving(false)
+    setStageUpdating(false)
+    setForm({ ...job })
+
+    // On reload restore tab from hash — on fresh job open reset to details
+    const hash = window.location.hash.replace('#', '')
+    const isReload = ['details', 'ocr', 'fields'].includes(hash)
+    if (!isReload) {
+      setDetailTab('details')
+      window.location.hash = 'details'
+    } else {
+      setDetailTab(hash)
+    }
   }, [job?.id])
 
   const stage = Number(job.stage) || 0
@@ -663,7 +765,7 @@ Write the summary:`
           </div>
         </div>
         <div className="flex items-center gap-2">
-          {!editMode ? (
+          {!editMode && detailTab === 'details' ? (
             <>
               <button type="button" onClick={() => setEditMode(true)} className="h-9 px-4 text-xs rounded-lg bg-[#1a4fa0] text-white hover:bg-[#153d82] font-semibold">Edit</button>
               <select disabled={!canUpdateStage||stageUpdating} value={stage} onChange={handleStageChange}
@@ -688,15 +790,15 @@ Write the summary:`
 
       <div className="px-4 sm:px-6 border-b border-[#e2e6ed] bg-[#f8f9fb]">
         <div className="flex gap-1 py-2">
-          <button type="button" onClick={() => setDetailTab('details')}
+          <button type="button" onClick={() => { setDetailTab('details'); window.location.hash = 'details' }}
             className={classNames('px-4 py-1.5 text-xs font-bold rounded-lg transition-colors', detailTab === 'details' ? 'bg-white text-[#1a4fa0] shadow-sm border border-[#e2e6ed]' : 'text-[#8a96a8] hover:text-[#1a4fa0]')}>
             Job Details
           </button>
-          <button type="button" onClick={() => setDetailTab('ocr')}
+          <button type="button" onClick={() => { setDetailTab('ocr'); window.location.hash = 'ocr' }}
             className={classNames('px-4 py-1.5 text-xs font-bold rounded-lg transition-colors', detailTab === 'ocr' ? 'bg-white text-[#1a4fa0] shadow-sm border border-[#e2e6ed]' : 'text-[#8a96a8] hover:text-[#1a4fa0]')}>
             ✦ OCR Extract
           </button>
-          <button type="button" onClick={() => setDetailTab('fields')}
+          <button type="button" onClick={() => { setDetailTab('fields'); window.location.hash = 'fields' }}
             className={classNames('px-4 py-1.5 text-xs font-bold rounded-lg transition-colors', detailTab === 'fields' ? 'bg-white text-[#1a4fa0] shadow-sm border border-[#e2e6ed]' : 'text-[#8a96a8] hover:text-[#1a4fa0]')}>
             ✦ Extracted Fields
           </button>
@@ -759,26 +861,74 @@ Write the summary:`
 
             {/* Right — notes + delay reason */}
             <div className="lg:col-span-1 flex flex-col gap-4">
-              {job.delay_reason?.trim() && (
-                <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-amber-700 mb-1">Delay Reason</p>
-                  <p>{job.delay_reason}</p>
-                </div>
-              )}
+              {/* Delay reason */}
+              <div className="flex flex-col gap-1">
+                <p className="text-xs font-semibold uppercase tracking-wide text-[#8a96a8]">Delay Reason</p>
+                {editMode ? (
+                  <input type="text" value={form.delay_reason || ''} onChange={e => setForm(p => ({...p, delay_reason: e.target.value}))}
+                    placeholder="Enter delay reason..."
+                    className="w-full rounded-lg border border-[#e2e6ed] bg-white px-3 py-2 text-sm text-[#1a2233] focus:border-[#1a4fa0] focus:outline-none focus:ring-1 focus:ring-[#1a4fa0]" />
+                ) : (
+                  <p className="text-sm text-[#4a5568]">{job.delay_reason?.trim() || <span className="text-[#d0d6e0]">\u2014</span>}</p>
+                )}
+              </div>
               <div className="flex flex-col rounded-lg border border-[#e2e6ed] bg-[#f8f9fb] overflow-hidden">
                 <div className="px-4 py-3 border-b border-[#e2e6ed] flex items-center justify-between">
                   <p className="text-xs font-semibold uppercase tracking-wide text-[#8a96a8]">Notes</p>
-                  {!job.notes?.trim() && (
-                    <span className="text-xs text-[#d0d6e0] italic">No notes yet</span>
-                  )}
+                  <button
+                    type="button"
+                    onClick={handleAISummary}
+                    disabled={summarising}
+                    style={{
+                      padding:'2px 8px', borderRadius:'6px', fontSize:'11px', fontWeight:600,
+                      background: summarising ? '#f4f6f9' : '#eff6ff',
+                      color: summarising ? '#8a96a8' : '#1a4fa0',
+                      border:'1px solid #bfdbfe', cursor: summarising ? 'default' : 'pointer',
+                    }}
+                  >
+                    {summarising ? '...' : '✦ AI Summary'}
+                  </button>
                 </div>
                 <div className="px-4 py-3">
-                  {job.notes?.trim() ? (
-                    <p className="text-sm text-[#4a5568] whitespace-pre-wrap leading-relaxed">{job.notes}</p>
-                  ) : (
-                    <p className="text-xs text-[#d0d6e0] italic">Click Edit to add notes</p>
-                  )}
+                  <textarea
+                    value={form.notes || ''}
+                    onChange={e => {
+                      setForm(p => ({ ...p, notes: e.target.value }))
+                      setHasUnsavedNotes(true)
+                      e.target.style.height = 'auto'
+                      e.target.style.height = e.target.scrollHeight + 'px'
+                    }}
+                    onInput={e => {
+                      e.target.style.height = 'auto'
+                      e.target.style.height = e.target.scrollHeight + 'px'
+                    }}
+                    ref={el => {
+                      if (el) {
+                        el.style.height = 'auto'
+                        el.style.height = el.scrollHeight + 'px'
+                      }
+                    }}
+                    placeholder="No notes yet — click to add..."
+                    rows={2}
+                    style={{ overflow:'hidden', minHeight:'48px' }}
+                    className="w-full text-sm text-[#4a5568] bg-transparent border-none outline-none resize-none leading-relaxed placeholder:text-[#d0d6e0] font-[inherit]"
+                  />
                 </div>
+                {hasUnsavedNotes && !editMode && (
+                  <div className="px-4 pb-3 flex justify-end">
+                    <button
+                      onClick={async () => {
+                        await supabase.from('jobs').update({ notes: form.notes }).eq('id', job.id)
+                        await onSaved()
+                        setHasUnsavedNotes(false)
+                        toast && toast('Notes saved', 'success')
+                      }}
+                      className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-[#1a4fa0] text-white hover:bg-[#0f3d8a]"
+                    >
+                      Save notes
+                    </button>
+                  </div>
+                )}
               </div>
 
               {/* Field Accountability */}
@@ -815,68 +965,159 @@ Write the summary:`
                   </table>
                 </div>
               </div>
-            </div>
-          </div>
+      </div>
+    </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-5">
-            {['job_no','client','mode','priority','goods','bl_no','be_no','be_date','containers','container_size','shipping_line','vessel','eta','cfs_name','cfs_amount','hs_code','rms_status','bg_required','destination','free_days','detention_risk','delay_reason','notes'].map((k) => {
-              const hasOcrValue   = OCR_FIELD_MAP[k] !== undefined && OCR_FIELD_MAP[k] !== null && !!extractedData?.[OCR_FIELD_MAP[k]]?.value
-              const isEditable    = canEditField(k)
-              const wasJustFilled = importedFields[k]
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* Left — editable fields, 2 columns wide */}
+            <div className="lg:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-5">
+              {['job_no','client','mode','priority','goods','bl_no','be_no','be_date','containers','container_size','shipping_line','vessel','eta','cfs_name','cfs_amount','hs_code','rms_status','bg_required','destination','free_days','detention_risk','delay_reason'].map((k) => {
+                const hasOcrValue   = OCR_FIELD_MAP[k] !== undefined && OCR_FIELD_MAP[k] !== null && !!extractedData?.[OCR_FIELD_MAP[k]]?.value
+                const isEditable    = canEditField(k)
+                const wasJustFilled = importedFields[k]
 
-              return (
-                <div key={k} className={k === 'notes' ? 'md:col-span-2' : ''}>
-                  <div className="flex items-center gap-1 mb-1 flex-wrap">
-                    <p className="text-xs text-[#8a96a8] font-medium uppercase tracking-wide">{FIELD_LABELS[k] || k}</p>
-                  </div>
-                  <div className={classNames('rounded-lg transition-all duration-500', wasJustFilled ? 'ring-2 ring-[#1a4fa0]/30 ring-offset-1' : '')}>
-                    {k === 'notes' ? (
-                      <div>
-                        {renderFieldInput(k)}
-                        <div style={{ display:'flex', justifyContent:'flex-end', marginTop:'6px' }}>
-                          <button
-                            type="button"
-                            onClick={handleAISummary}
-                            disabled={summarising}
-                            style={{
-                              display:'inline-flex', alignItems:'center', gap:'5px',
-                              height:'26px', padding:'0 10px', borderRadius:'6px',
-                              fontSize:'11px', fontWeight:600,
-                              border:'1px solid #ddd6fe', background:'#f5f3ff', color:'#5b21b6',
-                              cursor: summarising ? 'not-allowed' : 'pointer',
-                              opacity: summarising ? 0.6 : 1, transition:'all 0.15s',
-                            }}
-                            onMouseEnter={e => { if (!summarising) { e.currentTarget.style.background='#5b21b6'; e.currentTarget.style.color='white' }}}
-                            onMouseLeave={e => { e.currentTarget.style.background='#f5f3ff'; e.currentTarget.style.color='#5b21b6' }}
-                            title="Generate AI summary from extracted fields"
-                          >
-                            {summarising ? (
-                              <><span style={{ width:'10px', height:'10px', border:'2px solid currentColor', borderTopColor:'transparent', borderRadius:'50%', animation:'spin 0.7s linear infinite', display:'inline-block' }} /> Summarising...</>
-                            ) : <>✦ AI Summary</>}
-                          </button>
-                        </div>
-                      </div>
+                return (
+                  <div key={k} className="flex flex-col gap-1">
+                    <div className="flex items-center gap-1 flex-wrap">
+                      <p className="text-xs text-[#8a96a8] font-medium uppercase tracking-wide">{FIELD_LABELS[k] || k}</p>
+                      {wasJustFilled && (
+                        <span className="text-[10px] text-emerald-600 font-semibold">\u2713 Auto-filled</span>
+                      )}
+                    </div>
+                    {isEditable ? (
+                      k === 'containers' ? (
+                        <ContainerChipInput
+                          value={form.containers || ''}
+                          onChange={val => { setForm(p => ({...p, containers: val})); setError('') }}
+                        />
+                      ) : k === 'mode' ? (
+                        <select value={form[k] || ''} onChange={e => { setForm(p => ({...p, [k]: e.target.value})); setError('') }}
+                          className="w-full rounded-lg border border-[#e2e6ed] bg-white px-3 py-2 text-sm text-[#1a2233] focus:border-[#1a4fa0] focus:outline-none focus:ring-1 focus:ring-[#1a4fa0]">
+                          <option value="">Select mode</option>
+                          {['Sea FCL','Sea LCL','Air','Courier','Land'].map(m => <option key={m} value={m}>{m}</option>)}
+                        </select>
+                      ) : k === 'priority' ? (
+                        <select value={form[k] || ''} onChange={e => { setForm(p => ({...p, [k]: e.target.value})); setError('') }}
+                          className="w-full rounded-lg border border-[#e2e6ed] bg-white px-3 py-2 text-sm text-[#1a2233] focus:border-[#1a4fa0] focus:outline-none focus:ring-1 focus:ring-[#1a4fa0]">
+                          <option value="">Select priority</option>
+                          {['normal','high','urgent'].map(p => <option key={p} value={p}>{p}</option>)}
+                        </select>
+                      ) : k === 'eta' || k === 'be_date' ? (
+                        <input type="date" value={(form[k] || '').slice(0,10)} onChange={e => { setForm(p => ({...p, [k]: e.target.value})); setError('') }}
+                          className="w-full rounded-lg border border-[#e2e6ed] bg-white px-3 py-2 text-sm text-[#1a2233] focus:border-[#1a4fa0] focus:outline-none focus:ring-1 focus:ring-[#1a4fa0]" />
+                      ) : k === 'bg_required' || k === 'detention_risk' ? (
+                        <select value={form[k] || ''} onChange={e => { setForm(p => ({...p, [k]: e.target.value})); setError('') }}
+                          className="w-full rounded-lg border border-[#e2e6ed] bg-white px-3 py-2 text-sm text-[#1a2233] focus:border-[#1a4fa0] focus:outline-none focus:ring-1 focus:ring-[#1a4fa0]">
+                          <option value="">Select</option>
+                          <option value="Yes">Yes</option>
+                          <option value="No">No</option>
+                        </select>
+                      ) : (
+                        <input type="text" value={form[k] || ''} onChange={e => { setForm(p => ({...p, [k]: e.target.value})); setError('') }}
+                          className={`w-full rounded-lg border px-3 py-2 text-sm text-[#1a2233] focus:outline-none focus:ring-1 focus:ring-[#1a4fa0] ${wasJustFilled ? 'border-emerald-400 bg-emerald-50 focus:border-emerald-500' : 'border-[#e2e6ed] bg-white focus:border-[#1a4fa0]'}`} />
+                      )
                     ) : (
-                      renderFieldInput(k)
+                      <p className="text-sm text-[#1a2233] py-2">{form[k] || <span className="text-[#d0d6e0]">\u2014</span>}</p>
+                    )}
+                    {fieldConfidence[k] && (
+                      <span className={`inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full border w-fit ${
+                        fieldConfidence[k] === 'high' ? 'bg-[#f0fdf4] text-[#15803d] border-[#bbf7d0]' :
+                        fieldConfidence[k] === 'medium' ? 'bg-[#fffbeb] text-[#92400e] border-[#fde68a]' :
+                        'bg-[#fef2f2] text-[#991b1b] border-[#fecaca]'
+                      }`}>
+                        {fieldConfidence[k] === 'high' ? '\u25CF High confidence' :
+                         fieldConfidence[k] === 'medium' ? '\u25CF Medium \u2014 please verify' :
+                         '\u25CF Low confidence \u2014 check manually'}
+                      </span>
                     )}
                   </div>
-                  {k !== 'notes' && fieldConfidence[k] && (
-                    <div className="mt-1 flex items-center gap-1">
-                      <span className={classNames(
-                        'inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full border',
-                        fieldConfidence[k] === 'high'   ? 'bg-[#f0fdf4] text-[#15803d] border-[#bbf7d0]' :
-                        fieldConfidence[k] === 'medium' ? 'bg-[#fffbeb] text-[#92400e] border-[#fde68a]' :
-                                                          'bg-[#fef2f2] text-[#991b1b] border-[#fecaca]'
-                      )}>
-                        {fieldConfidence[k] === 'high'   ? '\u25CF High confidence' :
-                         fieldConfidence[k] === 'medium' ? '\u25CF Medium \u2014 please verify' :
-                                                            '\u25CF Low confidence \u2014 check manually'}
-                      </span>
-                    </div>
-                  )}
+                )
+              })}
+            </div>
+
+            {/* Right — notes + delay reason + field accountability */}
+            <div className="lg:col-span-1 flex flex-col gap-4">
+              {/* Delay reason */}
+              <div className="flex flex-col gap-1">
+                <p className="text-xs text-[#8a96a8] font-medium uppercase tracking-wide">Delay Reason</p>
+                <input type="text" value={form.delay_reason || ''} onChange={e => setForm(p => ({...p, delay_reason: e.target.value}))}
+                  placeholder="Enter delay reason..."
+                  className="w-full rounded-lg border border-[#e2e6ed] bg-white px-3 py-2 text-sm text-[#1a2233] focus:border-[#1a4fa0] focus:outline-none focus:ring-1 focus:ring-[#1a4fa0]" />
+              </div>
+
+              {/* Notes */}
+              <div className="flex flex-col rounded-lg border border-[#e2e6ed] bg-[#f8f9fb] overflow-hidden">
+                <div className="px-4 py-3 border-b border-[#e2e6ed] flex items-center justify-between">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-[#8a96a8]">Notes</p>
+                  <button
+                    type="button"
+                    onClick={handleAISummary}
+                    disabled={summarising}
+                    style={{
+                      padding:'2px 8px', borderRadius:'6px', fontSize:'11px', fontWeight:600,
+                      background: summarising ? '#f4f6f9' : '#eff6ff',
+                      color: summarising ? '#8a96a8' : '#1a4fa0',
+                      border:'1px solid #bfdbfe', cursor: summarising ? 'default' : 'pointer',
+                    }}
+                  >
+                    {summarising ? '...' : '✦ AI Summary'}
+                  </button>
                 </div>
-              )
-            })}
+                <div className="px-4 py-3">
+                  <textarea
+                    value={form.notes || ''}
+                    onChange={e => {
+                      setForm(p => ({ ...p, notes: e.target.value }))
+                      e.target.style.height = 'auto'
+                      e.target.style.height = e.target.scrollHeight + 'px'
+                    }}
+                    onInput={e => {
+                      e.target.style.height = 'auto'
+                      e.target.style.height = e.target.scrollHeight + 'px'
+                    }}
+                    ref={el => {
+                      if (el) {
+                        el.style.height = 'auto'
+                        el.style.height = el.scrollHeight + 'px'
+                      }
+                    }}
+                    placeholder="Add notes here..."
+                    rows={2}
+                    style={{ overflow:'hidden', minHeight:'48px' }}
+                    className="w-full text-sm text-[#1a2233] bg-transparent border-none outline-none resize-none leading-relaxed placeholder:text-[#d0d6e0] font-[inherit]"
+                  />
+                </div>
+              </div>
+
+              {/* Field Accountability — same as view mode */}
+              <div className="rounded-lg border border-[#e2e6ed] bg-white overflow-hidden">
+                <div className="px-4 py-3 border-b border-[#e2e6ed]">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-[#8a96a8]">Field Accountability</p>
+                </div>
+                <div className="max-h-[220px] overflow-y-auto">
+                  <table className="w-full table-fixed text-xs">
+                    <thead className="sticky top-0 z-10 bg-[#f8f9fb] text-[#8a96a8]">
+                      <tr>
+                        <th className="w-[40%] text-left px-3 py-2 font-semibold uppercase tracking-wide text-[10px]">Field</th>
+                        <th className="w-[30%] text-left px-3 py-2 font-semibold uppercase tracking-wide text-[10px]">By</th>
+                        <th className="w-[30%] text-left px-3 py-2 font-semibold uppercase tracking-wide text-[10px]">When</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {metaEntries.length ? metaEntries.slice(0, 10).map((m) => (
+                        <tr key={m.key} className="border-t border-[#e2e6ed]">
+                          <td className="px-3 py-1.5 text-[#4a5568] truncate text-[11px]">{m.label}</td>
+                          <td className="px-3 py-1.5 text-[#1a2233] font-semibold truncate text-[11px]">{profiles[m.by] || m.by}</td>
+                          <td className="px-3 py-1.5 text-[#8a96a8] text-[11px]">{formatAccountabilityWhen(m.ts)}</td>
+                        </tr>
+                      )) : (
+                        <tr><td colSpan={3} className="px-3 py-6 text-center text-[#8a96a8] text-[11px]">No updates logged yet</td></tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
           </div>
         )}
         </div>
@@ -936,6 +1177,7 @@ Write the summary:`
             currentUserName={currentUserName}
             user={null}
             profile={null}
+            onSaved={loadExtractedFields}
           />
         </div>
       )}

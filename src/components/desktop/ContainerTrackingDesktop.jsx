@@ -23,6 +23,7 @@ export default function ContainerTrackingDesktop({
   showToast,
   refreshAll,
   handleLDBRefresh,
+  handleChipClick,
 }) {
   return (
     <div style={{ display:'flex', flexDirection:'column', gap:'14px' }}>
@@ -113,29 +114,15 @@ export default function ContainerTrackingDesktop({
           <div style={{ background:'var(--color-background-primary)', border:'1.5px solid #d0d9e8', borderRadius:'12px', overflow:'hidden', minWidth:'700px' }}>
 
             {/* Column headers */}
-            <div style={{ display:'grid', gridTemplateColumns:'32px 100px 140px 180px 1fr 120px 130px 72px', gap:'10px', alignItems:'center', padding:'8px 16px', background:'#e8eef8', borderBottom:'0.5px solid var(--color-border-tertiary)' }}>
-              {['', 'Job', 'Client', 'Containers', 'Overview', 'Shipping line', 'Status', 'ETA'].map((h, i) => (
+            <div style={{ display:'grid', gridTemplateColumns:'32px 80px 110px 420px 1fr 200px 90px 55px', gap:'16px', alignItems:'center', padding:'8px 16px', background:'#e8eef8', borderBottom:'0.5px solid var(--color-border-tertiary)' }}>
+              {['', 'Job', 'Client', 'Containers', 'Overview', 'Customs', 'Shipping line', 'ETA'].map((h, i) => (
                 <div key={i} style={{ fontSize:'10px', fontWeight:500, textTransform:'uppercase', letterSpacing:'0.07em', color:'var(--color-text-secondary)' }}>{h}</div>
               ))}
             </div>
 
             {sortedJobCards.map(({ job, cnList }, jobIdx) => {
               const isExpanded   = !!expandedContainers[`job_${job.id}`]
-              const statuses     = cnList.map(cn => trackingData[cn]?.status || 'in_transit')
-              const hasDetention = cnList.some(cn => (trackingData[cn]?.freeDays ?? 99) <= 2)
-              const allDelivered = statuses.every(s => s === 'delivered')
-              const anyDelayed   = statuses.includes('delayed') || statuses.includes('customs_hold')
               const isLast       = jobIdx === sortedJobCards.length - 1
-
-              const jobBadge = hasDetention
-                ? { text:'⚠ Detention',      bg:'#FCEBEB', color:'#791F1F', border:'#F7C1C1' }
-                : allDelivered
-                ? { text:'Delivered',         bg:'#EAF3DE', color:'#27500A', border:'#C0DD97' }
-                : anyDelayed
-                ? { text:'Delayed / Hold',    bg:'#FCEBEB', color:'#791F1F', border:'#F7C1C1' }
-                : statuses.includes('at_cfs') || statuses.includes('arrived')
-                ? { text:'At CFS / Arrived',  bg:'#E1F5EE', color:'#085041', border:'#9FE1CB' }
-                : { text:'In Transit',        bg:'#FAEEDA', color:'#633806', border:'#FAC775' }
 
               const displayEta = job.eta
                 ? new Date(job.eta).toLocaleDateString('en-IN', { day:'2-digit', month:'short', timeZone:'Asia/Kolkata' })
@@ -152,8 +139,8 @@ export default function ContainerTrackingDesktop({
                   <div
                     onClick={() => setExpandedContainers(prev => ({ ...prev, [`job_${job.id}`]: !prev[`job_${job.id}`] }))}
                     style={{
-                      display:'grid', gridTemplateColumns:'32px 100px 140px 180px 1fr 120px 130px 72px',
-                      gap:'10px', alignItems:'center', padding:'11px 16px',
+                      display:'grid', gridTemplateColumns:'32px 80px 110px 420px 1fr 200px 90px 55px',
+                      gap:'16px', alignItems:'start', padding:'11px 16px',
                       cursor:'pointer', transition:'background 0.12s',
                       background: activeContainer?.jobId === job.id ? '#E6F1FB' : 'var(--color-background-primary)',
                     }}
@@ -165,71 +152,116 @@ export default function ContainerTrackingDesktop({
                     <span style={{ fontSize:'13px', fontWeight:500, color:'var(--color-text-primary)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{job.client}</span>
 
                     {/* Container chips */}
-                    <div style={{ display:'flex', gap:'4px', flexWrap:'wrap' }}>
-                      {cnList.slice(0, 3).map(cn => {
-                        const cnStatus = trackingData[cn]?.status || 'in_transit'
-                        const cnSt     = STATUS_STYLES_MAP[cnStatus] || STATUS_STYLES_MAP['in_transit']
-                        const isDet    = (trackingData[cn]?.freeDays ?? 99) <= 2
-                        return (
-                          <span
-                            key={cn}
-                            onClick={e => { e.stopPropagation(); setActiveContainer({ jobId: job.id, cn }); setDetailJob(job) }}
-                            style={{
-                              fontFamily:"'JetBrains Mono',monospace", fontSize:'10px', padding:'2px 7px',
-                              borderRadius:'5px', cursor:'pointer', transition:'all 0.12s',
-                              background: isDet ? '#FCEBEB' : cnSt.bg,
-                              color:      isDet ? '#A32D2D' : cnSt.color,
-                              border:     `0.5px solid ${isDet ? '#F7C1C1' : cnSt.border}`,
-                            }}
-                            onMouseEnter={e => { e.currentTarget.style.background = isDet ? '#A32D2D' : cnSt.color; e.currentTarget.style.color = 'white' }}
-                            onMouseLeave={e => { e.currentTarget.style.background = isDet ? '#FCEBEB' : cnSt.bg; e.currentTarget.style.color = isDet ? '#A32D2D' : cnSt.color }}
-                          >{isDet ? '⚠ ' : ''}{cn}</span>
+                    <div style={{ display:'flex', flexDirection:'column', gap:'4px' }}>
+                      {Array.from({ length: Math.ceil(cnList.length / 5) }, (_, rowIdx) =>
+                        cnList.slice(rowIdx * 5, rowIdx * 5 + 5)
+                      ).map((row, rowIdx) => (
+                        row.length > 0 && (
+                          <div key={rowIdx} style={{ display:'flex', gap:'4px' }}>
+                            {row.map(cn => {
+                              const cnStatus = trackingData[cn]?.status || 'in_transit'
+                              const cnSt     = STATUS_STYLES_MAP[cnStatus] || STATUS_STYLES_MAP['in_transit']
+                              const isDet    = (trackingData[cn]?.freeDays ?? 99) <= 2
+                              return (
+                                <span
+                                  key={cn}
+                                  onClick={e => { e.stopPropagation(); handleChipClick(job.id, cn, job) }}
+                                  style={{
+                                    ...(() => {
+                                      const isActiveChip = activeContainer?.jobId === job.id && activeContainer?.cn === cn
+                                      return {
+                                        fontFamily:"'JetBrains Mono',monospace", fontSize:'10px', padding:'2px 7px',
+                                        borderRadius:'5px', cursor:'pointer', transition:'all 0.12s',
+                                        background: isActiveChip ? '#185FA5' : isDet ? '#FCEBEB' : cnSt.bg,
+                                        color:      isActiveChip ? 'white'   : isDet ? '#A32D2D' : cnSt.color,
+                                        border:     `0.5px solid ${isActiveChip ? '#185FA5' : isDet ? '#F7C1C1' : cnSt.border}`,
+                                        whiteSpace: 'nowrap',
+                                      }
+                                    })(),
+                                  }}
+                                  onMouseEnter={e => {
+                                    if (!(activeContainer?.jobId === job.id && activeContainer?.cn === cn)) {
+                                      e.currentTarget.style.background = isDet ? '#A32D2D' : '#185FA5'
+                                      e.currentTarget.style.color = 'white'
+                                    }
+                                  }}
+                                  onMouseLeave={e => {
+                                    const isActiveChip = activeContainer?.jobId === job.id && activeContainer?.cn === cn
+                                    if (!isActiveChip) {
+                                      e.currentTarget.style.background = isDet ? '#FCEBEB' : cnSt.bg
+                                      e.currentTarget.style.color = isDet ? '#A32D2D' : cnSt.color
+                                    }
+                                  }}
+                                >{isDet ? '⚠ ' : ''}{cn}</span>
+                              )
+                            })}
+                          </div>
                         )
-                      })}
-                      {cnList.length > 3 && <span style={{ fontSize:'10px', color:'var(--color-text-secondary)', alignSelf:'center' }}>+{cnList.length - 3}</span>}
+                      ))}
                     </div>
 
-                    {/* Overview */}
-                    <div style={{ display:'flex', alignItems:'center', gap:'10px', overflow:'hidden' }}>
-                      {job.bl_no && (
-                        <span style={{ fontSize:'11px', color:'var(--color-text-secondary)', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>
-                          BL: <span style={{ fontFamily:"'JetBrains Mono',monospace", color:'var(--color-text-primary)', fontWeight:500 }}>{job.bl_no}</span>
+                    {/* Overview — BL + status summary */}
+                    <div style={{ display:'flex', flexDirection:'column', gap:'3px', overflow:'hidden' }}>
+                      <div style={{ display:'flex', alignItems:'center', gap:'8px' }}>
+                        {job.bl_no && (
+                          <span style={{ fontSize:'11px', color:'var(--color-text-secondary)', whiteSpace:'nowrap' }}>
+                            BL: <span style={{ fontFamily:"'JetBrains Mono',monospace", color:'var(--color-text-primary)', fontWeight:500 }}>{job.bl_no}</span>
+                          </span>
+                        )}
+                        {job.bl_no && <span style={{ color:'var(--color-border-tertiary)', fontSize:'12px' }}>|</span>}
+                        <span style={{ fontSize:'11px', color:'var(--color-text-secondary)', whiteSpace:'nowrap' }}>
+                          {(() => {
+                            const counts = {}
+                            cnList.forEach(cn => {
+                              const s = trackingData[cn]?.status || 'in_transit'
+                              const label =
+                                s === 'arrived' || s === 'at_cfs' ? 'arrived' :
+                                s === 'delivered' || s === 'empty_returned' ? 'delivered' :
+                                s === 'customs_hold' || s === 'delayed' ? 'on hold' :
+                                'in transit'
+                              counts[label] = (counts[label] || 0) + 1
+                            })
+                            return Object.entries(counts).map(([l, c]) => `${c} ${l}`).join(' \u00B7 ')
+                          })()}
                         </span>
-                      )}
-                      {job.bl_no && cnList.length > 0 && (
-                        <span style={{ color:'var(--color-border-tertiary)', fontSize:'12px', flexShrink:0 }}>|</span>
-                      )}
-                      <span style={{ fontSize:'11px', color:'var(--color-text-secondary)', whiteSpace:'nowrap', flexShrink:0 }}>
-                        {(() => {
-                          const counts = {}
-                          cnList.forEach(cn => {
-                            const s = trackingData[cn]?.status || 'in_transit'
-                            const label =
-                              s === 'arrived' || s === 'at_cfs' ? 'arrived' :
-                              s === 'delivered' || s === 'empty_returned' ? 'delivered' :
-                              s === 'customs_hold' || s === 'delayed' ? 'on hold' :
-                              'in transit'
-                            counts[label] = (counts[label] || 0) + 1
-                          })
-                          return Object.entries(counts)
-                            .map(([label, count]) => `${count} ${label}`)
-                            .join(' · ')
-                        })()}
-                      </span>
+                      </div>
+                    </div>
+
+                    {/* Customs checkpoint strip */}
+                    <div style={{ display:'flex', alignItems:'center', gap:'6px' }}>
+                      {[
+                        { label:'BE Filed', done: !!(job.be_no || job.stage >= 3) },
+                        { label:'Exam',     done: job.stage >= 5 },
+                        { label:'OOC',      done: job.stage >= 7 },
+                      ].map((c, i) => (
+                        <div key={i} style={{ display:'flex', alignItems:'center', gap:'3px' }}>
+                          <span style={{
+                            width:'13px', height:'13px', borderRadius:'50%', flexShrink:0,
+                            display:'flex', alignItems:'center', justifyContent:'center',
+                            fontSize:'8px', fontWeight:700,
+                            background: c.done ? '#1D9E75' : '#f4f6f9',
+                            color: c.done ? 'white' : '#8a96a8',
+                            border: `0.5px solid ${c.done ? '#1D9E75' : '#d0d6e0'}`,
+                          }}>
+                            {c.done ? '\u2713' : '\u25CB'}
+                          </span>
+<span style={{ fontSize:'9px', color: c.done ? '#1a2233' : '#8a96a8', whiteSpace:'nowrap' }}>
+            {c.label}
+          </span>
+          {i < 2 && <span style={{ fontSize:'9px', color:'#d0d6e0', margin:'0 1px' }}>›</span>}
+                        </div>
+                      ))}
                     </div>
 
                     <span style={{ fontSize:'12px', color:'var(--color-text-secondary)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{job.shipping_line || '—'}</span>
-                    <span style={{ display:'inline-flex', alignItems:'center', padding:'3px 10px', borderRadius:'9999px', fontSize:'11px', fontWeight:500, border:`0.5px solid ${jobBadge.border}`, background:jobBadge.bg, color:jobBadge.color, whiteSpace:'nowrap' }}>
-                      {jobBadge.text}
-                    </span>
                     <span style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:'12px', fontWeight:500, color:etaColor }}>{displayEta}</span>
                   </div>
 
                   {/* Expanded container rows */}
                   {isExpanded && (
                     <div style={{ borderTop:'2px solid var(--color-background-secondary)', background:'#f0f4fb' }}>
-                      <div style={{ display:'grid', gridTemplateColumns:'40px 180px 130px 1fr 100px 72px 80px', gap:'10px', alignItems:'center', padding:'5px 16px 5px 42px', borderBottom:'0.5px solid #dde3ef', background:'#e8eef8' }}>
-                        {['#', 'Container', 'Status', 'Progress', 'Location', 'Free days', ''].map((h, i) => (
+                      <div style={{ display:'grid', gridTemplateColumns:'40px 180px 130px 1fr 120px 80px', gap:'10px', alignItems:'center', padding:'5px 16px 5px 42px', borderBottom:'0.5px solid #dde3ef', background:'#e8eef8' }}>
+                        {['#', 'Container', 'Status', 'Progress', 'Location', ''].map((h, i) => (
                           <div key={i} style={{ fontSize:'9px', fontWeight:500, textTransform:'uppercase', letterSpacing:'0.07em', color:'var(--color-text-secondary)' }}>{h}</div>
                         ))}
                       </div>
@@ -246,9 +278,16 @@ export default function ContainerTrackingDesktop({
                         return (
                             <div
                               key={cn}
-                              onClick={() => { setActiveContainer(prev => prev?.jobId === job.id && prev?.cn === cn ? null : { jobId: job.id, cn }); setDetailJob(job) }}
+                              onClick={() => {
+                                if (activeContainer?.jobId === job.id && activeContainer?.cn === cn) {
+                                  handleChipClick(job.id, cn, job)
+                                } else {
+                                  setActiveContainer({ jobId: job.id, cn })
+                                  setDetailJob(job)
+                                }
+                              }}
                               style={{
-                                display:'grid', gridTemplateColumns:'40px 180px 130px 1fr 100px 72px 80px',
+                                display:'grid', gridTemplateColumns:'40px 180px 130px 1fr 120px 80px',
                                 gap:'10px', alignItems:'center', padding:'9px 16px 9px 42px',
                                 borderBottom: isLastCn ? 'none' : '0.5px solid #dde3ef',
                                 borderLeft: `3px solid ${isActive ? '#185FA5' : 'transparent'}`,
@@ -273,19 +312,38 @@ export default function ContainerTrackingDesktop({
                               <span style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:'12px', fontWeight:500, color:'var(--color-text-primary)' }}>{cn}</span>
                               <span style={{ fontSize:'10px', color:'#185FA5', opacity:0.7 }}>View details →</span>
                             </div>
-                            <span style={{ display:'inline-flex', alignItems:'center', padding:'2px 8px', borderRadius:'9999px', fontSize:'10px', fontWeight:500, border:`0.5px solid ${isDetention ? '#F7C1C1' : st.border}`, background: isDetention ? '#FCEBEB' : st.bg, color: isDetention ? '#791F1F' : st.color, whiteSpace:'nowrap' }}>
+                            <span style={{ display:'inline-flex', alignItems:'center', padding:'0px 7px', borderRadius:'9999px', fontSize:'10px', fontWeight:500, border:`0.5px solid ${isDetention ? '#F7C1C1' : st.border}`, background: isDetention ? '#FCEBEB' : st.bg, color: isDetention ? '#791F1F' : st.color, whiteSpace:'nowrap', height:'18px', width:'fit-content', alignSelf:'flex-start' }}>
                               {isDetention ? '⚠ Detention' : (td.statusText || 'Not Updated')}
                             </span>
-                            <div>
-                              <div style={{ height:'4px', background:'var(--color-border-tertiary)', borderRadius:'4px', overflow:'hidden', marginBottom:'2px' }}>
-                                <div style={{ height:'100%', borderRadius:'4px', width:`${pct}%`, background:pColor }} />
+                            <div style={{ display:'flex', flexDirection:'column', gap:'3px' }}>
+                              {/* Traffic light + free days */}
+                              <div style={{ display:'flex', alignItems:'center', gap:'5px' }}>
+                                <span style={{
+                                  width:'8px', height:'8px', borderRadius:'50%', flexShrink:0,
+                                  background: isDetention ? '#E24B4A' :
+                                    td.freeDays != null && td.freeDays <= 7 ? '#EF9F27' :
+                                    '#1D9E75'
+                                }} />
+                                <span style={{ fontSize:'11px', fontWeight:500,
+                                  color: isDetention ? '#A32D2D' :
+                                    td.freeDays != null && td.freeDays <= 7 ? '#854F0B' :
+                                    '#27500A'
+                                }}>
+                                  {td.freeDays != null
+                                    ? isDetention ? `⚠ ${td.freeDays}d free left`
+                                    : `${td.freeDays}d free`
+                                    : 'Free days —'}
+                                </span>
                               </div>
-                              <div style={{ fontSize:'10px', color:pColor, fontWeight:500 }}>{pct}%</div>
+                              {/* Location + days at port */}
+                              <div style={{ fontSize:'10px', color:'var(--color-text-secondary)', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>
+                                {td.currentLocation
+                                  ? `${td.currentLocation.split('/').pop()?.trim() || td.currentLocation}`
+                                  : '—'}
+                                {td.portIn && ` · ${Math.floor((Date.now() - new Date(td.portIn).getTime()) / 86400000)}d at port`}
+                              </div>
                             </div>
                             <span style={{ fontSize:'11px', color:'var(--color-text-secondary)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{td.currentLocation || '—'}</span>
-                            <span style={{ fontSize:'12px', fontWeight:500, color: isDetention ? '#A32D2D' : td.freeDays != null && td.freeDays <= 5 ? '#854F0B' : 'var(--color-text-secondary)' }}>
-                              {td.freeDays != null ? `${td.freeDays}d` : '—'}
-                            </span>
                             <div style={{ display:'flex', gap:'4px' }}>
                               <button
                                 onClick={async e => { e.stopPropagation(); setActiveContainer({ jobId: job.id, cn }); setDetailJob(job); await handleLDBRefresh(job, cn) }}

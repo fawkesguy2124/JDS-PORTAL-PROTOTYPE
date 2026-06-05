@@ -120,7 +120,7 @@ export default function ContainerTrackingMobile({
           <div key={job.id} style={{ background:'white', border:'1.5px solid #e2e6ed', borderRadius:'14px', overflow:'hidden', position:'relative', boxShadow:'0 1px 4px rgba(0,0,0,0.05)' }}>
 
             {/* Top stripe */}
-            <div style={{ position:'absolute', top:0, left:0, right:0, height:'3px', background:stripeColor }} />
+            <div style={{ position:'absolute', top:0, left:0, right:0, height:'4px', background: hasDetention ? '#E24B4A' : allDelivered ? '#1D9E75' : anyDelayed ? '#E24B4A' : statuses.includes('at_cfs') || statuses.includes('arrived') ? '#0F6E56' : '#EF9F27' }} />
 
             {/* Job header */}
             <div
@@ -143,6 +143,23 @@ export default function ContainerTrackingMobile({
                     {cnList.length} container{cnList.length !== 1 ? 's' : ''} {isExpanded ? '▲' : '▼'}
                   </span>
                 </div>
+              </div>
+
+              {/* Customs checkpoints */}
+              <div style={{ display:'flex', alignItems:'center', gap:'8px', marginBottom:'10px' }}>
+                {[
+                  { label:'BE Filed', done: !!(job.be_no || job.stage >= 3) },
+                  { label:'Exam',     done: job.stage >= 5 },
+                  { label:'OOC',      done: job.stage >= 7 },
+                ].map((c, i) => (
+                  <div key={i} style={{ display:'flex', alignItems:'center', gap:'4px' }}>
+                    <div style={{ width:'14px', height:'14px', borderRadius:'50%', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'8px', fontWeight:700, background: c.done ? '#1D9E75' : '#f4f6f9', color: c.done ? 'white' : '#8a96a8', border:`0.5px solid ${c.done ? '#1D9E75' : '#d0d6e0'}` }}>
+                      {c.done ? '✓' : '○'}
+                    </div>
+                    <span style={{ fontSize:'11px', color: c.done ? '#1a2233' : '#8a96a8' }}>{c.label}</span>
+                    {i < 2 && <span style={{ fontSize:'10px', color:'#d0d6e0' }}>›</span>}
+                  </div>
+                ))}
               </div>
 
               {/* ETA + Details */}
@@ -200,14 +217,17 @@ export default function ContainerTrackingMobile({
                         </span>
                       </div>
 
-                      {/* Progress bar */}
-                      <div style={{ height:'5px', background:'#e2e6ed', borderRadius:'4px', overflow:'hidden', marginBottom:'5px' }}>
-                        <div style={{ height:'100%', borderRadius:'4px', width:`${pct}%`, background:pColor }} />
-                      </div>
-                      <div style={{ display:'flex', justifyContent:'space-between', fontSize:'10px', color:'#8a96a8', marginBottom:'12px' }}>
-                        <span>Loaded</span>
-                        <span style={{ color:pColor, fontWeight:600 }}>{pct}%</span>
-                        <span>Discharged</span>
+                      {/* Traffic light + free days */}
+                      <div style={{ display:'flex', alignItems:'center', gap:'8px', marginBottom:'12px', padding:'8px 10px', borderRadius:'8px', background: isDetention ? '#FCEBEB' : td.freeDays != null && td.freeDays <= 7 ? '#FAEEDA' : '#EAF3DE', border:`0.5px solid ${isDetention ? '#F7C1C1' : td.freeDays != null && td.freeDays <= 7 ? '#FAC775' : '#C0DD97'}` }}>
+                        <div style={{ width:'10px', height:'10px', borderRadius:'50%', flexShrink:0, background: isDetention ? '#E24B4A' : td.freeDays != null && td.freeDays <= 7 ? '#EF9F27' : '#1D9E75' }} />
+                        <span style={{ fontSize:'13px', fontWeight:500, color: isDetention ? '#A32D2D' : td.freeDays != null && td.freeDays <= 7 ? '#854F0B' : '#27500A' }}>
+                          {td.freeDays != null ? `${td.freeDays} free days remaining` : 'Free days not set'}
+                        </span>
+                        {td.currentLocation && (
+                          <span style={{ fontSize:'11px', color:'var(--color-text-secondary)', marginLeft:'auto', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', maxWidth:'120px' }}>
+                            {td.currentLocation.split('/').pop()?.trim() || td.currentLocation}
+                          </span>
+                        )}
                       </div>
 
                       {/* Fields 2-col grid */}

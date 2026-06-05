@@ -392,6 +392,13 @@ export default function AdminDashboard() {
       ])
       if (!mounted) return
       setJobs(jobsData ?? [])
+      // Restore selected job from URL
+      const params = new URLSearchParams(window.location.search)
+      const jobId = params.get('jobId')
+      if (jobId && jobsData) {
+        const found = jobsData.find(j => j.id === jobId)
+        if (found) setSelectedJob(found)
+      }
       const map = {}
       ;(profilesData ?? []).forEach((p) => { map[p.id] = p.name })
       setProfiles(map)
@@ -556,7 +563,12 @@ export default function AdminDashboard() {
     searchQuery: search, setSearchQuery: setSearch,
     stageFilter: filterStage, setStageFilter: setFilterStage,
     priorityFilter: filterPriority, setPriorityFilter: setFilterPriority,
-    onOpenJob: setSelectedJob,
+    onOpenJob: (job) => {
+      setSelectedJob(job)
+      const params = new URLSearchParams(window.location.search)
+      params.set('jobId', job.id)
+      window.history.replaceState({}, '', `${window.location.pathname}?${params.toString()}${window.location.hash}`)
+    },
     getStageName,
     canCreateJob: true,
     onCreateJob: () => setShowCreateJob(true),
@@ -676,14 +688,25 @@ export default function AdminDashboard() {
               <JobDetailView
                 job={selectedJob} profiles={profiles} currentUserName={currentUserName}
                 isAdmin={isAdmin} canUpdateStage={canUpdateStage}
-                onBack={() => setSelectedJob(null)} onSaved={refreshJobs} toast={showToast}
+                onBack={() => {
+                  setSelectedJob(null)
+                  const params = new URLSearchParams(window.location.search)
+                  params.delete('jobId')
+                  window.history.replaceState({}, '', `${window.location.pathname}?${params.toString()}`)
+                  window.history.replaceState({}, '', window.location.pathname + '?' + params.toString())
+                }} onSaved={refreshJobs} toast={showToast}
                 onDelete={() => handleDeleteJob(selectedJob)}
               />
             ) : (
               <ControlTowerSection
                 jobs={jobs} profiles={profiles} currentUserName={currentUserName}
                 selectedJob={selectedJob}
-                onOpenJob={setSelectedJob}
+                onOpenJob={(job) => {
+                  setSelectedJob(job)
+                  const params = new URLSearchParams(window.location.search)
+                  params.set('jobId', job.id)
+                  window.history.replaceState({}, '', `${window.location.pathname}?${params.toString()}${window.location.hash}`)
+                }}
                 onStageFilter={(stage) => { setFilterStage(stage); navigate('/admin?tab=jobs') }}
                 showToast={showToast}
               />
@@ -695,7 +718,13 @@ export default function AdminDashboard() {
               <JobDetailView
                 job={selectedJob} profiles={profiles} currentUserName={currentUserName}
                 isAdmin={isAdmin} canUpdateStage={canUpdateStage}
-                onBack={() => setSelectedJob(null)} onSaved={refreshJobs} toast={showToast}
+                onBack={() => {
+                  setSelectedJob(null)
+                  const params = new URLSearchParams(window.location.search)
+                  params.delete('jobId')
+                  window.history.replaceState({}, '', `${window.location.pathname}?${params.toString()}`)
+                  window.history.replaceState({}, '', window.location.pathname + '?' + params.toString())
+                }} onSaved={refreshJobs} toast={showToast}
                 onDelete={() => handleDeleteJob(selectedJob)}
               />
             ) : (
@@ -706,7 +735,12 @@ export default function AdminDashboard() {
                     searchQuery={search} setSearchQuery={setSearch}
                     stageFilter={filterStage} setStageFilter={setFilterStage}
                     priorityFilter={filterPriority} setPriorityFilter={setFilterPriority}
-                    onOpenJob={setSelectedJob}
+                    onOpenJob={(job) => {
+                      setSelectedJob(job)
+                      const params = new URLSearchParams(window.location.search)
+                      params.set('jobId', job.id)
+                      window.history.replaceState({}, '', `${window.location.pathname}?${params.toString()}${window.location.hash}`)
+                    }}
                     getStageName={getStageName}
                     canCreateJob={true}
                     onCreateJob={() => setShowCreateJob(true)}
@@ -719,7 +753,12 @@ export default function AdminDashboard() {
                     filteredJobs={filteredJobs}
                     loadingJobs={loadingJobs}
                     selectedJob={selectedJob}
-                    onOpenJob={setSelectedJob}
+                    onOpenJob={(job) => {
+                      setSelectedJob(job)
+                      const params = new URLSearchParams(window.location.search)
+                      params.set('jobId', job.id)
+                      window.history.replaceState({}, '', `${window.location.pathname}?${params.toString()}${window.location.hash}`)
+                    }}
                     profiles={profiles}
                     currentUserName={currentUserName}
                     isAdmin={isAdmin}
