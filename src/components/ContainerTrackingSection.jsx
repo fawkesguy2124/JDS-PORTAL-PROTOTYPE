@@ -33,7 +33,7 @@ function JobDetailPanel({ job, trackingData, onClose, onUpdate, onAddEvent, onRe
   }, [activeContainer])
 
   const formatD  = (d) => d ? new Date(d).toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' }) : '\u2014'
-  const formatDT = (d) => d ? new Date(d).toLocaleString('en-IN', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' }) : '\u2014'
+  const formatDT = (d) => d ? new Date(d).toLocaleString('en-IN', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit', timeZone:'Asia/Kolkata' }) : '\u2014'
 
   const STATUS_STYLES_MAP = {
     in_transit:     { bg:'#fffbeb', color:'#92400e', border:'#fde68a' },
@@ -195,16 +195,16 @@ function JobDetailPanel({ job, trackingData, onClose, onUpdate, onAddEvent, onRe
               { label:'Current Location', value: td.currentLocation, full: true },
               { label:'Terminal',         value: td.terminal, full: true },
               { label:'Vessel',           value: td.vessel || job.vessel },
-              { label:'Vessel Arrival',   value: formatD(td.eta || job.eta) },
+              { label:'Vessel Arrival',   value: formatDT(td.eta || job.eta) },
               { label:'Shipping Line',    value: td.shippingLineLdb || job.shipping_line },
               { label:'Vessel IMO',       value: td.vesselImo },
               { label:'Size',             value: td.containerSize },
               { label:'Laden/Empty',      value: td.isEmpty === true ? 'Empty' : td.isEmpty === false ? 'Full / Laden' : null },
-              { label:'Port In',          value: formatD(td.portIn) },
-              { label:'Port Out',         value: formatD(td.portOut) },
+              { label:'Port In',          value: formatDT(td.portIn) },
+              { label:'Port Out',         value: formatDT(td.portOut) },
               { label:'Est. Dwell End',   value: td.expectedPortOut ? `~${formatD(td.expectedPortOut)}` : null,
                 color: '#8a96a8' },
-              { label:'CFS Gate In',      value: formatD(td.cfsGateIn) },
+              { label:'CFS Gate In',      value: formatDT(td.cfsGateIn) },
               { label:'DPD',              value: td.dpdFlag ? '\u2713 Yes' : td.dpdFlag === false ? 'No' : null,
                 color: td.dpdFlag ? '#15803d' : '#8a96a8' },
               { label:'Free Days Left',   value: td.freeDays != null ? `${td.freeDays} days${td.freeDays <= 2 ? ' \u26a0' : ''}` : null,
@@ -242,7 +242,7 @@ function JobDetailPanel({ job, trackingData, onClose, onUpdate, onAddEvent, onRe
                     <div style={{ fontSize:'12px', fontWeight:600, color:'#1a2233' }}>{m.description}</div>
                     <div style={{ fontSize:'11px', color:'#8a96a8', marginTop:'1px' }}>
                       {m.location && `${m.location} \u00b7 `}
-                      {m.date ? new Date(m.date).toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' }) : ''}
+                      {m.date ? new Date(m.date).toLocaleString('en-IN', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit', timeZone:'Asia/Kolkata' }) : ''}
                       {m.transportMode ? ` \u00b7 ${m.transportMode}` : ''}
                     </div>
                   </div>
