@@ -26,6 +26,8 @@ function JobDetailPanel({ job, trackingData, onClose, onUpdate, onAddEvent, onRe
   const [activeCnIdx, setActiveCnIdx] = useState(initialIdx)
   const tabsRef = useRef(null)
   const activeTabRef = useRef(null)
+  const touchStartX = useRef(null)
+  const touchStartY = useRef(null)
   const [closing, setClosing] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
   const isMobile = window.innerWidth < 768
@@ -121,16 +123,32 @@ function JobDetailPanel({ job, trackingData, onClose, onUpdate, onAddEvent, onRe
         @keyframes spin { from { transform:rotate(0deg) } to { transform:rotate(360deg) } }
       `}</style>
 
-      <div style={{
-        position:'fixed', right:0, top:0, bottom:0, width:'min(680px,100vw)',
-        background:'#ffffff',
-        borderLeft:'1.5px solid #d0d9e8',
-        zIndex:300, display:'flex', flexDirection:'column',
-        boxShadow:'-16px 0 48px rgba(0,0,0,0.18)',
-        animation: closing
-          ? 'slideOutRight 0.22s cubic-bezier(0.4,0,1,1) forwards'
-          : 'slideInRight 0.25s cubic-bezier(0.16,1,0.3,1)',
-      }}>
+      <div
+        style={{
+          position:'fixed', right:0, top:0, bottom:0, width:'min(680px,100vw)',
+          background:'#ffffff',
+          borderLeft:'1.5px solid #d0d9e8',
+          zIndex:300, display:'flex', flexDirection:'column',
+          boxShadow:'-16px 0 48px rgba(0,0,0,0.18)',
+          animation: closing
+            ? 'slideOutRight 0.22s cubic-bezier(0.4,0,1,1) forwards'
+            : 'slideInRight 0.25s cubic-bezier(0.16,1,0.3,1)',
+        }}
+        onTouchStart={e => {
+          touchStartX.current = e.touches[0].clientX
+          touchStartY.current = e.touches[0].clientY
+        }}
+        onTouchEnd={e => {
+          if (touchStartX.current === null) return
+          const deltaX = e.changedTouches[0].clientX - touchStartX.current
+          const deltaY = Math.abs(e.changedTouches[0].clientY - touchStartY.current)
+          if (deltaX > 80 && deltaX > deltaY * 1.5) {
+            handleClose()
+          }
+          touchStartX.current = null
+          touchStartY.current = null
+        }}
+      >
 
         {/* ── Header — status color ── */}
         <div style={{ padding:'14px 16px', background:headerBg, display:'flex', alignItems:'flex-start', gap:'10px', flexShrink:0 }}>
