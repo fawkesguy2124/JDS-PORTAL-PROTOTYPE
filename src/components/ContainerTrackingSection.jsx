@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '../supabase'
-import { updateContainerStatus, addMilestone, checkContainerStatus } from '../services/trackingService'
+import { updateContainerStatus, addMilestone } from '../services/trackingService'
+import { refreshAllContainers, fetchLDBTracking, persistLDBTracking } from '../services/tracking/ldbProvider'
 import ContainerTrackingMobile  from './mobile/ContainerTrackingMobile'
 import ContainerTrackingDesktop from './desktop/ContainerTrackingDesktop'
 
@@ -858,18 +859,19 @@ function ContainerTrackingSection({ showToast, jobs }) {
   const handleOpenUpdate = async (job, cn) => {
     await ensureTrackingRow(job, cn)
     const carrier = job.shipping_line || ''
-    const supported = ['MSC','ONE','Evergreen','CMA-CGM','CMA CGM','Hapag-Lloyd','Hapag Lloyd']
 
-    if (supported.some(s => carrier.toLowerCase().includes(s.toLowerCase()))) {
-      try {
-        showToast(`Fetching live status for ${cn}...`, 'info')
-        await checkContainerStatus(cn, carrier)
+    try {
+      showToast(`Fetching LDB status for ${cn}...`, 'info')
+      const result = await fetchLDBTracking(cn)
+      if (result.ok) {
+        await persistLDBTracking(cn, job, result.data)
         await refreshTracking()
-        showToast(`${cn} updated from ${carrier}`, 'success')
-        return
-      } catch (e) {
-        showToast(`Live fetch failed: ${e.message}. Opening manual update.`, 'error')
+        showToast(`${cn} updated from LDB`, 'success')
+      } else {
+        showToast(result.userMessage || `No LDB data for ${cn}`, 'info')
       }
+    } catch (e) {
+      showToast(`LDB unavailable for ${cn}`, 'info')
     }
 
     const td = trackingData[cn] || {}
@@ -955,20 +957,31 @@ function ContainerTrackingSection({ showToast, jobs }) {
 
   // ── Shared refresh handler ────────────────────────────────────────
   const handleRefreshAll = async () => {
-    showToast('Refreshing all containers...', 'info')
-    const supported = ['MSC','ONE','Evergreen','CMA-CGM','Hapag-Lloyd']
-    const tasks = allJobCards.flatMap(({ job, cnList }) =>
-      cnList
-        .filter(() => supported.some(s => (job.shipping_line||'').toLowerCase().includes(s.toLowerCase())))
-        .map(cn => checkContainerStatus(cn, job.shipping_line).catch(e => ({ error: e.message, cn })))
-    )
-    const results = await Promise.allSettled(tasks)
-    const failed  = results.filter(r => r.status === 'rejected').length
-    await refreshTracking()
-    showToast(
-      failed > 0 ? `Refreshed. ${failed} container(s) failed.` : `All containers refreshed.`,
-      failed > 0 ? 'error' : 'success'
-    )
+    showToast('Fetching live tracking from LDB...', 'info')
+    try {
+      const totals = await refreshAllContainers(
+        jobs,
+        trackingData,
+        (msg) => showToast(msg, 'info'),
+      )
+      await refreshTracking()
+      if (totals.updated === 0 && totals.failed === 0) {
+        showToast(`All containers are up to date (cached within 6 hours).`, 'info')
+      } else if (totals.failed > 0) {
+        showToast(
+          `Updated ${totals.updated}, skipped ${totals.skipped}, failed ${totals.failed} container(s). Check console for details.`,
+          'error',
+        )
+      } else {
+        showToast(
+          `LDB refresh complete. ${totals.updated} updated, ${totals.skipped} already current.`,
+          'success',
+        )
+      }
+    } catch (err) {
+      console.error('[LDB] handleRefreshAll error:', err)
+      showToast('LDB refresh failed. Check your connection.', 'error')
+    }
   }
 
   // ── Shared props passed to both views ────────────────────────────
