@@ -44,17 +44,24 @@ export default function ContainerTrackingMobile({
       </div>
 
       {/* ── FILTERS ROW ── */}
-      <div style={{ display:'flex', gap:'8px' }}>
-        <select value={filterLine} onChange={e => setFilterLine(e.target.value)}
-          style={{ flex:1, height:'40px', padding:'0 10px', border:'1.5px solid #e2e6ed', borderRadius:'8px', fontSize:'14px', color:'#4a5568', background:'white', outline:'none' }}>
-          <option value="">All Lines</option>
-          {carriers.map(c => <option key={c} value={c}>{c}</option>)}
-        </select>
-        <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
-          style={{ flex:1, height:'40px', padding:'0 10px', border:'1.5px solid #e2e6ed', borderRadius:'8px', fontSize:'14px', color:'#4a5568', background:'white', outline:'none' }}>
-          <option value="">All Status</option>
-          {STATUS_OPTIONS.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
-        </select>
+      <div style={{ display:'flex', gap:'6px', overflowX:'auto', scrollbarWidth:'none', paddingBottom:'2px' }}>
+        {[
+          { label:'All',        value:'' },
+          { label:'In Transit', value:'in_transit' },
+          { label:'At CFS',     value:'at_cfs' },
+          { label:'Arrived',    value:'arrived' },
+        ].map(p => (
+          <button
+            key={p.value}
+            onClick={() => setFilterStatus(p.value)}
+            style={{
+              padding:'6px 14px', borderRadius:'9999px', fontSize:'13px', fontWeight:500, cursor:'pointer', flexShrink:0, whiteSpace:'nowrap',
+              border: filterStatus === p.value ? '1.5px solid #185FA5' : '1.5px solid var(--color-border-tertiary)',
+              background: filterStatus === p.value ? '#185FA5' : 'var(--color-background-primary)',
+              color: filterStatus === p.value ? 'white' : 'var(--color-text-secondary)',
+            }}
+          >{p.label}</button>
+        ))}
         <button
           onClick={refreshAll}
           style={{ height:'40px', width:'44px', background:'#1a4fa0', border:'none', borderRadius:'8px', color:'white', fontSize:'16px', cursor:'pointer', flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center' }}

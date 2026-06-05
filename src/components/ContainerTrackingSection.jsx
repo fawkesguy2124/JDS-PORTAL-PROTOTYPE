@@ -254,40 +254,32 @@ function JobDetailPanel({ job, trackingData, onClose, onUpdate, onAddEvent, onRe
         </div>
 
         {/* Action buttons — pinned to bottom */}
-        <div style={{ padding:'12px 18px', borderTop:'1.5px solid #e2e6ed', display:'flex', gap:'8px', flexShrink:0, background:'white' }}>
+        <div style={{ padding:'10px 14px', borderTop:'0.5px solid var(--color-border-tertiary)', display:'flex', gap:'6px', flexShrink:0, background:'var(--color-background-primary)' }}>
           <button
             onClick={() => onRefresh(job, cn)}
-            style={{ flex:1, padding:'9px 0', background:'#f0f4fb', border:'1.5px solid #bfdbfe', color:'#1a4fa0', borderRadius:'8px', fontSize:'12px', fontWeight:600, cursor:'pointer' }}
-            onMouseEnter={e => { e.currentTarget.style.background='#1a4fa0'; e.currentTarget.style.color='white' }}
-            onMouseLeave={e => { e.currentTarget.style.background='#f0f4fb'; e.currentTarget.style.color='#1a4fa0' }}
+            style={{ width:'36px', height:'36px', borderRadius:'8px', border:'0.5px solid var(--color-border-tertiary)', background:'var(--color-background-primary)', color:'var(--color-text-secondary)', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'16px', flexShrink:0 }}
+            onMouseEnter={e => { e.currentTarget.style.background='#185FA5'; e.currentTarget.style.color='white'; e.currentTarget.style.borderColor='#185FA5' }}
+            onMouseLeave={e => { e.currentTarget.style.background='var(--color-background-primary)'; e.currentTarget.style.color='var(--color-text-secondary)'; e.currentTarget.style.borderColor='var(--color-border-tertiary)' }}
             title="Refresh"
-          >
-            ↻
-          </button>
+          >↻</button>
           <button
             onClick={() => onUpdate(job, cn)}
-            style={{ flex:1, padding:'9px 0', background:'#e8eef8', border:'1.5px solid #bfdbfe', color:'#1a4fa0', borderRadius:'8px', fontSize:'12px', fontWeight:600, cursor:'pointer' }}
-            onMouseEnter={e => { e.currentTarget.style.background='#1a4fa0'; e.currentTarget.style.color='white' }}
-            onMouseLeave={e => { e.currentTarget.style.background='#e8eef8'; e.currentTarget.style.color='#1a4fa0' }}
-          >
-            ✎ Update
-          </button>
+            style={{ flex:1, padding:'9px 0', background:'#E6F1FB', border:'0.5px solid #B5D4F4', color:'#185FA5', borderRadius:'8px', fontSize:'13px', fontWeight:500, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:'5px' }}
+            onMouseEnter={e => { e.currentTarget.style.background='#185FA5'; e.currentTarget.style.color='white' }}
+            onMouseLeave={e => { e.currentTarget.style.background='#E6F1FB'; e.currentTarget.style.color='#185FA5' }}
+          >✎ Update</button>
           <button
             onClick={() => onAddEvent(job, cn)}
-            style={{ flex:1, padding:'9px 0', background:'#f8f9fb', border:'1.5px solid #e2e6ed', color:'#4a5568', borderRadius:'8px', fontSize:'12px', fontWeight:600, cursor:'pointer' }}
-            onMouseEnter={e => { e.currentTarget.style.borderColor='#1a4fa0'; e.currentTarget.style.color='#1a4fa0' }}
-            onMouseLeave={e => { e.currentTarget.style.borderColor='#e2e6ed'; e.currentTarget.style.color='#4a5568' }}
-          >
-            + Add Event
-          </button>
+            style={{ flex:1, padding:'9px 0', background:'var(--color-background-primary)', border:'0.5px solid var(--color-border-tertiary)', color:'var(--color-text-secondary)', borderRadius:'8px', fontSize:'13px', fontWeight:500, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:'5px' }}
+            onMouseEnter={e => { e.currentTarget.style.borderColor='#185FA5'; e.currentTarget.style.color='#185FA5' }}
+            onMouseLeave={e => { e.currentTarget.style.borderColor='var(--color-border-tertiary)'; e.currentTarget.style.color='var(--color-text-secondary)' }}
+          >+ Add event</button>
           <button
             onClick={() => openCarrierTracking(cn, job.shipping_line, showToast)}
-            style={{ flex:1, padding:'9px 0', background:'#f8f9fb', border:'1.5px solid #e2e6ed', color:'#4a5568', borderRadius:'8px', fontSize:'12px', fontWeight:600, cursor:'pointer' }}
-            onMouseEnter={e => { e.currentTarget.style.borderColor='#1a4fa0'; e.currentTarget.style.color='#1a4fa0' }}
-            onMouseLeave={e => { e.currentTarget.style.borderColor='#e2e6ed'; e.currentTarget.style.color='#4a5568' }}
-          >
-            🌐 Carrier Site
-          </button>
+            style={{ flex:1, padding:'9px 0', background:'var(--color-background-primary)', border:'0.5px solid var(--color-border-tertiary)', color:'var(--color-text-secondary)', borderRadius:'8px', fontSize:'13px', fontWeight:500, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:'5px' }}
+            onMouseEnter={e => { e.currentTarget.style.borderColor='#0F6E56'; e.currentTarget.style.color='#0F6E56' }}
+            onMouseLeave={e => { e.currentTarget.style.borderColor='var(--color-border-tertiary)'; e.currentTarget.style.color='var(--color-text-secondary)' }}
+          >🌐 Carrier</button>
         </div>
 
       </div>
