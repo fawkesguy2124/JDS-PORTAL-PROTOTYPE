@@ -22,6 +22,7 @@ export default function ContainerTrackingDesktop({
   kpis,
   showToast,
   refreshAll,
+  handleLDBRefresh,
 }) {
   return (
     <div style={{ display:'flex', flexDirection:'column', gap:'14px' }}>
@@ -248,11 +249,17 @@ export default function ContainerTrackingDesktop({
                               {td.freeDays != null ? `${td.freeDays}d` : '—'}
                             </span>
                             <div style={{ display:'flex', gap:'5px' }}>
-                              <button onClick={e => { e.stopPropagation(); handleOpenUpdate(job, cn) }}
-                                style={{ padding:'5px 8px', background:'#e8eef8', border:'0.5px solid #bfdbfe', borderRadius:'5px', fontSize:'11px', fontWeight:500, color:'#1a4fa0', cursor:'pointer', minHeight:'32px' }}
+                              <button onClick={async e => {
+                                  e.stopPropagation()
+                                  setActiveContainer({ jobId: job.id, cn })
+                                  setDetailJob(job)
+                                  await handleLDBRefresh(job, cn)
+                                }}
+                                style={{ padding:'5px 8px', background:'#f0f4fb', border:'0.5px solid #bfdbfe', borderRadius:'5px', fontSize:'13px', color:'#1a4fa0', cursor:'pointer', minHeight:'32px', minWidth:'32px' }}
                                 onMouseEnter={e => { e.currentTarget.style.background='#1a4fa0'; e.currentTarget.style.color='white' }}
-                                onMouseLeave={e => { e.currentTarget.style.background='#e8eef8'; e.currentTarget.style.color='#1a4fa0' }}>
-                                Update
+                                onMouseLeave={e => { e.currentTarget.style.background='#f0f4fb'; e.currentTarget.style.color='#1a4fa0' }}
+                                title="Refresh">
+                                ↻
                               </button>
                               <button onClick={e => { e.stopPropagation(); openCarrierTracking(cn, job.shipping_line, showToast) }}
                                 style={{ padding:'5px 8px', background:'#f8f9fb', border:'0.5px solid #e2e6ed', borderRadius:'5px', fontSize:'13px', color:'#4a5568', cursor:'pointer', minHeight:'32px', minWidth:'32px' }}

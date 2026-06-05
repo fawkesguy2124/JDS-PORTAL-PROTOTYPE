@@ -202,8 +202,8 @@ function JobDetailPanel({ job, trackingData, onClose, onUpdate, onAddEvent, show
               { label:'Laden/Empty',      value: td.isEmpty === true ? 'Empty' : td.isEmpty === false ? 'Full / Laden' : null },
               { label:'Port In',          value: formatD(td.portIn) },
               { label:'Port Out',         value: formatD(td.portOut) },
-              { label:'Expected Out',     value: formatD(td.expectedPortOut),
-                color: td.expectedPortOut && new Date(td.expectedPortOut) < new Date() ? '#dc2626' : '#1a2233' },
+              { label:'Est. Dwell End',   value: td.expectedPortOut ? `~${formatD(td.expectedPortOut)}` : null,
+                color: '#8a96a8' },
               { label:'CFS Gate In',      value: formatD(td.cfsGateIn) },
               { label:'DPD',              value: td.dpdFlag ? '\u2713 Yes' : td.dpdFlag === false ? 'No' : null,
                 color: td.dpdFlag ? '#15803d' : '#8a96a8' },
@@ -261,7 +261,7 @@ function JobDetailPanel({ job, trackingData, onClose, onUpdate, onAddEvent, show
             onMouseEnter={e => { e.currentTarget.style.background='#1a4fa0'; e.currentTarget.style.color='white' }}
             onMouseLeave={e => { e.currentTarget.style.background='#e8eef8'; e.currentTarget.style.color='#1a4fa0' }}
           >
-            Update Status
+            ✎ Update
           </button>
           <button
             onClick={() => onAddEvent(job, cn)}
@@ -1084,6 +1084,21 @@ function ContainerTrackingSection({ showToast, jobs }) {
     refreshAll: handleRefreshAll,
     activeContainer,
     setActiveContainer,
+    handleLDBRefresh: async (job, cn) => {
+      showToast(`Refreshing ${cn} from LDB...`, 'info')
+      try {
+        const result = await fetchLDBTracking(cn)
+        if (result.ok) {
+          await persistLDBTracking(cn, job, result.data)
+          await refreshTracking()
+          showToast(`${cn} refreshed ✓`, 'success')
+        } else {
+          showToast(result.userMessage || `No LDB data for ${cn}`, 'info')
+        }
+      } catch (err) {
+        showToast(`LDB unavailable for ${cn}`, 'info')
+      }
+    },
   }
 
   return (
@@ -1124,8 +1139,8 @@ function ContainerTrackingSection({ showToast, jobs }) {
           activeContainer={activeContainer?.cn || null}
           onClose={() => { setDetailJob(null); setActiveContainer(null) }}
           onUpdate={(job, cn) => { setDetailJob(null); setActiveContainer(null); handleOpenUpdate(job, cn) }}
-          onAddEvent={(job, cn) => { setDetailJob(null); setActiveContainer(null); handleOpenMilestone(job, cn) }}
-        />
+          onAddEvent={(job, cn) => { setDetailJob(null); setActiveContainer(null); handleOpenMilestone(job, cn)       }}
+    />
       )}
     </div>
   )

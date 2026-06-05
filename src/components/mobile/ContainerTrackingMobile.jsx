@@ -24,6 +24,7 @@ export default function ContainerTrackingMobile({
   kpis,
   showToast,
   refreshAll,
+  handleLDBRefresh,
 }) {
   return (
     <div style={{ display:'flex', flexDirection:'column', gap:'12px' }}>
@@ -231,12 +232,16 @@ export default function ContainerTrackingMobile({
                       {/* Action buttons */}
                       <div style={{ display:'flex', gap:'8px' }}>
                         <button
-                          onClick={e => { e.stopPropagation(); handleOpenUpdate(job, cn) }}
-                          style={{ flex:1, padding:'11px 0', background:'#e8eef8', border:'1.5px solid #bfdbfe', color:'#1a4fa0', borderRadius:'10px', fontSize:'14px', fontWeight:600, cursor:'pointer' }}
-                          onMouseEnter={e => { e.currentTarget.style.background='#1a4fa0'; e.currentTarget.style.color='white' }}
-                          onMouseLeave={e => { e.currentTarget.style.background='#e8eef8'; e.currentTarget.style.color='#1a4fa0' }}
+                          onClick={async e => {
+                            e.stopPropagation()
+                            setActiveContainer({ jobId: job.id, cn })
+                            setDetailJob(job)
+                            await handleLDBRefresh(job, cn)
+                          }}
+                          style={{ width:'48px', height:'48px', background:'#f0f4fb', border:'1.5px solid #bfdbfe', color:'#1a4fa0', borderRadius:'10px', fontSize:'20px', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}
+                          title="Refresh"
                         >
-                          Update Status
+                          ↻
                         </button>
                         <button
                           onClick={e => { e.stopPropagation(); openCarrierTracking(cn, job.shipping_line, showToast) }}
