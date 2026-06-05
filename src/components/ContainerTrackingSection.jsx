@@ -14,25 +14,23 @@ function formatContainerDate(ts) {
 }
 
 function JobDetailPanel({ job, trackingData, onClose, onUpdate, onAddEvent, showToast, activeContainer }) {
-  const scrollBodyRef = useRef(null)
-
-  useEffect(() => {
-    if (!activeContainer || !scrollBodyRef.current) return
-    const timer = setTimeout(() => {
-      const el = scrollBodyRef.current.querySelector(`[data-cn="${activeContainer}"]`)
-      if (el) {
-        el.scrollIntoView({ behavior:'smooth', block:'start' })
-        el.style.transition = 'background 0.3s'
-        el.style.background = '#eff6ff'
-        setTimeout(() => { el.style.background = '' }, 1200)
-      }
-    }, 80)
-    return () => clearTimeout(timer)
-  }, [activeContainer])
   const cnList = (job.containers || '')
     .split(/[\s,;/]+/)
     .map(s => s.trim().toUpperCase())
     .filter(s => s.length >= 4)
+
+  const initialIdx = activeContainer
+    ? Math.max(0, cnList.indexOf(activeContainer))
+    : 0
+
+  const [activeCnIdx, setActiveCnIdx] = useState(initialIdx)
+
+  useEffect(() => {
+    if (activeContainer) {
+      const idx = cnList.indexOf(activeContainer)
+      if (idx >= 0) setActiveCnIdx(idx)
+    }
+  }, [activeContainer])
 
   const formatD  = (d) => d ? new Date(d).toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' }) : '\u2014'
   const formatDT = (d) => d ? new Date(d).toLocaleString('en-IN', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' }) : '\u2014'
@@ -71,15 +69,28 @@ function JobDetailPanel({ job, trackingData, onClose, onUpdate, onAddEvent, show
     ? { label:'HIGH',   bg:'#fffbeb', color:'#92400e', border:'#fde68a' }
     : null
 
+  if (cnList.length === 0) return (
+    <>
+      <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.35)', zIndex:199, cursor:'pointer' }} />
+      <div style={{ position:'fixed', right:0, top:0, bottom:0, width:'min(520px,100vw)', background:'white', borderLeft:'1.5px solid #e2e6ed', zIndex:200, display:'flex', alignItems:'center', justifyContent:'center' }}>
+        <div style={{ color:'#8a96a8', fontSize:'14px' }}>No containers found.</div>
+      </div>
+    </>
+  )
+
+  const cn  = cnList[activeCnIdx]
+  const td  = trackingData[cn] || {}
+  const status = td.status || 'in_transit'
+  const st     = STATUS_STYLES_MAP[status] || STATUS_STYLES_MAP['in_transit']
+  const pct    = statusProgress(status)
+  const pColor = progressColor(status, td.freeDays)
+  const isDetention = td.freeDays != null && td.freeDays <= 2
+
   return (
     <>
-      <div
-        onClick={onClose}
-        style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.35)', zIndex:199, cursor:'pointer' }}
-      />
-
+      <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.35)', zIndex:199, cursor:'pointer' }} />
       <div style={{
-        position:'fixed', right:0, top:0, bottom:0, width:'min(520px, 100vw)',
+        position:'fixed', right:0, top:0, bottom:0, width:'min(520px,100vw)',
         background:'white', borderLeft:'1.5px solid #e2e6ed',
         zIndex:200, display:'flex', flexDirection:'column',
         boxShadow:'-8px 0 32px rgba(0,0,0,0.12)',
@@ -87,14 +98,16 @@ function JobDetailPanel({ job, trackingData, onClose, onUpdate, onAddEvent, show
       }}>
         <style>{`@keyframes slideInRight { from { transform:translateX(100%) } to { transform:translateX(0) } }`}</style>
 
-        <div style={{ padding:'18px 22px', borderBottom:'1.5px solid #e2e6ed', background:'#f8f9fb', display:'flex', alignItems:'flex-start', gap:'14px', flexShrink:0 }}>
-          <button onClick={onClose} style={{ width:'30px', height:'30px', borderRadius:'7px', background:'white', border:'1.5px solid #e2e6ed', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', fontSize:'14px', color:'#4a5568', flexShrink:0 }}
+        {/* Header: job info + close */}
+        <div style={{ padding:'14px 18px', borderBottom:'1.5px solid #e2e6ed', background:'#f8f9fb', display:'flex', alignItems:'flex-start', gap:'12px', flexShrink:0 }}>
+          <button onClick={onClose}
+            style={{ width:'28px', height:'28px', borderRadius:'7px', background:'white', border:'1.5px solid #e2e6ed', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', fontSize:'13px', color:'#4a5568', flexShrink:0 }}
             onMouseEnter={e => { e.currentTarget.style.background='#fef2f2'; e.currentTarget.style.color='#dc2626' }}
             onMouseLeave={e => { e.currentTarget.style.background='white'; e.currentTarget.style.color='#4a5568' }}
           >✕</button>
           <div style={{ flex:1, minWidth:0 }}>
             <div style={{ display:'flex', alignItems:'center', gap:'8px', flexWrap:'wrap' }}>
-              <span style={{ fontSize:'16px', fontWeight:700, color:'#1a2233', fontFamily:"'JetBrains Mono',monospace" }}>{job.job_no}</span>
+              <span style={{ fontSize:'15px', fontWeight:700, color:'#1a2233', fontFamily:"'JetBrains Mono',monospace" }}>{job.job_no}</span>
               {priorityBadge && (
                 <span style={{ borderRadius:'9999px', padding:'2px 8px', fontSize:'11px', fontWeight:700, background:priorityBadge.bg, color:priorityBadge.color, border:`1px solid ${priorityBadge.border}` }}>
                   {priorityBadge.label}
@@ -106,140 +119,168 @@ function JobDetailPanel({ job, trackingData, onClose, onUpdate, onAddEvent, show
                 </span>
               )}
             </div>
-            <div style={{ fontSize:'13px', color:'#4a5568', marginTop:'3px' }}>
-              {job.client}{job.shipping_line ? ` · ${job.shipping_line}` : ''} · {cnList.length} container{cnList.length !== 1 ? 's' : ''}
+            <div style={{ fontSize:'12px', color:'#4a5568', marginTop:'2px' }}>
+              {job.client}{job.shipping_line ? ` \u00b7 ${job.shipping_line}` : ''}
             </div>
           </div>
         </div>
 
-        <div ref={scrollBodyRef} style={{ flex:1, overflowY:'auto', padding:'18px 22px' }}>
-          {cnList.length === 0 ? (
-            <div style={{ textAlign:'center', padding:'40px 0', color:'#8a96a8', fontSize:'14px' }}>
-              No container numbers found for this job.
+        {/* Container navigator */}
+        <div style={{ padding:'10px 18px', borderBottom:'1.5px solid #e2e6ed', background:'white', display:'flex', alignItems:'center', gap:'8px', flexShrink:0 }}>
+          <button
+            onClick={() => setActiveCnIdx(i => Math.max(0, i - 1))}
+            disabled={activeCnIdx === 0}
+            style={{ width:'28px', height:'28px', borderRadius:'6px', border:'1.5px solid #e2e6ed', background: activeCnIdx === 0 ? '#f8f9fb' : 'white', color: activeCnIdx === 0 ? '#d0d6e0' : '#4a5568', cursor: activeCnIdx === 0 ? 'default' : 'pointer', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'14px', flexShrink:0 }}
+          >{'<'}</button>
+
+          <div style={{ flex:1, display:'flex', gap:'6px', overflowX:'auto', scrollbarWidth:'none' }}>
+            {cnList.map((c, i) => {
+              const ctd = trackingData[c] || {}
+              const isActive = i === activeCnIdx
+              const hasDet = ctd.freeDays != null && ctd.freeDays <= 2
+              return (
+                <button
+                  key={c}
+                  onClick={() => setActiveCnIdx(i)}
+                  style={{
+                    padding:'4px 10px', borderRadius:'6px', fontSize:'11px', fontWeight:600,
+                    fontFamily:"'JetBrains Mono',monospace", whiteSpace:'nowrap', cursor:'pointer',
+                    border: isActive ? '1.5px solid #1a4fa0' : '1.5px solid #e2e6ed',
+                    background: isActive ? '#1a4fa0' : hasDet ? '#fef2f2' : '#f8f9fb',
+                    color: isActive ? 'white' : hasDet ? '#991b1b' : '#4a5568',
+                    flexShrink:0,
+                  }}
+                >
+                  {hasDet ? '\u26a0 ' : ''}{c}
+                </button>
+              )
+            })}
+          </div>
+
+          <button
+            onClick={() => setActiveCnIdx(i => Math.min(cnList.length - 1, i + 1))}
+            disabled={activeCnIdx === cnList.length - 1}
+            style={{ width:'28px', height:'28px', borderRadius:'6px', border:'1.5px solid #e2e6ed', background: activeCnIdx === cnList.length - 1 ? '#f8f9fb' : 'white', color: activeCnIdx === cnList.length - 1 ? '#d0d6e0' : '#4a5568', cursor: activeCnIdx === cnList.length - 1 ? 'default' : 'pointer', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'14px', flexShrink:0 }}
+          >{'>'}</button>
+
+          <span style={{ fontSize:'11px', color:'#8a96a8', flexShrink:0 }}>{activeCnIdx + 1}/{cnList.length}</span>
+        </div>
+
+        {/* Container detail — scrollable */}
+        <div style={{ flex:1, overflowY:'auto', padding:'16px 18px' }}>
+
+          {/* CN + status badge */}
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'12px' }}>
+            <span style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:'16px', fontWeight:700, color:'#1a2233' }}>{cn}</span>
+            <span style={{ borderRadius:'9999px', padding:'3px 12px', fontSize:'12px', fontWeight:700, background: isDetention ? '#fef2f2' : st.bg, color: isDetention ? '#991b1b' : st.color, border:`1px solid ${isDetention ? '#fecaca' : st.border}` }}>
+              {isDetention ? '\u26a0 Detention Risk' : (td.statusText || 'Not Updated')}
+            </span>
+          </div>
+
+          {/* Progress bar */}
+          <div style={{ marginBottom:'16px' }}>
+            <div style={{ height:'6px', background:'#f4f6f9', border:'1px solid #e2e6ed', borderRadius:'6px', overflow:'hidden' }}>
+              <div style={{ height:'100%', borderRadius:'6px', width:`${pct}%`, background:pColor, transition:'width 0.4s ease' }} />
             </div>
-          ) : (
-            <div style={{ display:'flex', flexDirection:'column', gap:'16px' }}>
-              {cnList.map((cn, idx) => {
-                const td     = trackingData[cn] || {}
-                const status = td.status || 'in_transit'
-                const st     = STATUS_STYLES_MAP[status] || STATUS_STYLES_MAP['in_transit']
-                const pct    = statusProgress(status)
-                const pColor = progressColor(status, td.freeDays)
-                const isDetention = td.freeDays != null && td.freeDays <= 2
+            <div style={{ display:'flex', justifyContent:'space-between', fontSize:'10px', color:'#8a96a8', marginTop:'3px' }}>
+              <span>Loaded</span>
+              <span style={{ color:pColor, fontWeight:600 }}>{pct}% complete</span>
+              <span>Discharged</span>
+            </div>
+          </div>
 
-                return (
-                  <div key={cn} data-cn={cn} style={{ border:'1.5px solid #e2e6ed', borderRadius:'12px', overflow:'hidden', borderTop:`3px solid ${pColor}`, outline: activeContainer === cn ? '2px solid #185FA5' : 'none', outlineOffset:'2px' }}>
+          {/* Fields grid */}
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'12px', marginBottom:'14px' }}>
+            {[
+              { label:'Current Location', value: td.currentLocation, full: true },
+              { label:'Terminal',         value: td.terminal, full: true },
+              { label:'Vessel',           value: td.vessel || job.vessel },
+              { label:'Vessel Arrival',   value: formatD(td.eta || job.eta) },
+              { label:'Shipping Line',    value: td.shippingLineLdb || job.shipping_line },
+              { label:'Vessel IMO',       value: td.vesselImo },
+              { label:'Size',             value: td.containerSize },
+              { label:'Laden/Empty',      value: td.isEmpty === true ? 'Empty' : td.isEmpty === false ? 'Full / Laden' : null },
+              { label:'Port In',          value: formatD(td.portIn) },
+              { label:'Port Out',         value: formatD(td.portOut) },
+              { label:'Expected Out',     value: formatD(td.expectedPortOut),
+                color: td.expectedPortOut && new Date(td.expectedPortOut) < new Date() ? '#dc2626' : '#1a2233' },
+              { label:'CFS Gate In',      value: formatD(td.cfsGateIn) },
+              { label:'DPD',              value: td.dpdFlag ? '\u2713 Yes' : td.dpdFlag === false ? 'No' : null,
+                color: td.dpdFlag ? '#15803d' : '#8a96a8' },
+              { label:'Free Days Left',   value: td.freeDays != null ? `${td.freeDays} days${td.freeDays <= 2 ? ' \u26a0' : ''}` : null,
+                color: td.freeDays != null && td.freeDays <= 2 ? '#dc2626' : td.freeDays != null && td.freeDays <= 5 ? '#b45309' : '#1a2233' },
+              { label:'Last Update',      value: formatDT(td.lastUpdate), full: true },
+            ].map(f => (
+              <div key={f.label} style={f.full ? { gridColumn:'1 / -1' } : {}}>
+                <div style={{ fontSize:'10px', fontWeight:600, textTransform:'uppercase', letterSpacing:'0.06em', color:'#8a96a8', marginBottom:'3px' }}>
+                  {f.label}
+                </div>
+                <div style={{ fontSize:'13px', fontWeight:500, color: f.color || (f.value ? '#1a2233' : '#d0d6e0') }}>
+                  {f.value || '\u2014'}
+                </div>
+              </div>
+            ))}
+          </div>
 
-                    <div style={{ padding:'12px 16px', background:'#f8f9fb', borderBottom:'1px solid #e2e6ed', display:'flex', alignItems:'center', justifyContent:'space-between', gap:'10px' }}>
-                      <div style={{ display:'flex', alignItems:'center', gap:'10px' }}>
-                        <span style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:'14px', fontWeight:700, color:'#1a2233' }}>{cn}</span>
-                        <span style={{ borderRadius:'9999px', padding:'2px 10px', fontSize:'11px', fontWeight:700, background: isDetention ? '#fef2f2' : st.bg, color: isDetention ? '#991b1b' : st.color, border:`1px solid ${isDetention ? '#fecaca' : st.border}` }}>
-                          {isDetention ? '⚠ Detention Risk' : (td.statusText || 'Not Updated')}
-                        </span>
-                      </div>
-                      <span style={{ fontSize:'11px', color:'#8a96a8' }}>#{idx + 1} of {cnList.length}</span>
-                    </div>
-
-                    <div style={{ padding:'10px 16px', borderBottom:'1px solid #e2e6ed', background:'white' }}>
-                      <div style={{ height:'5px', background:'#f4f6f9', border:'1px solid #e2e6ed', borderRadius:'6px', overflow:'hidden' }}>
-                        <div style={{ height:'100%', borderRadius:'6px', width:`${pct}%`, background:pColor }} />
-                      </div>
-                      <div style={{ display:'flex', justifyContent:'space-between', fontSize:'10px', color:'#8a96a8', marginTop:'3px' }}>
-                        <span>Loaded</span>
-                        <span style={{ color:pColor, fontWeight:600 }}>{pct}% complete</span>
-                        <span>Discharged</span>
-                      </div>
-                    </div>
-
-                    <div style={{ padding:'14px 16px', background:'white' }}>
-                      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'12px', marginBottom:'12px' }}>
-                        {[
-                          { label:'Current Location', value: td.currentLocation },
-                          { label:'Vessel',           value: td.vessel || job.vessel },
-                          { label:'Vessel Arrival',   value: formatD(td.eta || job.eta) },
-                          { label:'Port In',          value: td.portIn },
-                          { label:'Port Out',         value: td.portOut },
-                          { label:'CFS Gate In',      value: td.cfsGateIn },
-                          { label:'Terminal',         value: td.terminal },
-                          { label:'DPD',              value: td.dpdFlag ? '\u2713 Yes' : 'No',
-                            color: td.dpdFlag ? '#15803d' : '#8a96a8' },
-                          { label:'Container',        value: td.isEmpty ? 'Empty' : (td.isEmpty === false ? 'Full/Laden' : null),
-                            color: td.isEmpty ? '#8a96a8' : '#1a2233' },
-                          { label:'Free Days Left',   value: td.freeDays != null ? `${td.freeDays} days${td.freeDays <= 2 ? ' ⚠' : ''}` : '\u2014',
-                            color: td.freeDays != null && td.freeDays <= 2 ? '#dc2626' : td.freeDays != null && td.freeDays <= 5 ? '#b45309' : '#1a2233' },
-                          { label:'Last Update',      value: formatDT(td.lastUpdate) },
-                        ].map(f => (
-                          <div key={f.label}>
-                            <div style={{ fontSize:'10px', fontWeight:600, textTransform:'uppercase', letterSpacing:'0.06em', color:'#8a96a8', marginBottom:'3px' }}>
-                              {f.label}
-                            </div>
-                            <div style={{ fontSize:'13px', fontWeight:500, color: f.color || (f.value ? '#1a2233' : '#d0d6e0') }}>
-                              {f.value || '\u2014'}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-
-                      {td.notes && (
-                        <div style={{ marginBottom:'12px', padding:'8px 10px', background:'#fffbeb', border:'1px solid #fde68a', borderRadius:'7px', fontSize:'12px', color:'#92400e' }}>
-                          📝 {td.notes}
-                        </div>
-                      )}
-
-                      {td.milestones?.length > 0 && (
-                        <div style={{ marginBottom:'12px' }}>
-                          <div style={{ fontSize:'10px', fontWeight:600, textTransform:'uppercase', letterSpacing:'0.06em', color:'#8a96a8', marginBottom:'8px' }}>
-                            Event History
-                          </div>
-                          {td.milestones.map((m, i) => (
-                            <div key={i} style={{ display:'flex', gap:'10px', alignItems:'flex-start', marginBottom:'6px' }}>
-                              <div style={{ width:'8px', height:'8px', borderRadius:'50%', flexShrink:0, marginTop:'4px', background: i === 0 ? '#1a4fa0' : '#d0d6e0' }} />
-                              <div>
-                                <div style={{ fontSize:'12px', fontWeight:600, color:'#1a2233' }}>{m.description}</div>
-                                <div style={{ fontSize:'11px', color:'#8a96a8', marginTop:'1px' }}>
-                                  {m.location && `${m.location} · `}
-                                  {m.date ? new Date(m.date).toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' }) : ''}
-                                </div>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-
-                      <div style={{ display:'flex', gap:'8px' }}>
-                        <button
-                          onClick={() => onUpdate(job, cn)}
-                          style={{ flex:1, padding:'8px 0', background:'#e8eef8', border:'1.5px solid #bfdbfe', color:'#1a4fa0', borderRadius:'8px', fontSize:'12px', fontWeight:600, cursor:'pointer', fontFamily:'Inter,sans-serif' }}
-                          onMouseEnter={e => { e.currentTarget.style.background='#1a4fa0'; e.currentTarget.style.color='white' }}
-                          onMouseLeave={e => { e.currentTarget.style.background='#e8eef8'; e.currentTarget.style.color='#1a4fa0' }}
-                        >
-                          Update Status
-                        </button>
-                        <button
-                          onClick={() => onAddEvent(job, cn)}
-                          style={{ flex:1, padding:'8px 0', background:'#f8f9fb', border:'1.5px solid #e2e6ed', color:'#4a5568', borderRadius:'8px', fontSize:'12px', fontWeight:600, cursor:'pointer', fontFamily:'Inter,sans-serif' }}
-                          onMouseEnter={e => { e.currentTarget.style.borderColor='#1a4fa0'; e.currentTarget.style.color='#1a4fa0' }}
-                          onMouseLeave={e => { e.currentTarget.style.borderColor='#e2e6ed'; e.currentTarget.style.color='#4a5568' }}
-                        >
-                          + Add Event
-                        </button>
-                        <button
-                          onClick={() => openCarrierTracking(cn, job.shipping_line, showToast)}
-                          style={{ flex:1, padding:'8px 0', background:'#f8f9fb', border:'1.5px solid #e2e6ed', color:'#4a5568', borderRadius:'8px', fontSize:'12px', fontWeight:600, cursor:'pointer', fontFamily:'Inter,sans-serif' }}
-                          onMouseEnter={e => { e.currentTarget.style.borderColor='#1a4fa0'; e.currentTarget.style.color='#1a4fa0' }}
-                          onMouseLeave={e => { e.currentTarget.style.borderColor='#e2e6ed'; e.currentTarget.style.color='#4a5568' }}
-                        >
-                          🌐 Carrier Site
-                        </button>
-                      </div>
-                    </div>
-
-                  </div>
-                )
-              })}
+          {/* Notes */}
+          {td.notes && (
+            <div style={{ marginBottom:'14px', padding:'8px 10px', background:'#fffbeb', border:'1px solid #fde68a', borderRadius:'7px', fontSize:'12px', color:'#92400e' }}>
+              📝 {td.notes}
             </div>
           )}
+
+          {/* Event history */}
+          {td.milestones?.length > 0 && (
+            <div style={{ marginBottom:'14px' }}>
+              <div style={{ fontSize:'10px', fontWeight:600, textTransform:'uppercase', letterSpacing:'0.06em', color:'#8a96a8', marginBottom:'8px' }}>
+                Event History
+              </div>
+              {td.milestones.map((m, i) => (
+                <div key={i} style={{ display:'flex', gap:'10px', alignItems:'flex-start', marginBottom:'8px' }}>
+                  <div style={{ width:'8px', height:'8px', borderRadius:'50%', flexShrink:0, marginTop:'4px', background: i === 0 ? '#1a4fa0' : '#d0d6e0' }} />
+                  <div>
+                    <div style={{ fontSize:'12px', fontWeight:600, color:'#1a2233' }}>{m.description}</div>
+                    <div style={{ fontSize:'11px', color:'#8a96a8', marginTop:'1px' }}>
+                      {m.location && `${m.location} \u00b7 `}
+                      {m.date ? new Date(m.date).toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' }) : ''}
+                      {m.transportMode ? ` \u00b7 ${m.transportMode}` : ''}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
         </div>
+
+        {/* Action buttons — pinned to bottom */}
+        <div style={{ padding:'12px 18px', borderTop:'1.5px solid #e2e6ed', display:'flex', gap:'8px', flexShrink:0, background:'white' }}>
+          <button
+            onClick={() => onUpdate(job, cn)}
+            style={{ flex:1, padding:'9px 0', background:'#e8eef8', border:'1.5px solid #bfdbfe', color:'#1a4fa0', borderRadius:'8px', fontSize:'12px', fontWeight:600, cursor:'pointer' }}
+            onMouseEnter={e => { e.currentTarget.style.background='#1a4fa0'; e.currentTarget.style.color='white' }}
+            onMouseLeave={e => { e.currentTarget.style.background='#e8eef8'; e.currentTarget.style.color='#1a4fa0' }}
+          >
+            Update Status
+          </button>
+          <button
+            onClick={() => onAddEvent(job, cn)}
+            style={{ flex:1, padding:'9px 0', background:'#f8f9fb', border:'1.5px solid #e2e6ed', color:'#4a5568', borderRadius:'8px', fontSize:'12px', fontWeight:600, cursor:'pointer' }}
+            onMouseEnter={e => { e.currentTarget.style.borderColor='#1a4fa0'; e.currentTarget.style.color='#1a4fa0' }}
+            onMouseLeave={e => { e.currentTarget.style.borderColor='#e2e6ed'; e.currentTarget.style.color='#4a5568' }}
+          >
+            + Add Event
+          </button>
+          <button
+            onClick={() => openCarrierTracking(cn, job.shipping_line, showToast)}
+            style={{ flex:1, padding:'9px 0', background:'#f8f9fb', border:'1.5px solid #e2e6ed', color:'#4a5568', borderRadius:'8px', fontSize:'12px', fontWeight:600, cursor:'pointer' }}
+            onMouseEnter={e => { e.currentTarget.style.borderColor='#1a4fa0'; e.currentTarget.style.color='#1a4fa0' }}
+            onMouseLeave={e => { e.currentTarget.style.borderColor='#e2e6ed'; e.currentTarget.style.color='#4a5568' }}
+          >
+            🌐 Carrier Site
+          </button>
+        </div>
+
       </div>
     </>
   )
@@ -748,6 +789,10 @@ function ContainerTrackingSection({ showToast, jobs }) {
             terminal:        row.terminal        || null,
             dpdFlag:         row.dpd_flag        || false,
             isEmpty:         row.is_empty        || false,
+            vesselImo:        row.vessel_imo        || null,
+            shippingLineLdb:  row.shipping_line_ldb || null,
+            containerSize:    row.container_size    || null,
+            expectedPortOut:  row.expected_port_out || null,
           }
         }
         setTrackingData(map)
@@ -780,6 +825,10 @@ function ContainerTrackingSection({ showToast, jobs }) {
           terminal:        row.terminal        || null,
           dpdFlag:         row.dpd_flag        || false,
           isEmpty:         row.is_empty        || false,
+          vesselImo:        row.vessel_imo        || null,
+          shippingLineLdb:  row.shipping_line_ldb || null,
+          containerSize:    row.container_size    || null,
+          expectedPortOut:  row.expected_port_out || null,
         }
       }
       setTrackingData(map)

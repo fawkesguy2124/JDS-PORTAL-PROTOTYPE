@@ -96,27 +96,48 @@ function normaliseLDBResponse(containerNo, raw) {
   const status     = mapEventToStatus(eventName)
   const portEvents = derivePortEvents(obj.trackLog)
   const milestones = buildMilestones(obj.trackLog)
+
+  const terminalRaw = (obj.cntrInTransit && obj.cntrInTransit[0])
+    ? obj.cntrInTransit[0].currentLocation
+    : obj.lastEvent.currentLocation || null
+
+  const isEmpty = obj.lastEvent.isEmpty === 'Y'
+
+  const dpdFlag = Array.isArray(obj.trackLog)
+    && obj.trackLog.some(e => (e.eventName || '').toUpperCase() === 'DPD')
+
+  const expectedPortOut = obj.lastEvent.expectedEventTime || null
+
+  const shippingLine = vesselInfo.shippingline || null
+  const vesselImo    = vesselInfo.vesselimo    || null
+
+  const containerSize = obj.cntrDetail.containerType || obj.cntrDetail.size || null
+
   return {
     ok: true,
     data: {
       status,
-      statusText:      eventName,
-      currentLocation: obj.lastEvent.currentLocation || null,
-      terminal:   obj.lastEvent.currentLocation || null,
-      dpdFlag:    Array.isArray(obj.trackLog) && obj.trackLog.some(e => (e.eventName || '').toUpperCase() === 'DPD'),
-      isEmpty:    obj.lastEvent.isempty === 'Y' || obj.lastEvent.isEmpty === 'Y' || false,
+      statusText:       eventName,
+      currentLocation:  obj.lastEvent.currentLocation || null,
+      terminal:         terminalRaw,
+      dpdFlag,
+      isEmpty,
       vessel,
-      eta:             eta ? eta.slice(0, 10) : null,
-      freeDays:        null,
-      lastUpdate:      new Date().toISOString(),
+      vesselImo,
+      shippingLine,
+      containerSize,
+      eta:              eta ? eta.slice(0, 10) : null,
+      expectedPortOut,
+      freeDays:         null,
+      lastUpdate:       new Date().toISOString(),
       milestones,
-      portIn:          portEvents.portIn,
-      portOut:         portEvents.portOut,
-      cfsGateIn:       portEvents.cfsGateIn,
-      ldbContainerNo:  obj.cntrDetail.cntrNumber  || containerNo,
-      ldbSize:         obj.cntrDetail.size        || null,
-      ldbType:         obj.cntrDetail.containerType || null,
-      ldbIsoCode:      obj.cntrDetail.isoCode     || null,
+      portIn:           portEvents.portIn,
+      portOut:          portEvents.portOut,
+      cfsGateIn:        portEvents.cfsGateIn,
+      ldbContainerNo:   obj.cntrDetail.cntrNumber   || containerNo,
+      ldbSize:          obj.cntrDetail.size         || null,
+      ldbType:          obj.cntrDetail.containerType || null,
+      ldbIsoCode:       obj.cntrDetail.isoCode      || null,
     },
   }
 }
@@ -170,6 +191,10 @@ export async function persistLDBTracking(containerNo, jobContext, ldbData) {
     status_text:      ldbData.statusText,
     current_location: ldbData.currentLocation,
     vessel:           ldbData.vessel     || jobContext.vessel || null,
+    vessel_imo:        ldbData.vesselImo       || null,
+    shipping_line_ldb: ldbData.shippingLine    || null,
+    container_size:    ldbData.containerSize   || null,
+    expected_port_out: ldbData.expectedPortOut || null,
     eta:              ldbData.eta        || jobContext.eta    || null,
     free_days:        existing?.free_days ?? jobContext.free_days ?? null,
     notes:            existing?.notes    || null,
