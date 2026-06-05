@@ -160,6 +160,11 @@ function JobDetailPanel({ job, trackingData, onClose, onUpdate, onAddEvent, show
                           { label:'Port In',          value: td.portIn },
                           { label:'Port Out',         value: td.portOut },
                           { label:'CFS Gate In',      value: td.cfsGateIn },
+                          { label:'Terminal',         value: td.terminal },
+                          { label:'DPD',              value: td.dpdFlag ? '\u2713 Yes' : 'No',
+                            color: td.dpdFlag ? '#15803d' : '#8a96a8' },
+                          { label:'Container',        value: td.isEmpty ? 'Empty' : (td.isEmpty === false ? 'Full/Laden' : null),
+                            color: td.isEmpty ? '#8a96a8' : '#1a2233' },
                           { label:'Free Days Left',   value: td.freeDays != null ? `${td.freeDays} days${td.freeDays <= 2 ? ' ⚠' : ''}` : '\u2014',
                             color: td.freeDays != null && td.freeDays <= 2 ? '#dc2626' : td.freeDays != null && td.freeDays <= 5 ? '#b45309' : '#1a2233' },
                           { label:'Last Update',      value: formatDT(td.lastUpdate) },
@@ -740,6 +745,9 @@ function ContainerTrackingSection({ showToast, jobs }) {
             portIn:          row.port_in,
             portOut:         row.port_out,
             cfsGateIn:       row.cfs_gate_in,
+            terminal:        row.terminal        || null,
+            dpdFlag:         row.dpd_flag        || false,
+            isEmpty:         row.is_empty        || false,
           }
         }
         setTrackingData(map)
@@ -759,20 +767,23 @@ function ContainerTrackingSection({ showToast, jobs }) {
       map[row.container_no] = {
         status:          row.status || 'in_transit',
         statusText:      row.status_text || 'In Transit',
-        currentLocation: row.current_location,
-        vessel:          row.vessel,
-        freeDays:        row.free_days,
-        notes:           row.notes,
-        lastUpdate:      row.last_update,
-        milestones:      row.milestones || [],
-        eta:             row.eta,
-        portIn:          row.port_in,
-        portOut:         row.port_out,
-        cfsGateIn:       row.cfs_gate_in,
+      currentLocation: row.current_location,
+          vessel:          row.vessel,
+          freeDays:        row.free_days,
+          notes:           row.notes,
+          lastUpdate:      row.last_update,
+          milestones:      row.milestones || [],
+          eta:             row.eta,
+          portIn:          row.port_in,
+          portOut:         row.port_out,
+          cfsGateIn:       row.cfs_gate_in,
+          terminal:        row.terminal        || null,
+          dpdFlag:         row.dpd_flag        || false,
+          isEmpty:         row.is_empty        || false,
+        }
       }
+      setTrackingData(map)
     }
-    setTrackingData(map)
-  }
 
   const parseContainers = (str) => {
     if (!str || typeof str !== 'string') return []
