@@ -22,34 +22,29 @@ async function getAccessToken(clientEmail, privateKey) {
 
   const signingInput = `${base64urlJson(header)}.${base64urlJson(payload)}`
 
-  // Clean the private key — handle all possible formats from env vars
-  let cleanedKey = privateKey
-  // Replace literal \n strings with actual newlines
-  cleanedKey = cleanedKey.replace(/\\n/g, '\n')
-  // Ensure proper PEM format
-  if (!cleanedKey.includes('\n')) {
-    // Key has no newlines at all — reformat it
-    cleanedKey = cleanedKey
-      .replace('-----BEGIN PRIVATE KEY-----', '-----BEGIN PRIVATE KEY-----\n')
-      .replace('-----END PRIVATE KEY-----', '\n-----END PRIVATE KEY-----')
-  }
-
-  // Extract just the base64 body
-  const pemBody = cleanedKey
-    .split('\n')
-    .filter(line => line.trim() && !line.includes('-----'))
-    .join('')
-
-  // Decode base64 to binary
-  const binaryStr = atob(pemBody)
+  // Decode the base64-encoded private key stored in env
+  const binaryStr = atob(privateKey)
   const binaryKey = new Uint8Array(binaryStr.length)
   for (let i = 0; i < binaryStr.length; i++) {
     binaryKey[i] = binaryStr.charCodeAt(i)
   }
 
+  // The decoded string is the PEM — extract the base64 body
+  const pem = new TextDecoder().decode(binaryKey)
+  const pemBody = pem
+    .split('\n')
+    .filter(line => line.trim() && !line.includes('-----'))
+    .join('')
+
+  const derStr = atob(pemBody)
+  const derKey = new Uint8Array(derStr.length)
+  for (let i = 0; i < derStr.length; i++) {
+    derKey[i] = derStr.charCodeAt(i)
+  }
+
   const cryptoKey = await crypto.subtle.importKey(
     'pkcs8',
-    binaryKey.buffer,
+    derKey.buffer,
     { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
     false,
     ['sign']
