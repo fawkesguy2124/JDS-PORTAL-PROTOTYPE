@@ -386,37 +386,54 @@ function JobDetailPanel({ job, trackingData, onClose, onUpdate, onAddEvent, onRe
                 Event history
                 <span style={{ flex:1, height:'0.5px', background:'var(--color-border-tertiary)', display:'block' }} />
               </div>
-              {td.milestones.map((m, i) => {
-                const es = getEventStyle(m.description)
-                const ds = dotStyles[es.dot] || dotStyles.gray
-                const isLast = i === td.milestones.length - 1
-                return (
-                  <div key={i} style={{ display:'flex', gap:'8px', alignItems:'flex-start', paddingBottom: isLast ? 0 : '10px' }}>
-                    <div style={{ display:'flex', flexDirection:'column', alignItems:'center', width:'18px', flexShrink:0 }}>
-                      <div style={{ width:'18px', height:'18px', borderRadius:'50%', display:'flex', alignItems:'center', justifyContent:'center', background:ds.bg, border:`1.5px solid ${ds.border}`, flexShrink:0 }}>
-                        <div style={{ width:'7px', height:'7px', borderRadius:'50%', background:ds.inner }} />
-                      </div>
-                      {!isLast && <div style={{ width:'1px', flex:1, background:'var(--color-border-tertiary)', minHeight:'10px', marginTop:'2px' }} />}
+
+              {isMobile ? (
+                // Mobile — compressed plain text
+                <div style={{ display:'flex', flexDirection:'column', gap:'6px' }}>
+                  {td.milestones.map((m, i) => (
+                    <div key={i} style={{ fontSize:'12px', color:'var(--color-text-primary)', lineHeight:1.4, paddingBottom:'6px', borderBottom: i < td.milestones.length - 1 ? '0.5px solid var(--color-border-tertiary)' : 'none' }}>
+                      <span style={{ fontWeight:500 }}>{m.description}</span>
+                      {m.location && <span style={{ color:'var(--color-text-secondary)' }}> · {m.location.split('/').pop()?.trim() || m.location}</span>}
+                      {m.date && <span style={{ color:'var(--color-text-secondary)' }}> · {new Date(m.date).toLocaleString('en-IN', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit', timeZone:'Asia/Kolkata' })}</span>}
                     </div>
-                    <div style={{ flex:1, minWidth:0, paddingBottom:'2px' }}>
-                      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:'4px', marginBottom:'2px' }}>
-                        <span style={{ fontSize:'11px', fontWeight:500, color: i === 0 ? es.color : 'var(--color-text-primary)' }}>{m.description}</span>
-                        <div style={{ display:'flex', gap:'3px', alignItems:'center', flexShrink:0 }}>
-                          {m.transportMode && (
-                            <span style={{ fontSize:'8px', fontWeight:500, padding:'1px 4px', borderRadius:'9999px', background: m.transportMode === 'VESSEL' ? '#E6F1FB' : '#FAEEDA', color: m.transportMode === 'VESSEL' ? '#0C447C' : '#633806', border:`0.5px solid ${m.transportMode === 'VESSEL' ? '#B5D4F4' : '#FAC775'}` }}>
-                              {m.transportMode}
-                            </span>
-                          )}
-                          <span style={{ fontSize:'9px', color:'var(--color-text-secondary)', whiteSpace:'nowrap' }}>
-                            {m.date ? new Date(m.date).toLocaleString('en-IN', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit', timeZone:'Asia/Kolkata' }) : ''}
-                          </span>
+                  ))}
+                </div>
+              ) : (
+                // Desktop — full timeline with dots and connector lines
+                <div>
+                  {td.milestones.map((m, i) => {
+                    const es = getEventStyle(m.description)
+                    const ds = dotStyles[es.dot] || dotStyles.gray
+                    const isLast = i === td.milestones.length - 1
+                    return (
+                      <div key={i} style={{ display:'flex', gap:'8px', alignItems:'flex-start', paddingBottom: isLast ? 0 : '10px' }}>
+                        <div style={{ display:'flex', flexDirection:'column', alignItems:'center', width:'18px', flexShrink:0 }}>
+                          <div style={{ width:'18px', height:'18px', borderRadius:'50%', display:'flex', alignItems:'center', justifyContent:'center', background:ds.bg, border:`1.5px solid ${ds.border}`, flexShrink:0 }}>
+                            <div style={{ width:'7px', height:'7px', borderRadius:'50%', background:ds.inner }} />
+                          </div>
+                          {!isLast && <div style={{ width:'1px', flex:1, background:'var(--color-border-tertiary)', minHeight:'10px', marginTop:'2px' }} />}
+                        </div>
+                        <div style={{ flex:1, minWidth:0, paddingBottom:'2px' }}>
+                          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:'4px', marginBottom:'2px' }}>
+                            <span style={{ fontSize:'11px', fontWeight:500, color: i === 0 ? es.color : 'var(--color-text-primary)' }}>{m.description}</span>
+                            <div style={{ display:'flex', gap:'3px', alignItems:'center', flexShrink:0 }}>
+                              {m.transportMode && (
+                                <span style={{ fontSize:'8px', fontWeight:500, padding:'1px 4px', borderRadius:'9999px', background: m.transportMode === 'VESSEL' ? '#E6F1FB' : '#FAEEDA', color: m.transportMode === 'VESSEL' ? '#0C447C' : '#633806', border:`0.5px solid ${m.transportMode === 'VESSEL' ? '#B5D4F4' : '#FAC775'}` }}>
+                                  {m.transportMode}
+                                </span>
+                              )}
+                              <span style={{ fontSize:'9px', color:'var(--color-text-secondary)', whiteSpace:'nowrap' }}>
+                                {m.date ? new Date(m.date).toLocaleString('en-IN', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit', timeZone:'Asia/Kolkata' }) : ''}
+                              </span>
+                            </div>
+                          </div>
+                          <div style={{ fontSize:'10px', color:'var(--color-text-secondary)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{m.location}</div>
                         </div>
                       </div>
-                      <div style={{ fontSize:'10px', color:'var(--color-text-secondary)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{m.location}</div>
-                    </div>
-                  </div>
-                )
-              })}
+                    )
+                  })}
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -856,16 +873,21 @@ function openCarrierTracking(containerNo, shippingLine, showToast) {
     copyToClipboard(cn, showToast, shippingLine)
   }
 
-  const width  = Math.min(1200, window.screen.width  * 0.85)
-  const height = Math.min(800,  window.screen.height * 0.85)
-  const left   = (window.screen.width  - width)  / 2
-  const top    = (window.screen.height - height) / 2
+  const isMobile = window.innerWidth < 768
 
-  window.open(
-    url,
-    `carrier_tracking_${cn}`,
-    `width=${width},height=${height},left=${left},top=${top},toolbar=no,menubar=no,scrollbars=yes,resizable=yes`
-  )
+  if (isMobile) {
+    window.open(url, '_blank')
+  } else {
+    const width  = Math.min(1200, window.screen.width  * 0.85)
+    const height = Math.min(800,  window.screen.height * 0.85)
+    const left   = (window.screen.width  - width)  / 2
+    const top    = (window.screen.height - height) / 2
+    window.open(
+      url,
+      `carrier_tracking_${cn}`,
+      `width=${width},height=${height},left=${left},top=${top},toolbar=no,menubar=no,scrollbars=yes,resizable=yes`
+    )
+  }
 }
 
 function copyToClipboard(text, showToast, carrierName) {
