@@ -146,6 +146,8 @@ function JobDetailPanel({ job, trackingData, onClose, onUpdate, onAddEvent, onRe
           isDragging.current = false
           if (sidebarRef.current) {
             sidebarRef.current.style.transition = 'none'
+            sidebarRef.current.style.transform = 'translateX(0)'
+            sidebarRef.current.style.opacity = '1'
           }
         }}
         onTouchMove={e => {
@@ -172,20 +174,25 @@ function JobDetailPanel({ job, trackingData, onClose, onUpdate, onAddEvent, onRe
           }
         }}
         onTouchEnd={e => {
+          if (window.innerWidth >= 768) return
           if (touchStartX.current === null) return
 
-          if (sidebarRef.current) {
-            sidebarRef.current.style.transition = ''
-            sidebarRef.current.style.opacity = '1'
-          }
-
-          const deltaX = e.changedTouches[0].clientX - touchStartX.current
-
-          if (isDragging.current && (dragX.current > 120)) {
-            handleClose()
-          } else {
+          if (isDragging.current && dragX.current > 120) {
+            // Continue sliding out from current drag position
             if (sidebarRef.current) {
+              sidebarRef.current.style.transition = 'transform 0.22s cubic-bezier(0.4,0,1,1), opacity 0.22s'
+              sidebarRef.current.style.transform = 'translateX(100%)'
+              sidebarRef.current.style.opacity = '0'
+            }
+            setTimeout(() => {
+              onClose()
+            }, 220)
+          } else {
+            // Snap back smoothly
+            if (sidebarRef.current) {
+              sidebarRef.current.style.transition = 'transform 0.3s cubic-bezier(0.16,1,0.3,1), opacity 0.3s'
               sidebarRef.current.style.transform = 'translateX(0)'
+              sidebarRef.current.style.opacity = '1'
             }
           }
 
