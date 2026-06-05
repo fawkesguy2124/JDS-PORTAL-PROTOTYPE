@@ -6,36 +6,50 @@ const MODEL = 'gemini-2.0-flash-001'
 async function getAccessToken(clientEmail, privateKey) {
   const now = Math.floor(Date.now() / 1000)
 
-  const base64url = (obj) =>
-    btoa(JSON.stringify(obj))
-      .replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_')
+  const base64url = (str) =>
+    btoa(str).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_')
+
+  const base64urlJson = (obj) => base64url(JSON.stringify(obj))
 
   const header  = { alg: 'RS256', typ: 'JWT' }
   const payload = {
-    iss:  clientEmail,
+    iss:   clientEmail,
     scope: 'https://www.googleapis.com/auth/cloud-platform',
-    aud:  'https://oauth2.googleapis.com/token',
-    iat:  now,
-    exp:  now + 3600,
+    aud:   'https://oauth2.googleapis.com/token',
+    iat:   now,
+    exp:   now + 3600,
   }
 
-  const signingInput = `${base64url(header)}.${base64url(payload)}`
+  const signingInput = `${base64urlJson(header)}.${base64urlJson(payload)}`
 
-  // Import private key for signing
-  const pemContents = privateKey
-    .replace(/-----BEGIN PRIVATE KEY-----/g, '')
-    .replace(/-----END PRIVATE KEY-----/g, '')
-    .replace(/\\n/g, '')
-    .replace(/\n/g, '')
-    .replace(/\r/g, '')
-    .replace(/\s/g, '')
-    .trim()
+  // Clean the private key — handle all possible formats from env vars
+  let cleanedKey = privateKey
+  // Replace literal \n strings with actual newlines
+  cleanedKey = cleanedKey.replace(/\\n/g, '\n')
+  // Ensure proper PEM format
+  if (!cleanedKey.includes('\n')) {
+    // Key has no newlines at all — reformat it
+    cleanedKey = cleanedKey
+      .replace('-----BEGIN PRIVATE KEY-----', '-----BEGIN PRIVATE KEY-----\n')
+      .replace('-----END PRIVATE KEY-----', '\n-----END PRIVATE KEY-----')
+  }
 
-  const binaryKey = Uint8Array.from(atob(pemContents), c => c.charCodeAt(0))
+  // Extract just the base64 body
+  const pemBody = cleanedKey
+    .split('\n')
+    .filter(line => line.trim() && !line.includes('-----'))
+    .join('')
+
+  // Decode base64 to binary
+  const binaryStr = atob(pemBody)
+  const binaryKey = new Uint8Array(binaryStr.length)
+  for (let i = 0; i < binaryStr.length; i++) {
+    binaryKey[i] = binaryStr.charCodeAt(i)
+  }
 
   const cryptoKey = await crypto.subtle.importKey(
     'pkcs8',
-    binaryKey,
+    binaryKey.buffer,
     { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
     false,
     ['sign']
@@ -48,7 +62,12 @@ async function getAccessToken(clientEmail, privateKey) {
     encoder.encode(signingInput)
   )
 
-  const signature = btoa(String.fromCharCode(...new Uint8Array(signatureBuffer)))
+  const signatureArr = new Uint8Array(signatureBuffer)
+  let signatureStr = ''
+  for (let i = 0; i < signatureArr.length; i++) {
+    signatureStr += String.fromCharCode(signatureArr[i])
+  }
+  const signature = btoa(signatureStr)
     .replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_')
 
   const jwt = `${signingInput}.${signature}`
