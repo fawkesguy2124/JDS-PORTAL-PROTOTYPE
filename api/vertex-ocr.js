@@ -62,6 +62,18 @@ async function getAccessToken(clientEmail, privateKeyB64) {
   return tokenData.access_token
 }
 
+// TEMPORARY DEBUG — remove after testing
+if (req.method === 'GET') {
+  const raw = process.env.VITE_VERTEX_PRIVATE_KEY || ''
+  return new Response(JSON.stringify({
+    length: raw.length,
+    first30: raw.substring(0, 30),
+    last30: raw.substring(raw.length - 30),
+    hasNewlines: raw.includes('\n'),
+    hasLiteralBackslashN: raw.includes('\\n'),
+  }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+}
+
 export default async function handler(req) {
   const corsHeaders = {
     'Content-Type': 'application/json',
