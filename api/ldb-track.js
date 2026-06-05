@@ -38,6 +38,7 @@ export default async function handler(req) {
       signal: controller.signal,
     })
     clearTimeout(timeout)
+    console.log('[ldb-track] LDB responded with status:', ldbRes.status, 'for', cntrNo)
 
     let data
     try {
