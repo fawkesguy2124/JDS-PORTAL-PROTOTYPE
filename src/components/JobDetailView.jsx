@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '../supabase'
 import { getStageName } from '../utils/jobHelpers'
-import OCRSection, { FIELD_LABELS_OCR, OCR_SECTIONS } from '../components/OCRSection'
+import OCRSection, { FIELD_LABELS_OCR, OCR_SECTIONS, OCR_FIELD_MAP, MULTI_VALUE_FIELDS } from '../components/OCRSection'
 import JobDetailMobile from './mobile/JobDetailMobile'
 import JobDetailDesktop from './desktop/JobDetailDesktop'
 
@@ -239,32 +239,6 @@ function JobProgress({ stage }) {
     </div>
   )
 }
-
-const OCR_FIELD_MAP = {
-  bl_no:          'bl_number',
-  vessel:         'vessel_name',
-  containers:     'container_numbers',
-  container_size: 'container_size',
-  goods:          'goods_description',
-  hs_code:        'hs_code',
-  client:         'consignee_name',
-  destination:    'place_of_delivery',
-  be_no:          null,
-  eta:            null,
-  shipping_line:  null,
-  cfs_name:       null,
-  cfs_amount:     null,
-  free_days:      null,
-  notes:          null,
-  bg_required:    null,
-  rms_status:     null,
-  detention_risk: null,
-  delay_reason:   null,
-  priority:       null,
-  mode:           null,
-}
-
-const MULTI_VALUE_FIELDS = ['containers']
 
 function JobDetailView({ job, profiles, currentUserName, isAdmin, canUpdateStage, onBack, onSaved, toast, onDelete }) {
   const [editMode, setEditMode] = useState(false)

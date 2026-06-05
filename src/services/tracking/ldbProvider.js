@@ -127,6 +127,7 @@ export async function fetchLDBTracking(containerNo) {
       return { ok: false, status: 'TRACKING_PROVIDER_ERROR', userMessage: `LDB returned HTTP ${res.status} for ${cn}` }
     }
     raw = await res.json()
+    console.log('[LDB] Raw response for', cn, ':', JSON.stringify(raw, null, 2))
   } catch (err) {
     log(cn, `Network/parse error`, { error: err.message })
     return { ok: false, status: 'TRACKING_PROVIDER_ERROR', userMessage: `Could not reach LDB for ${cn}: ${err.message}` }

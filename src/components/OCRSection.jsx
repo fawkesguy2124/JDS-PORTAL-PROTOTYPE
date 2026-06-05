@@ -3,89 +3,212 @@ import { supabase } from '../supabase'
 import * as XLSX from 'xlsx'
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 
-const EXTRACTION_PROMPT = `You are a customs documentation expert for JDS Logistics, a licensed Customs House Agent (CHA) in Mumbai, India. We clear shipments at JNPT, MBPT, and MIAL.
+const EXTRACTION_PROMPT = `You are an expert Indian customs document parser with deep knowledge of BE (Bill of Entry) filing under Indian Customs law and ICEGATE.
 
-I am uploading shipping documents for a shipment job. These may include a Bill of Lading, Commercial Invoice, Packing List, Certificate of Origin, Insurance Certificate, or other trade documents.
+Extract ALL fields required for filing a Bill of Entry from the provided documents. Documents may include any combination of: Commercial Invoice, Packing List, Bill of Lading, Airway Bill, Certificate of Origin, Test Certificates.
 
-Extract ALL available shipment data from ALL uploaded documents and intelligently combine them into one unified shipment dataset.
-
-Return ONLY a valid JSON object. No markdown, no backticks, no explanation. Just raw JSON.
-
-For each field provide:
-- value: extracted string or null if not found
-- confidence: "high", "medium", or "low"
-- source: document type e.g. "BL", "Invoice", "Packing List", "COO", "Insurance"
+Return ONLY a valid JSON object with the structure below. If a field is not found in the documents set it to null. Do not guess, assume or hallucinate any value. Do not add markdown, backticks or explanation.
 
 {
-  "bl_number": {"value":null,"confidence":"low","source":null},
-  "bl_date": {"value":null,"confidence":"low","source":null},
-  "vessel_name": {"value":null,"confidence":"low","source":null},
-  "voyage_number": {"value":null,"confidence":"low","source":null},
-  "container_numbers": {"value":null,"confidence":"low","source":null},
-  "container_size": {"value":null,"confidence":"low","source":null},
-  "seal_numbers": {"value":null,"confidence":"low","source":null},
-  "port_of_loading": {"value":null,"confidence":"low","source":null},
-  "port_of_discharge": {"value":null,"confidence":"low","source":null},
-  "place_of_delivery": {"value":null,"confidence":"low","source":null},
-  "shipper_name": {"value":null,"confidence":"low","source":null},
-  "shipper_address": {"value":null,"confidence":"low","source":null},
-  "consignee_name": {"value":null,"confidence":"low","source":null},
-  "consignee_address": {"value":null,"confidence":"low","source":null},
-  "notify_party": {"value":null,"confidence":"low","source":null},
-  "freight_terms": {"value":null,"confidence":"low","source":null},
-  "shipment_terms": {"value":null,"confidence":"low","source":null},
-  "number_of_packages": {"value":null,"confidence":"low","source":null},
-  "package_type": {"value":null,"confidence":"low","source":null},
-  "gross_weight": {"value":null,"confidence":"low","source":null},
-  "net_weight": {"value":null,"confidence":"low","source":null},
-  "volume_cbm": {"value":null,"confidence":"low","source":null},
-  "invoice_number": {"value":null,"confidence":"low","source":null},
-  "invoice_date": {"value":null,"confidence":"low","source":null},
-  "invoice_value": {"value":null,"confidence":"low","source":null},
-  "currency": {"value":null,"confidence":"low","source":null},
-  "country_of_origin": {"value":null,"confidence":"low","source":null},
-  "hs_code": {"value":null,"confidence":"low","source":null},
-  "goods_description": {"value":null,"confidence":"low","source":null},
-  "goods_description_detailed": {"value":null,"confidence":"low","source":null},
-  "coo_certificate_number": {"value":null,"confidence":"low","source":null},
-  "coo_issuing_authority": {"value":null,"confidence":"low","source":null},
-  "insurance_policy_number": {"value":null,"confidence":"low","source":null},
-  "insurance_value": {"value":null,"confidence":"low","source":null},
-  "insurance_company": {"value":null,"confidence":"low","source":null},
-  "iec_code": {"value":null,"confidence":"low","source":null},
-  "ad_code": {"value":null,"confidence":"low","source":null},
-  "gstin": {"value":null,"confidence":"low","source":null},
-  "pan_number": {"value":null,"confidence":"low","source":null},
-  "bank_name": {"value":null,"confidence":"low","source":null},
-  "lc_number": {"value":null,"confidence":"low","source":null},
-  "marks_and_numbers": {"value":null,"confidence":"low","source":null}
+  "bl_number": "Bill of Lading or Airway Bill number",
+  "vessel_name": "name of vessel or flight number",
+  "container_numbers": ["array of container numbers e.g. ABCD1234567"],
+  "seal_numbers": ["array of seal numbers"],
+  "container_size": "e.g. 20FCL or 40FCL or LCL",
+  "shipping_line": "carrier/shipping line name",
+
+  "consignee_name": "full legal name of importer/buyer exactly as on document",
+  "consignee_address": "full address of importer",
+  "importer_gstin": "15-character GSTIN if present on document",
+  "importer_iec": "10-digit IEC if present on document",
+  "ad_code": "AD code if present on document",
+
+  "supplier_name": "full legal name of supplier/seller",
+  "supplier_address": "full address of supplier",
+  "supplier_country": "country of supplier",
+
+  "country_of_origin": "country where goods were manufactured",
+  "country_of_consignment": "country from which goods were shipped — may differ from country of origin",
+  "port_of_loading": "port where goods were loaded onto vessel",
+  "port_of_shipment": "port of shipment",
+  "port_of_discharge": "port of discharge in India e.g. Nhava Sheva or JNPT or Chennai",
+  "place_of_delivery": "final destination in India",
+
+  "igm_number": "IGM number if available on document",
+  "igm_date": "IGM date in DD-MMM-YYYY format",
+  "hawb_number": "House AWB or House BL number",
+  "hawb_date": "date of HAWB or HBL in DD-MMM-YYYY format",
+  "bl_date": "date of BL or AWB in DD-MMM-YYYY format",
+
+  "invoice_numbers": ["array of all invoice numbers"],
+  "invoice_dates": ["array of invoice dates in DD-MMM-YYYY format"],
+  "invoice_amounts": ["array of invoice amounts as numbers only no currency symbol"],
+  "invoice_currencies": ["array of currency codes e.g. USD CNY EUR GBP"],
+  "payment_terms": "CIF or FOB or CNF or CFR or EXW — exactly as stated on invoice",
+  "freight_amount": "freight amount as number or null",
+  "insurance_amount": "insurance amount as number or null",
+  "exchange_rates": {"USD": 95.15, "CNY": 14.05},
+
+  "package_count": "total number of packages or cartons as number",
+  "gross_weight": "total gross weight in KGS as number",
+  "net_weight": "total net weight in KGS as number or null",
+  "goods_description": "general description of all goods in shipment",
+  "hs_code": "primary HS or CTH code — 8 digits — first item or most prominent",
+
+  "invoice_line_items": [
+    {
+      "sno": 1,
+      "invoice_no": "which invoice this item belongs to",
+      "cth": "8-digit CTH or HS code for this item — from document if present",
+      "description": "item description exactly as on invoice",
+      "unit_price": 13.52,
+      "quantity": 8.0,
+      "uqc": "unit quantity code — KGS or NOS or MTR or PCS etc",
+      "amount": 108.16,
+      "currency": "USD or CNY etc",
+      "country_of_origin": "2-letter country code e.g. CN IN US"
+    }
+  ],
+
+  "supporting_documents": [
+    {
+      "type": "document type e.g. Bill of Lading or Commercial Invoice or Packing List or Certificate of Origin or Test Certificate or Import License",
+      "reference_no": "document reference number if present",
+      "date": "document date in DD-MMM-YYYY if present"
+    }
+  ]
 }`
 
 export const FIELD_LABELS_OCR = {
-  bl_number: 'BL Number', bl_date: 'BL Date', vessel_name: 'Vessel Name', voyage_number: 'Voyage Number',
-  container_numbers: 'Container Numbers', container_size: 'Container Size', seal_numbers: 'Seal Numbers',
-  port_of_loading: 'Port of Loading', port_of_discharge: 'Port of Discharge', place_of_delivery: 'Place of Delivery',
-  shipper_name: 'Shipper Name', shipper_address: 'Shipper Address', consignee_name: 'Consignee Name',
-  consignee_address: 'Consignee Address', notify_party: 'Notify Party',
-  freight_terms: 'Freight Terms', shipment_terms: 'Shipment Terms',
-  number_of_packages: 'Number of Packages', package_type: 'Package Type',
-  gross_weight: 'Gross Weight', net_weight: 'Net Weight', volume_cbm: 'Volume (CBM)',
-  invoice_number: 'Invoice Number', invoice_date: 'Invoice Date', invoice_value: 'Invoice Value',
-  currency: 'Currency', country_of_origin: 'Country of Origin', hs_code: 'HS Code',
-  goods_description: 'Goods Description', goods_description_detailed: 'Goods Description (Detailed)',
-  coo_certificate_number: 'COO Certificate Number', coo_issuing_authority: 'COO Issuing Authority',
-  insurance_policy_number: 'Insurance Policy Number', insurance_value: 'Insurance Value',
-  insurance_company: 'Insurance Company', iec_code: 'IEC Code', ad_code: 'AD Code',
-  gstin: 'GSTIN', pan_number: 'PAN Number', bank_name: 'Bank Name', lc_number: 'LC Number',
-  marks_and_numbers: 'Marks & Numbers',
+  // Shipment identifiers
+  bl_number: 'BL / AWB Number',
+  vessel_name: 'Vessel / Flight',
+  container_numbers: 'Container Numbers',
+  seal_numbers: 'Seal Numbers',
+  container_size: 'Container Size',
+  shipping_line: 'Shipping Line',
+
+  // Parties
+  consignee_name: 'Consignee / Importer',
+  consignee_address: 'Importer Address',
+  importer_gstin: 'GSTIN',
+  importer_iec: 'IEC Code',
+  ad_code: 'AD Code',
+  supplier_name: 'Supplier / Exporter',
+  supplier_address: 'Supplier Address',
+  supplier_country: 'Supplier Country',
+
+  // Origin & Route
+  country_of_origin: 'Country of Origin',
+  country_of_consignment: 'Country of Consignment',
+  port_of_loading: 'Port of Loading',
+  port_of_shipment: 'Port of Shipment',
+  port_of_discharge: 'Port of Discharge',
+  place_of_delivery: 'Place of Delivery',
+
+  // IGM / HAWB
+  igm_number: 'IGM Number',
+  igm_date: 'IGM Date',
+  hawb_number: 'HAWB / HBL Number',
+  hawb_date: 'HAWB / HBL Date',
+  bl_date: 'BL / AWB Date',
+
+  // Invoice & Finance
+  invoice_numbers: 'Invoice Numbers',
+  invoice_dates: 'Invoice Dates',
+  invoice_amounts: 'Invoice Amounts',
+  invoice_currencies: 'Invoice Currencies',
+  payment_terms: 'Payment Terms (CIF/FOB)',
+  freight_amount: 'Freight Amount',
+  insurance_amount: 'Insurance Amount',
+  exchange_rates: 'Exchange Rates',
+
+  // Cargo
+  package_count: 'Package Count',
+  gross_weight: 'Gross Weight (KGS)',
+  net_weight: 'Net Weight (KGS)',
+  goods_description: 'Goods Description',
+  hs_code: 'HS Code / CTH',
+
+  // Line items & docs
+  invoice_line_items: 'Invoice Line Items',
+  supporting_documents: 'Supporting Documents',
 }
 
 export const OCR_SECTIONS = [
-  { title: 'Bill of Lading Details', fields: ['bl_number','bl_date','vessel_name','voyage_number','container_numbers','container_size','seal_numbers','port_of_loading','port_of_discharge','place_of_delivery','freight_terms','shipment_terms'] },
-  { title: 'Parties', fields: ['shipper_name','shipper_address','consignee_name','consignee_address','notify_party'] },
-  { title: 'Cargo Details', fields: ['goods_description','goods_description_detailed','hs_code','number_of_packages','package_type','gross_weight','net_weight','volume_cbm','country_of_origin','marks_and_numbers'] },
-  { title: 'Invoice & Finance', fields: ['invoice_number','invoice_date','invoice_value','currency','iec_code','ad_code','gstin','pan_number','bank_name','lc_number'] },
-  { title: 'COO & Insurance', fields: ['coo_certificate_number','coo_issuing_authority','insurance_policy_number','insurance_value','insurance_company'] },
+  { title: 'Shipment Identifiers', fields: ['bl_number','bl_date','vessel_name','container_numbers','container_size','seal_numbers','shipping_line'] },
+  { title: 'Parties', fields: ['consignee_name','consignee_address','importer_gstin','importer_iec','ad_code','supplier_name','supplier_address','supplier_country'] },
+  { title: 'Origin & Route', fields: ['country_of_origin','country_of_consignment','port_of_loading','port_of_shipment','port_of_discharge','place_of_delivery'] },
+  { title: 'IGM & House Docs', fields: ['igm_number','igm_date','hawb_number','hawb_date'] },
+  { title: 'Invoice & Finance', fields: ['invoice_numbers','invoice_dates','invoice_amounts','invoice_currencies','payment_terms','freight_amount','insurance_amount','exchange_rates'] },
+  { title: 'Cargo Details', fields: ['goods_description','hs_code','package_count','gross_weight','net_weight'] },
+  { title: 'Line Items & Supporting Documents', fields: ['invoice_line_items','supporting_documents'] },
+]
+
+export const OCR_FIELD_MAP = {
+  bl_no:                    'bl_number',
+  vessel:                   'vessel_name',
+  containers:               'container_numbers',
+  container_size:           'container_size',
+  goods:                    'goods_description',
+  hs_code:                  'hs_code',
+  client:                   'consignee_name',
+  destination:              'place_of_delivery',
+  be_no:                    null,
+  eta:                      null,
+  shipping_line:            null,
+  cfs_name:                 null,
+  cfs_amount:               null,
+  free_days:                null,
+  notes:                    null,
+  bg_required:              null,
+  rms_status:               null,
+  detention_risk:           null,
+  delay_reason:             null,
+  priority:                 null,
+  mode:                     null,
+  importer_gstin:           'importer_gstin',
+  importer_iec:             'importer_iec',
+  importer_address:         'consignee_address',
+  ad_code:                  'ad_code',
+  igm_no:                   'igm_number',
+  igm_date:                 'igm_date',
+  hawb_no:                  'hawb_number',
+  hawb_date:                'hawb_date',
+  bl_date:                  'bl_date',
+  port_of_loading:          'port_of_loading',
+  port_of_shipment:         'port_of_shipment',
+  port_of_discharge:        'port_of_discharge',
+  country_of_origin:        'country_of_origin',
+  country_of_consignment:   'country_of_consignment',
+  package_count:            'package_count',
+  gross_weight:             'gross_weight',
+  net_weight:               'net_weight',
+  seal_numbers:             'seal_numbers',
+  supplier_name:            'supplier_name',
+  supplier_address:         'supplier_address',
+  supplier_country:         'supplier_country',
+  invoice_numbers:          'invoice_numbers',
+  invoice_dates:            'invoice_dates',
+  invoice_amounts:          'invoice_amounts',
+  invoice_currencies:       'invoice_currencies',
+  payment_terms:            'payment_terms',
+  freight_amount:           'freight_amount',
+  insurance_amount:         'insurance_amount',
+  exchange_rates:           'exchange_rates',
+  line_items:               'invoice_line_items',
+  supporting_documents:     'supporting_documents',
+}
+
+export const MULTI_VALUE_FIELDS = [
+  'containers',
+  'seal_numbers',
+  'invoice_numbers',
+  'invoice_dates',
+  'invoice_amounts',
+  'invoice_currencies',
+  'line_items',
+  'supporting_documents',
 ]
 
 async function urlToBase64(url) {
@@ -252,6 +375,23 @@ async function geminiExtract(imageChunks, prompt) {
   return JSON.parse(cleaned)
 }
 
+function normalizeResult(flat) {
+  const wrapped = {}
+  for (const [k, v] of Object.entries(flat)) {
+    if (v === null || v === undefined) {
+      wrapped[k] = { value: null, confidence: 'low', source: null }
+    } else if (Array.isArray(v)) {
+      const str = v.map(item => typeof item === 'object' ? JSON.stringify(item) : String(item)).join(', ')
+      wrapped[k] = { value: str, confidence: 'medium', source: null }
+    } else if (typeof v === 'object') {
+      wrapped[k] = { value: JSON.stringify(v), confidence: 'medium', source: null }
+    } else {
+      wrapped[k] = { value: String(v), confidence: 'medium', source: null }
+    }
+  }
+  return wrapped
+}
+
 async function extractWithFallback(docs, prompt) {
   const allImages = []
   for (const doc of docs) {
@@ -276,7 +416,7 @@ async function extractWithFallback(docs, prompt) {
     for (let ci = 0; ci < chunks.length; ci++) {
       if (ci > 0) await new Promise((r) => setTimeout(r, 1000 + Math.random() * 1000))
       const parsed = await withRetry(() => geminiExtract(chunks[ci], prompt), 2, 1500)
-      allResults.push(parsed)
+      allResults.push(normalizeResult(parsed))
     }
     return { result: mergeResults(allResults), provider: 'gemini' }
   } catch (geminiError) {
@@ -287,7 +427,7 @@ async function extractWithFallback(docs, prompt) {
       for (let ci = 0; ci < chunks.length; ci++) {
         if (ci > 0) await new Promise((r) => setTimeout(r, 2000 + Math.random() * 2000))
         const parsed = await withRetry(() => groqExtract(chunks[ci], prompt), 2, 2000)
-        allResults.push(parsed)
+        allResults.push(normalizeResult(parsed))
       }
       return { result: mergeResults(allResults), provider: 'groq' }
     } catch (groqError) {
@@ -382,7 +522,7 @@ export default function OCRSection({ jobs, currentUserName, showToast, user: ocr
     }
   }
 
-  const TEXTAREA_FIELDS = ['goods_description', 'goods_description_detailed', 'shipper_address', 'consignee_address', 'marks_and_numbers']
+  const TEXTAREA_FIELDS = ['goods_description', 'consignee_address', 'supplier_address', 'invoice_line_items', 'supporting_documents', 'exchange_rates']
 
   const filteredJobs = useMemo(() => {
     const q = ocrSearch.trim().toLowerCase()

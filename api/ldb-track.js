@@ -1,12 +1,18 @@
 export const config = { runtime: 'nodejs' }
 
 export default async function handler(req) {
-  const { searchParams } = new URL(req.url)
-  const cntrNo = (searchParams.get('cntrNo') || '').trim().toUpperCase()
-
   const corsHeaders = {
     'Content-Type': 'application/json',
     'Access-Control-Allow-Origin': '*',
+  }
+
+  let cntrNo
+  try {
+    const { searchParams } = new URL(req.url, 'http://localhost')
+    cntrNo = (searchParams.get('cntrNo') || '').trim().toUpperCase()
+  } catch (err) {
+    console.error('[ldb-track] URL parse error:', err.message, 'req.url was:', req.url)
+    return new Response(JSON.stringify({ error: 'URL parse failed', status: 'TRACKING_PROVIDER_ERROR' }), { status: 500, headers: corsHeaders })
   }
 
   if (!cntrNo || cntrNo.length < 4) {
@@ -44,6 +50,7 @@ export default async function handler(req) {
 
   } catch (err) {
     const isTimeout = err.name === 'AbortError'
+    console.error('[ldb-track] Fetch error:', err.message)
     return new Response(JSON.stringify({
       error: isTimeout ? 'LDB request timed out' : `LDB unreachable: ${err.message}`,
       status: 'TRACKING_PROVIDER_ERROR',
