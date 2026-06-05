@@ -23,9 +23,13 @@ async function getAccessToken(clientEmail, privateKey) {
 
   // Import private key for signing
   const pemContents = privateKey
-    .replace('-----BEGIN PRIVATE KEY-----', '')
-    .replace('-----END PRIVATE KEY-----', '')
+    .replace(/-----BEGIN PRIVATE KEY-----/g, '')
+    .replace(/-----END PRIVATE KEY-----/g, '')
+    .replace(/\\n/g, '')
+    .replace(/\n/g, '')
+    .replace(/\r/g, '')
     .replace(/\s/g, '')
+    .trim()
 
   const binaryKey = Uint8Array.from(atob(pemContents), c => c.charCodeAt(0))
 
@@ -87,7 +91,7 @@ export default async function handler(req) {
 
     const projectId   = process.env.VITE_VERTEX_PROJECT_ID
     const clientEmail = process.env.VITE_VERTEX_CLIENT_EMAIL
-    const privateKey  = process.env.VITE_VERTEX_PRIVATE_KEY?.replace(/\\n/g, '\n')
+    const privateKey  = process.env.VITE_VERTEX_PRIVATE_KEY || ''
 
     if (!projectId || !clientEmail || !privateKey) {
       return new Response(JSON.stringify({ error: 'Vertex AI credentials not configured' }), { status: 500, headers: corsHeaders })
