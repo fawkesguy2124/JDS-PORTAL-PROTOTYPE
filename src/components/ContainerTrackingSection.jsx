@@ -28,6 +28,9 @@ function JobDetailPanel({ job, trackingData, onClose, onUpdate, onAddEvent, onRe
   const activeTabRef = useRef(null)
   const touchStartX = useRef(null)
   const touchStartY = useRef(null)
+  const dragX = useRef(0)
+  const sidebarRef = useRef(null)
+  const isDragging = useRef(false)
   const [closing, setClosing] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
   const isMobile = window.innerWidth < 768
@@ -124,6 +127,7 @@ function JobDetailPanel({ job, trackingData, onClose, onUpdate, onAddEvent, onRe
       `}</style>
 
       <div
+        ref={sidebarRef}
         style={{
           position:'fixed', right:0, top:0, bottom:0, width:'min(680px,100vw)',
           background:'#ffffff',
@@ -135,18 +139,59 @@ function JobDetailPanel({ job, trackingData, onClose, onUpdate, onAddEvent, onRe
             : 'slideInRight 0.25s cubic-bezier(0.16,1,0.3,1)',
         }}
         onTouchStart={e => {
+          if (window.innerWidth >= 768) return
           touchStartX.current = e.touches[0].clientX
           touchStartY.current = e.touches[0].clientY
+          dragX.current = 0
+          isDragging.current = false
+          if (sidebarRef.current) {
+            sidebarRef.current.style.transition = 'none'
+          }
+        }}
+        onTouchMove={e => {
+          if (window.innerWidth >= 768) return
+          if (touchStartX.current === null) return
+          const deltaX = e.touches[0].clientX - touchStartX.current
+          const deltaY = Math.abs(e.touches[0].clientY - touchStartY.current)
+
+          if (!isDragging.current) {
+            if (deltaX > 10 && deltaX > deltaY) {
+              isDragging.current = true
+            } else if (deltaY > 10) {
+              touchStartX.current = null
+              return
+            }
+          }
+
+          if (isDragging.current && deltaX > 0) {
+            dragX.current = deltaX
+            if (sidebarRef.current) {
+              sidebarRef.current.style.transform = `translateX(${deltaX}px)`
+              sidebarRef.current.style.opacity = `${Math.max(0.5, 1 - deltaX / 400)}`
+            }
+          }
         }}
         onTouchEnd={e => {
           if (touchStartX.current === null) return
-          const deltaX = e.changedTouches[0].clientX - touchStartX.current
-          const deltaY = Math.abs(e.changedTouches[0].clientY - touchStartY.current)
-          if (deltaX > 80 && deltaX > deltaY * 1.5) {
-            handleClose()
+
+          if (sidebarRef.current) {
+            sidebarRef.current.style.transition = ''
+            sidebarRef.current.style.opacity = '1'
           }
+
+          const deltaX = e.changedTouches[0].clientX - touchStartX.current
+
+          if (isDragging.current && (dragX.current > 120)) {
+            handleClose()
+          } else {
+            if (sidebarRef.current) {
+              sidebarRef.current.style.transform = 'translateX(0)'
+            }
+          }
+
           touchStartX.current = null
-          touchStartY.current = null
+          dragX.current = 0
+          isDragging.current = false
         }}
       >
 
