@@ -250,6 +250,7 @@ function JobDetailView({ job, profiles, currentUserName, isAdmin, canUpdateStage
   const [loadingExtracted, setLoadingExtracted] = useState(false)
   const [extractedData, setExtractedData] = useState(null)
   const [importedFields, setImportedFields] = useState({})
+  const [fieldConfidence, setFieldConfidence] = useState({})
   const [summarising, setSummarising] = useState(false)
   const [form, setForm] = useState(() => ({ ...job }))
   const notesRef = useRef(null)
@@ -433,6 +434,69 @@ function JobDetailView({ job, profiles, currentUserName, isAdmin, canUpdateStage
     setTimeout(() => setImportedFields(prev => ({ ...prev, [fieldKey]: false })), 2500)
   }
 
+  const handleAutoFillAll = async () => {
+    if (!extractedData) {
+      toast('No extracted data found. Run OCR Extract on this job first.', 'info')
+      return
+    }
+
+    const fillableKeys = ['job_no','client','mode','goods','bl_no','containers','container_size',
+      'shipping_line','vessel','eta','hs_code','destination','importer_gstin','importer_iec',
+      'ad_code','igm_no','igm_date','hawb_no','hawb_date','bl_date','port_of_loading',
+      'port_of_shipment','port_of_discharge','country_of_origin','country_of_consignment',
+      'package_count','gross_weight','net_weight','supplier_name','supplier_address','supplier_country'
+    ].filter(k => canEditField(k) && OCR_FIELD_MAP[k] && extractedData[OCR_FIELD_MAP[k]]?.value)
+
+    if (fillableKeys.length === 0) {
+      toast('No extracted values available to fill.', 'info')
+      return
+    }
+
+    const newForm = { ...form }
+    const newMeta = { ...(meta || {}) }
+    const newConfidence = {}
+    const now = Date.now()
+
+    for (const k of fillableKeys) {
+      const ocrKey = OCR_FIELD_MAP[k]
+      const extracted = extractedData[ocrKey]
+      if (!extracted?.value) continue
+
+      const extractedValue = extracted.value.trim()
+      const sourceDoc = extracted.source || null
+      const confidence = extracted.confidence || 'low'
+
+      if (MULTI_VALUE_FIELDS.includes(k)) {
+        const existing = (newForm[k] || '').split(/[\s,;/]+/).map(s => s.trim().toUpperCase()).filter(Boolean)
+        const incoming = extractedValue.split(/[\s,;/]+/).map(s => s.trim().toUpperCase()).filter(Boolean)
+        newForm[k] = [...new Set([...existing, ...incoming])].join(', ')
+      } else {
+        newForm[k] = extractedValue
+      }
+
+      newConfidence[k] = confidence
+      newMeta[k] = {
+        ...(newMeta[k] || {}),
+        autoFill: { ts: now, by: currentUserName, source: sourceDoc },
+      }
+    }
+
+    setForm(newForm)
+    setFieldConfidence(newConfidence)
+    setImportedFields(Object.fromEntries(fillableKeys.map(k => [k, true])))
+
+    try {
+      await supabase.from('jobs').update({ field_meta: newMeta }).eq('id', job.id)
+      await onSaved()
+    } catch (e) {
+      console.warn('Could not persist auto-fill record:', e)
+    }
+
+    toast(`✓ ${fillableKeys.length} fields filled from OCR. Please review highlighted fields.`, 'success')
+
+    setTimeout(() => setImportedFields({}), 3000)
+  }
+
   const renderFieldInput = (key) => {
     const disabled = !canEditField(key) || saving
     const value = form[key] ?? ''
@@ -585,6 +649,7 @@ Write the summary:`
   }
 
   const content = (
+    <>
     <div className="bg-white border-[1.5px] border-[#e2e6ed] rounded-xl shadow-sm overflow-hidden">
       <div className="px-4 sm:px-6 py-4 border-b border-[#e2e6ed] flex flex-wrap items-center justify-between gap-3">
         <button type="button" onClick={onBack} className="h-9 px-3 text-xs rounded-lg bg-white border-[1.5px] border-[#d0d6e0] text-[#4a5568] hover:border-[#1a4fa0] hover:text-[#1a4fa0] hover:bg-[#e8eef8] font-semibold">
@@ -627,6 +692,10 @@ Write the summary:`
             className={classNames('px-4 py-1.5 text-xs font-bold rounded-lg transition-colors', detailTab === 'details' ? 'bg-white text-[#1a4fa0] shadow-sm border border-[#e2e6ed]' : 'text-[#8a96a8] hover:text-[#1a4fa0]')}>
             Job Details
           </button>
+          <button type="button" onClick={() => setDetailTab('ocr')}
+            className={classNames('px-4 py-1.5 text-xs font-bold rounded-lg transition-colors', detailTab === 'ocr' ? 'bg-white text-[#1a4fa0] shadow-sm border border-[#e2e6ed]' : 'text-[#8a96a8] hover:text-[#1a4fa0]')}>
+            ✦ OCR Extract
+          </button>
           <button type="button" onClick={() => setDetailTab('fields')}
             className={classNames('px-4 py-1.5 text-xs font-bold rounded-lg transition-colors', detailTab === 'fields' ? 'bg-white text-[#1a4fa0] shadow-sm border border-[#e2e6ed]' : 'text-[#8a96a8] hover:text-[#1a4fa0]')}>
             ✦ Extracted Fields
@@ -656,33 +725,109 @@ Write the summary:`
       </div>
 
       <div className="px-4 sm:px-6 py-5">
-        <h3 className="text-sm font-semibold text-[#1a2233] mb-3">Job Details</h3>
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-semibold text-[#1a2233]">Job Details</h3>
+          {editMode && (
+            <button
+              type="button"
+              onClick={handleAutoFillAll}
+              disabled={!extractedData}
+              className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg text-xs font-semibold border transition-all"
+              style={{
+                background: extractedData ? '#eff6ff' : '#f4f6f9',
+                color: extractedData ? '#1a4fa0' : '#8a96a8',
+                border: extractedData ? '1px solid #bfdbfe' : '1px solid #e2e6ed',
+                cursor: extractedData ? 'pointer' : 'not-allowed',
+                opacity: extractedData ? 1 : 0.6,
+              }}
+              onMouseEnter={e => { if (extractedData) { e.currentTarget.style.background='#1a4fa0'; e.currentTarget.style.color='white' }}}
+              onMouseLeave={e => { e.currentTarget.style.background= extractedData ? '#eff6ff' : '#f4f6f9'; e.currentTarget.style.color= extractedData ? '#1a4fa0' : '#8a96a8' }}
+              title={extractedData ? 'Fill all fields from OCR extracted data' : 'Run OCR Extract first to enable auto-fill'}
+            >
+              ✨ Auto Fill
+            </button>
+          )}
+        </div>
         {!editMode ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-5">
-            {fieldRows.map((f) => <DetailField key={f.key} label={f.label} value={f.value} meta={meta?.[f.key]} profiles={profiles} showProvenance={f.key !== 'notes'} />)}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* Left — job fields, 2 columns wide */}
+            <div className="lg:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-5">
+              {fieldRows.filter(f => f.key !== 'notes').map((f) => (
+                <DetailField key={f.key} label={f.label} value={f.value} meta={meta?.[f.key]} profiles={profiles} showProvenance={f.key !== 'notes'} />
+              ))}
+            </div>
+
+            {/* Right — notes + delay reason */}
+            <div className="lg:col-span-1 flex flex-col gap-4">
+              {job.delay_reason?.trim() && (
+                <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-amber-700 mb-1">Delay Reason</p>
+                  <p>{job.delay_reason}</p>
+                </div>
+              )}
+              <div className="flex flex-col rounded-lg border border-[#e2e6ed] bg-[#f8f9fb] overflow-hidden">
+                <div className="px-4 py-3 border-b border-[#e2e6ed] flex items-center justify-between">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-[#8a96a8]">Notes</p>
+                  {!job.notes?.trim() && (
+                    <span className="text-xs text-[#d0d6e0] italic">No notes yet</span>
+                  )}
+                </div>
+                <div className="px-4 py-3">
+                  {job.notes?.trim() ? (
+                    <p className="text-sm text-[#4a5568] whitespace-pre-wrap leading-relaxed">{job.notes}</p>
+                  ) : (
+                    <p className="text-xs text-[#d0d6e0] italic">Click Edit to add notes</p>
+                  )}
+                </div>
+              </div>
+
+              {/* Field Accountability */}
+              <div className="rounded-lg border border-[#e2e6ed] bg-white overflow-hidden">
+                <div className="px-4 py-3 border-b border-[#e2e6ed] flex items-center justify-between">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-[#8a96a8]">Field Accountability</p>
+                  {metaEntries.length > 5 && (
+                    <button type="button" onClick={() => setShowFullAccountability(true)}
+                      className="text-xs font-semibold text-blue-700 hover:text-blue-800">
+                      View All
+                    </button>
+                  )}
+                </div>
+                <div className="max-h-[220px] overflow-y-auto">
+                  <table className="w-full table-fixed text-xs">
+                    <thead className="sticky top-0 z-10 bg-[#f8f9fb] text-[#8a96a8]">
+                      <tr>
+                        <th className="w-[40%] text-left px-3 py-2 font-semibold uppercase tracking-wide text-[10px]">Field</th>
+                        <th className="w-[30%] text-left px-3 py-2 font-semibold uppercase tracking-wide text-[10px]">By</th>
+                        <th className="w-[30%] text-left px-3 py-2 font-semibold uppercase tracking-wide text-[10px]">When</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {metaEntries.length ? metaEntries.slice(0, 10).map((m) => (
+                        <tr key={m.key} className="border-t border-[#e2e6ed]">
+                          <td className="px-3 py-1.5 text-[#4a5568] truncate text-[11px]" title={m.label}>{m.label}</td>
+                          <td className="px-3 py-1.5 text-[#1a2233] font-semibold truncate text-[11px]">{profiles[m.by] || m.by}</td>
+                          <td className="px-3 py-1.5 text-[#8a96a8] text-[11px]">{formatAccountabilityWhen(m.ts)}</td>
+                        </tr>
+                      )) : (
+                        <tr><td colSpan={3} className="px-3 py-6 text-center text-[#8a96a8] text-[11px]">No updates logged yet</td></tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-5">
             {['job_no','client','mode','priority','goods','bl_no','be_no','be_date','containers','container_size','shipping_line','vessel','eta','cfs_name','cfs_amount','hs_code','rms_status','bg_required','destination','free_days','detention_risk','delay_reason','notes'].map((k) => {
               const hasOcrValue   = OCR_FIELD_MAP[k] !== undefined && OCR_FIELD_MAP[k] !== null && !!extractedData?.[OCR_FIELD_MAP[k]]?.value
               const isEditable    = canEditField(k)
-              const showAutoFill  = isEditable && k in OCR_FIELD_MAP && k !== 'notes'
               const wasJustFilled = importedFields[k]
 
               return (
                 <div key={k} className={k === 'notes' ? 'md:col-span-2' : ''}>
                   <div className="flex items-center gap-1 mb-1 flex-wrap">
                     <p className="text-xs text-[#8a96a8] font-medium uppercase tracking-wide">{FIELD_LABELS[k] || k}</p>
-                    {showAutoFill && (
-                      <button
-                        type="button"
-                        onClick={() => handleAutoFill(k)}
-                        title={hasOcrValue ? `Fill from OCR: "${extractedData[OCR_FIELD_MAP[k]].value}"${extractedData[OCR_FIELD_MAP[k]].source ? ` · Source: ${extractedData[OCR_FIELD_MAP[k]].source}` : ''}` : 'No extracted value available for this field'}
-                        className={classNames('ml-auto inline-flex items-center gap-1 h-5 px-1.5 rounded text-[10px] font-semibold transition-all border', wasJustFilled ? 'bg-[#f0fdf4] text-[#15803d] border-[#bbf7d0]' : hasOcrValue ? 'bg-[#eff6ff] text-[#1a4fa0] border-[#bfdbfe] hover:bg-[#1a4fa0] hover:text-white cursor-pointer' : 'bg-[#f4f6f9] text-[#8a96a8] border-[#e2e6ed] cursor-not-allowed opacity-50')}
-                      >
-                        {wasJustFilled ? '✓ Filled' : '✨ Auto Fill'}
-                      </button>
-                    )}
                   </div>
                   <div className={classNames('rounded-lg transition-all duration-500', wasJustFilled ? 'ring-2 ring-[#1a4fa0]/30 ring-offset-1' : '')}>
                     {k === 'notes' ? (
@@ -715,53 +860,28 @@ Write the summary:`
                       renderFieldInput(k)
                     )}
                   </div>
-                  {k !== 'notes' && form[k] && String(form[k]).trim() !== '' && <FieldProvenance meta={meta?.[k]} profiles={profiles} />}
+                  {k !== 'notes' && fieldConfidence[k] && (
+                    <div className="mt-1 flex items-center gap-1">
+                      <span className={classNames(
+                        'inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full border',
+                        fieldConfidence[k] === 'high'   ? 'bg-[#f0fdf4] text-[#15803d] border-[#bbf7d0]' :
+                        fieldConfidence[k] === 'medium' ? 'bg-[#fffbeb] text-[#92400e] border-[#fde68a]' :
+                                                          'bg-[#fef2f2] text-[#991b1b] border-[#fecaca]'
+                      )}>
+                        {fieldConfidence[k] === 'high'   ? '\u25CF High confidence' :
+                         fieldConfidence[k] === 'medium' ? '\u25CF Medium \u2014 please verify' :
+                                                            '\u25CF Low confidence \u2014 check manually'}
+                      </span>
+                    </div>
+                  )}
                 </div>
               )
             })}
           </div>
         )}
-      </div>
-
-      <div className="px-4 sm:px-6 pb-6">
-        <div className="bg-white border border-[#e2e6ed] rounded-xl overflow-hidden shadow-sm w-full">
-          <div className="px-4 py-3 border-b border-[#e2e6ed] flex items-center justify-between gap-3">
-<div className="text-sm font-semibold text-[#1a2233]">Field Accountability</div>
-            <div className="flex items-center gap-3">
-              <div className="text-xs text-[#8a96a8]">Who updated what</div>
-              {metaEntries.length > 5 && (
-                <button type="button" onClick={() => setShowFullAccountability(true)} className="text-xs font-semibold text-blue-700 hover:text-blue-800">
-                  View Full List
-                </button>
-              )}
-            </div>
-          </div>
-          <div className="max-h-[228px] overflow-y-auto">
-          <table className="w-full table-fixed text-xs">
-            <thead className="sticky top-0 z-10 bg-[#f8f9fb] text-[#8a96a8]">
-              <tr>
-                <th className="w-[36%] text-left px-4 py-3 font-semibold uppercase tracking-wide text-xs">Field Name</th>
-                <th className="w-[32%] text-left px-4 py-3 font-semibold uppercase tracking-wide text-xs">Updated By</th>
-                <th className="w-[32%] text-left px-4 py-3 font-semibold uppercase tracking-wide text-xs">When</th>
-              </tr>
-            </thead>
-            <tbody>
-              {metaEntries.length ? metaEntries.map((m) => (
-                <tr key={m.key} className="border-t border-[#e2e6ed]">
-                  <td className="px-4 py-2 text-[#4a5568] truncate" title={m.label}>{m.label}</td>
-                  <td className="px-4 py-2 text-[#1a2233] font-semibold truncate" title={profiles[m.by] || m.by}>{profiles[m.by] || m.by}</td>
-                  <td className="px-4 py-2 text-[#8a96a8]">{formatAccountabilityWhen(m.ts)}</td>
-                </tr>
-              )) : (
-                <tr><td colSpan={3} className="px-4 py-8 text-center text-[#8a96a8]">No field updates logged yet</td></tr>
-              )}
-            </tbody>
-          </table>
-          </div>
         </div>
-      </div>
 
-      {showFullAccountability && (
+        {showFullAccountability && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm px-4">
           <div className="w-full max-w-3xl max-h-[82vh] overflow-hidden rounded-xl bg-white shadow-2xl border border-[#e2e6ed]">
             <div className="px-5 py-4 border-b border-[#e2e6ed] flex items-center justify-between gap-3">
@@ -798,18 +918,6 @@ Write the summary:`
         </div>
       )}
 
-      {!editMode && job.delay_reason?.trim() && (
-        <div className="mx-4 sm:mx-6 mb-5 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-          <span className="font-semibold">Delay:</span> {job.delay_reason}
-        </div>
-      )}
-      {!editMode && job.notes?.trim() && (
-        <div className="mx-4 sm:mx-6 mb-6 rounded-lg border border-[#e2e6ed] bg-white px-4 py-3">
-          <p className="text-xs font-semibold text-[#8a96a8] uppercase tracking-wide mb-1">Notes</p>
-          <p className="text-sm text-[#4a5568] whitespace-pre-wrap">{job.notes}</p>
-        </div>
-      )}
-
       <div className="px-4 sm:px-6 pb-6">
         <button type="button" onClick={() => onDelete && onDelete()}
           className="h-9 px-5 text-xs rounded-lg border border-red-300 bg-red-50 text-red-700 hover:bg-red-100 font-semibold">
@@ -819,6 +927,18 @@ Write the summary:`
       </>
       )}
 
+      {detailTab === 'ocr' && (
+        <div className="px-4 sm:px-6 py-5">
+          <OCRSection
+            job={job}
+            showToast={toast}
+            preloadedExtraction={extractedFields}
+            currentUserName={currentUserName}
+            user={null}
+            profile={null}
+          />
+        </div>
+      )}
       {detailTab === 'fields' && (
         <div className="px-4 sm:px-6 py-5">
           {loadingExtracted ? (
@@ -887,13 +1007,14 @@ Write the summary:`
           ) : (
             <div className="flex flex-col items-center justify-center py-12 text-center">
               <p className="text-sm text-[#8a96a8] mb-2">No extracted fields found for this job</p>
-              <p className="text-xs text-[#8a96a8]">Go to the <strong>OCR Extract</strong> tab to extract fields from uploaded documents</p>
+              <p className="text-xs text-[#8a96a8]">Use the <strong>OCR Extract</strong> tab above to extract fields from uploaded documents</p>
             </div>
           )}
         </div>
       )}
 
     </div>
+    </>
   )
 
   return (

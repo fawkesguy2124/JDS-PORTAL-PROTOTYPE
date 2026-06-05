@@ -164,6 +164,13 @@ function JobDetailPanel({ job, trackingData, onClose, onUpdate, onAddEvent, onRe
           >{'>'}</button>
 
           <span style={{ fontSize:'11px', color:'#8a96a8', flexShrink:0 }}>{activeCnIdx + 1}/{cnList.length}</span>
+          <button
+            onClick={() => onRefresh(job, cn)}
+            style={{ width:'28px', height:'28px', borderRadius:'6px', border:'0.5px solid var(--color-border-tertiary)', background:'var(--color-background-primary)', color:'var(--color-text-secondary)', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'14px', flexShrink:0 }}
+            onMouseEnter={e => { e.currentTarget.style.background='#185FA5'; e.currentTarget.style.color='white'; e.currentTarget.style.borderColor='#185FA5' }}
+            onMouseLeave={e => { e.currentTarget.style.background='var(--color-background-primary)'; e.currentTarget.style.color='var(--color-text-secondary)'; e.currentTarget.style.borderColor='var(--color-border-tertiary)' }}
+            title="Refresh"
+          >↻</button>
         </div>
 
         {/* Container detail — scrollable */}
@@ -255,13 +262,7 @@ function JobDetailPanel({ job, trackingData, onClose, onUpdate, onAddEvent, onRe
 
         {/* Action buttons — pinned to bottom */}
         <div style={{ padding:'10px 14px', borderTop:'0.5px solid var(--color-border-tertiary)', display:'flex', gap:'6px', flexShrink:0, background:'var(--color-background-primary)' }}>
-          <button
-            onClick={() => onRefresh(job, cn)}
-            style={{ width:'36px', height:'36px', borderRadius:'8px', border:'0.5px solid var(--color-border-tertiary)', background:'var(--color-background-primary)', color:'var(--color-text-secondary)', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'16px', flexShrink:0 }}
-            onMouseEnter={e => { e.currentTarget.style.background='#185FA5'; e.currentTarget.style.color='white'; e.currentTarget.style.borderColor='#185FA5' }}
-            onMouseLeave={e => { e.currentTarget.style.background='var(--color-background-primary)'; e.currentTarget.style.color='var(--color-text-secondary)'; e.currentTarget.style.borderColor='var(--color-border-tertiary)' }}
-            title="Refresh"
-          >↻</button>
+
           <button
             onClick={() => onUpdate(job, cn)}
             style={{ flex:1, padding:'9px 0', background:'#E6F1FB', border:'0.5px solid #B5D4F4', color:'#185FA5', borderRadius:'8px', fontSize:'13px', fontWeight:500, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:'5px' }}
@@ -802,9 +803,44 @@ function ContainerTrackingSection({ showToast, jobs }) {
       } finally {
         setLoadingTracking(false)
       }
+
+      // Auto-refresh from LDB on tab open
+      if ((jobs || []).filter(j => j.containers).length > 0) {
+        try {
+          await refreshAllContainers(jobs, {})
+          const { data: fresh } = await supabase.from('container_tracking').select('*')
+          const map = {}
+          for (const row of (fresh || [])) {
+            map[row.container_no] = {
+              status:          row.status || 'in_transit',
+              statusText:      row.status_text || 'In Transit',
+              currentLocation: row.current_location,
+              vessel:          row.vessel,
+              freeDays:        row.free_days,
+              notes:           row.notes,
+              lastUpdate:      row.last_update,
+              milestones:      row.milestones || [],
+              eta:             row.eta,
+              portIn:          row.port_in,
+              portOut:         row.port_out,
+              cfsGateIn:       row.cfs_gate_in,
+              terminal:        row.terminal        || null,
+              dpdFlag:         row.dpd_flag        || false,
+              isEmpty:         row.is_empty        || false,
+              vesselImo:       row.vessel_imo      || null,
+              shippingLineLdb: row.shipping_line_ldb || null,
+              containerSize:   row.container_size  || null,
+              expectedPortOut: row.expected_port_out || null,
+            }
+          }
+          setTrackingData(map)
+        } catch (e) {
+          console.warn('Auto-refresh failed:', e)
+        }
+      }
     }
     load()
-  }, [])
+  }, [jobs])
 
   const refreshTracking = async () => {
     const { data } = await supabase.from('container_tracking').select('*')
@@ -852,8 +888,13 @@ function ContainerTrackingSection({ showToast, jobs }) {
     return allJobCards.filter(({ job, cnList }) => {
       if (filterLine && job.shipping_line !== filterLine) return false
       if (filterStatus) {
-        const anyMatch = cnList.some(cn => (trackingData[cn]?.status || 'in_transit') === filterStatus)
-        if (!anyMatch) return false
+        if (filterStatus === 'detained') {
+          const anyDetained = cnList.some(cn => (trackingData[cn]?.freeDays ?? 99) <= 2)
+          if (!anyDetained) return false
+        } else {
+          const anyMatch = cnList.some(cn => (trackingData[cn]?.status || 'in_transit') === filterStatus)
+          if (!anyMatch) return false
+        }
       }
       if (!q) return true
       return (

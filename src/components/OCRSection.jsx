@@ -375,6 +375,25 @@ async function geminiExtract(imageChunks, prompt) {
   return JSON.parse(cleaned)
 }
 
+async function vertexExtract(imageChunks, prompt) {
+  const res = await fetch('/api/vertex-ocr', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ images: imageChunks, prompt }),
+  })
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(err?.error || `Vertex AI proxy error ${res.status}`)
+  }
+
+  const { text } = await res.json()
+  if (!text) throw new Error('Vertex AI returned empty response')
+
+  const cleaned = text.replace(/```(?:json)?\s*/gi, '').replace(/```/g, '').trim()
+  return JSON.parse(cleaned)
+}
+
 function normalizeResult(flat) {
   const wrapped = {}
   for (const [k, v] of Object.entries(flat)) {
@@ -410,7 +429,20 @@ async function extractWithFallback(docs, prompt) {
     chunks.push(allImages.slice(i, i + MAX_IMAGES_PER_REQUEST))
   }
 
-  // Gemini 2.5 Flash is now PRIMARY (faster, better vision)
+  // Vertex AI (India region) is now PRIMARY
+  try {
+    const allResults = []
+    for (let ci = 0; ci < chunks.length; ci++) {
+      if (ci > 0) await new Promise((r) => setTimeout(r, 800 + Math.random() * 400))
+      const parsed = await withRetry(() => vertexExtract(chunks[ci], prompt), 2, 1500)
+      allResults.push(normalizeResult(parsed))
+    }
+    return { result: mergeResults(allResults), provider: 'vertex-gemini' }
+  } catch (vertexError) {
+    console.warn('Vertex AI failed, trying Gemini:', vertexError.message)
+  }
+
+  // Fallback: Gemini 2.5 Flash
   try {
     const allResults = []
     for (let ci = 0; ci < chunks.length; ci++) {
@@ -420,7 +452,7 @@ async function extractWithFallback(docs, prompt) {
     }
     return { result: mergeResults(allResults), provider: 'gemini' }
   } catch (geminiError) {
-    // Groq Llama 4 Scout is now FALLBACK
+    // Groq Llama 4 Scout as final fallback
     console.warn('Gemini failed, trying Groq fallback:', geminiError.message)
     try {
       const allResults = []
@@ -431,12 +463,12 @@ async function extractWithFallback(docs, prompt) {
       }
       return { result: mergeResults(allResults), provider: 'groq' }
     } catch (groqError) {
-      throw new Error(`Both Gemini and Groq failed. Gemini: ${geminiError.message} | Groq: ${groqError.message}`)
+      throw new Error(`All providers failed. Vertex: ${vertexError.message} | Gemini: ${geminiError.message} | Groq: ${groqError.message}`)
     }
   }
 }
 
-export default function OCRSection({ jobs, currentUserName, showToast, user: ocrUser, profile: ocrProfile }) {
+export default function OCRSection({ job: preselectedJob, jobs, currentUserName, showToast, user: ocrUser, profile: ocrProfile, preloadedExtraction }) {
   const [step, setStep] = useState(1)
   const [selectedJob, setSelectedJob] = useState(null)
   const [selectedDocIds, setSelectedDocIds] = useState(new Set())
@@ -460,6 +492,26 @@ export default function OCRSection({ jobs, currentUserName, showToast, user: ocr
   useEffect(() => {
     loadRecentExtractions()
   }, [])
+
+  useEffect(() => {
+    if (!preselectedJob) return
+
+    setSelectedJob(preselectedJob)
+    setSelectedDocIds(new Set())
+    setExtractError(null)
+
+    if (preloadedExtraction) {
+      // Use already-loaded extraction data — no Supabase call needed
+      setSavedExtraction(preloadedExtraction)
+      setExtractedData({ result: preloadedExtraction.extracted_data, provider: 'saved' })
+      setExtractEdits({ ...(preloadedExtraction.extracted_data || {}) })
+      setStep(4)
+      setLoadingDocs(false)
+    } else {
+      // No extraction yet — load documents for step 2
+      fetchDocuments(preselectedJob).then(() => setStep(2))
+    }
+  }, [preselectedJob?.id, preloadedExtraction?.id])
 
   const loadRecentExtractions = async () => {
     setLoadingRecent(true)
@@ -550,7 +602,7 @@ export default function OCRSection({ jobs, currentUserName, showToast, user: ocr
     setLoadingDocs(false)
   }
 
-  const handleSelectJob = async (job) => {
+  const handleSelectJob = async (job, autoAdvance = false) => {
     setSelectedJob(job)
     setSelectedDocIds(new Set())
     setExtractedData(null)
@@ -563,6 +615,12 @@ export default function OCRSection({ jobs, currentUserName, showToast, user: ocr
     if (extraction) {
       setSavedExtraction(extraction)
       setLoadingDocs(false)
+      if (autoAdvance) {
+        // Has saved extraction — go straight to review
+        setExtractedData({ result: extraction.extracted_data, provider: 'saved' })
+        setExtractEdits({ ...extraction.extracted_data })
+        setStep(4)
+      }
     } else {
       await fetchDocuments(job)
       setStep(2)
@@ -757,10 +815,10 @@ export default function OCRSection({ jobs, currentUserName, showToast, user: ocr
       {/* ── LEFT MAIN COLUMN ── */}
       <div className="flex-1 min-w-0">
 
-        {/* ── STEP INDICATOR (shown on all steps) ── */}
-        <div className="bg-white border-[1.5px] border-[#e2e6ed] rounded-xl shadow-sm overflow-hidden mb-[18px]">
+        {!preselectedJob && (
+          <div className="bg-white border-[1.5px] border-[#e2e6ed] rounded-xl shadow-sm overflow-hidden mb-[18px]">
           <div className="px-5 py-4 flex items-center gap-0">
-            {stepInfo.map((s, i) => {
+            {stepInfo.filter(s => preselectedJob ? s.num !== 1 : true).map((s, i) => {
               const done   = s.num < step
               const active = s.num === step
               return (
@@ -792,9 +850,10 @@ export default function OCRSection({ jobs, currentUserName, showToast, user: ocr
             })}
           </div>
         </div>
+        )}
 
         {/* ── STEP 1: SELECT JOB ── */}
-        {step === 1 && (
+        {step === 1 && !preselectedJob && (
           <div className="bg-white border-[1.5px] border-[#e2e6ed] rounded-xl shadow-sm overflow-hidden">
             <div className="px-5 py-4 border-b border-[#e2e6ed] flex items-center justify-between">
               <div>
@@ -896,10 +955,12 @@ export default function OCRSection({ jobs, currentUserName, showToast, user: ocr
         {step === 2 && (
           <div className="bg-white border-[1.5px] border-[#e2e6ed] rounded-xl shadow-sm overflow-hidden">
             <div className="px-5 py-4 border-b border-[#e2e6ed] flex items-center gap-3">
+            {!preselectedJob && (
               <button type="button" onClick={() => setStep(1)}
                 className="h-8 px-3 text-xs font-semibold rounded-lg bg-white border-[1.5px] border-[#d0d6e0] text-[#4a5568] hover:border-[#1a4fa0] hover:text-[#1a4fa0] hover:bg-[#e8eef8] transition-colors">
                 ← Back
               </button>
+            )}
               <div>
                 <span className="text-sm font-bold text-[#1a2233]">{selectedJob?.job_no}</span>
                 <span className="text-xs text-[#8a96a8] ml-2">{selectedJob?.client}</span>
@@ -1037,11 +1098,15 @@ export default function OCRSection({ jobs, currentUserName, showToast, user: ocr
               <div className="flex items-center gap-3">
                 <span className={[
                   'inline-flex items-center rounded-full px-2.5 py-1 text-xs font-bold',
-                  extractedData.provider === 'gemini' ? 'bg-[#eff6ff] text-[#1e40af] border border-[#bfdbfe]'
+                  extractedData.provider === 'vertex-gemini' ? 'bg-[#ecfdf5] text-[#065f46] border border-[#a7f3d0]'
+                  : extractedData.provider === 'gemini' ? 'bg-[#eff6ff] text-[#1e40af] border border-[#bfdbfe]'
                   : extractedData.provider === 'groq'  ? 'bg-[#f5f3ff] text-[#5b21b6] border border-[#ddd6fe]'
-                                                       : 'bg-[#f0fdf4] text-[#15803d] border border-[#bbf7d0]'
+                                                        : 'bg-[#f0fdf4] text-[#15803d] border border-[#bbf7d0]'
                 ].join(' ')}>
-                  {extractedData.provider === 'gemini' ? '✦ Gemini 2.5 Flash' : extractedData.provider === 'groq' ? '⚡ Groq Fallback' : '✓ Saved'}
+                  {extractedData.provider === 'vertex-gemini' ? '✦ Gemini 2.0 Flash · Vertex AI (India)'
+                  : extractedData.provider === 'gemini' ? '✦ Gemini 2.5 Flash'
+                  : extractedData.provider === 'groq' ? '⚡ Groq Fallback'
+                  : '✓ Saved'}
                 </span>
                 <div>
                   <span className="text-sm font-bold text-[#1a2233]">{selectedJob?.job_no}</span>
@@ -1150,7 +1215,21 @@ export default function OCRSection({ jobs, currentUserName, showToast, user: ocr
             {/* Action footer */}
             <div className="bg-white border-[1.5px] border-[#e2e6ed] rounded-xl px-5 py-4 flex items-center justify-between shadow-sm">
               <button type="button"
-                onClick={() => { setStep(1); setSelectedJob(null); setExtractedData(null); setExtractEdits({}) }}
+                onClick={async () => {
+                  setExtractedData(null)
+                  setExtractEdits({})
+                  setExtractError(null)
+                  setSavedExtraction(null)
+                  setSelectedDocIds(new Set())
+                  if (preselectedJob) {
+                    await fetchDocuments(preselectedJob)
+                    setStep(2)
+                  } else {
+                    setSelectedJob(null)
+                    setDocuments([])
+                    setStep(1)
+                  }
+                }}
                 className="h-9 px-4 text-sm font-semibold rounded-lg bg-white border-[1.5px] border-[#d0d6e0] text-[#4a5568] hover:border-[#1a4fa0] hover:text-[#1a4fa0] hover:bg-[#e8eef8] transition-colors">
                 ← Start Over
               </button>
@@ -1173,7 +1252,7 @@ export default function OCRSection({ jobs, currentUserName, showToast, user: ocr
       </div>{/* end left column */}
 
       {/* ── RIGHT SIDEBAR ── */}
-      <div className="hidden lg:flex w-[300px] shrink-0 flex-col gap-[16px]">
+      <div className={`${preselectedJob ? 'hidden' : 'hidden lg:flex'} w-[300px] shrink-0 flex-col gap-[16px]`}>
 
         {/* Step 1–3: Recent Extractions */}
         {step < 4 && (

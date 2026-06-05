@@ -66,11 +66,11 @@ export default function ContainerTrackingDesktop({
             { label:'In Transit', value:'in_transit' },
             { label:'At CFS',     value:'at_cfs' },
             { label:'Arrived',    value:'arrived' },
-            { label:'Detained',   value:'detained' },
+            { label:'Detention Risk',   value:'detained' },
           ].map(p => (
             <button
               key={p.value}
-              onClick={() => setFilterStatus(p.value === 'detained' ? '' : p.value)}
+              onClick={() => setFilterStatus(p.value)}
               style={{
                 padding:'5px 12px', borderRadius:'9999px', fontSize:'12px', fontWeight:500, cursor:'pointer',
                 border: filterStatus === p.value ? '0.5px solid #185FA5' : '0.5px solid var(--color-border-tertiary)',
@@ -98,11 +98,15 @@ export default function ContainerTrackingDesktop({
         <div style={{ background:'var(--color-background-primary)', border:'0.5px solid var(--color-border-tertiary)', borderRadius:'12px', padding:'48px 24px', textAlign:'center' }}>
           <div style={{ fontSize:'32px', color:'var(--color-text-secondary)', marginBottom:'12px' }}>⊟</div>
           <p style={{ fontSize:'14px', fontWeight:500, color:'var(--color-text-primary)' }}>
-            {searchQuery || filterLine || filterStatus ? 'No jobs match your filters.' : 'No jobs with containers yet.'}
+            {filterStatus === 'detained' ? 'No containers at detention risk.' :
+            (searchQuery || filterLine || filterStatus) ? 'No jobs match your filters.' :
+            'No jobs with containers yet.'}
           </p>
-          <p style={{ fontSize:'12px', color:'var(--color-text-secondary)', marginTop:'6px' }}>
-            Go to All Jobs → open a job → Edit → add container numbers.
-          </p>
+          {!filterStatus && (
+            <p style={{ fontSize:'12px', color:'var(--color-text-secondary)', marginTop:'6px' }}>
+              Go to All Jobs → open a job → Edit → add container numbers.
+            </p>
+          )}
         </div>
       ) : (
         <div style={{ overflowX:'auto', WebkitOverflowScrolling:'touch' }}>

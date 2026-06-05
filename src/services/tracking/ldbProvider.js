@@ -2,7 +2,7 @@ import { supabase } from '../../supabase'
 
 const LDB_PROXY_URL = '/api/ldb-track'
 const FRESHNESS_DAYS = 30
-const CACHE_HOURS = 6
+const CACHE_HOURS = 12
 
 function log(containerNo, message, extra = {}) {
   const ts = new Date().toISOString()
@@ -235,6 +235,8 @@ export async function refreshJobContainers(job, existingTrackingData = {}) {
         summary.skipped.push(cn)
         continue
       }
+      // Polite delay — avoid triggering LDB rate limits
+      await new Promise(r => setTimeout(r, 800 + Math.random() * 400))
       const result = await fetchLDBTracking(cn)
       if (!result.ok) {
         summary.messages.push(result.userMessage || `${cn}: ${result.status}`)

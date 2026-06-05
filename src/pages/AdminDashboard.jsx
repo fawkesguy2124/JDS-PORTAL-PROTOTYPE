@@ -11,7 +11,6 @@ import AllJobsMobile from '../components/mobile/AllJobsMobile'
 import AllJobsDesktop from '../components/desktop/AllJobsDesktop'
 import PaymentsSection from '../components/PaymentsSection'
 import ComplianceSection from '../components/ComplianceSection'
-import OCRSection from '../components/OCRSection'
 import BEFilingSection from '../components/BEFilingSection'
 import CreateJob from './CreateJob'
 
@@ -36,12 +35,6 @@ const NAV_SECTIONS = [
     label: 'COMPLIANCE',
     items: [
       { id: 'compliance', label: 'BIS & Licences', icon: '✓' },
-    ]
-  },
-  {
-    label: 'AI TOOLS',
-    items: [
-      { id: 'ocr', label: 'OCR Extract', icon: '✦' },
     ]
   },
 ]
@@ -758,15 +751,11 @@ export default function AdminDashboard() {
             <ComplianceSection showToast={showToast} />
           )}
 
-          {activeNav === 'ocr' && (
-            <OCRSection jobs={jobs} currentUserName={currentUserName} showToast={showToast} user={user} profile={profile} />
-          )}
-
           {activeNav === 'be-filing' && (
             <BEFilingSection jobs={jobs} currentUserName={currentUserName} showToast={showToast} user={user} />
           )}
 
-          {activeNav !== 'overview' && activeNav !== 'jobs' && activeNav !== 'documents' && activeNav !== 'containers' && activeNav !== 'ocr' && activeNav !== 'payments' && activeNav !== 'compliance' && activeNav !== 'be-filing' && (
+          {activeNav !== 'overview' && activeNav !== 'jobs' && activeNav !== 'documents' && activeNav !== 'containers' && activeNav !== 'payments' && activeNav !== 'compliance' && activeNav !== 'be-filing' && (
             <div className="bg-white border-[1.5px] border-[#e2e6ed] rounded-xl shadow-sm p-10 text-center text-[#8a96a8]">
               Coming soon
             </div>
