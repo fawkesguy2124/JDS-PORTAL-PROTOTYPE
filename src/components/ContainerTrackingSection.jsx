@@ -865,7 +865,6 @@ function ContainerTrackingSection({ showToast, jobs }) {
       const result = await fetchLDBTracking(cn)
       if (result.ok) {
         await persistLDBTracking(cn, job, result.data)
-        await refreshTracking()
         showToast(`${cn} updated from LDB`, 'success')
       } else {
         showToast(result.userMessage || `No LDB data for ${cn}`, 'info')
@@ -874,20 +873,40 @@ function ContainerTrackingSection({ showToast, jobs }) {
       showToast(`LDB unavailable for ${cn}`, 'info')
     }
 
-    const td = trackingData[cn] || {}
+    const { data: freshRow } = await supabase
+      .from('container_tracking')
+      .select('*')
+      .eq('container_no', cn)
+      .single()
+
+    await refreshTracking()
+
+    const td = freshRow ? {
+      status:          freshRow.status          || 'in_transit',
+      statusText:      freshRow.status_text     || 'In Transit',
+      currentLocation: freshRow.current_location || '',
+      vessel:          freshRow.vessel          || '',
+      eta:             freshRow.eta             || '',
+      freeDays:        freshRow.free_days       ?? '',
+      notes:           freshRow.notes          || '',
+      portIn:          freshRow.port_in         || '',
+      portOut:         freshRow.port_out        || '',
+      cfsGateIn:       freshRow.cfs_gate_in     || '',
+    } : {}
+
     setUpdateModal({
       containerNo:     cn,
       carrier:         carrier,
-      status:          td.status || 'in_transit',
-      statusText:      td.statusText || 'In Transit',
+      status:          td.status          || 'in_transit',
+      statusText:      td.statusText      || 'In Transit',
       currentLocation: td.currentLocation || '',
-      vessel:          td.vessel || job.vessel || '',
-      eta:             (td.eta || job.eta || '').slice(0, 10),
-      freeDays:        td.freeDays ?? job.free_days ?? '',
-      notes:           td.notes || '',
-      portIn:          td.portIn || '',
-      portOut:         td.portOut || '',
-      cfsGateIn:       td.cfsGateIn || '',
+      vessel:          td.vessel          || job.vessel || '',
+      eta:             (td.eta            || job.eta || '').slice(0, 10),
+      freeDays:        td.freeDays        ?? job.free_days ?? '',
+      notes:           td.notes          || '',
+      portIn:          td.portIn         || '',
+      portOut:         td.portOut        || '',
+      cfsGateIn:       td.cfsGateIn      || '',
     })
   }
 
