@@ -13,7 +13,7 @@ function formatContainerDate(ts) {
   })
 }
 
-function JobDetailPanel({ job, trackingData, onClose, onUpdate, onAddEvent, showToast, activeContainer }) {
+function JobDetailPanel({ job, trackingData, onClose, onUpdate, onAddEvent, onRefresh, showToast, activeContainer }) {
   const cnList = (job.containers || '')
     .split(/[\s,;/]+/)
     .map(s => s.trim().toUpperCase())
@@ -255,6 +255,15 @@ function JobDetailPanel({ job, trackingData, onClose, onUpdate, onAddEvent, show
 
         {/* Action buttons — pinned to bottom */}
         <div style={{ padding:'12px 18px', borderTop:'1.5px solid #e2e6ed', display:'flex', gap:'8px', flexShrink:0, background:'white' }}>
+          <button
+            onClick={() => onRefresh(job, cn)}
+            style={{ flex:1, padding:'9px 0', background:'#f0f4fb', border:'1.5px solid #bfdbfe', color:'#1a4fa0', borderRadius:'8px', fontSize:'12px', fontWeight:600, cursor:'pointer' }}
+            onMouseEnter={e => { e.currentTarget.style.background='#1a4fa0'; e.currentTarget.style.color='white' }}
+            onMouseLeave={e => { e.currentTarget.style.background='#f0f4fb'; e.currentTarget.style.color='#1a4fa0' }}
+            title="Refresh"
+          >
+            ↻
+          </button>
           <button
             onClick={() => onUpdate(job, cn)}
             style={{ flex:1, padding:'9px 0', background:'#e8eef8', border:'1.5px solid #bfdbfe', color:'#1a4fa0', borderRadius:'8px', fontSize:'12px', fontWeight:600, cursor:'pointer' }}
@@ -1063,6 +1072,22 @@ function ContainerTrackingSection({ showToast, jobs }) {
     }
   }
 
+  const handleLDBRefresh = async (job, cn) => {
+    showToast(`Refreshing ${cn} from LDB...`, 'info')
+    try {
+      const result = await fetchLDBTracking(cn)
+      if (result.ok) {
+        await persistLDBTracking(cn, job, result.data)
+        await refreshTracking()
+        showToast(`${cn} refreshed ✓`, 'success')
+      } else {
+        showToast(result.userMessage || `No LDB data for ${cn}`, 'info')
+      }
+    } catch (err) {
+      showToast(`LDB unavailable for ${cn}`, 'info')
+    }
+  }
+
   // ── Shared props passed to both views ────────────────────────────
   const sharedProps = {
     sortedJobCards,
@@ -1084,21 +1109,7 @@ function ContainerTrackingSection({ showToast, jobs }) {
     refreshAll: handleRefreshAll,
     activeContainer,
     setActiveContainer,
-    handleLDBRefresh: async (job, cn) => {
-      showToast(`Refreshing ${cn} from LDB...`, 'info')
-      try {
-        const result = await fetchLDBTracking(cn)
-        if (result.ok) {
-          await persistLDBTracking(cn, job, result.data)
-          await refreshTracking()
-          showToast(`${cn} refreshed ✓`, 'success')
-        } else {
-          showToast(result.userMessage || `No LDB data for ${cn}`, 'info')
-        }
-      } catch (err) {
-        showToast(`LDB unavailable for ${cn}`, 'info')
-      }
-    },
+    handleLDBRefresh,
   }
 
   return (
@@ -1140,7 +1151,8 @@ function ContainerTrackingSection({ showToast, jobs }) {
           onClose={() => { setDetailJob(null); setActiveContainer(null) }}
           onUpdate={(job, cn) => { setDetailJob(null); setActiveContainer(null); handleOpenUpdate(job, cn) }}
           onAddEvent={(job, cn) => { setDetailJob(null); setActiveContainer(null); handleOpenMilestone(job, cn)       }}
-    />
+          onRefresh={handleLDBRefresh}
+        />
       )}
     </div>
   )

@@ -10,8 +10,8 @@ const PRIORITIES = ['normal', 'high', 'urgent']
 const RMS_STATUSES = ['pending', 'rms', 'apr', 'acl', 'check', 'hold']
 const BG_OPTIONS = ['no', 'yes', '100percent']
 const SHIPPING_LINES = [
-  'Maersk', 'MSC', 'Hapag-Lloyd', 'CMA-CGM', 'Evergreen',
-  'ONE', 'OOCL', 'COSCO', 'ZIM', 'HMM', 'Yang Ming', 'Other',
+  'CMA-CGM', 'COSCO', 'Evergreen', 'Hapag-Lloyd', 'HMM',
+  'Maersk', 'MSC', 'ONE', 'OOCL', 'Wan Hai', 'Yang Ming', 'ZIM', 'Other',
 ]
 const DETENTION_RISKS = ['low', 'medium', 'high']
 
@@ -172,7 +172,7 @@ export default function CreateJob({ isModal = false, onCancel, onCreated }) {
       priority: form.priority,
       bl_no: form.bl_no.trim() || null,
       containers: form.containers.split(',').map(c => c.trim()).filter(Boolean).join(', ') || null,
-      shipping_line: form.carrier || null,
+      shipping_line: form.carrier === '__other__' ? (form.carrierOther.trim() || null) : (form.carrier || null),
       vessel: form.vessel.trim() || null,
       eta: form.eta || null,
       cfs_name: form.cfs_name.trim() || null,
@@ -374,7 +374,7 @@ export default function CreateJob({ isModal = false, onCancel, onCreated }) {
                       required
                       value={form.carrierOther || ''}
                       onChange={e => {
-                        setForm(p => ({ ...p, carrierOther: e.target.value, carrier: e.target.value }))
+                        setForm(p => ({ ...p, carrierOther: e.target.value }))
                         setError('')
                       }}
                       className={inputClass}
