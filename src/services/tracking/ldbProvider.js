@@ -25,24 +25,30 @@ function isCacheStale(lastRefreshedAt) {
 function mapEventToStatus(eventName) {
   if (!eventName) return 'in_transit'
   const e = eventName.toUpperCase()
-  if (e.includes('GATE OUT') || e.includes('GATEOUT'))             return 'delivered'
-  if (e.includes('CFS') || e.includes('DPD') || e.includes('ICD')) return 'at_cfs'
-  if (e.includes('PORT OUT') || e.includes('PORTOUT'))              return 'at_cfs'
-  if (e.includes('VESSEL ARRIVED') || e.includes('DISCHARGE') || e.includes('PORT IN') || e.includes('PORTIN')) return 'arrived'
-  if (e.includes('EMPTY'))                                          return 'empty_returned'
-  if (e.includes('CUSTOMS') || e.includes('HOLD'))                  return 'customs_hold'
-  if (e.includes('RAIL'))                                           return 'on_rail'
+
+  if (e === 'GATE OUT' || e === 'GATEOUT')               return 'delivered'
+  if (e === 'GATE IN'  || e === 'CFS GATE IN')           return 'at_cfs'
+  if (e === 'DPD')                                       return 'at_cfs'
+  if (e === 'PORT OUT' || e === 'PORTOUT')               return 'at_cfs'
+  if (e === 'VESSEL ARRIVED' || e === 'PORT IN'
+    || e === 'PORTIN' || e.includes('DISCHARGE'))        return 'arrived'
+  if (e.includes('EMPTY'))                               return 'empty_returned'
+  if (e.includes('CUSTOMS') || e.includes('HOLD'))       return 'customs_hold'
+  if (e.includes('RAIL'))                                return 'on_rail'
+
   return 'in_transit'
 }
 
 function derivePortEvents(trackLog) {
   if (!Array.isArray(trackLog)) return {}
-  const portInEvent  = trackLog.find(e => (e.eventName || '').toUpperCase().includes('PORT IN'))
-  const portOutEvent = trackLog.find(e => (e.eventName || '').toUpperCase().includes('PORT OUT'))
+
+  const portInEvent  = trackLog.find(e => (e.eventName || '').toUpperCase() === 'PORT IN')
+  const portOutEvent = trackLog.find(e => (e.eventName || '').toUpperCase() === 'PORT OUT')
   const cfsEvent     = trackLog.find(e => {
     const n = (e.eventName || '').toUpperCase()
-    return n.includes('CFS') || n.includes('DPD') || n.includes('ICD')
+    return n === 'GATE IN' || n === 'CFS GATE IN' || n === 'ICD GATE IN'
   })
+
   return {
     portIn:    portInEvent  ? portInEvent.timestampTimezone  : null,
     portOut:   portOutEvent ? portOutEvent.timestampTimezone : null,
@@ -96,6 +102,9 @@ function normaliseLDBResponse(containerNo, raw) {
       status,
       statusText:      eventName,
       currentLocation: obj.lastEvent.currentLocation || null,
+      terminal:   obj.lastEvent.currentLocation || null,
+      dpdFlag:    Array.isArray(obj.trackLog) && obj.trackLog.some(e => (e.eventName || '').toUpperCase() === 'DPD'),
+      isEmpty:    obj.lastEvent.isempty === 'Y' || obj.lastEvent.isEmpty === 'Y' || false,
       vessel,
       eta:             eta ? eta.slice(0, 10) : null,
       freeDays:        null,
@@ -168,6 +177,9 @@ export async function persistLDBTracking(containerNo, jobContext, ldbData) {
     milestones:       ldbData.milestones || [],
     port_in:          ldbData.portIn     || null,
     port_out:         ldbData.portOut    || null,
+    terminal:         ldbData.terminal  || null,
+    dpd_flag:         ldbData.dpdFlag   || false,
+    is_empty:         ldbData.isEmpty   || false,
     cfs_gate_in:      ldbData.cfsGateIn  || null,
     last_refreshed_at: new Date().toISOString(),
   }
