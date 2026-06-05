@@ -1,4 +1,4 @@
-export const config = { runtime: 'nodejs' }
+export const config = { runtime: 'edge' }
 
 export default async function handler(req) {
   const corsHeaders = {
@@ -6,21 +6,15 @@ export default async function handler(req) {
     'Access-Control-Allow-Origin': '*',
   }
 
-  let cntrNo
-  try {
-    const { searchParams } = new URL(req.url, 'http://localhost')
-    cntrNo = (searchParams.get('cntrNo') || '').trim().toUpperCase()
-  } catch (err) {
-    console.error('[ldb-track] URL parse error:', err.message, 'req.url was:', req.url)
-    return new Response(JSON.stringify({ error: 'URL parse failed', status: 'TRACKING_PROVIDER_ERROR' }), { status: 500, headers: corsHeaders })
-  }
+  const { searchParams } = new URL(req.url)
+  const cntrNo = (searchParams.get('cntrNo') || '').trim().toUpperCase()
 
   if (!cntrNo || cntrNo.length < 4) {
     return new Response(JSON.stringify({ error: 'Missing or invalid cntrNo', status: 'INVALID_TRACKING_RESPONSE' }), { status: 400, headers: corsHeaders })
   }
 
   if (!/^[A-Z0-9]+$/.test(cntrNo)) {
-    return new Response(JSON.stringify({ error: 'Invalid characters in container number', status: 'INVALID_TRACKING_RESPONSE' }), { status: 400, headers: corsHeaders })
+    return new Response(JSON.stringify({ error: 'Invalid characters', status: 'INVALID_TRACKING_RESPONSE' }), { status: 400, headers: corsHeaders })
   }
 
   const ldbUrl = `https://ldb.co.in/api/ldb/container/search?cntrNo=${encodeURIComponent(cntrNo)}&searchType=39`
@@ -38,7 +32,6 @@ export default async function handler(req) {
       signal: controller.signal,
     })
     clearTimeout(timeout)
-    console.log('[ldb-track] LDB responded with status:', ldbRes.status, 'for', cntrNo)
 
     let data
     try {
@@ -47,11 +40,13 @@ export default async function handler(req) {
       return new Response(JSON.stringify({ error: 'LDB returned non-JSON', status: 'INVALID_TRACKING_RESPONSE' }), { status: 502, headers: corsHeaders })
     }
 
-    return new Response(JSON.stringify(data), { status: ldbRes.ok ? 200 : ldbRes.status, headers: corsHeaders })
+    return new Response(JSON.stringify(data), {
+      status: ldbRes.ok ? 200 : ldbRes.status,
+      headers: corsHeaders,
+    })
 
   } catch (err) {
     const isTimeout = err.name === 'AbortError'
-    console.error('[ldb-track] Fetch error:', err.message)
     return new Response(JSON.stringify({
       error: isTimeout ? 'LDB request timed out' : `LDB unreachable: ${err.message}`,
       status: 'TRACKING_PROVIDER_ERROR',
