@@ -28,6 +28,7 @@ function JobDetailPanel({ job, trackingData, onClose, onUpdate, onAddEvent, onRe
   const activeTabRef = useRef(null)
   const [closing, setClosing] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
+  const isMobile = window.innerWidth < 768
 
   useEffect(() => {
     if (activeContainer) {
@@ -161,43 +162,77 @@ function JobDetailPanel({ job, trackingData, onClose, onUpdate, onAddEvent, onRe
         </div>
 
         {/* ── Container nav ── */}
-        <div style={{ padding:'8px 12px', borderBottom:'0.5px solid var(--color-border-tertiary)', display:'flex', alignItems:'center', gap:'5px', background:'var(--color-background-secondary)', flexShrink:0 }}>
-          <button
-            onClick={() => setActiveCnIdx(i => Math.max(0, i - 1))}
-            disabled={activeCnIdx === 0}
-            style={{ width:'24px', height:'24px', borderRadius:'6px', border:'0.5px solid var(--color-border-tertiary)', background:'var(--color-background-primary)', color:'var(--color-text-secondary)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'11px', opacity: activeCnIdx === 0 ? 0.3 : 1, cursor: activeCnIdx === 0 ? 'default' : 'pointer' }}
-          >{'<'}</button>
-          <div ref={tabsRef} style={{ flex:1, display:'flex', gap:'4px', overflowX:'auto', scrollbarWidth:'none' }}>
-            {cnList.map((c, i) => {
-              const ctd = trackingData[c] || {}
-              const cStatus = ctd.status || 'in_transit'
-              const cDet = (ctd.freeDays ?? 99) <= 2
-              const cEffective = cDet ? 'delayed' : cStatus
-              const cSt = STATUS_STYLES_MAP[cEffective] || STATUS_STYLES_MAP['in_transit']
-              const isActive = i === activeCnIdx
-              return (
-                <button
-                  key={c}
-                  ref={i === activeCnIdx ? activeTabRef : null}
-                  onClick={() => setActiveCnIdx(i)}
-                  style={{
-                    fontFamily:"'JetBrains Mono',monospace", fontSize:'10px', fontWeight:500,
-                    padding:'3px 8px', borderRadius:'5px', whiteSpace:'nowrap', cursor:'pointer', flexShrink:0,
-                    background: isActive ? headerBg : 'var(--color-background-primary)',
-                    color: isActive ? 'white' : cDet ? '#A32D2D' : 'var(--color-text-secondary)',
-                    border: isActive ? `0.5px solid ${headerBg}` : cDet ? '0.5px solid #F7C1C1' : '0.5px solid var(--color-border-tertiary)',
-                  }}
-                >{cDet ? '⚠ ' : ''}{c}</button>
-              )
-            })}
+        {isMobile ? (
+          // Mobile — compact grid of shortened chips
+          <div style={{ padding:'8px 12px', borderBottom:'0.5px solid var(--color-border-tertiary)', background:'var(--color-background-secondary)', flexShrink:0 }}>
+            <div style={{ display:'grid', gridTemplateColumns:'repeat(4, 1fr)', gap:'4px' }}>
+              {cnList.map((c, i) => {
+                const ctd = trackingData[c] || {}
+                const cDet = (ctd.freeDays ?? 99) <= 2
+                const cStatus = ctd.status || 'in_transit'
+                const cEffective = cDet ? 'delayed' : cStatus
+                const cSt = STATUS_STYLES_MAP[cEffective] || STATUS_STYLES_MAP['in_transit']
+                const isActive = i === activeCnIdx
+                const shortened = c.slice(-7)
+                return (
+                  <button
+                    key={c}
+                    onClick={() => setActiveCnIdx(i)}
+                    style={{
+                      fontFamily:"'JetBrains Mono',monospace",
+                      fontSize:'9px', fontWeight:500,
+                      padding:'4px 2px', borderRadius:'5px',
+                      cursor:'pointer', textAlign:'center',
+                      background: isActive ? headerBg : cDet ? '#FCEBEB' : cSt.bg,
+                      color: isActive ? 'white' : cDet ? '#A32D2D' : cSt.color,
+                      border: `0.5px solid ${isActive ? headerBg : cDet ? '#F7C1C1' : cSt.border}`,
+                      whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis',
+                    }}
+                  >{cDet ? '⚠ ' : ''}{shortened}</button>
+                )
+              })}
+            </div>
           </div>
-          <button
-            onClick={() => setActiveCnIdx(i => Math.min(cnList.length - 1, i + 1))}
-            disabled={activeCnIdx === cnList.length - 1}
-            style={{ width:'24px', height:'24px', borderRadius:'6px', border:'0.5px solid var(--color-border-tertiary)', background:'var(--color-background-primary)', color:'var(--color-text-secondary)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'11px', opacity: activeCnIdx === cnList.length - 1 ? 0.3 : 1, cursor: activeCnIdx === cnList.length - 1 ? 'default' : 'pointer' }}
-          >{'>'}</button>
-          <span style={{ fontSize:'10px', color:'var(--color-text-secondary)', flexShrink:0 }}>{activeCnIdx + 1}/{cnList.length}</span>
-        </div>
+        ) : (
+          // Desktop — arrow nav
+          <div style={{ padding:'8px 12px', borderBottom:'0.5px solid var(--color-border-tertiary)', display:'flex', alignItems:'center', gap:'5px', background:'var(--color-background-secondary)', flexShrink:0 }}>
+            <button
+              onClick={() => setActiveCnIdx(i => Math.max(0, i - 1))}
+              disabled={activeCnIdx === 0}
+              style={{ width:'24px', height:'24px', borderRadius:'6px', border:'0.5px solid var(--color-border-tertiary)', background:'var(--color-background-primary)', color:'var(--color-text-secondary)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'11px', opacity: activeCnIdx === 0 ? 0.3 : 1, cursor: activeCnIdx === 0 ? 'default' : 'pointer' }}
+            >{'<'}</button>
+            <div ref={tabsRef} style={{ flex:1, display:'flex', gap:'4px', overflowX:'auto', scrollbarWidth:'none' }}>
+              {cnList.map((c, i) => {
+                const ctd = trackingData[c] || {}
+                const cStatus = ctd.status || 'in_transit'
+                const cDet = (ctd.freeDays ?? 99) <= 2
+                const cEffective = cDet ? 'delayed' : cStatus
+                const cSt = STATUS_STYLES_MAP[cEffective] || STATUS_STYLES_MAP['in_transit']
+                const isActive = i === activeCnIdx
+                return (
+                  <button
+                    key={c}
+                    ref={i === activeCnIdx ? activeTabRef : null}
+                    onClick={() => setActiveCnIdx(i)}
+                    style={{
+                      fontFamily:"'JetBrains Mono',monospace", fontSize:'10px', fontWeight:500,
+                      padding:'3px 8px', borderRadius:'5px', whiteSpace:'nowrap', cursor:'pointer', flexShrink:0,
+                      background: isActive ? headerBg : 'var(--color-background-primary)',
+                      color: isActive ? 'white' : cDet ? '#A32D2D' : 'var(--color-text-secondary)',
+                      border: isActive ? `0.5px solid ${headerBg}` : cDet ? '0.5px solid #F7C1C1' : '0.5px solid var(--color-border-tertiary)',
+                    }}
+                  >{cDet ? '⚠ ' : ''}{c}</button>
+                )
+              })}
+            </div>
+            <button
+              onClick={() => setActiveCnIdx(i => Math.min(cnList.length - 1, i + 1))}
+              disabled={activeCnIdx === cnList.length - 1}
+              style={{ width:'24px', height:'24px', borderRadius:'6px', border:'0.5px solid var(--color-border-tertiary)', background:'var(--color-background-primary)', color:'var(--color-text-secondary)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'11px', opacity: activeCnIdx === cnList.length - 1 ? 0.3 : 1, cursor: activeCnIdx === cnList.length - 1 ? 'default' : 'pointer' }}
+            >{'>'}</button>
+            <span style={{ fontSize:'10px', color:'var(--color-text-secondary)', flexShrink:0 }}>{activeCnIdx + 1}/{cnList.length}</span>
+          </div>
+        )}
 
         {/* ── Scrollable body ── */}
         <div style={{ flex:1, overflowY:'auto' }}>
@@ -233,8 +268,8 @@ function JobDetailPanel({ job, trackingData, onClose, onUpdate, onAddEvent, onRe
               </span>
             </div>
 
-            {td.freeDays != null && (
-              <div style={{ background: isDetention ? '#FCEBEB' : '#EAF3DE', border:`0.5px solid ${isDetention ? '#F7C1C1' : '#C0DD97'}`, borderRadius:'8px', padding:'10px 12px' }}>
+            {!isMobile && td.freeDays != null && (
+              <div style={{ background: isDetention ? '#FCEBEB' : '#EAF3DE', border:`0.5px solid ${isDetention ? '#F7C1C1' : '#C0DD97'}`, borderRadius:'8px', padding:'10px 12px', marginTop:'10px' }}>
                 <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'6px' }}>
                   <span style={{ fontSize:'10px', fontWeight:500, textTransform:'uppercase', letterSpacing:'0.06em', color: isDetention ? '#791F1F' : '#27500A' }}>Free days remaining</span>
                   <span style={{ fontSize:'20px', fontWeight:500, color: isDetention ? '#A32D2D' : '#0F6E56', lineHeight:1 }}>{td.freeDays} days</span>
@@ -250,21 +285,19 @@ function JobDetailPanel({ job, trackingData, onClose, onUpdate, onAddEvent, onRe
               </div>
             )}
 
-            {isDetention && (
+            {!isMobile && isDetention && (
               <div style={{ display:'flex', alignItems:'flex-start', gap:'7px', padding:'8px 10px', borderRadius:'7px', marginTop:'8px', background:'#FCEBEB', border:'0.5px solid #F7C1C1' }}>
                 <span style={{ fontSize:'13px', flexShrink:0, marginTop:'1px' }}>🚨</span>
                 <span style={{ fontSize:'11px', fontWeight:500, color:'#791F1F', lineHeight:1.4 }}>Only {td.freeDays} free day{td.freeDays !== 1 ? 's' : ''} left — contact client and arrange transport today</span>
               </div>
             )}
-
-            {!isDetention && td.dpdFlag && (
+            {!isMobile && !isDetention && td.dpdFlag && (
               <div style={{ display:'flex', alignItems:'flex-start', gap:'7px', padding:'8px 10px', borderRadius:'7px', marginTop:'8px', background:'#EAF3DE', border:'0.5px solid #C0DD97' }}>
                 <span style={{ fontSize:'13px', flexShrink:0, marginTop:'1px' }}>✅</span>
                 <span style={{ fontSize:'11px', fontWeight:500, color:'#27500A', lineHeight:1.4 }}>DPD applicable — eligible for direct port delivery</span>
               </div>
             )}
-
-            {status === 'customs_hold' && (
+            {!isMobile && status === 'customs_hold' && (
               <div style={{ display:'flex', alignItems:'flex-start', gap:'7px', padding:'8px 10px', borderRadius:'7px', marginTop:'8px', background:'#FAEEDA', border:'0.5px solid #FAC775' }}>
                 <span style={{ fontSize:'13px', flexShrink:0, marginTop:'1px' }}>🔒</span>
                 <span style={{ fontSize:'11px', fontWeight:500, color:'#633806', lineHeight:1.4 }}>Container under customs hold — check examination status</span>
@@ -286,6 +319,10 @@ function JobDetailPanel({ job, trackingData, onClose, onUpdate, onAddEvent, onRe
                 { label:'Vessel arrival',   value: formatD(td.eta || job.eta) },
                 { label:'Shipping line',    value: td.shippingLineLdb || job.shipping_line },
                 { label:'Vessel IMO',       value: td.vesselImo,       mono: true, muted: true },
+                ...(isMobile ? [
+                  { label:'Free Days', value: td.freeDays != null ? `${td.freeDays} days${isDetention ? ' ⚠' : ''}` : null },
+                  { label:'DPD', value: td.dpdFlag ? '✓ Yes' : td.dpdFlag === false ? 'No' : null, ok: td.dpdFlag },
+                ] : []),
               ].map(f => (
                 <div key={f.label} style={f.full ? { gridColumn:'1/-1' } : {}}>
                   <div style={{ fontSize:'10px', fontWeight:500, textTransform:'uppercase', letterSpacing:'0.06em', color:'var(--color-text-secondary)', marginBottom:'4px' }}>{f.label}</div>
