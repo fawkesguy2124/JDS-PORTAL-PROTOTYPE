@@ -307,7 +307,16 @@ function JobDetailPanel({ job, trackingData, onClose, onUpdate, onAddEvent, onRe
         {/* ── Scrollable body ── */}
         <div
   style={{ flex:1, overflowY:'auto', overscrollBehavior:'contain' }}
-  onTouchMove={e => e.stopPropagation()}
+  onTouchMove={e => {
+    if (window.innerWidth >= 768) return
+    const touch = e.touches[0]
+    if (!touch || touchStartX.current === null) return
+    const deltaX = Math.abs(touch.clientX - touchStartX.current)
+    const deltaY = Math.abs(touch.clientY - touchStartY.current)
+    if (deltaY > deltaX) {
+      e.stopPropagation()
+    }
+  }}
 >
 
           {/* Container hero + free days */}
