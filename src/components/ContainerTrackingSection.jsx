@@ -124,10 +124,12 @@ function JobDetailPanel({ job, trackingData, onClose, onUpdate, onAddEvent, onRe
         @keyframes slideInRight { from { transform:translateX(100%) } to { transform:translateX(0) } }
         @keyframes slideOutRight { from { transform:translateX(0) } to { transform:translateX(100%) } }
         @keyframes spin { from { transform:rotate(0deg) } to { transform:rotate(360deg) } }
+        @keyframes expandDown { from { opacity:0; transform:translateY(-8px) } to { opacity:1; transform:translateY(0) } }
       `}</style>
 
       <div
         ref={sidebarRef}
+        data-sidebar="container-detail"
         style={{
           position:'fixed', right:0, top:0, bottom:0, width:'min(680px,100vw)',
           background:'#ffffff',
@@ -1342,6 +1344,17 @@ function ContainerTrackingSection({ showToast, jobs }) {
     }
   }, [searchQuery, allJobCards])
 
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape' && detailJob && window.innerWidth >= 768) {
+        if (closeSidebarRef.current) closeSidebarRef.current()
+        else { setDetailJob(null); setActiveContainer(null) }
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [detailJob])
+
   if (loadingTracking) return (
     <div style={{ display:'flex', flexDirection:'column', gap:'12px' }}>
       {[1,2,3].map(i => (
@@ -1432,7 +1445,19 @@ function ContainerTrackingSection({ showToast, jobs }) {
   }
 
   return (
-    <div>
+    <div
+      onDoubleClick={e => {
+        if (window.innerWidth < 768) return
+        if (!detailJob) return
+        const sidebar = document.querySelector('[data-sidebar="container-detail"]')
+        const jobCards = document.querySelector('[data-area="job-cards"]')
+        if (sidebar && sidebar.contains(e.target)) return
+        if (jobCards && jobCards.contains(e.target)) return
+        if (closeSidebarRef.current) closeSidebarRef.current()
+        else { setDetailJob(null); setActiveContainer(null) }
+      }}
+      style={{ minHeight:'100vh' }}
+    >
       {/* Mobile — hidden on md+ */}
       <div className="block md:hidden">
         <ContainerTrackingMobile {...sharedProps} />
