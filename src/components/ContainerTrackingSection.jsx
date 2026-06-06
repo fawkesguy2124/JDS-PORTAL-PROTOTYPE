@@ -213,7 +213,7 @@ function JobDetailPanel({ job, trackingData, onClose, onUpdate, onAddEvent, onRe
             <div style={{ fontSize:'11px', color:'rgba(255,255,255,0.5)', marginTop:'2px' }}>
               {job.client}{job.shipping_line ? ` · ${job.shipping_line}` : ''}
             </div>
-            <div style={{ display:'flex', gap:'4px', marginTop:'6px', flexWrap:'wrap' }}>
+            <div style={{ display:'flex', gap:'4px', marginTop:'6px', flexWrap:'wrap', alignItems:'center' }}>
               {job.mode && (
                 <span style={{ display:'inline-flex', alignItems:'center', padding:'2px 7px', borderRadius:'9999px', fontSize:'10px', fontWeight:500, background:'rgba(255,255,255,0.1)', color:'rgba(255,255,255,0.8)', border:'0.5px solid rgba(255,255,255,0.15)' }}>
                   {job.mode}
@@ -235,7 +235,7 @@ function JobDetailPanel({ job, trackingData, onClose, onUpdate, onAddEvent, onRe
         {isMobile ? (
           // Mobile — compact grid of shortened chips
           <div style={{ padding:'8px 12px', borderBottom:'0.5px solid var(--color-border-tertiary)', background:'var(--color-background-secondary)', flexShrink:0 }}>
-            <div style={{ display:'grid', gridTemplateColumns:'repeat(4, 1fr)', gap:'4px' }}>
+            <div style={{ display:'grid', gridTemplateColumns:'repeat(3, 1fr)', gap:'4px' }}>
               {cnList.map((c, i) => {
                 const ctd = trackingData[c] || {}
                 const cDet = (ctd.freeDays ?? 99) <= 2
@@ -250,8 +250,8 @@ function JobDetailPanel({ job, trackingData, onClose, onUpdate, onAddEvent, onRe
                     onClick={() => setActiveCnIdx(i)}
                     style={{
                       fontFamily:"'JetBrains Mono',monospace",
-                      fontSize:'9px', fontWeight:500,
-                      padding:'4px 2px', borderRadius:'5px',
+                      fontSize:'11px', fontWeight:500,
+                      padding:'8px 4px', borderRadius:'6px',
                       cursor:'pointer', textAlign:'center',
                       background: isActive ? headerBg : cDet ? '#FCEBEB' : cSt.bg,
                       color: isActive ? 'white' : cDet ? '#A32D2D' : cSt.color,
@@ -328,11 +328,23 @@ function JobDetailPanel({ job, trackingData, onClose, onUpdate, onAddEvent, onRe
               >
                 <span style={{ display:'inline-block', animation: refreshing ? 'spin 0.7s linear infinite' : 'none' }}>↻</span>
               </button>
+
+              {isMobile && (
+                <button
+                  onClick={() => openCarrierTracking(cn, job.shipping_line, showToast)}
+                  style={{ width:'28px', height:'28px', borderRadius:'6px', border:'0.5px solid var(--color-border-tertiary)', background:'var(--color-background-secondary)', color:'var(--color-text-secondary)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'15px', cursor:'pointer' }}
+                  onTouchStart={e => { e.currentTarget.style.background = headerBg; e.currentTarget.style.color = 'white'; e.currentTarget.style.borderColor = headerBg }}
+                  onTouchEnd={e => { e.currentTarget.style.background = 'var(--color-background-secondary)'; e.currentTarget.style.color = 'var(--color-text-secondary)'; e.currentTarget.style.borderColor = 'var(--color-border-tertiary)' }}
+                  title="Track on carrier site"
+                >🌐</button>
+              )}
+
               {td.lastUpdate && (
                 <span style={{ fontSize:'10px', color:'var(--color-text-secondary)', fontStyle:'italic' }}>
                   {new Date(td.lastUpdate).toLocaleString('en-IN', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit', timeZone:'Asia/Kolkata' })}
                 </span>
               )}
+
               <span style={{ marginLeft:'auto', display:'inline-flex', alignItems:'center', padding:'2px 8px', borderRadius:'9999px', fontSize:'10px', fontWeight:500, background: isDetention ? '#FCEBEB' : st.bg, color: isDetention ? '#791F1F' : st.color, border:`0.5px solid ${isDetention ? '#F7C1C1' : st.border}` }}>
                 {isDetention ? '⚠ Detention' : (td.statusText || 'Not Updated')}
               </span>
@@ -509,24 +521,26 @@ function JobDetailPanel({ job, trackingData, onClose, onUpdate, onAddEvent, onRe
         </div>
 
         {/* ── Footer ── */}
-        <div style={{ padding:'10px 12px', borderTop:'0.5px solid var(--color-border-tertiary)', display:'flex', gap:'6px', flexShrink:0, background:'var(--color-background-primary)' }}>
-          <button
-            onClick={() => onUpdate(job, cn)}
-            style={{ flex:1, padding:'9px 0', borderRadius:'7px', fontSize:'12px', fontWeight:500, cursor:'pointer', border:'none', background:headerBg, color:'white', display:'flex', alignItems:'center', justifyContent:'center', gap:'5px' }}
-          >✎ Update</button>
-          <button
-            onClick={() => onAddEvent(job, cn)}
-            style={{ flex:1, padding:'9px 0', borderRadius:'7px', fontSize:'12px', fontWeight:500, cursor:'pointer', border:'0.5px solid var(--color-border-tertiary)', background:'var(--color-background-secondary)', color:'var(--color-text-secondary)', display:'flex', alignItems:'center', justifyContent:'center', gap:'5px' }}
-            onMouseEnter={e => { e.currentTarget.style.borderColor = headerBg; e.currentTarget.style.color = headerBg }}
-            onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--color-border-tertiary)'; e.currentTarget.style.color = 'var(--color-text-secondary)' }}
-          >+ Add event</button>
-          <button
-            onClick={() => openCarrierTracking(cn, job.shipping_line, showToast)}
-            style={{ flex:1, padding:'9px 0', borderRadius:'7px', fontSize:'12px', fontWeight:500, cursor:'pointer', border:'0.5px solid var(--color-border-tertiary)', background:'var(--color-background-secondary)', color:'var(--color-text-secondary)', display:'flex', alignItems:'center', justifyContent:'center', gap:'5px' }}
-            onMouseEnter={e => { e.currentTarget.style.borderColor = headerBg; e.currentTarget.style.color = headerBg }}
-            onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--color-border-tertiary)'; e.currentTarget.style.color = 'var(--color-text-secondary)' }}
-          >🌐 Carrier</button>
-        </div>
+          {!isMobile && (
+          <div style={{ padding:'10px 12px', borderTop:'0.5px solid var(--color-border-tertiary)', display:'flex', gap:'6px', flexShrink:0, background:'var(--color-background-primary)' }}>
+            <button
+              onClick={() => onUpdate(job, cn)}
+              style={{ flex:1, padding:'9px 0', borderRadius:'7px', fontSize:'12px', fontWeight:500, cursor:'pointer', border:'none', background:headerBg, color:'white', display:'flex', alignItems:'center', justifyContent:'center', gap:'5px' }}
+            >✎ Update</button>
+            <button
+              onClick={() => onAddEvent(job, cn)}
+              style={{ flex:1, padding:'9px 0', borderRadius:'7px', fontSize:'12px', fontWeight:500, cursor:'pointer', border:'0.5px solid var(--color-border-tertiary)', background:'var(--color-background-secondary)', color:'var(--color-text-secondary)', display:'flex', alignItems:'center', justifyContent:'center', gap:'5px' }}
+              onMouseEnter={e => { e.currentTarget.style.borderColor = headerBg; e.currentTarget.style.color = headerBg }}
+              onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--color-border-tertiary)'; e.currentTarget.style.color = 'var(--color-text-secondary)' }}
+            >+ Add event</button>
+            <button
+              onClick={() => openCarrierTracking(cn, job.shipping_line, showToast)}
+              style={{ flex:1, padding:'9px 0', borderRadius:'7px', fontSize:'12px', fontWeight:500, cursor:'pointer', border:'0.5px solid var(--color-border-tertiary)', background:'var(--color-background-secondary)', color:'var(--color-text-secondary)', display:'flex', alignItems:'center', justifyContent:'center', gap:'5px' }}
+              onMouseEnter={e => { e.currentTarget.style.borderColor = headerBg; e.currentTarget.style.color = headerBg }}
+              onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--color-border-tertiary)'; e.currentTarget.style.color = 'var(--color-text-secondary)' }}
+            >🌐 Carrier</button>
+          </div>
+        )}
 
       </div>
     </>
