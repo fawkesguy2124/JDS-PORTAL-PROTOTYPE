@@ -305,7 +305,10 @@ function JobDetailPanel({ job, trackingData, onClose, onUpdate, onAddEvent, onRe
         )}
 
         {/* ── Scrollable body ── */}
-        <div style={{ flex:1, overflowY:'auto' }}>
+        <div
+  style={{ flex:1, overflowY:'auto', overscrollBehavior:'contain' }}
+  onTouchMove={e => e.stopPropagation()}
+>
 
           {/* Container hero + free days */}
           <div style={{ padding:'14px 18px', borderBottom:'0.5px solid var(--color-border-tertiary)' }}>
