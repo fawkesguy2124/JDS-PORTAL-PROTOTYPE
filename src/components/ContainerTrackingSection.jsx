@@ -916,7 +916,7 @@ function getCarrierUrl(containerNo, shippingLine) {
   if (sl.includes('one'))
     return `https://ecomm.one-line.com/one-ecom/manage-shipment/cargo-tracking?ctrack-field=${cn}&trakNoParam=${cn}`
   if (sl.includes('evergreen'))
-    return `https://www.evergreen-line.com/servlet/TDB1_CargoTracking.do?TYPE=CNTR&CNTR=${cn}`
+    return `https://ct.shipmentlink.com/servlet/TDB1_CargoTracking.do?TYPE=CNTR&CNTR=${cn}`
   if (sl.includes('zim'))
     return `https://www.zim.com/tools/track-a-shipment?consnumber=${cn}`
   if (sl.includes('yang ming') || sl.includes('yangming'))
