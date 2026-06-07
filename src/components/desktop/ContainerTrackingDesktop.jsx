@@ -242,9 +242,9 @@ export default function ContainerTrackingDesktop({
           <div style={{ background:'var(--color-background-primary)', border:'1.5px solid #d0d9e8', borderRadius:'12px', overflow:'hidden', minWidth:'700px' }}>
 
             {/* Column headers */}
-            <div style={{ display:'grid', gridTemplateColumns:'32px 80px 110px 460px 1fr 160px 130px 60px', gap:'20px', alignItems:'center', padding:'8px 16px', background:'#e8eef8', borderBottom:'0.5px solid var(--color-border-tertiary)' }}>
-              {['', 'Job', 'Client', 'Containers', 'Overview', 'Customs', 'Shipping line', 'ETA'].map((h, i) => (
-                <div key={i} style={{ fontSize:'10px', fontWeight:500, textTransform:'uppercase', letterSpacing:'0.07em', color:'var(--color-text-secondary)', textAlign: i === 6 ? 'center' : 'left' }}>{h}</div>
+            <div style={{ display:'grid', gridTemplateColumns:'32px 80px 110px 460px 1fr 130px 60px', gap:'20px', alignItems:'center', padding:'8px 16px', background:'#e8eef8', borderBottom:'0.5px solid var(--color-border-tertiary)' }}>
+              {['', 'Job', 'Client', 'Containers', 'Overview', 'Shipping line', 'ETA'].map((h, i) => (
+                <div key={i} style={{ fontSize:'10px', fontWeight:500, textTransform:'uppercase', letterSpacing:'0.07em', color:'var(--color-text-secondary)', textAlign: i === 5 ? 'center' : 'left' }}>{h}</div>
               ))}
             </div>
 
@@ -278,7 +278,7 @@ export default function ContainerTrackingDesktop({
                       }
                     }}
                     style={{
-                      display:'grid', gridTemplateColumns:'32px 80px 110px 460px 1fr 160px 130px 60px',
+                      display:'grid', gridTemplateColumns:'32px 80px 110px 460px 1fr 130px 60px',
                       gap:'20px', alignItems:'start', padding:'11px 16px',
                       cursor:'pointer', transition:'background 0.12s',
                       background: activeContainer?.jobId === job.id ? '#E6F1FB' : 'var(--color-background-primary)',
@@ -387,32 +387,6 @@ export default function ContainerTrackingDesktop({
                           })
                         })()}
                       </div>
-                    </div>
-
-                    {/* Customs checkpoint strip */}
-                    <div style={{ display:'flex', alignItems:'center', gap:'6px' }}>
-                      {[
-                        { label:'BE Filed', done: !!(job.be_no || job.stage >= 3) },
-                        { label:'Exam',     done: job.stage >= 5 },
-                        { label:'OOC',      done: job.stage >= 7 },
-                      ].map((c, i) => (
-                        <div key={i} style={{ display:'flex', alignItems:'center', gap:'3px' }}>
-                          <span style={{
-                            width:'13px', height:'13px', borderRadius:'50%', flexShrink:0,
-                            display:'flex', alignItems:'center', justifyContent:'center',
-                            fontSize:'8px', fontWeight:700,
-                            background: c.done ? '#1D9E75' : '#f4f6f9',
-                            color: c.done ? 'white' : '#8a96a8',
-                            border: `0.5px solid ${c.done ? '#1D9E75' : '#d0d6e0'}`,
-                          }}>
-                            {c.done ? '\u2713' : '\u25CB'}
-                          </span>
-<span style={{ fontSize:'9px', color: c.done ? '#1a2233' : '#8a96a8', whiteSpace:'nowrap' }}>
-            {c.label}
-          </span>
-          {i < 2 && <span style={{ fontSize:'9px', color:'#d0d6e0', margin:'0 1px' }}>›</span>}
-                        </div>
-                      ))}
                     </div>
 
                     <span style={{ fontSize:'12px', color:'var(--color-text-secondary)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', textAlign:'center', display:'block' }}>{job.shipping_line || '—'}</span>
