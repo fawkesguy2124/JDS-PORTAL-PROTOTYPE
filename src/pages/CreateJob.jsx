@@ -798,7 +798,7 @@ if (parsed.client && shouldFill('client')) {
               <Field label="Client Name" required>
                 {form.client === '__other__' ? (
                   <div className="flex gap-2">
-                    <input type="text" required value={form.clientOther || ''} onChange={(e) => { setForm(p => ({ ...p, clientOther: e.target.value, client: e.target.value })); setError('') }} className={fieldClass('client')} placeholder="Enter client name" />
+                    <input type="text" required value={form.clientOther || ''} onChange={(e) => { setForm(p => ({ ...p, clientOther: e.target.value })); setError('') }} className={fieldClass('client')} placeholder="Enter client name" />
                     <button type="button" onClick={() => setForm(p => ({ ...p, client: '', clientOther: '' }))} className="shrink-0 px-3 py-2 text-xs font-semibold rounded-lg bg-gray-100 border border-gray-300 text-gray-600 hover:bg-gray-200">↩ List</button>
                   </div>
                 ) : (
