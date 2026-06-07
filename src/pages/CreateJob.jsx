@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../supabase'
 import { useAuth } from '../contexts/AuthContext'
@@ -14,6 +14,131 @@ const SHIPPING_LINES = [
   'Maersk', 'MSC', 'ONE', 'OOCL', 'Wan Hai', 'Yang Ming', 'ZIM', 'Other',
 ]
 const DETENTION_RISKS = ['low', 'medium', 'high']
+
+const CLIENT_LIST = [
+  'PCM','Adorn (ALS Series)','Deepa Traders','Divine / NNC','Eboney',
+  'Limitless Components EXIM','Infinite EXIM','Uddaybharat Techno Pvt. Ltd.',
+  'Leon International','Green Soul','Enkay Machinery','TRW','Grupo',
+  'Integral','Maxlord','Gefit','REAL','Mahalaxmi','Macksmatec','Finearc',
+  'Electrica','Ishita','Cotswold','INTO','Rivaan','Nikam',
+]
+
+const CLIENT_ALIASES = {
+  'putzmeister': 'PCM',
+  'putzmeister concrete': 'PCM',
+  'putzmeister concrete machines': 'PCM',
+  'putzmeister concrete machines private limited': 'PCM',
+  'putzmeister concrete machines pvt ltd': 'PCM',
+  'putzmeister concrete machines pvt': 'PCM',
+  'putzmeister india pvt ltd': 'PCM',
+  'putzmeister india private limited': 'PCM',
+  'putzmeister india': 'PCM',
+  'putzmeister concrete pumps india': 'PCM',
+  'pcm india': 'PCM',
+  'ms putzmeister': 'PCM',
+}
+
+const normalise = (str) => (str || '')
+  .toLowerCase()
+  .replace(/\bpvt\b|\bltd\b|\binc\b|\bcorp\b|\bllp\b|\bco\b|\bprivate\b|\blimited\b|\btrading\b|\benterprises\b|\bindustries\b|\bexim\b/g, '')
+  .replace(/[^a-z0-9\s]/g, '')
+  .replace(/\s+/g, ' ')
+  .trim()
+
+const fuzzyMatchClient = (extracted) => {
+  if (!extracted) return null
+  const normExtracted = normalise(extracted)
+
+  // Check aliases first
+  for (const [alias, clientName] of Object.entries(CLIENT_ALIASES)) {
+    if (normExtracted.includes(normalise(alias)) || normalise(alias).includes(normExtracted)) {
+      return clientName
+    }
+  }
+
+  // Then fuzzy match against client list
+  return CLIENT_LIST.find(c => {
+    const normC = normalise(c)
+    return normExtracted.includes(normC) || normC.includes(normExtracted)
+  }) || null
+}
+
+const fuzzyMatchShippingLine = (extracted) => {
+  if (!extracted) return null
+  const normExtracted = normalise(extracted)
+  return SHIPPING_LINES.filter(sl => sl !== 'Other').find(sl => {
+    const normSl = normalise(sl)
+    return normExtracted.includes(normSl) || normSl.includes(normExtracted)
+  }) || null
+}
+
+const BL_QUICK_EXTRACT_PROMPT = `You are an expert shipping document parser.
+
+IMPORTANT: First check if this is a shipping or customs document such as a Bill of Lading, Commercial Invoice, Packing List, Certificate of Origin, or similar. If it is NOT a shipping document, return exactly this JSON and nothing else: {"_irrelevant": true}
+
+If it IS a shipping document, extract ONLY these fields and return ONLY valid JSON, no markdown, no explanation:
+
+{
+  "client": "importer or consignee full name",
+  "bl_no": "bill of lading number",
+  "containers": "ALL container numbers space separated e.g. MSCU1234567 OOLU7654321",
+  "shipping_line": "shipping line name e.g. Evergreen COSCO MSC",
+  "vessel": "vessel name",
+  "eta": "estimated arrival date in YYYY-MM-DD format if found else null",
+  "goods": "brief goods description",
+  "hs_code": "HS code if found else null"
+}
+
+If a field is not found set it to null. Extract ALL container numbers visible in the document.`
+
+const BE_QUICK_EXTRACT_PROMPT = `You are an expert Indian Customs document parser.
+
+IMPORTANT: First check if this is an Indian Customs Bill of Entry or OOC document issued by ICEGATE. If it is NOT a customs document, return exactly this JSON and nothing else: {"_irrelevant": true}
+
+If it IS a Bill of Entry or OOC document, extract ONLY these fields and return ONLY valid JSON, no markdown, no explanation:
+
+{
+  "client": "importer full name from DECLARANT section — extract the FULL name exactly as written e.g. PUTZMEISTER CONCRETE MACHINES PRIVATE LIMITED",
+  "be_no": "BE number from top right corner of every page e.g. 9301277",
+  "be_date": "BE date in YYYY-MM-DD format e.g. 2026-05-16",
+  "bl_no": "BL or MAWB number from MANIFEST DETAILS section e.g. COSU6445596690",
+  "containers": "ALL container numbers from CONTAINER DETAILS section across ALL pages space separated e.g. BMOU4978572 BMOU5358154 CCLU7383578",
+  "shipping_line": "shipping line name derived from container prefix or manifest e.g. COSCO Evergreen MSC",
+  "vessel": "vessel name from MANIFEST DETAILS section",
+  "eta": null,
+  "goods": "item description from PART III DUTIES section",
+  "hs_code": "8-digit CTH code from PART III e.g. 84571010"
+}
+
+Important:
+- Extract ALL container numbers — they appear in PART I summary and PART IV additional details across multiple pages
+- BE number is in the top right corner of every page
+- BL number is in the MANIFEST DETAILS section as MAWB NO
+- Importer name is in the DECLARANT section
+- If a field is not found set it to null`
+
+const INVOICE_QUICK_EXTRACT_PROMPT = `You are an expert shipping document parser.
+
+IMPORTANT: If this is not a Commercial Invoice or Proforma Invoice, return exactly: {"_irrelevant": true}
+
+If it IS a Commercial Invoice, extract ONLY these fields and return ONLY valid JSON:
+{
+  "client": "buyer or importer full name",
+  "goods": "brief description of goods",
+  "hs_code": "HS or CTH code if found else null"
+}
+If a field is not found set it to null.`
+
+const PACKING_LIST_PROMPT = `You are an expert shipping document parser.
+
+IMPORTANT: If this is not a Packing List, return exactly: {"_irrelevant": true}
+
+If it IS a Packing List, extract ONLY these fields and return ONLY valid JSON:
+{
+  "client": "buyer or importer full name if found else null",
+  "goods": "brief description of goods if found else null"
+}
+If a field is not found set it to null.`
 
 const INITIAL_FORM = {
   job_no: '',
@@ -40,7 +165,6 @@ const INITIAL_FORM = {
   detention_risk: 'low',
   stage: '0',
   delay_reason: '',
-  notes: '',
 }
 
 const inputClass =
@@ -79,6 +203,18 @@ export default function CreateJob({ isModal = false, onCancel, onCreated }) {
   const [addDocFile, setAddDocFile] = useState(null)
   const [addDocError, setAddDocError] = useState('')
   const [uploadingDocs, setUploadingDocs] = useState(false)
+
+  const [extracting, setExtracting] = useState(false)
+  const [extractProgress, setExtractProgress] = useState(0)
+  const [extractStatus, setExtractStatus] = useState('')
+  const [extractedFields, setExtractedFields] = useState(null)
+  const [autoFillApplied, setAutoFillApplied] = useState({})
+  const quickUploadRef = useRef(null)
+
+  const fieldClass = (fieldKey) =>
+    `w-full border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1e3a5f] focus:border-transparent ${
+      autoFillApplied[fieldKey] ? 'border-green-400 bg-green-50' : 'border-gray-300'
+    }`
 
   const DOC_TYPES = ['BL', 'Invoice', 'Packing List', 'COO', 'Insurance', 'BE', 'Examination Order', 'OOC', 'E-Way Bill', 'POD', 'Other']
 
@@ -152,6 +288,192 @@ export default function CreateJob({ isModal = false, onCancel, onCreated }) {
     if (fileInput) fileInput.value = ''
   }
 
+  const handleQuickExtract = async (file, docType, docId) => {
+    if (!file) return
+    setExtracting(true)
+    setExtractedFields(null)
+    setAutoFillApplied({})
+    setExtractProgress(0)
+    setExtractStatus('Reading document...')
+
+    try {
+      // Convert file to base64
+      const base64 = await new Promise((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload = () => resolve(reader.result.split(',')[1])
+        reader.onerror = reject
+        reader.readAsDataURL(file)
+      })
+
+      setExtractProgress(20)
+      setExtractStatus('Converting pages...')
+
+      const isPdf = file.name.toLowerCase().endsWith('.pdf')
+      let images = []
+
+      if (isPdf) {
+        const pdfjs = await import('pdfjs-dist')
+        const workerUrl = new URL('pdfjs-dist/build/pdf.worker.mjs', import.meta.url)
+        pdfjs.GlobalWorkerOptions.workerSrc = workerUrl.href
+        const pdfBytes = Uint8Array.from(atob(base64), c => c.charCodeAt(0))
+        const pdf = await pdfjs.getDocument({ data: pdfBytes }).promise
+        const maxPages = Math.min(pdf.numPages, 4)
+        for (let p = 1; p <= maxPages; p++) {
+          const page = await pdf.getPage(p)
+          const viewport = page.getViewport({ scale: 0.9 })
+          const canvas = document.createElement('canvas')
+          const ctx = canvas.getContext('2d')
+          canvas.width = viewport.width
+          canvas.height = viewport.height
+          await page.render({ canvasContext: ctx, viewport }).promise
+          images.push({
+            base64: canvas.toDataURL('image/jpeg', 0.85).split(',')[1],
+            mimeType: 'image/jpeg',
+          })
+        }
+      } else {
+        images = [{ base64, mimeType: file.type || 'image/jpeg' }]
+      }
+
+      setExtractProgress(45)
+      setExtractStatus('Sending to AI...')
+
+      // Use Jose's selected document type to pick the right prompt
+      const promptMap = {
+        'BL':           BL_QUICK_EXTRACT_PROMPT,
+        'BE':           BE_QUICK_EXTRACT_PROMPT,
+        'OOC':          BE_QUICK_EXTRACT_PROMPT,
+        'Invoice':      INVOICE_QUICK_EXTRACT_PROMPT,
+        'Packing List': PACKING_LIST_PROMPT,
+      }
+      const activePrompt = promptMap[docType] || BL_QUICK_EXTRACT_PROMPT
+
+      setExtractProgress(55)
+      setExtractStatus('Extracting fields...')
+
+      let parsed = null
+
+      // Try Gemini first
+      try {
+        const res = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${import.meta.env.VITE_GEMINI_API_KEY}`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              contents: [{
+                parts: [
+                  { text: activePrompt },
+                  ...images.map(img => ({ inline_data: { mime_type: img.mimeType, data: img.base64 } }))
+                ]
+              }],
+              generationConfig: { temperature: 0.1, maxOutputTokens: 1024 },
+            }),
+          }
+        )
+        const data = await res.json()
+        if (data.error) throw new Error(`Gemini API error: ${data.error.message}`)
+        const text = data?.candidates?.[0]?.content?.parts?.map(p => p.text).filter(Boolean).join('\n') || ''
+        if (!text) throw new Error('Gemini returned empty response')
+        const cleaned = text.replace(/```(?:json)?\s*/gi, '').replace(/```/g, '').trim()
+        console.log('Gemini raw response:', cleaned)
+        parsed = JSON.parse(cleaned)
+      } catch (geminiErr) {
+        console.warn('Gemini failed in CreateJob, trying Groq...', geminiErr.message)
+        setExtractStatus('Trying fallback AI...')
+
+        // Groq fallback — images only (first image, Groq handles one at a time)
+        const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${import.meta.env.VITE_GROQ_API_KEY}`,
+          },
+          body: JSON.stringify({
+            model: 'meta-llama/llama-4-scout-17b-16e-instruct',
+            max_tokens: 1024,
+            temperature: 0.1,
+            messages: [{
+              role: 'user',
+              content: [
+                { type: 'text', text: activePrompt },
+                { type: 'image_url', image_url: { url: `data:${images[0].mimeType};base64,${images[0].base64}` } }
+              ]
+            }]
+          }),
+        })
+        const groqData = await groqRes.json()
+        const groqText = groqData?.choices?.[0]?.message?.content || ''
+        const groqCleaned = groqText.replace(/```(?:json)?\s*/gi, '').replace(/```/g, '').trim()
+        parsed = JSON.parse(groqCleaned)
+      }
+
+      setExtractProgress(85)
+      setExtractStatus('Applying fields...')
+
+      // Check if document was flagged as irrelevant by the AI
+      if (parsed._irrelevant) {
+        setStagedDocs(prev => prev.map(d => d.id === docId ? { ...d, irrelevant: true } : d))
+        setExtractedFields({ _irrelevant: true })
+        return
+      }
+
+      // Validate minimum shipping fields
+      const hasMinimumFields = parsed.bl_no || parsed.be_no || parsed.containers || parsed.client
+      if (!hasMinimumFields) {
+        setStagedDocs(prev => prev.map(d => d.id === docId ? { ...d, irrelevant: true } : d))
+        setExtractedFields({ _irrelevant: true })
+        return
+      }
+
+setExtractedFields(parsed)
+
+// Only fill fields that are currently empty — don't overwrite existing data
+const shouldFill = (field) => !form[field] || form[field] === '' || form[field] === '__other__'
+const updates = {}
+const applied = {}
+
+if (parsed.client && shouldFill('client')) {
+        const matchedClient = fuzzyMatchClient(parsed.client)
+        if (matchedClient) { updates.client = matchedClient }
+        else { updates.client = '__other__'; updates.clientOther = parsed.client }
+        applied.client = true
+      }
+      if (parsed.bl_no && shouldFill('bl_no'))           { updates.bl_no = parsed.bl_no;         applied.bl_no = true }
+      if (parsed.containers && shouldFill('containers')) { updates.containers = parsed.containers; applied.containers = true }
+      if (parsed.shipping_line && shouldFill('carrier')) {
+        const matchedLine = fuzzyMatchShippingLine(parsed.shipping_line)
+        updates.carrier = matchedLine || '__other__'
+        if (!matchedLine) updates.carrierOther = parsed.shipping_line
+        applied.shipping_line = true
+      }
+      if (parsed.vessel && shouldFill('vessel'))         { updates.vessel = parsed.vessel;       applied.vessel = true }
+      if (parsed.eta && shouldFill('eta'))               { updates.eta = parsed.eta;             applied.eta = true }
+      if (parsed.goods && shouldFill('goods'))           { updates.goods = parsed.goods;         applied.goods = true }
+      if (parsed.hs_code && shouldFill('hs_code'))       { updates.hs_code = parsed.hs_code;     applied.hs_code = true }
+      if (parsed.be_no && shouldFill('be_no'))           { updates.be_no = parsed.be_no;         applied.be_no = true }
+      if (parsed.be_date && shouldFill('be_date'))       { updates.be_date = parsed.be_date;     applied.be_date = true }
+
+      setForm(prev => ({ ...prev, ...updates }))
+      setStagedDocs(prev => prev.map(d => d.id === docId ? { ...d, extracted: true } : d))
+      setAutoFillApplied(applied)
+      setExtractProgress(100)
+      setExtractStatus('Done!')
+
+    } catch (err) {
+      console.error('Quick extract error:', err.message, err)
+      setExtractedFields({ _error: true })
+      setExtractProgress(0)
+      setExtractStatus('')
+    } finally {
+      setTimeout(() => {
+        setExtracting(false)
+        setExtractProgress(0)
+        setExtractStatus('')
+      }, 800)
+    }
+  }
+
   const handleSubmit = async (e) => {
     e.preventDefault()
     setError('')
@@ -163,15 +485,28 @@ export default function CreateJob({ isModal = false, onCancel, onCreated }) {
       return
     }
 
+    if (!form.job_no.trim()) {
+      setError('Job number is required.')
+      setSaving(false)
+      return
+    }
+
+    const clientValue = form.client === '__other__' ? (form.clientOther?.trim() || '') : form.client.trim()
+    if (!clientValue) {
+      setError('Client name is required.')
+      setSaving(false)
+      return
+    }
+
     const payload = {
       job_no: `J-${form.job_no.trim()}`,
-      client: form.client.trim(),
+      client: form.client === '__other__' ? (form.clientOther?.trim() || '') : form.client.trim(),
       mode: form.mode,
       container_size: ['Sea FCL', 'Sea LCL'].includes(form.mode) ? form.container_size : null,
       goods: form.goods.trim() || null,
       priority: form.priority,
       bl_no: form.bl_no.trim() || null,
-      containers: form.containers.split(',').map(c => c.trim()).filter(Boolean).join(', ') || null,
+      containers: form.containers.split(/[\s,;]+/).map(c => c.trim()).filter(Boolean).join(', ') || null,
       shipping_line: form.carrier === '__other__' ? (form.carrierOther.trim() || null) : (form.carrier || null),
       vessel: form.vessel.trim() || null,
       eta: form.eta || null,
@@ -187,7 +522,6 @@ export default function CreateJob({ isModal = false, onCancel, onCreated }) {
       detention_risk: form.detention_risk,
       stage: Number(form.stage),
       delay_reason: form.delay_reason.trim() || null,
-      notes: form.notes.trim() || null,
       created_by: user.id,
     }
 
@@ -209,6 +543,19 @@ export default function CreateJob({ isModal = false, onCancel, onCreated }) {
 
     const jobId = insertedJob.id
     const jobNo = payload.job_no
+
+    // Validate shipping line before uploading documents
+    if (form.containers.trim()) {
+      if (!form.carrier) {
+        setError('Shipping Line is required when containers are specified.')
+        setSaving(false)
+        return
+      }
+      const containerList = form.containers.trim().split(/[\s,;]+/).filter(Boolean)
+      await Promise.allSettled(containerList.map((cn) =>
+        linkContainer(cn.toUpperCase(), jobId, jobNo, form.carrier).catch(() => {})
+      ))
+    }
 
     if (stagedDocs.length > 0) {
       setUploadingDocs(true)
@@ -242,18 +589,6 @@ export default function CreateJob({ isModal = false, onCancel, onCreated }) {
         }
       }))
       setUploadingDocs(false)
-    }
-
-    if (form.containers.trim()) {
-      if (!form.carrier) {
-        setError('Shipping Line is required when containers are specified.')
-        setSaving(false)
-        return
-      }
-      const containerList = form.containers.trim().split(/[\s,;]+/).filter(Boolean)
-      await Promise.allSettled(containerList.map((cn) =>
-        linkContainer(cn.toUpperCase(), jobId, jobNo, form.carrier).catch(() => {})
-      ))
     }
 
     setSaving(false)
@@ -291,6 +626,159 @@ export default function CreateJob({ isModal = false, onCancel, onCreated }) {
       <main className={isModal ? 'flex-1 p-5 overflow-y-auto' : 'flex-1 p-6 overflow-auto'}>
         <div className={isModal ? 'bg-white' : 'max-w-5xl mx-auto bg-white rounded-lg shadow-lg p-6 md:p-8'}>
           <form onSubmit={handleSubmit}>
+            {/* Smart Document Upload */}
+            <div className="mb-6 border-2 border-dashed border-[#1e3a5f] border-opacity-30 rounded-xl p-5 bg-blue-50">
+              <p className="text-sm font-semibold text-[#1e3a5f] mb-1">
+                ✦ Upload documents to auto-fill fields
+              </p>
+              <p className="text-xs text-gray-500 mb-4">
+                Select document type then upload — fields will be extracted automatically. You can upload multiple documents.
+              </p>
+
+              {/* Staged documents list */}
+              {stagedDocs.length > 0 && (
+                <div className="space-y-2 mb-4">
+                  {stagedDocs.map((item) => (
+                    <div key={item.id} className="flex items-center gap-3 bg-white rounded-lg px-3 py-2 border border-gray-200">
+                      <span className={`text-xs font-bold ${item.file.name.toLowerCase().endsWith('.pdf') ? 'text-red-500' : 'text-green-500'}`}>
+                        {item.file.name.toLowerCase().endsWith('.pdf') ? 'PDF' : 'IMG'}
+                      </span>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm text-gray-900 truncate">{item.file.name}</p>
+                        <p className="text-xs text-gray-500">{formatFileSize(item.file.size)}</p>
+                      </div>
+                      <select
+                        value={item.docType}
+                        onChange={e => setStagedDocs(prev => prev.map(d => d.id === item.id ? { ...d, docType: e.target.value } : d))}
+                        className="text-xs border border-gray-300 rounded-md px-2 py-1 bg-white"
+                      >
+                        {DOC_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                      </select>
+                      {item.extracted && (
+                        <span className="text-xs text-green-600 font-medium flex items-center gap-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-green-500 inline-block" />
+                          Extracted
+                        </span>
+                      )}
+                      {item.irrelevant && (
+                        <span className="text-xs text-amber-600 font-medium">⚠ Not a shipping doc</span>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => setStagedDocs(prev => prev.filter(d => d.id !== item.id))}
+                        className="text-gray-400 hover:text-red-600 text-lg leading-none"
+                      >&times;</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Upload row — doc type + file picker */}
+              <div className="flex flex-wrap items-end gap-3">
+                <div className="w-44">
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Document type</label>
+                  <select
+                    value={addDocType}
+                    onChange={e => setAddDocType(e.target.value)}
+                    className={inputClass}
+                  >
+                    <option value="">Select type...</option>
+                    {DOC_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">File</label>
+                  <input
+                    ref={quickUploadRef}
+                    id="doc-file-input"
+                    type="file"
+                    accept=".pdf,.jpg,.jpeg,.png"
+                    style={{ display:'none' }}
+                    onChange={async e => {
+                      const file = e.target.files?.[0]
+                      if (!file) return
+                      if (!addDocType) { setAddDocError('Please select a document type first.'); return }
+                      if (file.size > 10 * 1024 * 1024) { setAddDocError('File must be under 10MB.'); return }
+                      setAddDocError('')
+
+                      const docId = Date.now()
+                      setStagedDocs(prev => [...prev, { file, docType: addDocType, id: docId, extracted: false, irrelevant: false }])
+
+                      // Only extract for these types
+                      const extractableTypes = ['BL', 'Invoice', 'BE', 'OOC', 'Packing List']
+                      if (extractableTypes.includes(addDocType)) {
+                        await handleQuickExtract(file, addDocType, docId)
+                      }
+
+                      setAddDocType('')
+                      e.target.value = ''
+                    }}
+                  />
+                  <button
+                    type="button"
+                    disabled={!addDocType || extracting}
+                    onClick={() => {
+                      if (!addDocType) { setAddDocError('Please select a document type first.'); return }
+                      quickUploadRef.current?.click()
+                    }}
+                    className="px-4 py-2 text-sm font-medium text-white bg-[#1e3a5f] rounded-lg hover:bg-[#16304f] disabled:opacity-50 flex items-center gap-2"
+                  >
+                    {extracting ? (
+                      <>
+                        <span className="h-3.5 w-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                        {extractStatus || 'Extracting...'}
+                      </>
+                    ) : (
+                      '↑ Upload'
+                    )}
+                  </button>
+                </div>
+                {addDocError && <p className="text-xs text-red-600 w-full">{addDocError}</p>}
+              </div>
+
+              {/* Progress bar */}
+              {extracting && (
+                <div style={{ marginTop:'10px' }}>
+                  <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'4px' }}>
+                    <span style={{ fontSize:'11px', color:'#1e3a5f', fontWeight:500 }}>{extractStatus}</span>
+                    <span style={{ fontSize:'11px', color:'#1e3a5f', fontWeight:600 }}>{extractProgress}%</span>
+                  </div>
+                  <div style={{ height:'5px', background:'#dbeafe', borderRadius:'9999px', overflow:'hidden' }}>
+                    <div style={{
+                      height:'100%', borderRadius:'9999px', background:'#1e3a5f',
+                      width:`${extractProgress}%`, transition:'width 0.4s ease',
+                    }} />
+                  </div>
+                </div>
+              )}
+
+              {extractedFields?._error && (
+                <div className="mt-3 bg-red-50 rounded-lg border border-red-200 p-3">
+                  <p className="text-xs font-semibold text-red-700">⚠ Extraction failed — please fill fields manually or try again.</p>
+                </div>
+              )}
+              {extractedFields?._irrelevant && (
+                <div className="mt-3 bg-amber-50 rounded-lg border border-amber-200 p-3">
+                  <p className="text-xs font-semibold text-amber-700">⚠ Document doesn't appear to be a shipping document — no fields extracted.</p>
+                </div>
+              )}
+
+              {/* Auto-filled fields summary */}
+              {Object.keys(autoFillApplied).length > 0 && (
+                <div className="mt-3 bg-white rounded-lg border border-green-200 p-3">
+                  <p className="text-xs font-semibold text-green-700 mb-2">✓ Fields applied to form</p>
+                  <div className="flex flex-wrap gap-x-4 gap-y-1">
+                    {Object.entries(autoFillApplied).filter(([, v]) => v).map(([key]) => (
+                      <div key={key} className="flex items-center gap-1.5">
+                        <span className="w-1.5 h-1.5 rounded-full bg-green-500 flex-shrink-0" />
+                        <span className="text-xs text-gray-600 capitalize">{key.replace(/_/g, ' ')}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
               <SectionHeading>Job Header</SectionHeading>
 
@@ -310,13 +798,13 @@ export default function CreateJob({ isModal = false, onCancel, onCreated }) {
               <Field label="Client Name" required>
                 {form.client === '__other__' ? (
                   <div className="flex gap-2">
-                    <input type="text" required value={form.clientOther || ''} onChange={(e) => { setForm(p => ({ ...p, clientOther: e.target.value, client: e.target.value })); setError('') }} className={inputClass} placeholder="Enter client name" />
+                    <input type="text" required value={form.clientOther || ''} onChange={(e) => { setForm(p => ({ ...p, clientOther: e.target.value, client: e.target.value })); setError('') }} className={fieldClass('client')} placeholder="Enter client name" />
                     <button type="button" onClick={() => setForm(p => ({ ...p, client: '', clientOther: '' }))} className="shrink-0 px-3 py-2 text-xs font-semibold rounded-lg bg-gray-100 border border-gray-300 text-gray-600 hover:bg-gray-200">↩ List</button>
                   </div>
                 ) : (
-                  <select value={form.client} onChange={(e) => { const v = e.target.value; setForm(p => ({ ...p, client: v === '__other__' ? '__other__' : v, clientOther: v === '__other__' ? '' : p.clientOther })); setError('') }} className={inputClass} required>
+                  <select value={form.client} onChange={(e) => { const v = e.target.value; setForm(p => ({ ...p, client: v === '__other__' ? '__other__' : v, clientOther: v === '__other__' ? '' : p.clientOther })); setError('') }} className={fieldClass('client')} required>
                     <option value="">Select client</option>
-                    {['PCM','Adorn (ALS Series)','Deepa Traders','Divine / NNC','Eboney','Limitless Components EXIM','Infinite EXIM','Uddaybharat Techno Pvt. Ltd.','Leon International','Green Soul','Enkay Machinery','TRW','Grupo','Integral','Maxlord','Gefit','REAL','Mahalaxmi','Macksmatec','Finearc','Electrica','Ishita','Cotswold','INTO','Rivaan','Nikam',].map(c => <option key={c} value={c}>{c}</option>)}
+                    {CLIENT_LIST.map(c => <option key={c} value={c}>{c}</option>)}
                     <option value="__other__">Other...</option>
                   </select>
                 )}
@@ -346,7 +834,7 @@ export default function CreateJob({ isModal = false, onCancel, onCreated }) {
                   type="text"
                   value={form.goods}
                   onChange={set('goods')}
-                  className={inputClass}
+                  className={fieldClass('goods')}
                 />
               </Field>
 
@@ -363,7 +851,7 @@ export default function CreateJob({ isModal = false, onCancel, onCreated }) {
               <SectionHeading>Shipment Details</SectionHeading>
 
               <Field label="BL Number">
-                <input type="text" value={form.bl_no} onChange={set('bl_no')} className={inputClass} />
+                <input type="text" value={form.bl_no} onChange={set('bl_no')} className={fieldClass('bl_no')} />
               </Field>
 
               <Field label="Carrier / Shipping Line" required>
@@ -418,18 +906,18 @@ export default function CreateJob({ isModal = false, onCancel, onCreated }) {
                   type="text"
                   value={form.containers}
                   onChange={set('containers')}
-                  className={inputClass}
+                  className={fieldClass('containers')}
                   placeholder="e.g. MSCU1234567, OOLU7654321, CMAU9988776"
                 />
                 <p className="text-xs text-gray-400 mt-1">Enter multiple container numbers separated by commas</p>
               </Field>
 
               <Field label="Vessel / Flight">
-                <input type="text" value={form.vessel} onChange={set('vessel')} className={inputClass} />
+                <input type="text" value={form.vessel} onChange={set('vessel')} className={fieldClass('vessel')} />
               </Field>
 
               <Field label="ETA">
-                <input type="date" value={form.eta} onChange={set('eta')} className={inputClass} />
+                <input type="date" value={form.eta} onChange={set('eta')} className={fieldClass('eta')} />
               </Field>
 
               <Field label="CFS Name">
@@ -450,15 +938,15 @@ export default function CreateJob({ isModal = false, onCancel, onCreated }) {
               <SectionHeading>Customs</SectionHeading>
 
               <Field label="BE Number">
-                <input type="text" value={form.be_no} onChange={set('be_no')} className={inputClass} />
+                <input type="text" value={form.be_no} onChange={set('be_no')} className={fieldClass('be_no')} />
               </Field>
 
               <Field label="BE Date">
-                <input type="date" value={form.be_date} onChange={set('be_date')} className={inputClass} />
+                <input type="date" value={form.be_date} onChange={set('be_date')} className={fieldClass('be_date')} />
               </Field>
 
               <Field label="HS Code">
-                <input type="text" value={form.hs_code} onChange={set('hs_code')} className={inputClass} />
+                <input type="text" value={form.hs_code} onChange={set('hs_code')} className={fieldClass('hs_code')} />
               </Field>
 
               <Field label="RMS Status">
@@ -537,68 +1025,6 @@ export default function CreateJob({ isModal = false, onCancel, onCreated }) {
                 </Field>
               </div>
 
-              <SectionHeading>Notes</SectionHeading>
-
-              <div className="md:col-span-2">
-                <Field label="Notes">
-                  <textarea
-                    rows={4}
-                    value={form.notes}
-                    onChange={set('notes')}
-                    className={inputClass}
-                  />
-                </Field>
-              </div>
-            </div>
-
-            <div className="mt-8 border-t border-gray-200 pt-6">
-              <SectionHeading>Documents (Optional)</SectionHeading>
-              <p className="text-sm text-gray-500 mb-4">Attach shipping documents to this job</p>
-
-              {stagedDocs.length === 0 ? (
-                <p className="text-sm text-gray-400 italic mb-4">No documents added yet</p>
-              ) : (
-                <div className="space-y-2 mb-4">
-                  {stagedDocs.map((item) => {
-                    const isPdf = item.file.name.toLowerCase().endsWith('.pdf')
-                    return (
-                      <div key={item.id} className="flex items-center gap-3 bg-gray-50 rounded-md px-3 py-2">
-                        <span className={`text-xs font-bold ${isPdf ? 'text-red-500' : 'text-green-500'}`}>
-                          {isPdf ? 'PDF' : 'IMG'}
-                        </span>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm text-gray-900 truncate">{item.file.name}</p>
-                          <p className="text-xs text-gray-500">{formatFileSize(item.file.size)}</p>
-                        </div>
-                        <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold ${DOC_TYPE_COLORS[item.docType] || 'bg-slate-100 text-slate-800'}`}>
-                          {item.docType}
-                        </span>
-                        <button type="button" onClick={() => setStagedDocs((prev) => prev.filter((d) => d.id !== item.id))}
-                          className="text-gray-400 hover:text-red-600 transition-colors text-lg leading-none">&times;</button>
-                      </div>
-                    )
-                  })}
-                </div>
-              )}
-
-              <div className="flex flex-wrap items-end gap-3">
-                <div className="w-44">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Document Type</label>
-                  <select value={addDocType} onChange={(e) => setAddDocType(e.target.value)} className={inputClass}>
-                    <option value="">Select...</option>
-                    {DOC_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">File</label>
-                  <input id="doc-file-input" type="file" accept=".pdf,.jpg,.jpeg,.png" onChange={handleAddDocFile} className="text-sm text-gray-600 file:mr-3 file:py-1.5 file:px-3 file:text-sm file:font-medium file:border file:border-gray-300 file:rounded-md file:bg-gray-50 file:text-gray-700 hover:file:bg-gray-100" />
-                </div>
-                <button type="button" onClick={handleAddDoc}
-                  className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-70">
-                  Add
-                </button>
-              </div>
-              {addDocError && <p className="text-xs text-red-600 mt-1">{addDocError}</p>}
             </div>
 
             {error && (
