@@ -10,8 +10,6 @@ export default function AllJobsMobile({
   setPriorityFilter,
   onOpenJob,
   getStageName,
-  canCreateJob,
-  onCreateJob,
 }) {
   const [expandedId, setExpandedId] = useState(null)
 
@@ -50,16 +48,8 @@ export default function AllJobsMobile({
         </select>
       </div>
 
-      {/* Job count + create */}
-      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
-        <span style={{ fontSize:'12px', color:'#8a96a8' }}>{jobs.length} job{jobs.length !== 1 ? 's' : ''}</span>
-        {canCreateJob && (
-          <button onClick={onCreateJob}
-            style={{ padding:'8px 16px', background:'#1a4fa0', border:'none', borderRadius:'8px', color:'white', fontSize:'13px', fontWeight:600, cursor:'pointer' }}>
-            + Create Job
-          </button>
-        )}
-      </div>
+      {/* Job count */}
+      <div style={{ fontSize:'12px', color:'#8a96a8' }}>{jobs.length} job{jobs.length !== 1 ? 's' : ''}</div>
 
       {/* Empty state */}
       {jobs.length === 0 && (
