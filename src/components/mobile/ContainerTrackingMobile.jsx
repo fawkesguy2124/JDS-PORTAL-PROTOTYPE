@@ -1,5 +1,3 @@
-import { useState } from 'react'
-
 export default function ContainerTrackingMobile({
   sortedJobCards,
   trackingData,
@@ -11,8 +9,6 @@ export default function ContainerTrackingMobile({
   setFilterStatus,
   carriers,
   STATUS_OPTIONS,
-  expandedContainers,
-  setExpandedContainers,
   setDetailJob,
   handleOpenUpdate,
   openCarrierTracking,
@@ -90,8 +86,6 @@ export default function ContainerTrackingMobile({
         const hasDetention = cnList.some(cn => (trackingData[cn]?.freeDays ?? 99) <= 2)
         const allDelivered = statuses.every(s => s === 'delivered')
         const anyDelayed   = statuses.includes('delayed') || statuses.includes('customs_hold')
-        const isExpanded   = !!expandedContainers[`job_${job.id}`]
-
         const jobBadge = hasDetention
           ? { text:'⚠ Detention', bg:'#FCEBEB', color:'#991b1b', border:'#fecaca' }
           : allDelivered
@@ -124,7 +118,7 @@ export default function ContainerTrackingMobile({
 
             {/* Job header */}
             <div
-              onClick={() => setExpandedContainers(prev => ({ ...prev, [`job_${job.id}`]: !prev[`job_${job.id}`] }))}
+              onClick={() => setDetailJob(job)}
               style={{ padding:'16px 16px 12px', cursor:'pointer', userSelect:'none' }}
             >
               <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:'10px' }}>
@@ -140,7 +134,7 @@ export default function ContainerTrackingMobile({
                     {jobBadge.text}
                   </span>
                   <span style={{ fontSize:'12px', color:'#8a96a8' }}>
-                    {cnList.length} container{cnList.length !== 1 ? 's' : ''} {isExpanded ? '▲' : '▼'}
+                    {cnList.length} container{cnList.length !== 1 ? 's' : ''}
                   </span>
                 </div>
               </div>
@@ -159,113 +153,6 @@ export default function ContainerTrackingMobile({
                 </button>
               </div>
             </div>
-
-            {/* Expanded containers */}
-            {isExpanded && (
-              <div style={{ borderTop:'1.5px solid #e2e6ed' }}>
-                {cnList.map((cn, cnIdx) => {
-                  const td     = trackingData[cn] || {}
-                  const status = td.status || 'in_transit'
-                  const st     = STATUS_STYLES_MAP[status] || STATUS_STYLES_MAP['in_transit']
-                  const pct    = statusProgress(status)
-                  const pColor = getProgressColor(status, td.freeDays)
-                  const isDetention = td.freeDays != null && td.freeDays <= 2
-                  const isLastCn    = cnIdx === cnList.length - 1
-
-                  return (
-                    <div
-                      key={cn}
-                      onClick={() => {
-                        const key = `${job.id}-${cn}`
-                        setActiveContainer(prev =>
-                          prev?.jobId === job.id && prev?.cn === cn ? null : { jobId: job.id, cn }
-                        )
-                        setDetailJob(job)
-                      }}
-                      style={{
-                        padding:'14px 16px',
-                        borderBottom: isLastCn ? 'none' : '1px solid #f0f2f5',
-                        background: activeContainer?.cn === cn && activeContainer?.jobId === job.id
-                          ? '#f0f4fb' : '#fafbfc',
-                        cursor:'pointer',
-                        transition:'background 0.15s',
-                      }}
-                    >
-
-                      {/* Container # + status */}
-                      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'10px' }}>
-                        <span style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:'14px', fontWeight:700, color:'#1a2233' }}>{cn}</span>
-                        <span style={{ display:'inline-flex', alignItems:'center', padding:'3px 10px', borderRadius:'9999px', fontSize:'12px', fontWeight:600, background: isDetention ? '#fef2f2' : st.bg, color: isDetention ? '#991b1b' : st.color, border:`1px solid ${isDetention ? '#fecaca' : st.border}` }}>
-                          {isDetention ? '⚠ Detention' : (td.statusText || 'Not Updated')}
-                        </span>
-                      </div>
-
-                      {/* Traffic light + free days */}
-                      <div style={{ display:'flex', alignItems:'center', gap:'8px', marginBottom:'12px', padding:'8px 10px', borderRadius:'8px', background: isDetention ? '#FCEBEB' : td.freeDays != null && td.freeDays <= 7 ? '#FAEEDA' : '#EAF3DE', border:`0.5px solid ${isDetention ? '#F7C1C1' : td.freeDays != null && td.freeDays <= 7 ? '#FAC775' : '#C0DD97'}` }}>
-                        <div style={{ width:'10px', height:'10px', borderRadius:'50%', flexShrink:0, background: isDetention ? '#E24B4A' : td.freeDays != null && td.freeDays <= 7 ? '#EF9F27' : '#1D9E75' }} />
-                        <span style={{ fontSize:'13px', fontWeight:500, color: isDetention ? '#A32D2D' : td.freeDays != null && td.freeDays <= 7 ? '#854F0B' : '#27500A' }}>
-                          {td.freeDays != null ? `${td.freeDays} free days remaining` : 'Free days not set'}
-                        </span>
-                        {td.currentLocation && (
-                          <span style={{ fontSize:'11px', color:'var(--color-text-secondary)', marginLeft:'auto', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', maxWidth:'120px' }}>
-                            {td.currentLocation.split('/').pop()?.trim() || td.currentLocation}
-                          </span>
-                        )}
-                      </div>
-
-                      {/* Fields 2-col grid */}
-                      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'10px', marginBottom:'12px' }}>
-                        {[
-                          { label:'Location',    value: td.currentLocation },
-                          { label:'Vessel',      value: td.vessel || job.vessel },
-                          { label:'ETA',         value: (td.eta || job.eta) ? new Date(td.eta || job.eta).toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' }) : null },
-                          { label:'Free Days',   value: td.freeDays != null ? `${td.freeDays} days` : null, color: td.freeDays != null && td.freeDays <= 2 ? '#dc2626' : td.freeDays != null && td.freeDays <= 5 ? '#b45309' : '#1a2233' },
-                          { label:'Port In',     value: td.portIn },
-                          { label:'Port Out',    value: td.portOut },
-                          { label:'CFS Gate In', value: td.cfsGateIn },
-                          { label:'Last Update', value: td.lastUpdate ? new Date(td.lastUpdate).toLocaleDateString('en-IN', { day:'2-digit', month:'short' }) : null },
-                        ].map(f => (
-                          <div key={f.label}>
-                            <div style={{ fontSize:'9px', fontWeight:700, textTransform:'uppercase', letterSpacing:'0.07em', color:'#8a96a8', marginBottom:'3px' }}>{f.label}</div>
-                            <div style={{ fontSize:'13px', fontWeight:500, color: f.color || (f.value ? '#1a2233' : '#d0d6e0') }}>{f.value || '—'}</div>
-                          </div>
-                        ))}
-                      </div>
-
-                      {/* Notes */}
-                      {td.notes && (
-                        <div style={{ marginBottom:'12px', padding:'8px 10px', background:'#fffbeb', border:'1px solid #fde68a', borderRadius:'8px', fontSize:'12px', color:'#92400e' }}>
-                          📝 {td.notes}
-                        </div>
-                      )}
-
-                      {/* Action buttons */}
-                      <div style={{ display:'flex', gap:'8px' }}>
-                        <button
-                          onClick={async e => {
-                            e.stopPropagation()
-                            setActiveContainer({ jobId: job.id, cn })
-                            setDetailJob(job)
-                            await handleLDBRefresh(job, cn)
-                          }}
-                          style={{ width:'48px', height:'48px', background:'#f0f4fb', border:'1.5px solid #bfdbfe', color:'#1a4fa0', borderRadius:'10px', fontSize:'20px', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}
-                          title="Refresh"
-                        >
-                          ↻
-                        </button>
-                        <button
-                          onClick={e => { e.stopPropagation(); openCarrierTracking(cn, job.shipping_line, showToast) }}
-                          style={{ width:'48px', height:'48px', background:'#f8f9fb', border:'1.5px solid #e2e6ed', color:'#4a5568', borderRadius:'10px', fontSize:'20px', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}
-                          title="Open carrier tracking"
-                        >
-                          🌐
-                        </button>
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            )}
           </div>
         )
       })}

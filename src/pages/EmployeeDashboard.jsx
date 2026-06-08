@@ -28,7 +28,6 @@ function EmpContainerSection({ jobs, showToast }) {
   const [trackingData, setTrackingData] = useState({})
   const [loadingTracking, setLoadingTracking] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
-  const [expandedContainers, setExpandedContainers] = useState({})
   const [detailJob, setDetailJob] = useState(null)
 
   useEffect(() => {
@@ -91,23 +90,6 @@ function EmpContainerSection({ jobs, showToast }) {
   }, [allJobCards, searchQuery])
 
   const totalContainers = allJobCards.reduce((s, { cnList }) => s + cnList.length, 0)
-
-  const statusProgress = (status) => {
-    if (status === 'delivered' || status === 'empty_returned') return 100
-    if (status === 'at_cfs')       return 85
-    if (status === 'arrived')      return 75
-    if (status === 'customs_hold') return 70
-    if (status === 'on_rail')      return 90
-    if (status === 'delayed')      return 45
-    return 55
-  }
-
-  const progressColor = (status, freeDays) => {
-    if (freeDays != null && freeDays <= 2) return '#dc2626'
-    if (['delivered','arrived','at_cfs','on_rail'].includes(status)) return '#16a34a'
-    if (['customs_hold','delayed'].includes(status)) return '#dc2626'
-    return '#f59e0b'
-  }
 
   const formatD = (d) => d
     ? new Date(d).toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' })
@@ -247,21 +229,15 @@ function EmpContainerSection({ jobs, showToast }) {
                   const status = td.status || 'in_transit'
                   const st     = STATUS_STYLES_MAP[status] || STATUS_STYLES_MAP['in_transit']
                   const isDetention = td.freeDays != null && td.freeDays <= 2
-                  const key    = `${job.id}-${cn}`
-                  const isOpen = !!expandedContainers[key]
-                  const pct    = statusProgress(status)
-                  const pColor = progressColor(status, td.freeDays)
 
                   return (
                     <div key={cn}>
                       <div
-                        onClick={e => { e.stopPropagation(); setExpandedContainers(prev => ({ ...prev, [key]: !prev[key] })) }}
+                        onClick={e => { e.stopPropagation(); setDetailJob(job) }}
                         style={{
                           display:'flex', alignItems:'center', gap:'8px',
                           padding:'8px 10px', borderRadius:'8px', cursor:'pointer',
-                          background: isOpen ? '#f0f4fb' : '#f8f9fb',
-                          border: `1.5px solid ${isOpen ? '#bfdbfe' : '#e2e6ed'}`,
-                          transition:'all 0.15s',
+                          background:'#f8f9fb', border:'1.5px solid #e2e6ed', transition:'all 0.15s',
                         }}
                       >
                         <span style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:'12px', fontWeight:600, color:'#1a2233', flex:1 }}>
@@ -276,40 +252,7 @@ function EmpContainerSection({ jobs, showToast }) {
                         }}>
                           {isDetention ? '⚠ Detention' : (td.statusText || 'Not Updated')}
                         </span>
-                        <span style={{ color:'#8a96a8', fontSize:'10px' }}>{isOpen ? '▲' : '▼'}</span>
                       </div>
-
-                      {isOpen && (
-                        <div style={{ margin:'4px 0 2px', padding:'10px 12px', background:'white', border:'1.5px solid #bfdbfe', borderRadius:'8px' }}>
-                          <div style={{ height:'5px', background:'#f4f6f9', borderRadius:'6px', overflow:'hidden', marginBottom:'3px' }}>
-                            <div style={{ height:'100%', borderRadius:'6px', width:`${pct}%`, background:pColor }} />
-                          </div>
-                          <div style={{ display:'flex', justifyContent:'space-between', fontSize:'10px', color:'#8a96a8', marginBottom:'8px' }}>
-                            <span>Loaded</span>
-                            <span style={{ color:pColor, fontWeight:600 }}>{pct}%</span>
-                            <span>Discharged</span>
-                          </div>
-                          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'8px', fontSize:'11px' }}>
-                            {[
-                              { label:'Location', value: td.currentLocation },
-                              { label:'Vessel',   value: td.vessel || job.vessel },
-                              { label:'ETA',      value: formatD(td.eta || job.eta) },
-                              { label:'Free Days', value: td.freeDays != null ? `${td.freeDays}d` : '—',
-                                color: td.freeDays != null && td.freeDays <= 2 ? '#dc2626' : td.freeDays != null && td.freeDays <= 5 ? '#b45309' : '#1a2233' },
-                            ].map(f => (
-                              <div key={f.label}>
-                                <div style={{ color:'#8a96a8', fontSize:'10px', textTransform:'uppercase', letterSpacing:'0.05em', marginBottom:'2px' }}>{f.label}</div>
-                                <div style={{ fontWeight:500, color: f.color || (f.value ? '#1a2233' : '#d0d6e0') }}>{f.value || '—'}</div>
-                              </div>
-                            ))}
-                          </div>
-                          {td.notes && (
-                            <div style={{ marginTop:'8px', padding:'5px 8px', background:'#fffbeb', border:'1px solid #fde68a', borderRadius:'5px', fontSize:'11px', color:'#92400e' }}>
-                              📝 {td.notes}
-                            </div>
-                          )}
-                        </div>
-                      )}
                     </div>
                   )
                 })}
