@@ -71,6 +71,11 @@ export default function Login() {
         return
       }
 
+      if (profile.role === 'field_ops') {
+        window.location.replace('/field')
+        return
+      }
+
       setError('Invalid role. Contact Jose.')
       await supabase.auth.signOut()
     } catch (err) {

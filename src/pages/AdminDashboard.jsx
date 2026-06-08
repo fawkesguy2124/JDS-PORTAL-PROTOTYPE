@@ -270,14 +270,6 @@ function formatAccountabilityWhen(ts) {
   })
 }
 
-function progressColor(stage) {
-  const s = Number(stage) || 0
-  if (s <= 3) return 'bg-red-600'
-  if (s <= 6) return 'bg-amber-500'
-  if (s <= 9) return 'bg-blue-600'
-  return 'bg-green-600'
-}
-
 function JobCard({ job, profiles, onOpen, onDelete }) {
   const priority = priorityChip(job.priority)
   const mode = modeChip(job.mode)
@@ -334,15 +326,6 @@ function JobCard({ job, profiles, onOpen, onDelete }) {
           </div>
         </div>
       </div>
-      <div className="mt-2">
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-xs text-[#8a96a8]">{getStageName(Number(job.stage) || 0)}</span>
-              <span className="text-xs text-[#8a96a8]">{Math.round(((Number(job.stage)||0)/10)*100)}%</span>
-            </div>
-            <div className="h-1.5 bg-[#e2e6ed] rounded-full overflow-hidden">
-              <div className="h-full bg-[#1a4fa0] rounded-full" style={{ width: `${Math.round(((Number(job.stage)||0)/10)*100)}%` }} />
-            </div>
-          </div>
       <div className="mt-2 flex items-center justify-between gap-2 flex-wrap">
         <div className="text-xs text-[#8a96a8]">
           <span className="text-[#4a5568] font-medium">{assignedName}</span> · {job.destination || '—'} ·{' '}
@@ -365,6 +348,7 @@ export default function AdminDashboard() {
   const [filterStage, setFilterStage] = useState('')
   const [filterPriority, setFilterPriority] = useState('')
   const [filterMode, setFilterMode] = useState('')
+  const [sortBy, setSortBy] = useState('number_desc')
   const [selectedJob, setSelectedJob] = useState(null)
   const [showCreateJob, setShowCreateJob] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(false)
@@ -439,7 +423,6 @@ export default function AdminDashboard() {
 
   const filteredJobs = useMemo(() => {
     const q = search.trim().toLowerCase()
-    const pRank = { urgent: 0, high: 1, normal: 2 }
     return (jobs || [])
       .filter((j) => {
         if (q) {
@@ -452,12 +435,36 @@ export default function AdminDashboard() {
         return true
       })
       .sort((a, b) => {
-        const pa = pRank[String(a.priority||'normal').toLowerCase()] ?? 3
-        const pb = pRank[String(b.priority||'normal').toLowerCase()] ?? 3
-        if (pa !== pb) return pa - pb
-        return new Date(b.updated_at||b.created_at||0).getTime() - new Date(a.updated_at||a.created_at||0).getTime()
+        if (sortBy === 'number_desc') {
+          const na = parseInt((a.job_no || '').replace(/\D/g, '')) || 0
+          const nb = parseInt((b.job_no || '').replace(/\D/g, '')) || 0
+          return nb - na
+        }
+        if (sortBy === 'number_asc') {
+          const na = parseInt((a.job_no || '').replace(/\D/g, '')) || 0
+          const nb = parseInt((b.job_no || '').replace(/\D/g, '')) || 0
+          return na - nb
+        }
+        if (sortBy === 'latest') {
+          return new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
+        }
+        if (sortBy === 'updated') {
+          return new Date(b.updated_at || b.created_at || 0).getTime() - new Date(a.updated_at || a.created_at || 0).getTime()
+        }
+        if (sortBy === 'eta') {
+          const ea = a.eta ? new Date(a.eta).getTime() : Infinity
+          const eb = b.eta ? new Date(b.eta).getTime() : Infinity
+          return ea - eb
+        }
+        if (sortBy === 'stage_asc') {
+          return (Number(a.stage) || 0) - (Number(b.stage) || 0)
+        }
+        if (sortBy === 'stage_desc') {
+          return (Number(b.stage) || 0) - (Number(a.stage) || 0)
+        }
+        return 0
       })
-  }, [jobs, search, filterStage, filterPriority, filterMode])
+  }, [jobs, search, filterStage, filterPriority, filterMode, sortBy])
 
   const handleLogout = async () => { await supabase.auth.signOut(); window.location.replace('/login') }
   const handleNavClick = (id) => {
@@ -550,7 +557,16 @@ export default function AdminDashboard() {
         <select value={filterMode} onChange={(e) => setFilterMode(e.target.value)} className="h-6 px-2 text-xs bg-white border-[1.5px] border-[#e2e6ed] rounded-lg text-[#4a5568] outline-none focus:border-[#1a4fa0]">
           {MODE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
         </select>
-        <button type="button" onClick={() => { setSearch(''); setFilterStage(''); setFilterPriority(''); setFilterMode('') }}
+        <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} className="h-6 px-2 text-xs bg-white border-[1.5px] border-[#e2e6ed] rounded-lg text-[#4a5568] outline-none focus:border-[#1a4fa0]">
+          <option value="number_desc">Job No ↓</option>
+          <option value="number_asc">Job No ↑</option>
+          <option value="updated">Recently Updated</option>
+          <option value="latest">Latest Added</option>
+          <option value="eta">ETA Soonest</option>
+          <option value="stage_asc">Stage ↑ (needs attention)</option>
+          <option value="stage_desc">Stage ↓ (nearly done)</option>
+        </select>
+        <button type="button" onClick={() => { setSearch(''); setFilterStage(''); setFilterPriority(''); setFilterMode(''); setSortBy('number_desc') }}
           className="h-6 px-2.5 text-xs rounded-lg bg-white border-[1.5px] border-[#d0d6e0] text-[#4a5568] hover:border-[#1a4fa0] hover:text-[#1a4fa0] hover:bg-[#e8eef8]">
           Clear
         </button>

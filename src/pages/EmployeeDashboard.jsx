@@ -8,24 +8,8 @@ import CreateJob from './CreateJob'
 import * as XLSX from 'xlsx'
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 import OCRSection from '../components/OCRSection'
-
-const NAV_SECTIONS = [
-  {
-    label: 'OPERATIONS',
-    items: [
-      { id: 'jobs',       label: 'All Jobs',           icon: '≡'  },
-      { id: 'containers', label: 'Container Tracking',  icon: '⊟' },
-      { id: 'documents',  label: 'Documents',           icon: '📄' },
-    ],
-  },
-  {
-    label: 'AI TOOLS',
-    items: [
-      { id: 'ocr', label: 'OCR Extract', icon: '✦' },
-    ],
-  },
-]
-const NAV_ITEMS = NAV_SECTIONS.flatMap(s => s.items)
+import ContainerTrackingSection from '../components/ContainerTrackingSection'
+import JobDetailView from '../components/JobDetailView'
 
 function getGreeting() {
   const hour = new Date().getHours()
@@ -535,29 +519,61 @@ export default function EmployeeDashboard() {
   const [filterStage, setFilterStage] = useState('')
   const [filterPriority, setFilterPriority] = useState('')
   const [filterMode, setFilterMode] = useState('')
+  const [sortBy, setSortBy] = useState('number_desc')
+  const [showMyJobs, setShowMyJobs] = useState(false)
   const [expandedJobId, setExpandedJobId] = useState(null)
   const [editingJobId, setEditingJobId] = useState(null)
   const [editForm, setEditForm] = useState({})
   const [saving, setSaving] = useState(false)
-  const [showCreateJob, setShowCreateJob] = useState(false)
   const [toastState, setToastState] = useState(null)
-  const [showMyJobs, setShowMyJobs] = useState(false)
-  const [documents, setDocuments] = useState([])
-  const [loadingDocs, setLoadingDocs] = useState(false)
-  const [expandedDocJobId, setExpandedDocJobId] = useState(null)
+  const [showCreateJob, setShowCreateJob] = useState(false)
   const [previewModal, setPreviewModal] = useState({ open: false, doc: null })
-  const [extractModal, setExtractModal] = useState({ open: false, job: null, docs: [] })
-  const [extracting, setExtracting] = useState(false)
+  const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [selectedJob, setSelectedJob] = useState(null)
+  const [expandedDocJobId, setExpandedDocJobId] = useState(null)
+  const [extractModal, setExtractModal] = useState({ open: false, job: null })
+  const [uploadModal, setUploadModal] = useState({ open: false, job: null })
+  const [uploadFile, setUploadFile] = useState(null)
+  const [uploadDocType, setUploadDocType] = useState('BL')
+  const [uploadProgress, setUploadProgress] = useState(0)
+  const [uploading, setUploading] = useState(false)
+  const [loadingDocs, setLoadingDocs] = useState(false)
+  const [documents, setDocuments] = useState([])
   const [extractedFields, setExtractedFields] = useState(null)
   const [extractEdits, setExtractEdits] = useState(null)
   const [extractError, setExtractError] = useState(null)
+  const [extracting, setExtracting] = useState(false)
   const [extractProgress, setExtractProgress] = useState('')
-  const [uploadModal, setUploadModal] = useState({ open: false, job: null })
-  const [uploadDocType, setUploadDocType] = useState('BL')
-  const [uploadFile, setUploadFile] = useState(null)
-  const [uploading, setUploading] = useState(false)
-  const [uploadProgress, setUploadProgress] = useState(0)
-  const [sidebarOpen, setSidebarOpen] = useState(false)
+
+  const isFieldOps = profile?.role === 'field_ops'
+
+  const NAV_SECTIONS = useMemo(() => isFieldOps ? [
+    {
+      label: 'OPERATIONS',
+      items: [
+        { id: 'jobs',       label: 'All Jobs',           icon: '≡'  },
+        { id: 'containers', label: 'Container Tracking',  icon: '⊟' },
+        { id: 'documents',  label: 'Documents',           icon: '📄' },
+      ],
+    },
+  ] : [
+    {
+      label: 'OPERATIONS',
+      items: [
+        { id: 'jobs',       label: 'All Jobs',           icon: '≡'  },
+        { id: 'containers', label: 'Container Tracking',  icon: '⊟' },
+        { id: 'documents',  label: 'Documents',           icon: '📄' },
+      ],
+    },
+    {
+      label: 'AI TOOLS',
+      items: [
+        { id: 'ocr', label: 'OCR Extract', icon: '✦' },
+      ],
+    },
+  ], [isFieldOps])
+
+  const NAV_ITEMS = useMemo(() => NAV_SECTIONS.flatMap(s => s.items), [NAV_SECTIONS])
 
   const activeNav = useMemo(() => {
     const params = new URLSearchParams(location.search)
@@ -565,10 +581,16 @@ export default function EmployeeDashboard() {
   }, [location.search])
 
   const handleNavClick = (id) => {
-    navigate(`/dashboard?tab=${id}`, { replace: true })
+    const base = isFieldOps ? '/field' : '/dashboard'
+    navigate(`${base}?tab=${id}`, { replace: true })
   }
 
   const isAkshyani = profile?.name === 'Akshyani'
+
+  const refreshJobs = async () => {
+    const { data } = await supabase.from('jobs').select('*').order('updated_at', { ascending: false })
+    setJobs(data ?? [])
+  }
 
   useEffect(() => {
     if (!user?.id) return
@@ -581,6 +603,13 @@ export default function EmployeeDashboard() {
       ])
       if (!mounted) return
       setJobs(jobsData ?? [])
+      // Restore selected job from URL
+      const params = new URLSearchParams(window.location.search)
+      const jobId = params.get('jobId')
+      if (jobId && jobsData) {
+        const found = jobsData.find(j => j.id === jobId)
+        if (found) setSelectedJob(found)
+      }
       const map = {}
       ;(profilesData ?? []).forEach((p) => {
         map[p.id] = p.name
@@ -609,7 +638,7 @@ export default function EmployeeDashboard() {
 
   const currentUserName = profile?.name || '—'
 
-  const canCreateJob = ['Uphadhya', 'Akshyani'].includes(currentUserName)
+  const canCreateJob = isFieldOps || ['Uphadhya', 'Akshyani'].includes(currentUserName)
   const canUpdateStage = ['Trupti', 'Uphadhya'].includes(currentUserName)
 
   const FIELD_LABELS = {
@@ -870,16 +899,39 @@ export default function EmployeeDashboard() {
       return true
     }
 
-    const pRank = { urgent: 0, high: 1, normal: 2 }
     return (jobs || [])
       .filter((j) => matchesQuery(j) && matchesFilters(j))
       .sort((a, b) => {
-        const pa = pRank[String(a.priority || 'normal').toLowerCase()] ?? 3
-        const pb = pRank[String(b.priority || 'normal').toLowerCase()] ?? 3
-        if (pa !== pb) return pa - pb
-        return new Date(b.updated_at || b.created_at || 0).getTime() - new Date(a.updated_at || a.created_at || 0).getTime()
+        if (sortBy === 'number_desc') {
+          const na = parseInt((a.job_no || '').replace(/\D/g, '')) || 0
+          const nb = parseInt((b.job_no || '').replace(/\D/g, '')) || 0
+          return nb - na
+        }
+        if (sortBy === 'number_asc') {
+          const na = parseInt((a.job_no || '').replace(/\D/g, '')) || 0
+          const nb = parseInt((b.job_no || '').replace(/\D/g, '')) || 0
+          return na - nb
+        }
+        if (sortBy === 'latest') {
+          return new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
+        }
+        if (sortBy === 'updated') {
+          return new Date(b.updated_at || b.created_at || 0).getTime() - new Date(a.updated_at || a.created_at || 0).getTime()
+        }
+        if (sortBy === 'eta') {
+          const ea = a.eta ? new Date(a.eta).getTime() : Infinity
+          const eb = b.eta ? new Date(b.eta).getTime() : Infinity
+          return ea - eb
+        }
+        if (sortBy === 'stage_asc') {
+          return (Number(a.stage) || 0) - (Number(b.stage) || 0)
+        }
+        if (sortBy === 'stage_desc') {
+          return (Number(b.stage) || 0) - (Number(a.stage) || 0)
+        }
+        return 0
       })
-  }, [jobs, search, filterStage, filterPriority, filterMode, showMyJobs, user?.id])
+  }, [jobs, search, filterStage, filterPriority, filterMode, sortBy, showMyJobs, user?.id])
 
   useEffect(() => {
     if (activeNav !== 'documents') return
@@ -898,23 +950,34 @@ export default function EmployeeDashboard() {
     return () => { mounted = false }
   }, [activeNav])
 
-  const refreshJobs = async () => {
-    const { data } = await supabase.from('jobs').select('*').order('updated_at', { ascending: false })
-    setJobs(data ?? [])
+  const setJobParam = (job) => {
+    const params = new URLSearchParams(window.location.search)
+    if (job) {
+      params.set('jobId', job.id)
+    } else {
+      params.delete('jobId')
+    }
+    window.history.replaceState({}, '', `${window.location.pathname}?${params.toString()}${window.location.hash}`)
   }
 
-  const handleCardClick = (e, jobId) => {
+  const handleJobOpen = (job) => {
+    setSelectedJob(job)
+    setJobParam(job)
+  }
+
+  const handleCardClick = (e, job) => {
     const tag = e.target?.tagName?.toLowerCase?.() || ''
     if (['input', 'select', 'textarea', 'button'].includes(tag)) return
-    setExpandedJobId((prev) => (prev === jobId ? null : jobId))
+    setSelectedJob(job)
+    setJobParam(job)
   }
 
-  const handleCardKeyDown = (e, jobId) => {
+  const handleCardKeyDown = (e, job) => {
     const tag = e.target?.tagName?.toLowerCase?.() || ''
     if (['input', 'select', 'textarea', 'button'].includes(tag)) return
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault()
-      setExpandedJobId((prev) => (prev === jobId ? null : jobId))
+      setSelectedJob(job)
     }
   }
 
@@ -1052,22 +1115,6 @@ export default function EmployeeDashboard() {
         <p className="text-sm font-semibold text-[#1a2233] mt-1 truncate" title={value}>
           {value}
         </p>
-      </div>
-    )
-  }
-
-  const JobProgress = ({ stage }) => {
-    const s = Number(stage) || 0
-    const pct = Math.min(100, Math.round((s / 10) * 100))
-    return (
-      <div className="mt-2">
-        <div className="flex items-center justify-between gap-2">
-          <span className="text-xs text-[#8a96a8] truncate">Stage {s}: {getStageName(s)}</span>
-          <span className="text-xs text-[#8a96a8]">{pct}%</span>
-        </div>
-        <div className="mt-1 h-1 bg-[#e2e6ed] border border-[#e2e6ed] rounded overflow-hidden">
-          <div className={classNames('h-full rounded', progressColor(s))} style={{ width: `${pct}%` }} />
-        </div>
       </div>
     )
   }
@@ -1455,6 +1502,7 @@ export default function EmployeeDashboard() {
                 </div>
                 {section.items.map((item) => {
                   const isActive = activeNav === item.id
+                  const badge = item.id === 'jobs' ? jobs.length : null
                   return (
                     <button
                       key={item.id}
@@ -1469,6 +1517,11 @@ export default function EmployeeDashboard() {
                     >
                       <span className="w-4 text-center shrink-0 text-sm opacity-90">{item.icon}</span>
                       <span className="truncate flex-1">{item.label}</span>
+                      {badge !== null && badge > 0 && (
+                        <span style={{ background:'rgba(255,255,255,0.2)', color:'white', borderRadius:'9999px', fontSize:'11px', fontWeight:700, padding:'1px 7px', minWidth:'20px', textAlign:'center', flexShrink:0 }}>
+                          {badge}
+                        </span>
+                      )}
                     </button>
                   )
                 })}
@@ -1506,9 +1559,11 @@ export default function EmployeeDashboard() {
               : activeNav === 'ocr' ? 'OCR Extract'
               : 'All Jobs'}
             </div>
-            <div className="text-sm text-[#8a96a8] truncate">
-              {getGreeting()}, {profile?.name || 'there'}
-            </div>
+            {activeNav === 'jobs' && (
+              <div className="text-sm text-[#8a96a8] truncate">
+                {getGreeting()}, {profile?.name || 'there'}
+              </div>
+            )}
           </div>
           <div className="ml-auto flex items-center gap-2">
             {canCreateJob && (
@@ -1535,6 +1590,28 @@ export default function EmployeeDashboard() {
         <main className="flex-1 overflow-y-auto p-4 sm:p-6">
           {activeNav === 'jobs' && (
             <>
+              {selectedJob ? (
+                <JobDetailView
+                  job={selectedJob}
+                  onBack={() => { setSelectedJob(null); setJobParam(null) }}
+                  profile={profile}
+                  profiles={profiles}
+                  currentUserName={currentUserName}
+                  showToast={showToast}
+                  isAdmin={profile?.role === 'admin'}
+                  canUpdateStage={canUpdateStage}
+                  onJobUpdated={async () => {
+                    const { data } = await supabase
+                      .from('jobs')
+                      .select('*')
+                      .eq('id', selectedJob.id)
+                      .single()
+                    if (data) setSelectedJob(data)
+                    await refreshJobs()
+                  }}
+                />
+              ) : (
+                <>
               <div className="bg-white border-[1.5px] border-[#e2e6ed] rounded-xl shadow-sm mb-4">
                 <div className="px-5 py-3 bg-[#f8f9fb] border-b border-[#e2e6ed] flex items-center justify-between">
                   <div className="flex items-center gap-3">
@@ -1597,6 +1674,19 @@ export default function EmployeeDashboard() {
                       </option>
                     ))}
                   </select>
+                  <select
+                    value={sortBy}
+                    onChange={(e) => setSortBy(e.target.value)}
+                    className="h-9 px-3 text-sm bg-white border-[1.5px] border-[#e2e6ed] rounded-lg text-[#4a5568] outline-none focus:border-[#1a4fa0]"
+                  >
+                    <option value="number_desc">Job No ↓</option>
+                    <option value="number_asc">Job No ↑</option>
+                    <option value="updated">Recently Updated</option>
+                    <option value="latest">Latest Added</option>
+                    <option value="eta">ETA Soonest</option>
+                    <option value="stage_asc">Stage ↑ (needs attention)</option>
+                    <option value="stage_desc">Stage ↓ (nearly done)</option>
+                  </select>
                   <button
                     type="button"
                     onClick={() => {
@@ -1604,6 +1694,7 @@ export default function EmployeeDashboard() {
                       setFilterStage('')
                       setFilterPriority('')
                       setFilterMode('')
+                      setSortBy('number_desc')
                       setShowMyJobs(false)
                     }}
                     className="h-9 px-4 text-sm rounded-lg bg-white border-[1.5px] border-[#d0d6e0] text-[#4a5568] hover:border-[#1a4fa0] hover:text-[#1a4fa0] hover:bg-[#e8eef8]"
@@ -1644,8 +1735,8 @@ export default function EmployeeDashboard() {
                         key={job.id}
                         role="button"
                         tabIndex={0}
-                        onClick={(e) => handleCardClick(e, job.id)}
-                        onKeyDown={(e) => handleCardKeyDown(e, job.id)}
+                        onClick={(e) => handleCardClick(e, job)}
+                        onKeyDown={(e) => handleCardKeyDown(e, job)}
                         className={classNames(
                           'bg-white border-[1.5px] border-[#e2e6ed] rounded-xl shadow-sm p-4 mb-3 cursor-pointer transition-all',
                           'hover:border-[#d0d6e0] hover:shadow-md hover:bg-[#fafbfc]',
@@ -1713,8 +1804,6 @@ export default function EmployeeDashboard() {
                           </div>
                         </div>
 
-                        <JobProgress stage={job.stage} />
-
                         <div className="mt-3 flex items-center justify-between gap-3 flex-wrap">
                           <div className="text-sm text-[#8a96a8]">
                             <span className="text-[#8a96a8] font-medium">{assignedName}</span> · {job.destination || '—'} ·{' '}
@@ -1730,16 +1819,6 @@ export default function EmployeeDashboard() {
                           </div>
 
                           <div className="flex items-center gap-2">
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                startEditing(job)
-                              }}
-                              className="h-8 px-3 text-sm rounded-lg bg-white border-[1.5px] border-[#d0d6e0] text-[#4a5568] hover:border-[#1a4fa0] hover:text-[#1a4fa0] hover:bg-[#e8eef8]"
-                            >
-                              Edit
-                            </button>
                           </div>
                         </div>
 
@@ -1751,206 +1830,6 @@ export default function EmployeeDashboard() {
                               <MiniStatus title="TRANSPORT" value={job.vessel?.trim() ? job.vessel : 'Not Yet'} tone="gray" />
                               <MiniStatus title="DELIVERY" value={job.destination?.trim() ? job.destination : 'Pending'} tone="green" />
                             </div>
-
-                            {canUpdateStage && (
-                              <div className="mb-4 flex items-center gap-2">
-                                <span className="text-xs font-semibold text-[#8a96a8] uppercase tracking-wide">Update Stage</span>
-                                <select
-                                  disabled={saving}
-                                  value={Number(isEditing ? editForm.stage ?? job.stage : job.stage)}
-                                  onChange={(e) => updateStage(job, e.target.value)}
-                                  className={classNames(inputBase, 'h-9 text-sm max-w-[320px]')}
-                                >
-                                  {STAGE_LIST.map((s) => (
-                                    <option key={s.value} value={s.value}>
-                                      {s.value} — {s.label}
-                                    </option>
-                                  ))}
-                                </select>
-                              </div>
-                            )}
-
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-5">
-                              {[
-                                'job_no',
-                                'client',
-                                'mode',
-                                'priority',
-                                'goods',
-                                'bl_no',
-                                'be_no',
-                                'be_date',
-                                'containers',
-                                'container_size',
-                                'shipping_line',
-                                'vessel',
-                                'eta',
-                                'cfs_name',
-                                'cfs_amount',
-                                'hs_code',
-                                'rms_status',
-                                'bg_required',
-                                'destination',
-                                'free_days',
-                                'detention_risk',
-                                'delay_reason',
-                                'notes',
-                              ].map((k) => {
-                                const locked = !isFieldEditable(k)
-                                const value = isEditing ? (editForm[k] ?? '') : job[k]
-                                const disabled = locked || saving || !isEditing
-
-                                const renderInput = () => {
-                                  if (!isEditing) {
-                                    let shown = displayValue(value)
-                                    if (k === 'eta' || k === 'be_date') shown = formatDateSlash(value)
-                                    if (k === 'cfs_amount') {
-                                      shown = value !== null && value !== undefined && value !== '' ? `Rs. ${Number(value).toLocaleString('en-IN')}` : 'Pending'
-                                    }
-                                    return <div className="text-sm text-[#1a2233] font-medium">{shown}</div>
-                                  }
-
-                                  if (k === 'mode') {
-                                    return (
-                                      <select value={value || ''} onChange={updateEditField(k)} disabled={disabled} className={inputBase} onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
-                                        <option value="">—</option>
-                                        <option value="Sea FCL">Sea FCL</option>
-                                        <option value="Sea LCL">Sea LCL</option>
-                                        <option value="Air">Air</option>
-                                        <option value="BPT/MBPT">BPT/MBPT</option>
-                                      </select>
-                                    )
-                                  }
-                                  if (k === 'priority') {
-                                    return (
-                                      <select value={value || 'normal'} onChange={updateEditField(k)} disabled={disabled} className={inputBase} onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
-                                        <option value="normal">Normal</option>
-                                        <option value="high">High</option>
-                                        <option value="urgent">Urgent</option>
-                                      </select>
-                                    )
-                                  }
-                                  if (k === 'rms_status') {
-                                    return (
-                                      <select value={value || 'pending'} onChange={updateEditField(k)} disabled={disabled} className={inputBase} onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
-                                        <option value="pending">pending</option>
-                                        <option value="rms">rms</option>
-                                        <option value="apr">apr</option>
-                                        <option value="acl">acl</option>
-                                        <option value="check">check</option>
-                                        <option value="hold">hold</option>
-                                      </select>
-                                    )
-                                  }
-                                  if (k === 'bg_required') {
-                                    return (
-                                      <select value={value || 'no'} onChange={updateEditField(k)} disabled={disabled} className={inputBase} onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
-                                        <option value="no">no</option>
-                                        <option value="yes">yes</option>
-                                        <option value="100percent">100percent</option>
-                                      </select>
-                                    )
-                                  }
-                                  if (k === 'detention_risk') {
-                                    return (
-                                      <select value={value || 'low'} onChange={updateEditField(k)} disabled={disabled} className={inputBase} onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
-                                        <option value="low">low</option>
-                                        <option value="medium">medium</option>
-                                        <option value="high">high</option>
-                                      </select>
-                                    )
-                                  }
-                                  if (k === 'be_date') {
-                                    return <input type="date" value={value || ''} onChange={updateEditField(k)} disabled={disabled} className={inputBase} onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()} />
-                                  }
-                                  if (k === 'container_size') {
-                                    return (
-                                      <select value={value || ''} onChange={updateEditField(k)} disabled={disabled} className={inputBase} onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
-                                        <option value="">— Select —</option>
-                                        <option value="20 Feet">20 Feet</option>
-                                        <option value="40 Feet">40 Feet</option>
-                                      </select>
-                                    )
-                                  }
-                                  if (k === 'eta') {
-                                    return <input type="date" value={value || ''} onChange={updateEditField(k)} disabled={disabled} className={inputBase} onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()} />
-                                  }
-                                  if (k === 'free_days' || k === 'cfs_amount') {
-                                    return <input type="number" value={value ?? ''} onChange={updateEditField(k)} disabled={disabled} className={inputBase} onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()} />
-                                  }
-                                  if (k === 'notes') {
-                                    return <textarea rows={3} value={value || ''} onChange={updateEditField(k)} disabled={disabled} className={classNames(inputBase, 'h-auto py-2')} onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()} />
-                                  }
-                                  if (k === 'shipping_line') {
-                                    return (
-                                      <select value={value || ''} onChange={updateEditField(k)} disabled={disabled} className={inputBase} onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
-                                        <option value="">— Select —</option>
-                                        <option value="Maersk">Maersk</option>
-                                        <option value="MSC">MSC</option>
-                                        <option value="Hapag-Lloyd">Hapag-Lloyd</option>
-                                        <option value="CMA-CGM">CMA-CGM</option>
-                                        <option value="Evergreen">Evergreen</option>
-                                        <option value="ONE">ONE</option>
-                                        <option value="OOCL">OOCL</option>
-                                        <option value="COSCO">COSCO</option>
-                                        <option value="ZIM">ZIM</option>
-                                        <option value="HMM">HMM</option>
-                                        <option value="Yang Ming">Yang Ming</option>
-                                        <option value="Wan Hai">Wan Hai</option>
-                                        <option value="TS Line">TS Line</option>
-                                        <option value="Interasia">Interasia</option>
-                                        <option value="Emirates">Emirates</option>
-                                        <option value="Akkon">Akkon</option>
-                                        <option value="Other">Other</option>
-                                      </select>
-                                    )
-                                  }
-                                  return <input type="text" value={value || ''} onChange={updateEditField(k)} disabled={disabled} className={inputBase} onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()} />
-                                }
-
-                                return (
-                                  <div key={k} className={k === 'notes' ? 'md:col-span-2' : ''}>
-                                    <FieldLabel label={FIELD_LABELS[k] || k} locked={locked} />
-                                    {renderInput()}
-                                  </div>
-                                )
-                              })}
-                            </div>
-
-                            {job.delay_reason?.trim() && (
-                              <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-                                <span className="font-semibold">\u26A0 Delay:</span> {job.delay_reason}
-                              </div>
-                            )}
-
-                            {job.notes?.trim() && !isEditing && (
-                              <div className="mt-4 rounded-lg border border-[#e2e6ed] bg-[#f8f9fb] px-4 py-3">
-                                <p className="text-xs font-semibold text-[#8a96a8] uppercase tracking-wide mb-1">Notes</p>
-                                <p className="text-sm text-[#4a5568] whitespace-pre-wrap">{job.notes}</p>
-                              </div>
-                            )}
-
-                            {isEditing && (
-                              <div className="mt-4 flex items-center justify-end gap-2">
-                                <button
-                                  type="button"
-                                  disabled={saving}
-                                  onClick={(e) => { e.stopPropagation(); cancelEditing(); }}
-                                  className="h-9 px-4 text-sm rounded-lg bg-white border-[1.5px] border-[#d0d6e0] text-[#4a5568] hover:border-[#1a4fa0] hover:text-[#1a4fa0] hover:bg-[#e8eef8] font-semibold disabled:opacity-60"
-                                >
-                                  Cancel
-                                </button>
-                                <button
-                                  type="button"
-                                  disabled={saving}
-                                  onClick={(e) => { e.stopPropagation(); saveEdits(job); }}
-                                  className="h-9 px-4 text-sm rounded-lg bg-[#1a4fa0] text-white hover:bg-[#153d82] font-semibold disabled:opacity-60 inline-flex items-center gap-2"
-                                >
-                                  {saving && <span className="h-3.5 w-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />}
-                                  Save
-                                </button>
-                              </div>
-                            )}
                           </div>
                         )}
                       </div>
@@ -1959,6 +1838,8 @@ export default function EmployeeDashboard() {
                 </div>
               )}
             </>
+            )}
+          </>
           )}
 
           {activeNav === 'documents' && (
@@ -2077,7 +1958,16 @@ export default function EmployeeDashboard() {
           )}
 
           {activeNav === 'containers' && (
-            <EmpContainerSection jobs={jobs} showToast={showToast} />
+            isFieldOps ? (
+              <ContainerTrackingSection
+                jobs={jobs}
+                showToast={showToast}
+                profile={profile}
+                currentUserName={currentUserName}
+              />
+            ) : (
+              <EmpContainerSection jobs={jobs} showToast={showToast} />
+            )
           )}
         </main>
       </div>

@@ -24,7 +24,7 @@ export default function App() {
           <Route
             path="/admin/create-job"
             element={
-              <ProtectedRoute allowedRole="admin">
+              <ProtectedRoute allowedRole={['admin', 'field_ops']}>
                 <CreateJob />
               </ProtectedRoute>
             }
@@ -33,6 +33,14 @@ export default function App() {
             path="/dashboard"
             element={
               <ProtectedRoute allowedRole="employee">
+                <EmployeeDashboard />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/field"
+            element={
+              <ProtectedRoute allowedRole="field_ops">
                 <EmployeeDashboard />
               </ProtectedRoute>
             }

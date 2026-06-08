@@ -15,10 +15,18 @@ export default function ProtectedRoute({ allowedRole, children }) {
 
   useEffect(() => {
     let cancelled = false
+    const allowed = Array.isArray(allowedRole) ? allowedRole : [allowedRole]
 
     async function checkAccess() {
-      const { data: { session } } = await supabase.auth.getSession()
+      let { data: { session } } = await supabase.auth.getSession()
       if (cancelled) return
+
+      if (!session?.user) {
+        await new Promise(r => setTimeout(r, 300))
+        if (cancelled) return
+        const retry = await supabase.auth.getSession()
+        session = retry.data?.session
+      }
 
       if (!session?.user) {
         setStatus('denied')
@@ -33,7 +41,7 @@ export default function ProtectedRoute({ allowedRole, children }) {
 
       if (cancelled) return
 
-      if (error || !profile || profile.role !== allowedRole) {
+      if (error || !profile || !allowed.includes(profile.role)) {
         setStatus('denied')
         return
       }

@@ -116,15 +116,6 @@ function JobCard({ job, profiles, onOpen }) {
           </div>
         </div>
       </div>
-      <div className="mt-2">
-        <div className="flex items-center justify-between mb-1">
-          <span className="text-xs text-[#8a96a8]">{job.stage ? `Stage ${job.stage}` : '—'}</span>
-          <span className="text-xs text-[#8a96a8]">{Math.round(((Number(job.stage)||0)/10)*100)}%</span>
-        </div>
-        <div className="h-1.5 bg-[#e2e6ed] rounded-full overflow-hidden">
-          <div className="h-full bg-[#1a4fa0] rounded-full" style={{ width: `${Math.round(((Number(job.stage)||0)/10)*100)}%` }} />
-        </div>
-      </div>
       <div className="mt-2 flex items-center justify-between gap-2 flex-wrap">
         <div className="text-xs text-[#8a96a8]">
           <span className="text-[#4a5568] font-medium">{assignedName}</span> · {job.destination || '—'} ·{' '}

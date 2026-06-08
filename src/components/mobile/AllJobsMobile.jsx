@@ -110,14 +110,6 @@ export default function AllJobsMobile({
                 </div>
               </div>
 
-              {/* Progress bar */}
-              <div style={{ height:'4px', background:'#e2e6ed', borderRadius:'4px', overflow:'hidden', marginBottom:'4px' }}>
-                <div style={{ height:'100%', borderRadius:'4px', width:`${pct}%`, background:'#1a4fa0' }} />
-              </div>
-              <div style={{ display:'flex', justifyContent:'space-between', fontSize:'11px', color:'#8a96a8' }}>
-                <span>Stage {stage} — {getStageName(stage)}</span>
-                <span>{pct}%</span>
-              </div>
             </div>
 
             {/* Expanded details */}

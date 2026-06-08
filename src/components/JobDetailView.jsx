@@ -931,7 +931,7 @@ Write the summary:`
                 )}
               </div>
 
-              {/* Field Accountability */}
+              {isAdmin && (
               <div className="rounded-lg border border-[#e2e6ed] bg-white overflow-hidden">
                 <div className="px-4 py-3 border-b border-[#e2e6ed] flex items-center justify-between">
                   <p className="text-xs font-semibold uppercase tracking-wide text-[#8a96a8]">Field Accountability</p>
@@ -965,6 +965,7 @@ Write the summary:`
                   </table>
                 </div>
               </div>
+            )}
       </div>
     </div>
         ) : (
@@ -1089,7 +1090,7 @@ Write the summary:`
                 </div>
               </div>
 
-              {/* Field Accountability — same as view mode */}
+              {isAdmin && (
               <div className="rounded-lg border border-[#e2e6ed] bg-white overflow-hidden">
                 <div className="px-4 py-3 border-b border-[#e2e6ed]">
                   <p className="text-xs font-semibold uppercase tracking-wide text-[#8a96a8]">Field Accountability</p>
@@ -1117,12 +1118,13 @@ Write the summary:`
                   </table>
                 </div>
               </div>
+              )}
             </div>
           </div>
         )}
         </div>
 
-        {showFullAccountability && (
+        {isAdmin && showFullAccountability && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm px-4">
           <div className="w-full max-w-3xl max-h-[82vh] overflow-hidden rounded-xl bg-white shadow-2xl border border-[#e2e6ed]">
             <div className="px-5 py-4 border-b border-[#e2e6ed] flex items-center justify-between gap-3">
@@ -1160,10 +1162,12 @@ Write the summary:`
       )}
 
       <div className="px-4 sm:px-6 pb-6">
-        <button type="button" onClick={() => onDelete && onDelete()}
-          className="h-9 px-5 text-xs rounded-lg border border-red-300 bg-red-50 text-red-700 hover:bg-red-100 font-semibold">
-          Delete Job
-        </button>
+        {isAdmin && (
+          <button type="button" onClick={() => onDelete && onDelete()}
+            className="h-9 px-5 text-xs rounded-lg border border-red-300 bg-red-50 text-red-700 hover:bg-red-100 font-semibold">
+            Delete Job
+          </button>
+        )}
       </div>
       </>
       )}

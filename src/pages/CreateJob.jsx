@@ -262,7 +262,7 @@ export default function CreateJob({ isModal = false, onCancel, onCreated }) {
       onCancel()
       return
     }
-    navigate('/admin')
+    navigate(profile?.role === 'field_ops' ? '/field' : '/admin')
   }
 
   const handleAddDocFile = (e) => {
@@ -597,7 +597,7 @@ if (parsed.client && shouldFill('client')) {
       onCreated()
       return
     }
-    navigate('/admin')
+    navigate(profile?.role === 'field_ops' ? '/field' : '/admin')
   }
 
   return (
