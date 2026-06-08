@@ -329,12 +329,12 @@ function JobDetailPanel({ job, trackingData, onClose, onUpdate, onAddEvent, onRe
               <button
                 onClick={async () => { setRefreshing(true); try { await onRefresh(job, cn) } finally { setRefreshing(false) } }}
                 disabled={refreshing}
-                style={{ width:'28px', height:'28px', borderRadius:'6px', border:'0.5px solid var(--color-border-tertiary)', background:'var(--color-background-secondary)', color:'var(--color-text-secondary)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'16px', cursor:'pointer' }}
-                onMouseEnter={e => { e.currentTarget.style.background = headerBg; e.currentTarget.style.color = 'white'; e.currentTarget.style.borderColor = headerBg }}
-                onMouseLeave={e => { e.currentTarget.style.background = 'var(--color-background-secondary)'; e.currentTarget.style.color = 'var(--color-text-secondary)'; e.currentTarget.style.borderColor = 'var(--color-border-tertiary)' }}
+                style={{ background:'none', border:'none', color:'var(--color-text-secondary)', cursor:'pointer', padding:0, lineHeight:1, fontSize:'16px' }}
+                onMouseEnter={e => { e.currentTarget.style.color = headerBg }}
+                onMouseLeave={e => { e.currentTarget.style.color = 'var(--color-text-secondary)' }}
                 title="Refresh"
               >
-                <span style={{ display:'inline-block', animation: refreshing ? 'spin 0.7s linear infinite' : 'none' }}>↻</span>
+                <span style={{ display:'inline-block', animation: refreshing ? 'spin 0.7s linear infinite' : 'none', fontSize:'17px', verticalAlign:'middle' }}>↻</span>
               </button>
 
               {isMobile && (
