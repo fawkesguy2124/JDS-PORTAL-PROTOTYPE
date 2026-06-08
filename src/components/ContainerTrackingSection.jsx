@@ -347,9 +347,9 @@ function JobDetailPanel({ job, trackingData, onClose, onUpdate, onAddEvent, onRe
                 >🌐</button>
               )}
 
-              {td.lastUpdate && (
+              {!isMobile && td.lastUpdate && (
                 <span style={{ fontSize:'10px', color:'var(--color-text-secondary)', fontStyle:'italic' }}>
-                  {new Date(td.lastUpdate).toLocaleString('en-IN', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit', timeZone:'Asia/Kolkata' })}
+                  Last refreshed: {new Date(td.lastUpdate).toLocaleString('en-IN', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit', timeZone:'Asia/Kolkata' })}
                 </span>
               )}
 
@@ -367,6 +367,12 @@ function JobDetailPanel({ job, trackingData, onClose, onUpdate, onAddEvent, onRe
                 {isDetention ? '⚠ Detention' : (td.statusText || 'Not Updated')}
               </span>
             </div>
+
+            {isMobile && td.lastUpdate && (
+              <div style={{ fontSize:'10px', color:'var(--color-text-secondary)', fontStyle:'italic', marginBottom:'10px' }}>
+                Last refreshed: {new Date(td.lastUpdate).toLocaleString('en-IN', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit', timeZone:'Asia/Kolkata' })}
+              </div>
+            )}
 
             {!isMobile && td.freeDays != null && (
               <div style={{ background: isDetention ? '#FCEBEB' : '#EAF3DE', border:`0.5px solid ${isDetention ? '#F7C1C1' : '#C0DD97'}`, borderRadius:'8px', padding:'10px 12px', marginTop:'10px' }}>
