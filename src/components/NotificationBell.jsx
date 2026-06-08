@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../supabase'
 
-const STORAGE_KEY = 'jds_notif_last_seen'
+const getStorageKey = (userId) => `jds_notif_last_seen_${userId || 'unknown'}`
 
 function timeAgo(ts) {
   if (!ts) return ''
@@ -30,10 +30,11 @@ function groupByDay(notifications) {
   return groups
 }
 
-export default function NotificationBell({ onNavigate }) {
+export default function NotificationBell({ onNavigate, profile }) {
   const [open, setOpen] = useState(false)
   const [notifications, setNotifications] = useState([])
   const [filter, setFilter] = useState('all')
+  const STORAGE_KEY = getStorageKey(profile?.id)
   const [lastSeen, setLastSeen] = useState(() => localStorage.getItem(STORAGE_KEY) || null)
   const dropdownRef = useRef(null)
   const bellRef = useRef(null)

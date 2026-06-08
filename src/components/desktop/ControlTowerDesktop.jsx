@@ -29,7 +29,11 @@ function timeAgo(ts) {
 }
 
 function getGreeting() {
-  const hour = new Date().getHours()
+  const now = new Date()
+  const utc = now.getTime() + now.getTimezoneOffset() * 60000
+  const ist = new Date(utc + 3600000 * 5.5)
+  const hour = ist.getHours()
+  if (hour >= 21 || hour < 5) return 'Good night'
   if (hour < 12) return 'Good morning'
   if (hour < 17) return 'Good afternoon'
   return 'Good evening'

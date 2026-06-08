@@ -14,7 +14,11 @@ import JobDetailView from '../components/JobDetailView'
 import { forceRefreshAllContainers } from '../services/tracking/ldbProvider'
 
 function getGreeting() {
-  const hour = new Date().getHours()
+  const now = new Date()
+  const utc = now.getTime() + now.getTimezoneOffset() * 60000
+  const ist = new Date(utc + 3600000 * 5.5)
+  const hour = ist.getHours()
+  if (hour >= 21 || hour < 5) return 'Good night'
   if (hour < 12) return 'Good morning'
   if (hour < 17) return 'Good afternoon'
   return 'Good evening'
@@ -575,12 +579,13 @@ export default function EmployeeDashboard() {
       // Background LDB refresh on login — only if last refresh was 6+ hours ago
       if ((jobsData || []).some(j => j.containers)) {
         const REFRESH_GAP_HOURS = 6
-        const lastLoginRefresh = localStorage.getItem('jds_last_login_refresh')
+        const loginKey = `jds_last_login_refresh_${user?.id || 'unknown'}`
+        const lastLoginRefresh = localStorage.getItem(loginKey)
         const hoursSince = lastLoginRefresh
           ? (Date.now() - new Date(lastLoginRefresh).getTime()) / (1000 * 60 * 60)
           : Infinity
         if (hoursSince >= REFRESH_GAP_HOURS) {
-          localStorage.setItem('jds_last_login_refresh', new Date().toISOString())
+          localStorage.setItem(loginKey, new Date().toISOString())
           forceRefreshAllContainers(jobsData).catch(err =>
             console.warn('[LDB] Background refresh on login failed:', err)
           )
@@ -1571,6 +1576,7 @@ export default function EmployeeDashboard() {
                 setPendingNavAction(action)
                 handleNavClick(action.tab)
               }}
+              profile={profile}
             />
             {canCreateJob && (
               <button
