@@ -3,6 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom'
 import { supabase } from '../supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { getStageName, isEtaThisWeek } from '../utils/jobHelpers'
+import NotificationBell from '../components/NotificationBell'
 import ControlTowerSection from '../components/ControlTower'
 import JobDetailView from '../components/JobDetailView'
 import DocumentsSection from '../components/DocumentsSection'
@@ -13,6 +14,7 @@ import PaymentsSection from '../components/PaymentsSection'
 import ComplianceSection from '../components/ComplianceSection'
 import BEFilingSection from '../components/BEFilingSection'
 import CreateJob from './CreateJob'
+import { forceRefreshAllContainers } from '../services/tracking/ldbProvider'
 
 const NAV_SECTIONS = [
   {
@@ -351,6 +353,8 @@ export default function AdminDashboard() {
   const [sortBy, setSortBy] = useState('number_desc')
   const [selectedJob, setSelectedJob] = useState(null)
   const [showCreateJob, setShowCreateJob] = useState(false)
+  const [pendingNavAction, setPendingNavAction] = useState(null)
+  const [documentExpandJobId, setDocumentExpandJobId] = useState(null)
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [toastState, setToastState] = useState(null)
 
@@ -376,6 +380,20 @@ export default function AdminDashboard() {
       ])
       if (!mounted) return
       setJobs(jobsData ?? [])
+      // Background LDB refresh on login — only if last refresh was 6+ hours ago
+      if ((jobsData || []).some(j => j.containers)) {
+        const REFRESH_GAP_HOURS = 6
+        const lastLoginRefresh = localStorage.getItem('jds_last_login_refresh')
+        const hoursSince = lastLoginRefresh
+          ? (Date.now() - new Date(lastLoginRefresh).getTime()) / (1000 * 60 * 60)
+          : Infinity
+        if (hoursSince >= REFRESH_GAP_HOURS) {
+          localStorage.setItem('jds_last_login_refresh', new Date().toISOString())
+          forceRefreshAllContainers(jobsData).catch(err =>
+            console.warn('[LDB] Background refresh on login failed:', err)
+          )
+        }
+      }
       // Restore selected job from URL
       const params = new URLSearchParams(window.location.search)
       const jobId = params.get('jobId')
@@ -391,6 +409,23 @@ export default function AdminDashboard() {
     load()
     return () => { mounted = false }
   }, [])
+
+  useEffect(() => {
+    if (pendingNavAction?.tab === 'jobs' && pendingNavAction?.jobId && jobs.length > 0) {
+      const job = jobs.find(j => j.id === pendingNavAction.jobId)
+      if (job) {
+        setSelectedJob(job)
+        setPendingNavAction(null)
+      }
+    }
+    if (pendingNavAction?.tab === 'documents' && pendingNavAction?.jobNo) {
+      const job = jobs.find(j => j.job_no === pendingNavAction.jobNo)
+      if (job) {
+        setDocumentExpandJobId(job.id)
+        setPendingNavAction(null)
+      }
+    }
+  }, [pendingNavAction, jobs])
 
   const showToast = (message, type = 'success') => {
     const id = Date.now()
@@ -685,6 +720,12 @@ export default function AdminDashboard() {
             <div className="text-sm text-[#8a96a8] truncate">Live operations overview</div>
           </div>
           <div className="ml-auto flex items-center gap-2">
+            <NotificationBell
+              onNavigate={action => {
+                setPendingNavAction(action)
+                handleNavClick(action.tab)
+              }}
+            />
             <button type="button" onClick={() => setShowCreateJob(true)}
               className="h-9 px-3 sm:px-4 text-sm rounded-lg bg-[#1a4fa0] text-white hover:bg-[#153d82] font-semibold">
               <span className="hidden sm:inline">+ Create Job</span>
@@ -791,11 +832,23 @@ export default function AdminDashboard() {
           )}
 
           {activeNav === 'documents' && (
-            <DocumentsSection jobs={jobs} profiles={profiles} currentUserName={currentUserName} showToast={showToast} />
+            <DocumentsSection
+              jobs={jobs}
+              profiles={profiles}
+              currentUserName={currentUserName}
+              showToast={showToast}
+              initialExpandJobId={documentExpandJobId}
+              onExpandConsumed={() => setDocumentExpandJobId(null)}
+            />
           )}
 
           {activeNav === 'containers' && (
-            <ContainerTrackingSection showToast={showToast} jobs={jobs} />
+            <ContainerTrackingSection
+              showToast={showToast}
+              jobs={jobs}
+              pendingNavAction={activeNav === 'containers' ? pendingNavAction : null}
+              onNavActionConsumed={() => setPendingNavAction(null)}
+            />
           )}
 
           {activeNav === 'payments' && (

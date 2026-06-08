@@ -1,4 +1,18 @@
-import { memo, useState } from 'react'
+import { memo, useState, useRef, useEffect } from 'react'
+
+function normalizeTrackingData(td) {
+  if (!td || typeof td !== 'object') return {}
+  const freeDaysRaw = Number(td.freeDays)
+  return {
+    ...td,
+    status: typeof td.status === 'string' ? td.status : 'in_transit',
+    freeDays: Number.isFinite(freeDaysRaw) ? freeDaysRaw : null,
+    currentLocation: typeof td.currentLocation === 'string' ? td.currentLocation : '',
+    portIn: td.portIn && !isNaN(new Date(td.portIn).getTime()) ? td.portIn : null,
+    portOut: td.portOut && !isNaN(new Date(td.portOut).getTime()) ? td.portOut : null,
+    eta: td.eta && !isNaN(new Date(td.eta).getTime()) ? td.eta : null,
+  }
+}
 
 const ExpandedContainerRows = memo(function ExpandedContainerRows({
   job, cnList, trackingData, activeContainer, STATUS_STYLES_MAP,
@@ -6,16 +20,19 @@ const ExpandedContainerRows = memo(function ExpandedContainerRows({
   handleChipClick, handleLDBRefresh, openCarrierTracking, showToast, isClosing,
 }) {
   return (
+    <div style={{
+      display: 'grid',
+      willChange: 'grid-template-rows, opacity',
+      animation: isClosing
+        ? 'collapseUp 0.3s cubic-bezier(0.4,0,0.2,1) forwards'
+        : 'expandDown 0.25s cubic-bezier(0.16,1,0.3,1) forwards',
+    }}>
+    <div style={{ overflow:'hidden' }}>
     <div
       key={`expanded-${job.id}`}
       style={{
         borderTop:'2px solid var(--color-background-secondary)',
         background:'#f0f4fb',
-        animation: isClosing
-          ? 'collapseUp 0.22s cubic-bezier(0.4,0,1,1) both'
-          : 'expandDown 0.25s cubic-bezier(0.16,1,0.3,1) both',
-        overflow:'hidden',
-        transformOrigin:'top',
       }}
     >
       <div style={{ display:'grid', gridTemplateColumns:'40px 180px 130px 1fr 120px 80px', gap:'10px', alignItems:'center', padding:'5px 16px 5px 42px', borderBottom:'0.5px solid #dde3ef', background:'#e8eef8' }}>
@@ -24,7 +41,7 @@ const ExpandedContainerRows = memo(function ExpandedContainerRows({
         ))}
       </div>
       {cnList.map((cn, cnIdx) => {
-        const td          = trackingData[cn] || {}
+        const td          = normalizeTrackingData(trackingData[cn] || {})
         const status      = td.status || 'in_transit'
         const st          = STATUS_STYLES_MAP[status] || STATUS_STYLES_MAP['in_transit']
         const isDetention = td.freeDays != null && td.freeDays <= 2
@@ -33,7 +50,7 @@ const ExpandedContainerRows = memo(function ExpandedContainerRows({
 
         return (
           <div
-            key={cn}
+            key={`${cn}-${cnIdx}`}
             onClick={() => {
               if (activeContainer?.jobId === job.id && activeContainer?.cn === cn) {
                 handleChipClick(job.id, cn, job)
@@ -68,9 +85,11 @@ const ExpandedContainerRows = memo(function ExpandedContainerRows({
               <span style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:'12px', fontWeight:500, color:'var(--color-text-primary)' }}>{cn}</span>
               <span style={{ fontSize:'10px', color:'#185FA5', opacity:0.7 }}>View details →</span>
             </div>
-            <span style={{ display:'inline-flex', alignItems:'center', padding:'0px 7px', borderRadius:'9999px', fontSize:'10px', fontWeight:500, border:`0.5px solid ${isDetention ? '#F7C1C1' : st.border}`, background: isDetention ? '#FCEBEB' : st.bg, color: isDetention ? '#791F1F' : st.color, whiteSpace:'nowrap', height:'18px', width:'fit-content', alignSelf:'flex-start' }}>
-              {isDetention ? '⚠ Detention' : (td.statusText || 'Not Updated')}
-            </span>
+            <div style={{ display:'flex', alignItems:'center' }}>
+              <span style={{ display:'inline-flex', alignItems:'center', padding:'0px 7px', borderRadius:'9999px', fontSize:'10px', fontWeight:500, border:`0.5px solid ${isDetention ? '#F7C1C1' : st.border}`, background: isDetention ? '#FCEBEB' : st.bg, color: isDetention ? '#791F1F' : st.color, whiteSpace:'nowrap', height:'20px', flexShrink:0 }}>
+                {isDetention ? '⚠ Detention' : (td.statusText || 'Not Updated')}
+              </span>
+            </div>
             <div style={{ display:'flex', flexDirection:'column', gap:'3px' }}>
               <div style={{ display:'flex', alignItems:'center', gap:'5px' }}>
                 <span style={{ width:'8px', height:'8px', borderRadius:'50%', flexShrink:0, background: isDetention ? '#E24B4A' : td.freeDays != null && td.freeDays <= 7 ? '#EF9F27' : '#1D9E75' }} />
@@ -80,7 +99,11 @@ const ExpandedContainerRows = memo(function ExpandedContainerRows({
               </div>
               <div style={{ fontSize:'10px', color:'var(--color-text-secondary)', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>
                 {td.currentLocation ? `${td.currentLocation.split('/').pop()?.trim() || td.currentLocation}` : '—'}
-                {td.portIn && ` · ${Math.floor((Date.now() - new Date(td.portIn).getTime()) / 86400000)}d at port`}
+                {(() => {
+  if (!td.portIn) return null
+  const days = Math.floor((Date.now() - new Date(td.portIn).getTime()) / 86400000)
+  return Number.isFinite(days) && days >= 0 ? ` · ${days}d at port` : null
+})()}
               </div>
             </div>
             <span style={{ fontSize:'11px', color:'var(--color-text-secondary)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{td.currentLocation || '—'}</span>
@@ -91,6 +114,7 @@ const ExpandedContainerRows = memo(function ExpandedContainerRows({
                 onMouseEnter={e => { e.currentTarget.style.background='#185FA5'; e.currentTarget.style.color='white'; e.currentTarget.style.borderColor='#185FA5' }}
                 onMouseLeave={e => { e.currentTarget.style.background='var(--color-background-primary)'; e.currentTarget.style.color='var(--color-text-secondary)'; e.currentTarget.style.borderColor='var(--color-border-tertiary)' }}
                 title="Refresh"
+                aria-label="Refresh container tracking"
               >↻</button>
               <button
                 onClick={e => { e.stopPropagation(); openCarrierTracking(cn, job.shipping_line, showToast) }}
@@ -98,21 +122,31 @@ const ExpandedContainerRows = memo(function ExpandedContainerRows({
                 onMouseEnter={e => { e.currentTarget.style.background='#0F6E56'; e.currentTarget.style.color='white'; e.currentTarget.style.borderColor='#0F6E56' }}
                 onMouseLeave={e => { e.currentTarget.style.background='var(--color-background-primary)'; e.currentTarget.style.color='var(--color-text-secondary)'; e.currentTarget.style.borderColor='var(--color-border-tertiary)' }}
                 title="Carrier site"
+                aria-label="Open carrier tracking site"
               >🌐</button>
             </div>
           </div>
         )
       })}
     </div>
+    </div>
+    </div>
   )
 }, (prevProps, nextProps) => {
-  return (
-    prevProps.isClosing === nextProps.isClosing &&
-    prevProps.activeContainer?.cn === nextProps.activeContainer?.cn &&
-    prevProps.activeContainer?.jobId === nextProps.activeContainer?.jobId &&
-    prevProps.trackingData === nextProps.trackingData &&
-    prevProps.cnList === nextProps.cnList
-  )
+  // Only re-render if closing state changes, tracking data changes, or active container changes
+  // BUT don't re-render if activeContainer changes to a different job — avoids animation restart
+  if (prevProps.isClosing !== nextProps.isClosing) return false
+  if (prevProps.trackingData !== nextProps.trackingData) return false
+  if (prevProps.cnList !== nextProps.cnList) return false
+
+  // Active container changed — only re-render if it affects THIS job's rows
+  const prevJobActive = prevProps.activeContainer?.jobId === prevProps.job.id
+  const nextJobActive = nextProps.activeContainer?.jobId === nextProps.job.id
+  const prevCn = prevJobActive ? prevProps.activeContainer?.cn : null
+  const nextCn = nextJobActive ? nextProps.activeContainer?.cn : null
+  if (prevCn !== nextCn) return false // need re-render to update chip highlight
+
+  return true // skip re-render
 })
 
 export default function ContainerTrackingDesktop({
@@ -143,16 +177,24 @@ export default function ContainerTrackingDesktop({
   handleChipClick,
 }) {
   const [closingJobs, setClosingJobs] = useState({})
+  const [refreshingAll, setRefreshingAll] = useState(false)
+  const timeoutRefs = useRef({})
+  useEffect(() => {
+    const refs = timeoutRefs.current
+    return () => {
+      Object.values(refs).forEach(t => clearTimeout(t))
+    }
+  }, [])
   return (
   <div style={{ display:'flex', flexDirection:'column', gap:'14px' }}>
     <style>{`
       @keyframes expandDown {
-        from { opacity: 0; transform: translateY(-6px); max-height: 0; }
-        to   { opacity: 1; transform: translateY(0);   max-height: 2000px; }
+        from { grid-template-rows: 0fr; opacity: 0; }
+        to   { grid-template-rows: 1fr; opacity: 1; }
       }
       @keyframes collapseUp {
-        from { opacity: 1; transform: translateY(0); }
-        to   { opacity: 0; transform: translateY(-6px); }
+        from { grid-template-rows: 1fr; opacity: 1; }
+        to   { grid-template-rows: 0fr; opacity: 0; }
       }
     `}</style>
 
@@ -211,10 +253,16 @@ export default function ContainerTrackingDesktop({
         </div>
 
         <button
-          onClick={refreshAll}
-          style={{ marginLeft:'auto', height:'36px', padding:'0 16px', background:'#185FA5', border:'none', borderRadius:'8px', color:'white', fontSize:'13px', fontWeight:500, cursor:'pointer', display:'flex', alignItems:'center', gap:'6px' }}
+          onClick={async () => {
+            setRefreshingAll(true)
+            try { await refreshAll() }
+            finally { setRefreshingAll(false) }
+          }}
+          disabled={refreshingAll}
+          style={{ marginLeft:'auto', height:'36px', padding:'0 16px', background:'#185FA5', border:'none', borderRadius:'8px', color:'white', fontSize:'13px', fontWeight:500, cursor: refreshingAll ? 'default' : 'pointer', display:'flex', alignItems:'center', gap:'6px', opacity: refreshingAll ? 0.8 : 1 }}
         >
-          ↻ Refresh all
+          <span style={{ display:'inline-block', animation: refreshingAll ? 'spin 0.7s linear infinite' : 'none' }}>↻</span>
+          {refreshingAll ? 'Refreshing...' : 'Refresh all'}
         </button>
 
         <span style={{ fontSize:'12px', color:'var(--color-text-secondary)' }}>
@@ -239,7 +287,7 @@ export default function ContainerTrackingDesktop({
         </div>
       ) : (
         <div data-area="job-cards" style={{ overflowX:'auto', WebkitOverflowScrolling:'touch' }}>
-          <div style={{ background:'var(--color-background-primary)', border:'1.5px solid #d0d9e8', borderRadius:'12px', overflow:'hidden', minWidth:'700px' }}>
+          <div style={{ background:'var(--color-background-primary)', border:'1.5px solid #d0d9e8', borderRadius:'12px', overflow:'hidden', minWidth:'700px', willChange:'transform' }}>
 
             {/* Column headers */}
             <div style={{ display:'grid', gridTemplateColumns:'32px 80px 110px 460px 1fr 130px 60px', gap:'20px', alignItems:'center', padding:'8px 16px', background:'#e8eef8', borderBottom:'0.5px solid var(--color-border-tertiary)' }}>
@@ -256,23 +304,28 @@ export default function ContainerTrackingDesktop({
               const displayEta = job.eta
                 ? new Date(job.eta).toLocaleDateString('en-IN', { day:'2-digit', month:'short', timeZone:'Asia/Kolkata' })
                 : '—'
-              const etaDays = job.eta ? Math.ceil((new Date(job.eta) - new Date()) / 86400000) : null
-              const etaColor = !job.eta ? 'var(--color-text-secondary)' : etaDays < 0 ? '#A32D2D' : etaDays <= 3 ? '#854F0B' : 'var(--color-text-primary)'
+              const etaDate = job.eta ? new Date(job.eta) : null
+              const validEta = etaDate && !isNaN(etaDate.getTime())
+              const etaDays = validEta ? Math.ceil((etaDate.getTime() - Date.now()) / 86400000) : null
+              const etaColor = !validEta ? 'var(--color-text-secondary)' : etaDays < 0 ? '#A32D2D' : etaDays <= 3 ? '#854F0B' : 'var(--color-text-primary)'
 
               return (
                 <div key={job.id} style={{
                   borderBottom: isLast ? 'none' : '2px solid #d0d9e8',
+                  transition: 'border-color 0.3s',
+                  borderColor: isClosing ? 'transparent' : '#d0d9e8',
                 }}>
 
                   {/* Job row */}
                   <div
                     onClick={() => {
+                      if (isClosing) return
                       if (isExpanded) {
                         setClosingJobs(prev => ({ ...prev, [`job_${job.id}`]: true }))
-                        setTimeout(() => {
+                        timeoutRefs.current[job.id] = setTimeout(() => {
                           setExpandedContainers(prev => ({ ...prev, [`job_${job.id}`]: false }))
                           setClosingJobs(prev => ({ ...prev, [`job_${job.id}`]: false }))
-                        }, 220)
+                        }, 300)
                       } else {
                         setExpandedContainers(prev => ({ ...prev, [`job_${job.id}`]: true }))
                       }
@@ -298,12 +351,13 @@ export default function ContainerTrackingDesktop({
                         row.length > 0 && (
                           <div key={rowIdx} style={{ display:'flex', gap:'4px' }}>
                             {row.map(cn => {
-                              const cnStatus = trackingData[cn]?.status || 'in_transit'
+                              const cnNorm = normalizeTrackingData(trackingData[cn] || {})
+                              const cnStatus = cnNorm.status || 'in_transit'
                               const cnSt     = STATUS_STYLES_MAP[cnStatus] || STATUS_STYLES_MAP['in_transit']
-                              const isDet    = (trackingData[cn]?.freeDays ?? 99) <= 2
+                              const isDet    = cnNorm.freeDays !== null && cnNorm.freeDays <= 2
                               return (
                                 <span
-                                  key={cn}
+                                  key={`${cn}-${rowIdx}-chip`}
                                   onClick={e => { e.stopPropagation(); handleChipClick(job.id, cn, job) }}
                                   style={{
                                     ...(() => {

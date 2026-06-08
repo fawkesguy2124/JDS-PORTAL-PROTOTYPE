@@ -8,8 +8,10 @@ import CreateJob from './CreateJob'
 import * as XLSX from 'xlsx'
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 import OCRSection from '../components/OCRSection'
+import NotificationBell from '../components/NotificationBell'
 import ContainerTrackingSection from '../components/ContainerTrackingSection'
 import JobDetailView from '../components/JobDetailView'
+import { forceRefreshAllContainers } from '../services/tracking/ldbProvider'
 
 function getGreeting() {
   const hour = new Date().getHours()
@@ -475,10 +477,12 @@ export default function EmployeeDashboard() {
   const [saving, setSaving] = useState(false)
   const [toastState, setToastState] = useState(null)
   const [showCreateJob, setShowCreateJob] = useState(false)
+  const [pendingNavAction, setPendingNavAction] = useState(null)
   const [previewModal, setPreviewModal] = useState({ open: false, doc: null })
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [selectedJob, setSelectedJob] = useState(null)
   const [expandedDocJobId, setExpandedDocJobId] = useState(null)
+  const [documentExpandJobId, setDocumentExpandJobId] = useState(null)
   const [extractModal, setExtractModal] = useState({ open: false, job: null })
   const [uploadModal, setUploadModal] = useState({ open: false, job: null })
   const [uploadFile, setUploadFile] = useState(null)
@@ -492,6 +496,23 @@ export default function EmployeeDashboard() {
   const [extractError, setExtractError] = useState(null)
   const [extracting, setExtracting] = useState(false)
   const [extractProgress, setExtractProgress] = useState('')
+
+  useEffect(() => {
+    if (pendingNavAction?.tab === 'jobs' && pendingNavAction?.jobId && jobs.length > 0) {
+      const job = jobs.find(j => j.id === pendingNavAction.jobId)
+      if (job) {
+        setSelectedJob(job)
+        setPendingNavAction(null)
+      }
+    }
+    if (pendingNavAction?.tab === 'documents' && pendingNavAction?.jobNo) {
+      const job = jobs.find(j => j.job_no === pendingNavAction.jobNo)
+      if (job) {
+        setDocumentExpandJobId(job.job_no)
+        setPendingNavAction(null)
+      }
+    }
+  }, [pendingNavAction, jobs])
 
   const isFieldOps = profile?.role === 'field_ops'
 
@@ -551,6 +572,20 @@ export default function EmployeeDashboard() {
       ])
       if (!mounted) return
       setJobs(jobsData ?? [])
+      // Background LDB refresh on login — only if last refresh was 6+ hours ago
+      if ((jobsData || []).some(j => j.containers)) {
+        const REFRESH_GAP_HOURS = 6
+        const lastLoginRefresh = localStorage.getItem('jds_last_login_refresh')
+        const hoursSince = lastLoginRefresh
+          ? (Date.now() - new Date(lastLoginRefresh).getTime()) / (1000 * 60 * 60)
+          : Infinity
+        if (hoursSince >= REFRESH_GAP_HOURS) {
+          localStorage.setItem('jds_last_login_refresh', new Date().toISOString())
+          forceRefreshAllContainers(jobsData).catch(err =>
+            console.warn('[LDB] Background refresh on login failed:', err)
+          )
+        }
+      }
       // Restore selected job from URL
       const params = new URLSearchParams(window.location.search)
       const jobId = params.get('jobId')
@@ -1259,6 +1294,23 @@ export default function EmployeeDashboard() {
       setUploadFile(null)
       setUploadDocType('BL')
       setUploadProgress(0)
+      await supabase.from('activity_log').insert({
+        type: 'document_upload',
+        action: 'document_upload',
+        title: `${job.job_no} — ${uploadDocType} uploaded`,
+        note: `${uploadFile.name} uploaded by ${profile?.name || 'Unknown'}`,
+        job_no: job.job_no,
+        job_id: job.id,
+        done_by: user.id,
+        done_by_name: profile?.name || 'Unknown',
+        meta: {
+          job_id: job.id,
+          job_no: job.job_no,
+          file_name: uploadFile.name,
+          doc_type: uploadDocType,
+        },
+        created_at: new Date().toISOString(),
+      })
       showToast('Document uploaded successfully', 'success')
       const { data } = await supabase
         .from('documents')
@@ -1514,6 +1566,12 @@ export default function EmployeeDashboard() {
             )}
           </div>
           <div className="ml-auto flex items-center gap-2">
+            <NotificationBell
+              onNavigate={action => {
+                setPendingNavAction(action)
+                handleNavClick(action.tab)
+              }}
+            />
             {canCreateJob && (
               <button
                 type="button"
@@ -1814,7 +1872,7 @@ export default function EmployeeDashboard() {
                     const isExpanded = expandedDocJobId === jobNo
                     const docCount = docs.length
                     return (
-                      <div key={jobNo} className="border-b border-[#e2e6ed] last:border-b-0">
+                      <div key={jobNo} id={`doc-job-${jobNo}`} className="border-b border-[#e2e6ed] last:border-b-0">
                         <button
                           type="button"
                           onClick={() => setExpandedDocJobId(isExpanded ? null : jobNo)}
@@ -1912,6 +1970,8 @@ export default function EmployeeDashboard() {
                 showToast={showToast}
                 profile={profile}
                 currentUserName={currentUserName}
+                pendingNavAction={activeNav === 'containers' ? pendingNavAction : null}
+                onNavActionConsumed={() => setPendingNavAction(null)}
               />
             ) : (
               <EmpContainerSection jobs={jobs} showToast={showToast} />

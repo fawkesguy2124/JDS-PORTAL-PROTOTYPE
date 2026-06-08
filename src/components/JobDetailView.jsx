@@ -474,6 +474,17 @@ function JobDetailView({ job, profiles, currentUserName, isAdmin, canUpdateStage
       const newMeta = { ...(meta || {}), stage: { by: currentUserName, ts: Date.now() } }
       const { error } = await supabase.from('jobs').update({ stage: nextStage, field_meta: newMeta, updated_at: new Date().toISOString() }).eq('id', job.id)
       if (error) throw error
+      await supabase.from('activity_log').insert({
+        type: 'job_update',
+        action: 'stage_update',
+        title: `${job.job_no} — Stage ${nextStage}: ${getStageName(nextStage)}`,
+        note: `Stage updated by ${currentUserName}: ${getStageName(job.stage)} → ${getStageName(nextStage)}`,
+        job_no: job.job_no,
+        job_id: job.id,
+        done_by_name: currentUserName,
+        meta: { job_id: job.id, job_no: job.job_no, old_stage: job.stage, new_stage: nextStage },
+        created_at: new Date().toISOString(),
+      })
       toast(`Stage updated to: ${getStageName(nextStage)}`, 'success')
       await onSaved()
     } catch (e2) { toast(e2?.message || 'Stage update failed.', 'error') }

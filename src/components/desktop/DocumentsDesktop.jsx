@@ -78,7 +78,7 @@ export default function DocumentsDesktop({
             const isExpanded = expandedJobId === job.id
             const docCount = job.docs.length
             return (
-              <div key={job.id} className="border-b border-[#e2e6ed] last:border-b-0">
+              <div key={job.id} id={`doc-job-${job.id}`} className="border-b border-[#e2e6ed] last:border-b-0">
                 <div
                   role="button" tabIndex={0}
                   onClick={() => setExpandedJobId(isExpanded ? null : job.id)}

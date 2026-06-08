@@ -6,7 +6,7 @@ import DocumentsDesktop from './desktop/DocumentsDesktop'
 
 const DOC_TYPES = ['BL', 'Invoice', 'Packing List', 'COO', 'Insurance', 'BE', 'Examination Order', 'OOC', 'E-Way Bill', 'POD', 'Other']
 
-function DocumentsSection({ jobs, profiles, currentUserName, showToast }) {
+function DocumentsSection({ jobs, profiles, currentUserName, showToast, initialExpandJobId, onExpandConsumed }) {
   const { user, profile } = useAuth()
   const isAdmin = profile?.role === 'admin'
   const [documents, setDocuments] = useState([])
@@ -20,6 +20,17 @@ function DocumentsSection({ jobs, profiles, currentUserName, showToast }) {
   const [uploadFile, setUploadFile] = useState(null)
   const [docSearch, setDocSearch] = useState('')
   const fileInputRef = useRef(null)
+
+  useEffect(() => {
+    if (initialExpandJobId) {
+      setExpandedJobId(initialExpandJobId)
+      onExpandConsumed?.()
+      setTimeout(() => {
+        const el = document.getElementById(`doc-job-${initialExpandJobId}`)
+        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      }, 150)
+    }
+  }, [initialExpandJobId])
 
   const DOC_TYPE_COLORS = {
     BL: 'bg-[#eff6ff] text-[#1e40af] border border-[#bfdbfe]',
@@ -67,7 +78,9 @@ function DocumentsSection({ jobs, profiles, currentUserName, showToast }) {
       const aHas = a.docs.length > 0 ? 0 : 1
       const bHas = b.docs.length > 0 ? 0 : 1
       if (aHas !== bHas) return aHas - bHas
-      return (a.job_no || '').localeCompare(b.job_no || '')
+      const na = parseInt((a.job_no || '').replace(/\D/g, '')) || 0
+      const nb = parseInt((b.job_no || '').replace(/\D/g, '')) || 0
+      return nb - na
     })
     return items
   }, [jobs, documents, docSearch])
@@ -116,12 +129,23 @@ function DocumentsSection({ jobs, profiles, currentUserName, showToast }) {
       const { data: newDocs } = await supabase.from('documents').select('*').order('created_at', { ascending: false })
       setDocuments(newDocs ?? [])
       await supabase.from('activity_log').insert({
-        job_id: job.id,
+        type: 'document_upload',
+        action: 'document_upload',
+        title: `${job.job_no} — ${uploadDocType} uploaded`,
+        note: `${uploadFile.name} uploaded by ${profile?.name || currentUserName}`,
         job_no: job.job_no,
+        job_id: job.id,
+        done_by: user?.id || null,
+        done_by_name: profile?.name || currentUserName,
         user_name: profile?.name || currentUserName,
-        action: 'upload',
-        description: `uploaded ${uploadFile.name}`,
-      }).maybeSingle()
+        meta: {
+          job_id: job.id,
+          job_no: job.job_no,
+          file_name: uploadFile.name,
+          doc_type: uploadDocType,
+        },
+        created_at: new Date().toISOString(),
+      })
     } catch (e) {
       clearInterval(sim)
       setUploadProgress(0)

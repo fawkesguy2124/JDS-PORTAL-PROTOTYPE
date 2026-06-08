@@ -10,8 +10,9 @@ const PRIORITIES = ['normal', 'high', 'urgent']
 const RMS_STATUSES = ['pending', 'rms', 'apr', 'acl', 'check', 'hold']
 const BG_OPTIONS = ['no', 'yes', '100percent']
 const SHIPPING_LINES = [
-  'CMA-CGM', 'COSCO', 'Evergreen', 'Hapag-Lloyd', 'HMM',
-  'Maersk', 'MSC', 'ONE', 'OOCL', 'Wan Hai', 'Yang Ming', 'ZIM', 'Other',
+  'Maersk', 'MSC', 'Hapag-Lloyd', 'CMA CGM', 'Evergreen',
+  'ONE', 'OOCL', 'COSCO', 'ZIM', 'HMM', 'Yang Ming',
+  'Wan Hai', 'TS Line', 'Interasia', 'Emirates', 'RCL', 'Other',
 ]
 const DETENTION_RISKS = ['low', 'medium', 'high']
 
@@ -590,6 +591,19 @@ if (parsed.client && shouldFill('client')) {
       }))
       setUploadingDocs(false)
     }
+
+    await supabase.from('activity_log').insert({
+      type: 'job_created',
+      action: 'job_created',
+      title: `${payload.job_no} — Job created`,
+      note: `${payload.client} · ${payload.mode || ''} · ${payload.containers ? payload.containers.split(/[\s,;]+/).filter(Boolean).length + ' containers' : 'no containers'}`,
+      job_no: payload.job_no,
+      job_id: insertedJob.id,
+      done_by: user.id,
+      done_by_name: profile?.name || 'Unknown',
+      meta: { job_id: insertedJob.id, job_no: payload.job_no },
+      created_at: new Date().toISOString(),
+    })
 
     setSaving(false)
 

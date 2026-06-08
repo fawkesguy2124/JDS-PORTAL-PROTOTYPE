@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '../supabase'
 import { updateContainerStatus, addMilestone } from '../services/trackingService'
-import { refreshAllContainers, fetchLDBTracking, persistLDBTracking } from '../services/tracking/ldbProvider'
+import { refreshAllContainers, forceRefreshAllContainers, fetchLDBTracking, persistLDBTracking } from '../services/tracking/ldbProvider'
 import ContainerTrackingMobile  from './mobile/ContainerTrackingMobile'
 import ContainerTrackingDesktop from './desktop/ContainerTrackingDesktop'
 
@@ -940,11 +940,13 @@ function getCarrierUrl(containerNo, shippingLine) {
   if (sl.includes('ts line') || sl.includes('tsline'))
     return `https://www.tslines.com/cargo_track?cntr_no=${cn}`
   if (sl.includes('interasia'))
-    return `https://www.interasia.com.tw/cargo_trace/cargo_trace.aspx?cntr_no=${cn}`
+    return `https://www.track-trace.com/container#${cn}`
   if (sl.includes('sinokor'))
     return `https://www.sinokor.co.kr/Tracking?blNo=${cn}`
   if (sl.includes('emirates'))
-    return `https://www.emiratesline.com/cargo-tracking?containerNo=${cn}`
+    return `https://scekprd.emirates.com/skychain/app?service=page%2Fnwp%3ATrackshipmt&initial=y`
+  if (sl.includes('rcl') || sl.includes('regional container'))
+    return `https://www.track-trace.com/container#${cn}`
 
   return `https://www.track-trace.com/container#${cn}`
 }
@@ -1009,7 +1011,7 @@ function fallbackCopy(text, showToast, carrierName) {
   }
 }
 
-function ContainerTrackingSection({ showToast, jobs }) {
+function ContainerTrackingSection({ showToast, jobs, pendingNavAction, onNavActionConsumed }) {
   const [trackingData, setTrackingData]         = useState({})
   const [loadingTracking, setLoadingTracking]   = useState(true)
   const [searchQuery, setSearchQuery]           = useState('')
@@ -1054,7 +1056,16 @@ function ContainerTrackingSection({ showToast, jobs }) {
             eta:             row.eta,
             portIn:          row.port_in,
             portOut:         row.port_out,
-            cfsGateIn:       row.cfs_gate_in,
+            cfsGateIn:       row.cfs_gate_in || (() => {
+              const milestones = row.milestones || []
+              const cfsEvent = milestones.find(m =>
+                typeof m.description === 'string' &&
+                (m.description.toUpperCase().includes('CFS IN') ||
+                 m.description.toUpperCase().includes('CFS GATE IN') ||
+                 m.description.toUpperCase().includes('GATE IN'))
+              )
+              return cfsEvent?.date || null
+            })(),
             terminal:        row.terminal        || null,
             dpdFlag:         row.dpd_flag        || false,
             isEmpty:         row.is_empty        || false,
@@ -1090,7 +1101,16 @@ function ContainerTrackingSection({ showToast, jobs }) {
               eta:             row.eta,
               portIn:          row.port_in,
               portOut:         row.port_out,
-              cfsGateIn:       row.cfs_gate_in,
+              cfsGateIn:       row.cfs_gate_in || (() => {
+                const milestones = row.milestones || []
+                const cfsEvent = milestones.find(m =>
+                  typeof m.description === 'string' &&
+                  (m.description.toUpperCase().includes('CFS IN') ||
+                   m.description.toUpperCase().includes('CFS GATE IN') ||
+                   m.description.toUpperCase().includes('GATE IN'))
+                )
+                return cfsEvent?.date || null
+              })(),
               terminal:        row.terminal        || null,
               dpdFlag:         row.dpd_flag        || false,
               isEmpty:         row.is_empty        || false,
@@ -1125,7 +1145,16 @@ function ContainerTrackingSection({ showToast, jobs }) {
           eta:             row.eta,
           portIn:          row.port_in,
           portOut:         row.port_out,
-          cfsGateIn:       row.cfs_gate_in,
+          cfsGateIn:       row.cfs_gate_in || (() => {
+            const milestones = row.milestones || []
+            const cfsEvent = milestones.find(m =>
+              typeof m.description === 'string' &&
+              (m.description.toUpperCase().includes('CFS IN') ||
+               m.description.toUpperCase().includes('CFS GATE IN') ||
+               m.description.toUpperCase().includes('GATE IN'))
+            )
+            return cfsEvent?.date || null
+          })(),
           terminal:        row.terminal        || null,
           dpdFlag:         row.dpd_flag        || false,
           isEmpty:         row.is_empty        || false,
@@ -1339,6 +1368,19 @@ function ContainerTrackingSection({ showToast, jobs }) {
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [detailJob])
 
+  useEffect(() => {
+    if (!pendingNavAction || pendingNavAction.tab !== 'containers') return
+    if (!pendingNavAction.jobId || !pendingNavAction.cn) return
+    if (jobs.length === 0) return
+
+    const job = jobs.find(j => j.id === pendingNavAction.jobId)
+    if (!job) return
+
+    setActiveContainer({ jobId: pendingNavAction.jobId, cn: pendingNavAction.cn })
+    setDetailJob(job)
+    onNavActionConsumed?.()
+  }, [pendingNavAction, jobs])
+
   if (loadingTracking) return (
     <div style={{ display:'flex', flexDirection:'column', gap:'12px' }}>
       {[1,2,3].map(i => (
@@ -1354,14 +1396,13 @@ function ContainerTrackingSection({ showToast, jobs }) {
   const handleRefreshAll = async () => {
     showToast('Fetching live tracking from LDB...', 'info')
     try {
-      const totals = await refreshAllContainers(
+      const totals = await forceRefreshAllContainers(
         jobs,
-        trackingData,
         (msg) => showToast(msg, 'info'),
       )
       await refreshTracking()
       if (totals.updated === 0 && totals.failed === 0) {
-        showToast(`All containers are up to date (cached within 6 hours).`, 'info')
+        showToast(`All containers refreshed — no updates available from LDB.`, 'info')
       } else if (totals.failed > 0) {
         showToast(
           `Updated ${totals.updated}, skipped ${totals.skipped}, failed ${totals.failed} container(s). Check console for details.`,
@@ -1369,7 +1410,7 @@ function ContainerTrackingSection({ showToast, jobs }) {
         )
       } else {
         showToast(
-          `LDB refresh complete. ${totals.updated} updated, ${totals.skipped} already current.`,
+          `LDB refresh complete. ${totals.updated} updated, ${totals.skipped} skipped (outdated/no data).`,
           'success',
         )
       }

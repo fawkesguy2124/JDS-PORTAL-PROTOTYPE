@@ -179,7 +179,7 @@ export async function fetchLDBTracking(containerNo) {
 export async function persistLDBTracking(containerNo, jobContext, ldbData) {
   const { data: existing } = await supabase
     .from('container_tracking')
-    .select('free_days, notes')
+    .select('free_days, notes, status, milestones')
     .eq('container_no', containerNo)
     .single()
   const row = {
@@ -215,6 +215,55 @@ export async function persistLDBTracking(containerNo, jobContext, ldbData) {
     console.error(`[LDB] Failed to persist tracking for ${containerNo}:`, error.message)
     throw error
   }
+
+  // Log notifications
+  const logEntries = []
+
+  // Status changed
+  if (existing?.status && existing.status !== ldbData.status) {
+    logEntries.push({
+      type: 'container_update',
+      action: 'container_update',
+      title: `${containerNo} — ${ldbData.statusText || ldbData.status}`,
+      note: `Status: ${existing.status} → ${ldbData.status}`,
+      job_no: jobContext.job_no || null,
+      job_id: jobContext.id || null,
+      meta: { job_id: jobContext.id, container_no: containerNo, old_status: existing.status, new_status: ldbData.status },
+    })
+  }
+
+  // New milestones
+  const existingDates = new Set((existing?.milestones || []).map(m => m.date))
+  const newMilestones = (ldbData.milestones || []).filter(m => m.date && !existingDates.has(m.date))
+  if (newMilestones.length > 0) {
+    const latest = newMilestones[0]
+    logEntries.push({
+      type: 'container_update',
+      action: 'container_update',
+      title: `${containerNo} — ${latest.description}`,
+      note: newMilestones.length > 1 ? `${newMilestones.length} new events · Latest: ${latest.description}` : `${latest.description} · ${latest.location || ''}`,
+      job_no: jobContext.job_no || null,
+      job_id: jobContext.id || null,
+      meta: { job_id: jobContext.id, container_no: containerNo },
+    })
+  }
+
+  // Detention alert (only if newly triggered)
+  if (ldbData.freeDays != null && ldbData.freeDays <= 2 && (existing?.free_days == null || existing.free_days > 2)) {
+    logEntries.push({
+      type: 'detention_alert',
+      action: 'detention_alert',
+      title: `${containerNo} — Detention risk`,
+      note: `Only ${ldbData.freeDays} free day${ldbData.freeDays !== 1 ? 's' : ''} left · ${jobContext.job_no}`,
+      job_no: jobContext.job_no || null,
+      job_id: jobContext.id || null,
+      meta: { job_id: jobContext.id, container_no: containerNo },
+    })
+  }
+
+  if (logEntries.length > 0) {
+    await supabase.from('activity_log').insert(logEntries.map(e => ({ ...e, created_at: new Date().toISOString() })))
+  }
 }
 
 export async function refreshJobContainers(job, existingTrackingData = {}) {
@@ -225,12 +274,13 @@ export async function refreshJobContainers(job, existingTrackingData = {}) {
   const summary = { updated: [], skipped: [], failed: [], messages: [] }
   for (const cn of cnList) {
     try {
-      const { data: dbRow } = await supabase
+      const { data: dbRow, error: dbErr } = await supabase
         .from('container_tracking')
         .select('last_refreshed_at')
         .eq('container_no', cn)
         .single()
-      if (!isCacheStale(dbRow?.last_refreshed_at)) {
+      // 406 = no row exists yet, treat as stale
+      if (!dbErr && !isCacheStale(dbRow?.last_refreshed_at)) {
         log(cn, `Cache still fresh (refreshed: ${dbRow.last_refreshed_at}), skipping`)
         summary.skipped.push(cn)
         continue
@@ -273,5 +323,64 @@ export async function refreshAllContainers(jobs, existingTracking = {}, onProgre
       onProgress(`Updated: ${summary.updated.join(', ')}`)
     }
   }
+  return totals
+}
+
+export async function forceRefreshAllContainers(jobs, onProgress = null) {
+  const allJobs = (jobs || []).filter(j => j.containers)
+  const totals = { updated: 0, skipped: 0, failed: 0, messages: [] }
+
+  // Collect all containers across all jobs
+  const allContainers = []
+  for (const job of allJobs) {
+    const cnList = (job.containers || '')
+      .split(/[\s,;/]+/)
+      .map(s => s.trim().toUpperCase())
+      .filter(s => s.length >= 4)
+    for (const cn of cnList) {
+      allContainers.push({ cn, job })
+    }
+  }
+
+  // Process in batches of 5 in parallel
+  const BATCH_SIZE = 5
+  for (let i = 0; i < allContainers.length; i += BATCH_SIZE) {
+    const batch = allContainers.slice(i, i + BATCH_SIZE)
+
+    await Promise.all(batch.map(async ({ cn, job }) => {
+      try {
+        const result = await fetchLDBTracking(cn)
+
+        if (!result.ok) {
+          totals.messages.push(result.userMessage || `${cn}: ${result.status}`)
+          if (result.status === 'OUTDATED_TRACKING' || result.status === 'NO_TRACKING_FOUND') {
+            await supabase.from('container_tracking')
+              .update({ last_refreshed_at: new Date().toISOString() })
+              .eq('container_no', cn)
+            totals.skipped++
+          } else {
+            totals.failed++
+          }
+          return
+        }
+
+        await persistLDBTracking(cn, job, result.data)
+        totals.updated++
+        log(cn, 'Force refreshed successfully')
+        if (onProgress) onProgress(`Updated: ${cn}`)
+
+      } catch (err) {
+        log(cn, 'Force refresh error', { error: err.message })
+        totals.failed++
+        totals.messages.push(`${cn}: ${err.message}`)
+      }
+    }))
+
+    // Small delay between batches to be polite to LDB
+    if (i + BATCH_SIZE < allContainers.length) {
+      await new Promise(r => setTimeout(r, 500))
+    }
+  }
+
   return totals
 }
