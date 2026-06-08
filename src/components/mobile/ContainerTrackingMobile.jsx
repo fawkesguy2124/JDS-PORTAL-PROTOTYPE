@@ -145,23 +145,6 @@ export default function ContainerTrackingMobile({
                 </div>
               </div>
 
-              {/* Customs checkpoints */}
-              <div style={{ display:'flex', alignItems:'center', gap:'8px', marginBottom:'10px' }}>
-                {[
-                  { label:'BE Filed', done: !!(job.be_no || job.stage >= 3) },
-                  { label:'Exam',     done: job.stage >= 5 },
-                  { label:'OOC',      done: job.stage >= 7 },
-                ].map((c, i) => (
-                  <div key={i} style={{ display:'flex', alignItems:'center', gap:'4px' }}>
-                    <div style={{ width:'14px', height:'14px', borderRadius:'50%', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'8px', fontWeight:700, background: c.done ? '#1D9E75' : '#f4f6f9', color: c.done ? 'white' : '#8a96a8', border:`0.5px solid ${c.done ? '#1D9E75' : '#d0d6e0'}` }}>
-                      {c.done ? '✓' : '○'}
-                    </div>
-                    <span style={{ fontSize:'11px', color: c.done ? '#1a2233' : '#8a96a8' }}>{c.label}</span>
-                    {i < 2 && <span style={{ fontSize:'10px', color:'#d0d6e0' }}>›</span>}
-                  </div>
-                ))}
-              </div>
-
               {/* ETA + Details */}
               <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', paddingTop:'10px', borderTop:'1px solid #f4f6f9' }}>
                 <div>

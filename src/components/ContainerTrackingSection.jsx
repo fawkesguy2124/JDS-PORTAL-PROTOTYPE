@@ -245,11 +245,11 @@ function JobDetailPanel({ job, trackingData, onClose, onUpdate, onAddEvent, onRe
                 const cEffective = cDet ? 'delayed' : cStatus
                 const cSt = STATUS_STYLES_MAP[cEffective] || STATUS_STYLES_MAP['in_transit']
                 const isActive = i === activeCnIdx
-                const shortened = c.slice(-7)
                 return (
                   <button
                     key={c}
                     onClick={() => setActiveCnIdx(i)}
+                    title={c}
                     style={{
                       fontFamily:"'JetBrains Mono',monospace",
                       fontSize:'11px', fontWeight:500,
@@ -260,7 +260,7 @@ function JobDetailPanel({ job, trackingData, onClose, onUpdate, onAddEvent, onRe
                       border: `0.5px solid ${isActive ? headerBg : cDet ? '#F7C1C1' : cSt.border}`,
                       whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis',
                     }}
-                  >{cDet ? '⚠ ' : ''}{shortened}</button>
+                  >{cDet ? '⚠ ' : ''}{c}</button>
                 )
               })}
             </div>
