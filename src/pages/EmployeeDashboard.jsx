@@ -72,6 +72,11 @@ function EmpContainerSection({ jobs, showToast }) {
     return (jobs || [])
       .map(job => ({ job, cnList: parseContainers(job.containers) }))
       .filter(({ cnList }) => cnList.length > 0)
+      .sort((a, b) => {
+        const na = parseInt((a.job.job_no || '').replace(/\D/g, '')) || 0
+        const nb = parseInt((b.job.job_no || '').replace(/\D/g, '')) || 0
+        return nb - na
+      })
   }, [jobs])
 
   const filteredJobCards = useMemo(() => {

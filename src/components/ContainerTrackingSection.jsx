@@ -1303,15 +1303,11 @@ function ContainerTrackingSection({ showToast, jobs }) {
 
   const sortedJobCards = useMemo(() => {
     return [...filteredJobCards].sort((a, b) => {
-      const aHasDetention = a.cnList.some(cn => (trackingData[cn]?.freeDays ?? 99) <= 2)
-      const bHasDetention = b.cnList.some(cn => (trackingData[cn]?.freeDays ?? 99) <= 2)
-      if (aHasDetention && !bHasDetention) return -1
-      if (!aHasDetention && bHasDetention) return 1
-      const aEta = a.job.eta || '9999'
-      const bEta = b.job.eta || '9999'
-      return aEta.localeCompare(bEta)
+      const na = parseInt((a.job.job_no || '').replace(/\D/g, '')) || 0
+      const nb = parseInt((b.job.job_no || '').replace(/\D/g, '')) || 0
+      return nb - na
     })
-  }, [filteredJobCards, trackingData])
+  }, [filteredJobCards])
 
   useEffect(() => {
     if (!searchQuery.trim()) return
