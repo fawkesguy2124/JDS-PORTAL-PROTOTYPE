@@ -334,7 +334,7 @@ function JobDetailPanel({ job, trackingData, onClose, onUpdate, onAddEvent, onRe
                 onMouseLeave={e => { e.currentTarget.style.color = 'var(--color-text-secondary)' }}
                 title="Refresh"
               >
-                <span style={{ display:'inline-block', animation: refreshing ? 'spin 0.7s linear infinite' : 'none', fontSize:'17px', verticalAlign:'middle' }}>↻</span>
+                <span style={{ display:'inline-block', animation: refreshing ? 'spin 0.7s linear infinite' : 'none', fontSize:'18px', verticalAlign:'middle' }}>↻</span>
               </button>
 
               {isMobile && (
