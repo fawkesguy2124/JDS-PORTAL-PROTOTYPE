@@ -332,7 +332,10 @@ export async function persistLDBTracking(containerNo, jobContext, ldbData) {
     const daysSincePortIn = Math.floor((nowIST - portInIST) / 86400000)
     return Math.max(0, contractual - daysSincePortIn)
   })()
-  const isTerminal = ['delivered', 'empty_returned'].includes(ldbData.status)
+  const isTerminal = ['delivered', 'empty_returned'].includes(ldbData.status) ||
+    (ldbData.milestones || []).some(m => 
+      ['CFS OUT', 'GATE OUT', 'GATEOUT', 'GATE CROSSED'].includes((m.description || '').toUpperCase().trim())
+    )
   if (calculatedFreeDays != null && calculatedFreeDays <= 2 && !isTerminal && (existing?.free_days == null || existing.free_days > 2)) {
     const dedupKey = `${containerNo}__detention`
     if (!_loggedThisRun.has(dedupKey)) {

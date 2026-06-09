@@ -5,8 +5,8 @@ export default function ContainerTrackingMobile({
   setSearchQuery,
   filterLine,
   setFilterLine,
-  filterStatus,
-  setFilterStatus,
+  filterMilestone,
+  setFilterMilestone,
   carriers,
   STATUS_OPTIONS,
   setDetailJob,
@@ -42,19 +42,21 @@ export default function ContainerTrackingMobile({
       {/* ── FILTERS ROW ── */}
       <div style={{ display:'flex', gap:'6px', overflowX:'auto', scrollbarWidth:'none', paddingBottom:'2px' }}>
         {[
-          { label:'All',        value:'' },
-          { label:'In Transit', value:'in_transit' },
-          { label:'At CFS',     value:'at_cfs' },
-          { label:'Arrived',    value:'arrived' },
+          { label:'All',          value:'' },
+          { label:'Port In',      value:'port_in' },
+          { label:'Port Out',     value:'port_out' },
+          { label:'CFS / ICD In', value:'cfs_in' },
+          { label:'CFS Out',      value:'cfs_out' },
+          { label:'Detention',    value:'detained' },
         ].map(p => (
           <button
             key={p.value}
-            onClick={() => setFilterStatus(p.value)}
+            onClick={() => setFilterMilestone(p.value)}
             style={{
               padding:'6px 14px', borderRadius:'9999px', fontSize:'13px', fontWeight:500, cursor:'pointer', flexShrink:0, whiteSpace:'nowrap',
-              border: filterStatus === p.value ? '1.5px solid #185FA5' : '1.5px solid var(--color-border-tertiary)',
-              background: filterStatus === p.value ? '#185FA5' : 'var(--color-background-primary)',
-              color: filterStatus === p.value ? 'white' : 'var(--color-text-secondary)',
+              border: filterMilestone === p.value ? '1.5px solid #185FA5' : '1.5px solid var(--color-border-tertiary)',
+              background: filterMilestone === p.value ? '#185FA5' : 'var(--color-background-primary)',
+              color: filterMilestone === p.value ? 'white' : 'var(--color-text-secondary)',
             }}
           >{p.label}</button>
         ))}
@@ -75,7 +77,7 @@ export default function ContainerTrackingMobile({
         <div style={{ background:'white', border:'1.5px solid #e2e6ed', borderRadius:'12px', padding:'40px 20px', textAlign:'center' }}>
           <div style={{ fontSize:'28px', marginBottom:'10px' }}>⊟</div>
           <p style={{ fontSize:'14px', fontWeight:500, color:'#1a2233' }}>
-            {searchQuery || filterLine || filterStatus ? 'No jobs match your filters.' : 'No jobs with containers yet.'}
+            {searchQuery || filterLine || filterMilestone ? 'No jobs match your filters.' : 'No jobs with containers yet.'}
           </p>
         </div>
       )}
@@ -83,7 +85,10 @@ export default function ContainerTrackingMobile({
       {/* ── JOB CARDS ── */}
       {sortedJobCards.map(({ job, cnList }) => {
         const statuses     = cnList.map(cn => trackingData[cn]?.status || 'in_transit')
-        const hasDetention = cnList.some(cn => (trackingData[cn]?.freeDays ?? 99) <= 2)
+        const hasDetention = cnList.some(cn => {
+          const ctd = trackingData[cn] || {}
+          return !['delivered', 'empty_returned'].includes(ctd.status) && (ctd.freeDays ?? 99) <= 2
+        })
         const allDelivered = statuses.every(s => s === 'delivered')
         const anyDelayed   = statuses.includes('delayed') || statuses.includes('customs_hold')
         const jobBadge = hasDetention

@@ -247,7 +247,10 @@ async function persistAndNotify(cn: string, job: any, ldbData: any) {
   }
 
   // ── Detention alert ──
-  const isTerminal = TERMINAL_STATUSES.includes(ldbData.status)
+  const isTerminal = TERMINAL_STATUSES.includes(ldbData.status) ||
+    (ldbData.milestones || []).some(m => 
+      ['CFS OUT', 'GATE OUT', 'GATEOUT', 'GATE CROSSED'].includes((m.description || '').toUpperCase().trim())
+    )
   if (!isTerminal && freeDays != null && freeDays <= 2 && (existing?.free_days == null || existing.free_days > 2)) {
     const dedupKey = `${cn}__detention`
     if (!_loggedThisRun.has(dedupKey)) {

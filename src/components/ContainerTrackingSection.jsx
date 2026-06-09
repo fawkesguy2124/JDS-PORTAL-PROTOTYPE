@@ -98,7 +98,7 @@ function JobDetailPanel({ job, trackingData, onClose, onUpdate, onAddEvent, onRe
   const cn = cnList[safeIdx] || cnList[0]
   const td = trackingData[cn] || {}
   const status = td.status || 'in_transit'
-  const isDetention = td.freeDays != null && td.freeDays <= 2
+  const isDetention = !['delivered', 'empty_returned'].includes(status) && td.freeDays != null && td.freeDays <= 2
   const effectiveStatus = isDetention ? 'delayed' : status
   const st = STATUS_STYLES_MAP[effectiveStatus] || STATUS_STYLES_MAP['in_transit']
   const headerBg = st.header
@@ -497,7 +497,13 @@ function JobDetailPanel({ job, trackingData, onClose, onUpdate, onAddEvent, onRe
               {[
                 { label:'Port in',      value: formatDT(td.portIn) },
                 { label:'Port out',     value: formatDT(td.portOut) },
-                { label:'CFS gate in',  value: formatDT(td.cfsGateIn) },
+                { 
+                  label: (td.milestones || []).some(m => 
+                    (m.description || '').toUpperCase().trim() === 'ICD IN' || 
+                    (m.description || '').toUpperCase().trim() === 'ICD GATE IN'
+                  ) ? 'ICD gate in' : 'CFS gate in',
+                  value: formatDT(td.cfsGateIn) 
+                },
               ].map(f => (
                 <div key={f.label}>
                   <div style={{ fontSize:'10px', fontWeight:500, textTransform:'uppercase', letterSpacing:'0.06em', color:'var(--color-text-secondary)', marginBottom:'4px' }}>{f.label}</div>
@@ -1046,7 +1052,7 @@ function ContainerTrackingSection({ showToast, jobs, pendingNavAction, onNavActi
   const [updateModal, setUpdateModal]           = useState(null)
   const [milestoneModal, setMilestoneModal]     = useState(null)
   const [filterLine, setFilterLine]             = useState('')
-  const [filterStatus, setFilterStatus]         = useState('')
+  const [filterMilestone, setFilterMilestone]     = useState('')
 
   const STATUS_OPTIONS = [
     { value: 'in_transit',     label: 'In Transit'     },
@@ -1265,12 +1271,28 @@ function ContainerTrackingSection({ showToast, jobs, pendingNavAction, onNavActi
     const q = searchQuery.trim().toLowerCase()
     return allJobCards.filter(({ job, cnList }) => {
       if (filterLine && job.shipping_line !== filterLine) return false
-      if (filterStatus) {
-        if (filterStatus === 'detained') {
+      if (filterMilestone) {
+        if (filterMilestone === 'detained') {
           const anyDetained = cnList.some(cn => (trackingData[cn]?.freeDays ?? 99) <= 2)
           if (!anyDetained) return false
+        } else if (filterMilestone === 'dpd') {
+          const anyDPD = cnList.some(cn => trackingData[cn]?.dpdFlag === true)
+          if (!anyDPD) return false
         } else {
-          const anyMatch = cnList.some(cn => (trackingData[cn]?.status || 'in_transit') === filterStatus)
+          const MILESTONE_MATCH = {
+            'port_in':   ['PORT IN', 'PORTIN', 'VESSEL ARRIVED'],
+            'port_out':  ['PORT OUT', 'PORTOUT'],
+            'cfs_in':    ['CFS IN', 'ICD IN', 'GATE IN', 'CFS GATE IN', 'ICD GATE IN'],
+            'cfs_out':   ['CFS OUT', 'GATE OUT', 'GATEOUT', 'GATE CROSSED'],
+            'customs':   ['CUSTOMS HOLD', 'HOLD'],
+          }
+          const targets = MILESTONE_MATCH[filterMilestone] || []
+          const anyMatch = cnList.some(cn => {
+            const milestones = trackingData[cn]?.milestones || []
+            return milestones.some(m =>
+              targets.some(t => (m.description || '').toUpperCase().trim().includes(t))
+            )
+          })
           if (!anyMatch) return false
         }
       }
@@ -1282,7 +1304,7 @@ function ContainerTrackingSection({ showToast, jobs, pendingNavAction, onNavActi
         cnList.some(cn => cn.toLowerCase().includes(q))
       )
     })
-  }, [allJobCards, searchQuery, filterLine, filterStatus, trackingData])
+  }, [allJobCards, searchQuery, filterLine, filterMilestone, trackingData])
 
   const totalContainerCount = allJobCards.reduce((s, { cnList }) => s + cnList.length, 0)
 
@@ -1405,7 +1427,7 @@ function ContainerTrackingSection({ showToast, jobs, pendingNavAction, onNavActi
       for (const cn of cnList) {
         const td = trackingData[cn] || {}
         const status = td.status || 'in_transit'
-        if (td.freeDays != null && td.freeDays <= 2) detained++
+        if (!['delivered', 'empty_returned'].includes(td.status) && td.freeDays != null && td.freeDays <= 2) detained++
         else if (status === 'in_transit')  inTransit++
         else if (status === 'at_cfs' || status === 'arrived') atCFS++
         const eta = td.eta || null
@@ -1524,7 +1546,7 @@ function ContainerTrackingSection({ showToast, jobs, pendingNavAction, onNavActi
     trackingData,
     searchQuery, setSearchQuery,
     filterLine,  setFilterLine,
-    filterStatus, setFilterStatus,
+    filterMilestone, setFilterMilestone,
     carriers,
     STATUS_OPTIONS,
     expandedContainers, setExpandedContainers,

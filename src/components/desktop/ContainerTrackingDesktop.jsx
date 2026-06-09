@@ -44,7 +44,7 @@ const ExpandedContainerRows = memo(function ExpandedContainerRows({
         const td          = normalizeTrackingData(trackingData[cn] || {})
         const status      = td.status || 'in_transit'
         const st          = STATUS_STYLES_MAP[status] || STATUS_STYLES_MAP['in_transit']
-        const isDetention = td.freeDays != null && td.freeDays <= 2
+        const isDetention = !['delivered', 'empty_returned'].includes(status) && td.freeDays != null && td.freeDays <= 2
         const isLastCn    = cnIdx === cnList.length - 1
         const isActive    = activeContainer?.cn === cn && activeContainer?.jobId === job.id
 
@@ -156,8 +156,8 @@ export default function ContainerTrackingDesktop({
   setSearchQuery,
   filterLine,
   setFilterLine,
-  filterStatus,
-  setFilterStatus,
+  filterMilestone,
+  setFilterMilestone,
   carriers,
   STATUS_OPTIONS,
   expandedContainers,
@@ -230,23 +230,26 @@ export default function ContainerTrackingDesktop({
           )}
         </div>
 
-        {/* Status pills */}
-        <div style={{ display:'flex', gap:'5px', alignItems:'center' }}>
+        {/* Milestone pills */}
+        <div style={{ display:'flex', gap:'5px', alignItems:'center', flexWrap:'wrap' }}>
           {[
-            { label:'All',        value:'' },
-            { label:'In Transit', value:'in_transit' },
-            { label:'At CFS',     value:'at_cfs' },
-            { label:'Arrived',    value:'arrived' },
-            { label:'Detention Risk',   value:'detained' },
+            { label:'All',            value:'' },
+            { label:'Port In',        value:'port_in' },
+            { label:'Port Out',       value:'port_out' },
+            { label:'CFS / ICD In',   value:'cfs_in' },
+            { label:'CFS Out',        value:'cfs_out' },
+            { label:'DPD',            value:'dpd' },
+            { label:'Customs Hold',   value:'customs' },
+            { label:'Detention Risk', value:'detained' },
           ].map(p => (
             <button
               key={p.value}
-              onClick={() => setFilterStatus(p.value)}
+              onClick={() => setFilterMilestone(p.value)}
               style={{
                 padding:'5px 12px', borderRadius:'9999px', fontSize:'12px', fontWeight:500, cursor:'pointer',
-                border: filterStatus === p.value ? '0.5px solid #185FA5' : '0.5px solid var(--color-border-tertiary)',
-                background: filterStatus === p.value ? '#185FA5' : 'var(--color-background-primary)',
-                color: filterStatus === p.value ? 'white' : 'var(--color-text-secondary)',
+                border: filterMilestone === p.value ? '0.5px solid #185FA5' : '0.5px solid var(--color-border-tertiary)',
+                background: filterMilestone === p.value ? '#185FA5' : 'var(--color-background-primary)',
+                color: filterMilestone === p.value ? 'white' : 'var(--color-text-secondary)',
               }}
             >{p.label}</button>
           ))}
@@ -275,11 +278,11 @@ export default function ContainerTrackingDesktop({
         <div style={{ background:'var(--color-background-primary)', border:'0.5px solid var(--color-border-tertiary)', borderRadius:'12px', padding:'48px 24px', textAlign:'center' }}>
           <div style={{ fontSize:'32px', color:'var(--color-text-secondary)', marginBottom:'12px' }}>⊟</div>
           <p style={{ fontSize:'14px', fontWeight:500, color:'var(--color-text-primary)' }}>
-            {filterStatus === 'detained' ? 'No containers at detention risk.' :
-            (searchQuery || filterLine || filterStatus) ? 'No jobs match your filters.' :
+            {filterMilestone === 'detained' ? 'No containers at detention risk.' :
+            (searchQuery || filterLine || filterMilestone) ? 'No jobs match your filters.' :
             'No jobs with containers yet.'}
           </p>
-          {!filterStatus && (
+          {!filterMilestone && (
             <p style={{ fontSize:'12px', color:'var(--color-text-secondary)', marginTop:'6px' }}>
               Go to All Jobs → open a job → Edit → add container numbers.
             </p>
@@ -354,7 +357,7 @@ export default function ContainerTrackingDesktop({
                               const cnNorm = normalizeTrackingData(trackingData[cn] || {})
                               const cnStatus = cnNorm.status || 'in_transit'
                               const cnSt     = STATUS_STYLES_MAP[cnStatus] || STATUS_STYLES_MAP['in_transit']
-                              const isDet    = cnNorm.freeDays !== null && cnNorm.freeDays <= 2
+                              const isDet = !['delivered', 'empty_returned'].includes(cnNorm.status) && cnNorm.freeDays !== null && cnNorm.freeDays <= 2
                               return (
                                 <span
                                   key={`${cn}-${rowIdx}-chip`}
@@ -415,7 +418,7 @@ export default function ContainerTrackingDesktop({
                           const counts = {}
                           cnList.forEach(cn => {
                             const s = trackingData[cn]?.status || 'in_transit'
-                            const isDetention = (trackingData[cn]?.freeDays ?? 99) <= 2
+                            const isDetention = !['delivered', 'empty_returned'].includes(trackingData[cn]?.status) && (trackingData[cn]?.freeDays ?? 99) <= 2
                             const label = isDetention ? 'detention' :
                               s === 'arrived' || s === 'at_cfs' ? 'arrived' :
                               s === 'delivered' || s === 'empty_returned' ? 'delivered' :
