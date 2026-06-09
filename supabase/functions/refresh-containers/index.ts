@@ -124,6 +124,22 @@ async function fetchLDB(cn: string): Promise<{ ok: boolean; data?: any; error?: 
 
 const _loggedThisRun = new Set<string>()
 
+async function wasAlreadyLogged(title: string, jobNo: string | null): Promise<boolean> {
+  try {
+    const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString()
+    const { data } = await supabase
+      .from('activity_log')
+      .select('id')
+      .eq('title', title)
+      .eq('job_no', jobNo || '')
+      .gte('created_at', twoHoursAgo)
+      .limit(1)
+    return !!(data && data.length > 0)
+  } catch {
+    return false
+  }
+}
+
 async function persistAndNotify(cn: string, job: any, ldbData: any) {
   const { data: existing } = await supabase
     .from('container_tracking')
@@ -136,11 +152,11 @@ async function persistAndNotify(cn: string, job: any, ldbData: any) {
   if (contractual && ldbData.portIn) {
     const portInDate = new Date(ldbData.portIn)
     if (!isNaN(portInDate.getTime())) {
-      const IST_OFFSET   = 5.5 * 60 * 60 * 1000
-      const nowIST       = Date.now() + IST_OFFSET
-      const portInIST    = portInDate.getTime() + IST_OFFSET
-      const daysSince    = Math.floor((nowIST - portInIST) / 86400000)
-      freeDays           = Math.max(0, contractual - daysSince)
+      const IST_OFFSET = 5.5 * 60 * 60 * 1000
+      const nowIST     = Date.now() + IST_OFFSET
+      const portInIST  = portInDate.getTime() + IST_OFFSET
+      const daysSince  = Math.floor((nowIST - portInIST) / 86400000)
+      freeDays         = Math.max(0, contractual - daysSince)
     }
   } else if (contractual && !ldbData.portIn) {
     freeDays = contractual
@@ -148,8 +164,8 @@ async function persistAndNotify(cn: string, job: any, ldbData: any) {
 
   await supabase.from('container_tracking').upsert({
     container_no:      cn,
-    job_no:            job.job_no   || null,
-    job_id:            job.id       || null,
+    job_no:            job.job_no        || null,
+    job_id:            job.id            || null,
     carrier:           job.shipping_line || null,
     status:            ldbData.status,
     status_text:       ldbData.statusText,
@@ -169,24 +185,29 @@ async function persistAndNotify(cn: string, job: any, ldbData: any) {
 
   const entryBase = { job_no: job.job_no || null, job_id: job.id || null }
 
+  // ── Status change notification ──
   if (existing?.status && existing.status !== ldbData.status) {
     const key = `${cn}__status__${ldbData.status}`
     if (!_loggedThisRun.has(key)) {
       _loggedThisRun.add(key)
-      try {
-        await supabase.from('activity_log').insert({
-          ...entryBase,
-          type:   'container_update',
-          action: 'container_update',
-          title:  `${cn} — ${ldbData.statusText || ldbData.status}`,
-          note:   `Status: ${existing.status} → ${ldbData.status}`,
-          meta:   { job_id: job.id, container_no: cn, old_status: existing.status, new_status: ldbData.status },
-          created_at: ldbData.milestones?.[0]?.date || new Date().toISOString(),
-        })
-      } catch (e: any) { console.warn('[CRON] activity_log status insert failed:', e.message) }
+      const notifTitle = `${cn} — ${ldbData.statusText || ldbData.status}`
+      if (!(await wasAlreadyLogged(notifTitle, job.job_no))) {
+        try {
+          await supabase.from('activity_log').insert({
+            ...entryBase,
+            type:       'container_update',
+            action:     'container_update',
+            title:      notifTitle,
+            note:       `Status: ${existing.status} → ${ldbData.status}`,
+            meta:       { job_id: job.id, container_no: cn, old_status: existing.status, new_status: ldbData.status },
+            created_at: ldbData.milestones?.[0]?.date || new Date().toISOString(),
+          })
+        } catch (e: any) { console.warn('[CRON] activity_log status insert failed:', e.message) }
+      }
     }
   }
 
+  // ── New milestones notification ──
   const existingKeys = new Set(
     (existing?.milestones || []).map((m: any) =>
       `${(m.description || '').toUpperCase().trim()}__${m.date ? new Date(m.date).toISOString().slice(0, 16) : ''}`
@@ -197,42 +218,49 @@ async function persistAndNotify(cn: string, job: any, ldbData: any) {
     return m.date && !existingKeys.has(key)
   })
   if (newMilestones.length > 0) {
-    const latest    = newMilestones[0]
-    const dedupKey  = `${cn}__${latest.description}`
+    const latest   = newMilestones[0]
+    const dedupKey = `${cn}__${latest.description}__${latest.date ? new Date(latest.date).toISOString().slice(0, 16) : 'nodate'}`
     if (!_loggedThisRun.has(dedupKey)) {
       _loggedThisRun.add(dedupKey)
-      try {
-        await supabase.from('activity_log').insert({
-          ...entryBase,
-          type:   'container_update',
-          action: 'container_update',
-          title:  `${cn} — ${latest.description}`,
-          note:   newMilestones.length > 1
-            ? `${newMilestones.length} new events · Latest: ${latest.description}`
-            : `${latest.description} · ${latest.location || ''}`,
-          meta:   { job_id: job.id, container_no: cn },
-          created_at: latest.date || new Date().toISOString(),
-        })
-      } catch (e: any) { console.warn('[CRON] activity_log milestone insert failed:', e.message) }
+      const notifTitle = `${cn} — ${latest.description}`
+      if (!(await wasAlreadyLogged(notifTitle, job.job_no))) {
+        try {
+          await supabase.from('activity_log').insert({
+            ...entryBase,
+            type:       'container_update',
+            action:     'container_update',
+            title:      notifTitle,
+            note:       newMilestones.length > 1
+              ? `${newMilestones.length} new events · Latest: ${latest.description}`
+              : `${latest.description} · ${latest.location || ''}`,
+            meta:       { job_id: job.id, container_no: cn },
+            created_at: latest.date || new Date().toISOString(),
+          })
+        } catch (e: any) { console.warn('[CRON] activity_log milestone insert failed:', e.message) }
+      }
     }
   }
 
+  // ── Detention alert ──
   const isTerminal = TERMINAL_STATUSES.includes(ldbData.status)
   if (!isTerminal && freeDays != null && freeDays <= 2 && (existing?.free_days == null || existing.free_days > 2)) {
     const dedupKey = `${cn}__detention`
     if (!_loggedThisRun.has(dedupKey)) {
       _loggedThisRun.add(dedupKey)
-      try {
-        await supabase.from('activity_log').insert({
-          ...entryBase,
-          type:   'detention_alert',
-          action: 'detention_alert',
-          title:  `${cn} — Detention risk`,
-          note:   `Only ${freeDays} free day${freeDays !== 1 ? 's' : ''} left · Port in: ${ldbData.portIn ? new Date(ldbData.portIn).toLocaleDateString('en-IN', { day:'2-digit', month:'short', timeZone:'Asia/Kolkata' }) : '—'} · ${job.job_no}`,
-          meta:   { job_id: job.id, container_no: cn, port_in: ldbData.portIn || null, free_days_remaining: freeDays },
-          created_at: ldbData.portIn || new Date().toISOString(),
-        })
-      } catch (e: any) { console.warn('[CRON] activity_log detention insert failed:', e.message) }
+      const notifTitle = `${cn} — Detention risk`
+      if (!(await wasAlreadyLogged(notifTitle, job.job_no))) {
+        try {
+          await supabase.from('activity_log').insert({
+            ...entryBase,
+            type:       'detention_alert',
+            action:     'detention_alert',
+            title:      notifTitle,
+            note:       `Only ${freeDays} free day${freeDays !== 1 ? 's' : ''} left · Port in: ${ldbData.portIn ? new Date(ldbData.portIn).toLocaleDateString('en-IN', { day:'2-digit', month:'short', timeZone:'Asia/Kolkata' }) : '—'} · ${job.job_no}`,
+            meta:       { job_id: job.id, container_no: cn, port_in: ldbData.portIn || null, free_days_remaining: freeDays },
+            created_at: ldbData.portIn || new Date().toISOString(),
+          })
+        } catch (e: any) { console.warn('[CRON] activity_log detention insert failed:', e.message) }
+      }
     }
   }
 }

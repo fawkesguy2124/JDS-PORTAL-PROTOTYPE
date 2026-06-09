@@ -131,15 +131,6 @@ export default function NotificationBell({ onNavigate, profile }) {
     }
   }
 
-  const getIcon = (n) => {
-    const t = n.type || n.action || ''
-    if (t === 'detention_alert') return { emoji: '🚨', cls: 'alert' }
-    if (t === 'container_update' || t.includes('container')) return { emoji: '📦', cls: 'container' }
-    if (t === 'job_update' || t === 'job_created' || t.includes('stage') || t.includes('job')) return { emoji: '📋', cls: 'job' }
-    if (t === 'document_upload' || t.includes('upload') || t.includes('document')) return { emoji: '📄', cls: 'document' }
-    return { emoji: '🔔', cls: 'default' }
-  }
-
   const filteredNotifications = filter === 'all'
     ? notifications
     : notifications.filter(n => {
@@ -152,14 +143,6 @@ export default function NotificationBell({ onNavigate, profile }) {
       })
 
   const groups = groupByDay(filteredNotifications)
-
-  const iconColors = {
-    alert:     { bg: '#FCEBEB', color: '#791F1F' },
-    container: { bg: '#E6F1FB', color: '#0C447C' },
-    job:       { bg: '#EAF3DE', color: '#27500A' },
-    document:  { bg: '#FAEEDA', color: '#633806' },
-    default:   { bg: '#f4f6f9', color: '#4a5568' },
-  }
 
   const tagStyles = {
     alert:     { bg: '#FCEBEB', color: '#791F1F', border: '#F7C1C1' },
@@ -272,15 +255,15 @@ export default function NotificationBell({ onNavigate, profile }) {
                     </div>
                     {items.map((n, i) => {
                       const isUnread = !lastSeen || new Date(n.created_at) > new Date(lastSeen)
-                      const { emoji, cls } = getIcon(n)
-                      const ic = iconColors[cls] || iconColors.default
-                      const ts = tagStyles[cls] || tagStyles.default
+                      const t = n.type || n.action || ''
+                      const tagCls = t === 'detention_alert' ? 'alert' : t.includes('container') ? 'container' : t.includes('job') || t.includes('stage') ? 'job' : t.includes('upload') || t.includes('document') ? 'document' : 'default'
+                      const ts = tagStyles[tagCls] || tagStyles.default
                       return (
                         <div
                           key={n.id || i}
                           onClick={() => handleItemClick(n)}
                           style={{
-                            padding: '10px 16px', display: 'flex', gap: '10px', alignItems: 'flex-start',
+                            padding: '10px 16px', display: 'flex', gap: '8px', alignItems: 'flex-start',
                             borderBottom: '0.5px solid #f4f6f9', cursor: 'pointer',
                             background: isUnread ? '#f0f5ff' : 'white',
                             transition: 'background 0.1s',
@@ -288,9 +271,6 @@ export default function NotificationBell({ onNavigate, profile }) {
                           onMouseEnter={e => e.currentTarget.style.background = isUnread ? '#e6eeff' : '#f8f9fb'}
                           onMouseLeave={e => e.currentTarget.style.background = isUnread ? '#f0f5ff' : 'white'}
                         >
-                          <div style={{ width: '30px', height: '30px', borderRadius: '8px', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', background: ic.bg }}>
-                            {emoji}
-                          </div>
                           <div style={{ flex: 1, minWidth: 0 }}>
                             <div style={{ fontSize: '12px', fontWeight: 500, color: '#1a2233', lineHeight: 1.4, marginBottom: '3px' }}>
                               {n.title || n.action || 'Update'}
