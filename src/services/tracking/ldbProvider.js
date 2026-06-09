@@ -189,13 +189,11 @@ export async function fetchLDBTracking(containerNo) {
 
 async function wasAlreadyLogged(title, jobNo) {
   try {
-    const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString()
     const { data } = await supabase
       .from('activity_log')
       .select('id')
       .eq('title', title)
       .eq('job_no', jobNo || '')
-      .gte('created_at', twoHoursAgo)
       .limit(1)
     return data && data.length > 0
   } catch {

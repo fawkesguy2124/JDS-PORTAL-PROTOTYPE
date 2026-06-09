@@ -133,13 +133,11 @@ const _loggedThisRun = new Set<string>()
 
 async function wasAlreadyLogged(title: string, jobNo: string | null): Promise<boolean> {
   try {
-    const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString()
     const { data } = await supabase
       .from('activity_log')
       .select('id')
       .eq('title', title)
       .eq('job_no', jobNo || '')
-      .gte('created_at', twoHoursAgo)
       .limit(1)
     return !!(data && data.length > 0)
   } catch {
