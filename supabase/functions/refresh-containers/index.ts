@@ -18,15 +18,22 @@ function log(cn: string, msg: string) {
 }
 
 function mapEventToStatus(eventName: string): string {
-  const e = (eventName || '').toUpperCase()
-  if (e === 'GATE OUT' || e === 'GATEOUT')                       return 'delivered'
-  if (e === 'GATE IN'  || e === 'CFS GATE IN' || e === 'ICD GATE IN') return 'at_cfs'
-  if (e === 'DPD')                                               return 'at_cfs'
-  if (e === 'PORT OUT' || e === 'PORTOUT')                       return 'at_cfs'
-  if (e === 'VESSEL ARRIVED' || e === 'PORT IN' || e === 'PORTIN' || e.includes('DISCHARGE')) return 'arrived'
-  if (e.includes('EMPTY'))                                       return 'empty_returned'
-  if (e.includes('CUSTOMS') || e.includes('HOLD'))               return 'customs_hold'
-  if (e.includes('RAIL'))                                        return 'on_rail'
+  if (!eventName) return 'in_transit'
+  const e = eventName.toUpperCase().trim()
+  if (e === 'CFS OUT' || e === 'GATE OUT' || e === 'GATEOUT' || e === 'GATE CROSSED')
+    return 'delivered'
+  if (e === 'CFS IN' || e === 'GATE IN' || e === 'CFS GATE IN' || e === 'ICD IN' || e === 'ICD GATE IN')
+    return 'at_cfs'
+  if (e === 'VESSEL ARRIVED' || e === 'PORT IN' || e === 'PORTIN' || e === 'DPD' || e.includes('DISCHARGE'))
+    return 'arrived'
+  if (e === 'PORT OUT' || e === 'PORTOUT' || e === 'TOLL PLAZA CROSSED')
+    return 'in_transit'
+  if (e.includes('EMPTY'))
+    return 'empty_returned'
+  if (e.includes('CUSTOMS') || e.includes('HOLD'))
+    return 'customs_hold'
+  if (e.includes('RAIL'))
+    return 'on_rail'
   return 'in_transit'
 }
 
@@ -36,7 +43,7 @@ function derivePortEvents(trackLog: any[]) {
   const portOutEvent = trackLog.find(e => (e.eventName || '').toUpperCase() === 'PORT OUT')
   const cfsEvent     = trackLog.find(e => {
     const n = (e.eventName || '').toUpperCase()
-    return n === 'GATE IN' || n === 'CFS GATE IN' || n === 'ICD GATE IN'
+    return n === 'GATE IN' || n === 'CFS GATE IN' || n === 'CFS IN' || n === 'ICD GATE IN' || n === 'ICD IN'
   })
   return {
     portIn:    portInEvent  ? portInEvent.timestampTimezone  : null,

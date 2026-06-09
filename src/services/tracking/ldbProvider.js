@@ -32,18 +32,21 @@ function isCacheStale(lastRefreshedAt) {
 
 function mapEventToStatus(eventName) {
   if (!eventName) return 'in_transit'
-  const e = eventName.toUpperCase()
-
-  if (e === 'GATE OUT' || e === 'GATEOUT')               return 'delivered'
-  if (e === 'GATE IN'  || e === 'CFS GATE IN')           return 'at_cfs'
-  if (e === 'DPD')                                       return 'at_cfs'
-  if (e === 'PORT OUT' || e === 'PORTOUT')               return 'at_cfs'
-  if (e === 'VESSEL ARRIVED' || e === 'PORT IN'
-    || e === 'PORTIN' || e.includes('DISCHARGE'))        return 'arrived'
-  if (e.includes('EMPTY'))                               return 'empty_returned'
-  if (e.includes('CUSTOMS') || e.includes('HOLD'))       return 'customs_hold'
-  if (e.includes('RAIL'))                                return 'on_rail'
-
+  const e = eventName.toUpperCase().trim()
+  if (e === 'CFS OUT' || e === 'GATE OUT' || e === 'GATEOUT' || e === 'GATE CROSSED')
+    return 'delivered'
+  if (e === 'CFS IN' || e === 'GATE IN' || e === 'CFS GATE IN' || e === 'ICD IN' || e === 'ICD GATE IN')
+    return 'at_cfs'
+  if (e === 'VESSEL ARRIVED' || e === 'PORT IN' || e === 'PORTIN' || e === 'DPD' || e.includes('DISCHARGE'))
+    return 'arrived'
+  if (e === 'PORT OUT' || e === 'PORTOUT' || e === 'TOLL PLAZA CROSSED')
+    return 'in_transit'
+  if (e.includes('EMPTY'))
+    return 'empty_returned'
+  if (e.includes('CUSTOMS') || e.includes('HOLD'))
+    return 'customs_hold'
+  if (e.includes('RAIL'))
+    return 'on_rail'
   return 'in_transit'
 }
 
@@ -54,7 +57,7 @@ function derivePortEvents(trackLog) {
   const portOutEvent = trackLog.find(e => (e.eventName || '').toUpperCase() === 'PORT OUT')
   const cfsEvent     = trackLog.find(e => {
     const n = (e.eventName || '').toUpperCase()
-    return n === 'GATE IN' || n === 'CFS GATE IN' || n === 'ICD GATE IN'
+    return n === 'GATE IN' || n === 'CFS GATE IN' || n === 'CFS IN' || n === 'ICD GATE IN' || n === 'ICD IN'
   })
 
   return {
@@ -259,7 +262,7 @@ export async function persistLDBTracking(containerNo, jobContext, ldbData) {
     job_id: jobContext.id || null,
   }
 
-  // Status changed
+  // ── Status changed ──
   if (existing?.status && existing.status !== ldbData.status) {
     const dedupKey = `${containerNo}__status__${ldbData.status}`
     if (!_loggedThisRun.has(dedupKey)) {
@@ -269,21 +272,21 @@ export async function persistLDBTracking(containerNo, jobContext, ldbData) {
         try {
           await supabase.from('activity_log').insert({
             ...entryBase,
-            type: 'container_update',
-            action: 'container_update',
-            title: notifTitle,
-          note: `Status: ${existing.status} → ${ldbData.status}`,
-          meta: { job_id: jobContext.id, container_no: containerNo, old_status: existing.status, new_status: ldbData.status },
-          created_at: ldbData.milestones?.[0]?.date || new Date().toISOString(),
-        })
-      } catch (logErr) {
-        console.warn('[LDB] activity_log insert failed:', logErr.message)
+            type:       'container_update',
+            action:     'container_update',
+            title:      notifTitle,
+            note:       `Status: ${existing.status} → ${ldbData.status}`,
+            meta:       { job_id: jobContext.id, container_no: containerNo, old_status: existing.status, new_status: ldbData.status },
+            created_at: ldbData.milestones?.[0]?.date || new Date().toISOString(),
+          })
+        } catch (logErr) {
+          console.warn('[LDB] activity_log status insert failed:', logErr.message)
+        }
       }
     }
   }
-  }
 
-  // New milestones — robust dedup using description + date
+  // ── New milestones ──
   const existingKeys = new Set(
     (existing?.milestones || []).map(m =>
       `${(m.description || '').toUpperCase().trim()}__${m.date ? new Date(m.date).toISOString().slice(0, 16) : ''}`
@@ -303,36 +306,35 @@ export async function persistLDBTracking(containerNo, jobContext, ldbData) {
         try {
           await supabase.from('activity_log').insert({
             ...entryBase,
-            type: 'container_update',
-            action: 'container_update',
-            title: notifTitle,
-          note: newMilestones.length > 1
-            ? `${newMilestones.length} new events · Latest: ${latest.description}`
-            : `${latest.description} · ${latest.location || ''}`,
-          meta: { job_id: jobContext.id, container_no: containerNo },
-          created_at: latest.date || new Date().toISOString(),
-        })
-      } catch (logErr) {
-        console.warn('[LDB] activity_log insert failed:', logErr.message)
+            type:       'container_update',
+            action:     'container_update',
+            title:      notifTitle,
+            note:       newMilestones.length > 1
+              ? `${newMilestones.length} new events · Latest: ${latest.description}`
+              : `${latest.description} · ${latest.location || ''}`,
+            meta:       { job_id: jobContext.id, container_no: containerNo },
+            created_at: latest.date || new Date().toISOString(),
+          })
+        } catch (logErr) {
+          console.warn('[LDB] activity_log milestone insert failed:', logErr.message)
+        }
       }
-    }
     }
   }
 
-  // Detention alert (only if newly triggered)
+  // ── Detention alert ──
   const calculatedFreeDays = (() => {
     const contractual = Number(jobContext.free_days) || null
     if (!contractual || !ldbData.portIn) return null
     const portInDate = new Date(ldbData.portIn)
     if (isNaN(portInDate.getTime())) return null
-    // Calculate days in IST
     const IST_OFFSET = 5.5 * 60 * 60 * 1000
     const nowIST = Date.now() + IST_OFFSET
     const portInIST = portInDate.getTime() + IST_OFFSET
     const daysSincePortIn = Math.floor((nowIST - portInIST) / 86400000)
     return Math.max(0, contractual - daysSincePortIn)
   })()
-  const isTerminal = ['delivered', 'empty_returned', 'gate_out'].includes(ldbData.status)
+  const isTerminal = ['delivered', 'empty_returned'].includes(ldbData.status)
   if (calculatedFreeDays != null && calculatedFreeDays <= 2 && !isTerminal && (existing?.free_days == null || existing.free_days > 2)) {
     const dedupKey = `${containerNo}__detention`
     if (!_loggedThisRun.has(dedupKey)) {
@@ -342,25 +344,22 @@ export async function persistLDBTracking(containerNo, jobContext, ldbData) {
         try {
           await supabase.from('activity_log').insert({
             ...entryBase,
-            type: 'detention_alert',
-            action: 'detention_alert',
-            title: notifTitle,
-          note: `Only ${calculatedFreeDays} free day${calculatedFreeDays !== 1 ? 's' : ''} left · Port in: ${ldbData.portIn ? new Date(ldbData.portIn).toLocaleDateString('en-IN', { day:'2-digit', month:'short', timeZone:'Asia/Kolkata' }) : '—'} · ${jobContext.job_no}`,
-          meta: {
-            job_id: jobContext.id,
-            container_no: containerNo,
-            port_in: ldbData.portIn || null,
-            free_days_remaining: calculatedFreeDays,
-          },
-          created_at: ldbData.portIn || new Date().toISOString(),
-        })
-      } catch (logErr) {
-        console.warn('[LDB] activity_log insert failed:', logErr.message)
+            type:       'detention_alert',
+            action:     'detention_alert',
+            title:      notifTitle,
+            note:       `Only ${calculatedFreeDays} free day${calculatedFreeDays !== 1 ? 's' : ''} left · Port in: ${ldbData.portIn ? new Date(ldbData.portIn).toLocaleDateString('en-IN', { day:'2-digit', month:'short', timeZone:'Asia/Kolkata' }) : '—'} · ${jobContext.job_no}`,
+            meta:       { job_id: jobContext.id, container_no: containerNo, port_in: ldbData.portIn || null, free_days_remaining: calculatedFreeDays },
+            created_at: ldbData.portIn || new Date().toISOString(),
+          })
+        } catch (logErr) {
+          console.warn('[LDB] activity_log detention insert failed:', logErr.message)
+        }
       }
     }
   }
 }
-}
+
+
 
 export async function refreshJobContainers(job, existingTrackingData = {}) {
   const cnList = (job.containers || '')
