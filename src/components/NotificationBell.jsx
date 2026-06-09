@@ -43,6 +43,10 @@ function groupByDay(notifications) {
     else if (d.getTime() === yesterday.getTime()) groups.Yesterday.push(n)
     else groups.Earlier.push(n)
   })
+  const sortDesc = (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+  groups.Today.sort(sortDesc)
+  groups.Yesterday.sort(sortDesc)
+  groups.Earlier.sort(sortDesc)
   return groups
 }
 
