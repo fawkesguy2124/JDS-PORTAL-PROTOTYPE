@@ -1,5 +1,13 @@
 import { supabase } from '../../supabase'
 
+// In-memory dedup set — cleared on each forceRefreshAllContainers/refreshAllContainers run
+const _loggedThisRun = new Set()
+const MAX_LOG_SET_SIZE = 500
+function safeLogAdd(key) {
+  if (_loggedThisRun.size > MAX_LOG_SET_SIZE) _loggedThisRun.clear()
+  safeLogAdd(key)
+}
+
 const LDB_PROXY_URL = '/api/ldb-track'
 const FRESHNESS_DAYS = 30
 const CACHE_HOURS = 12
@@ -196,7 +204,20 @@ export async function persistLDBTracking(containerNo, jobContext, ldbData) {
     container_size:    ldbData.containerSize   || null,
     expected_port_out: ldbData.expectedPortOut || null,
     eta:              ldbData.eta        || jobContext.eta    || null,
-    free_days:        existing?.free_days ?? jobContext.free_days ?? null,
+    free_days: (() => {
+      // Contractual free days comes from BL (stored on job) — never from LDB
+      const contractual = Number(jobContext.free_days) || null
+      if (!contractual) return existing?.free_days ?? null // preserve manual entry if no BL data
+      if (!ldbData.portIn) return contractual // not arrived yet — full free days remain
+      const portInDate = new Date(ldbData.portIn)
+      if (isNaN(portInDate.getTime())) return contractual
+      // Calculate days in IST (UTC+5:30) to avoid ±1 day error at midnight
+      const IST_OFFSET = 5.5 * 60 * 60 * 1000
+      const nowIST = Date.now() + IST_OFFSET
+      const portInIST = portInDate.getTime() + IST_OFFSET
+      const daysSincePortIn = Math.floor((nowIST - portInIST) / 86400000)
+      return Math.max(0, contractual - daysSincePortIn)
+    })(),
     notes:            existing?.notes    || null,
     last_update:      ldbData.lastUpdate,
     milestones:       ldbData.milestones || [],
@@ -216,53 +237,98 @@ export async function persistLDBTracking(containerNo, jobContext, ldbData) {
     throw error
   }
 
-  // Log notifications
-  const logEntries = []
+  // Log notifications — with in-memory dedup per refresh run
+  const entryBase = {
+    job_no: jobContext.job_no || null,
+    job_id: jobContext.id || null,
+  }
 
   // Status changed
   if (existing?.status && existing.status !== ldbData.status) {
-    logEntries.push({
-      type: 'container_update',
-      action: 'container_update',
-      title: `${containerNo} — ${ldbData.statusText || ldbData.status}`,
-      note: `Status: ${existing.status} → ${ldbData.status}`,
-      job_no: jobContext.job_no || null,
-      job_id: jobContext.id || null,
-      meta: { job_id: jobContext.id, container_no: containerNo, old_status: existing.status, new_status: ldbData.status },
-    })
+    const dedupKey = `${containerNo}__status__${ldbData.status}`
+    if (!_loggedThisRun.has(dedupKey)) {
+      safeLogAdd(dedupKey)
+      try {
+        await supabase.from('activity_log').insert({
+          ...entryBase,
+          type: 'container_update',
+          action: 'container_update',
+          title: `${containerNo} — ${ldbData.statusText || ldbData.status}`,
+          note: `Status: ${existing.status} → ${ldbData.status}`,
+          meta: { job_id: jobContext.id, container_no: containerNo, old_status: existing.status, new_status: ldbData.status },
+          created_at: new Date().toISOString(),
+        })
+      } catch (logErr) {
+        console.warn('[LDB] activity_log insert failed:', logErr.message)
+      }
+    }
   }
 
-  // New milestones
-  const existingDates = new Set((existing?.milestones || []).map(m => m.date))
-  const newMilestones = (ldbData.milestones || []).filter(m => m.date && !existingDates.has(m.date))
+  // New milestones — robust dedup using description + date
+  const existingKeys = new Set(
+    (existing?.milestones || []).map(m =>
+      `${(m.description || '').toUpperCase().trim()}__${m.date ? new Date(m.date).toISOString().slice(0, 16) : ''}`
+    )
+  )
+  const newMilestones = (ldbData.milestones || []).filter(m => {
+    const key = `${(m.description || '').toUpperCase().trim()}__${m.date ? new Date(m.date).toISOString().slice(0, 16) : ''}`
+    return m.date && !existingKeys.has(key)
+  })
   if (newMilestones.length > 0) {
     const latest = newMilestones[0]
-    logEntries.push({
-      type: 'container_update',
-      action: 'container_update',
-      title: `${containerNo} — ${latest.description}`,
-      note: newMilestones.length > 1 ? `${newMilestones.length} new events · Latest: ${latest.description}` : `${latest.description} · ${latest.location || ''}`,
-      job_no: jobContext.job_no || null,
-      job_id: jobContext.id || null,
-      meta: { job_id: jobContext.id, container_no: containerNo },
-    })
+    const dedupKey = `${containerNo}__${latest.description}`
+    if (!_loggedThisRun.has(dedupKey)) {
+      safeLogAdd(dedupKey)
+      try {
+        await supabase.from('activity_log').insert({
+          ...entryBase,
+          type: 'container_update',
+          action: 'container_update',
+          title: `${containerNo} — ${latest.description}`,
+          note: newMilestones.length > 1
+            ? `${newMilestones.length} new events · Latest: ${latest.description}`
+            : `${latest.description} · ${latest.location || ''}`,
+          meta: { job_id: jobContext.id, container_no: containerNo },
+          created_at: new Date().toISOString(),
+        })
+      } catch (logErr) {
+        console.warn('[LDB] activity_log insert failed:', logErr.message)
+      }
+    }
   }
 
   // Detention alert (only if newly triggered)
-  if (ldbData.freeDays != null && ldbData.freeDays <= 2 && (existing?.free_days == null || existing.free_days > 2)) {
-    logEntries.push({
-      type: 'detention_alert',
-      action: 'detention_alert',
-      title: `${containerNo} — Detention risk`,
-      note: `Only ${ldbData.freeDays} free day${ldbData.freeDays !== 1 ? 's' : ''} left · ${jobContext.job_no}`,
-      job_no: jobContext.job_no || null,
-      job_id: jobContext.id || null,
-      meta: { job_id: jobContext.id, container_no: containerNo },
-    })
-  }
-
-  if (logEntries.length > 0) {
-    await supabase.from('activity_log').insert(logEntries.map(e => ({ ...e, created_at: new Date().toISOString() })))
+  const calculatedFreeDays = (() => {
+    const contractual = Number(jobContext.free_days) || null
+    if (!contractual || !ldbData.portIn) return null
+    const portInDate = new Date(ldbData.portIn)
+    if (isNaN(portInDate.getTime())) return null
+    // Calculate days in IST
+    const IST_OFFSET = 5.5 * 60 * 60 * 1000
+    const nowIST = Date.now() + IST_OFFSET
+    const portInIST = portInDate.getTime() + IST_OFFSET
+    const daysSincePortIn = Math.floor((nowIST - portInIST) / 86400000)
+    return Math.max(0, contractual - daysSincePortIn)
+  })()
+  const isTerminal = ['delivered', 'empty_returned', 'gate_out'].includes(ldbData.status)
+  if (calculatedFreeDays != null && calculatedFreeDays <= 2 && !isTerminal && (existing?.free_days == null || existing.free_days > 2)) {
+    const dedupKey = `${containerNo}__detention`
+    if (!_loggedThisRun.has(dedupKey)) {
+      safeLogAdd(dedupKey)
+      try {
+        await supabase.from('activity_log').insert({
+          ...entryBase,
+          type: 'detention_alert',
+          action: 'detention_alert',
+          title: `${containerNo} — Detention risk`,
+          note: `Only ${calculatedFreeDays} free day${calculatedFreeDays !== 1 ? 's' : ''} left · ${jobContext.job_no}`,
+          meta: { job_id: jobContext.id, container_no: containerNo },
+          created_at: new Date().toISOString(),
+        })
+      } catch (logErr) {
+        console.warn('[LDB] activity_log insert failed:', logErr.message)
+      }
+    }
   }
 }
 
@@ -311,6 +377,7 @@ export async function refreshJobContainers(job, existingTrackingData = {}) {
 }
 
 export async function refreshAllContainers(jobs, existingTracking = {}, onProgress = null) {
+  _loggedThisRun.clear()
   const allJobs = (jobs || []).filter(j => j.containers)
   const totals = { updated: 0, skipped: 0, failed: 0, messages: [] }
   for (const job of allJobs) {
@@ -327,6 +394,7 @@ export async function refreshAllContainers(jobs, existingTracking = {}, onProgre
 }
 
 export async function forceRefreshAllContainers(jobs, onProgress = null) {
+  _loggedThisRun.clear()
   const allJobs = (jobs || []).filter(j => j.containers)
   const totals = { updated: 0, skipped: 0, failed: 0, messages: [] }
 

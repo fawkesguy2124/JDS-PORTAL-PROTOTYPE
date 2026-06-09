@@ -423,12 +423,13 @@ export default function AdminDashboard() {
         setPendingNavAction(null)
       }
     }
-    if (pendingNavAction?.tab === 'documents' && pendingNavAction?.jobNo) {
-      const job = jobs.find(j => j.job_no === pendingNavAction.jobNo)
-      if (job) {
-        setDocumentExpandJobId(job.id)
-        setPendingNavAction(null)
-      }
+    if (pendingNavAction?.tab === 'documents' && pendingNavAction?.jobNo && jobs.length > 0) {
+      setDocumentExpandJobId(pendingNavAction.jobNo)
+      setPendingNavAction(null)
+      setTimeout(() => {
+        const el = document.getElementById(`doc-job-${pendingNavAction.jobNo}`)
+        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      }, 200)
     }
   }, [pendingNavAction, jobs])
 

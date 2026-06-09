@@ -10,6 +10,7 @@ export default function AllJobsMobile({
   setPriorityFilter,
   onOpenJob,
   getStageName,
+  loadingJobs,
 }) {
   const [expandedId, setExpandedId] = useState(null)
 
@@ -49,10 +50,19 @@ export default function AllJobsMobile({
       </div>
 
       {/* Job count */}
-      <div style={{ fontSize:'12px', color:'#8a96a8' }}>{jobs.length} job{jobs.length !== 1 ? 's' : ''}</div>
+      {!loadingJobs && (
+        <div style={{ fontSize:'12px', color:'#8a96a8' }}>{jobs.length} job{jobs.length !== 1 ? 's' : ''}</div>
+      )}
+
+      {/* Loading state */}
+      {loadingJobs && (
+        <div style={{ background:'white', border:'1.5px solid #e2e6ed', borderRadius:'12px', padding:'40px 20px', display:'flex', justifyContent:'center' }}>
+          <div style={{ width:'36px', height:'36px', border:'4px solid #1a4fa0', borderTopColor:'transparent', borderRadius:'50%', animation:'spin 0.7s linear infinite' }} />
+        </div>
+      )}
 
       {/* Empty state */}
-      {jobs.length === 0 && (
+      {!loadingJobs && jobs.length === 0 && (
         <div style={{ background:'white', border:'1.5px solid #e2e6ed', borderRadius:'12px', padding:'40px 20px', textAlign:'center' }}>
           <div style={{ fontSize:'28px', marginBottom:'10px' }}>📋</div>
           <p style={{ fontSize:'14px', color:'#4a5568' }}>No jobs found.</p>

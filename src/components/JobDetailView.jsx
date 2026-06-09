@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, useCallback } from 'react'
 import { supabase } from '../supabase'
 import { getStageName } from '../utils/jobHelpers'
 import OCRSection, { FIELD_LABELS_OCR, OCR_SECTIONS, OCR_FIELD_MAP, MULTI_VALUE_FIELDS } from '../components/OCRSection'
 import JobDetailMobile from './mobile/JobDetailMobile'
 import JobDetailDesktop from './desktop/JobDetailDesktop'
+import { useAuth } from '../contexts/AuthContext'
 
 function classNames(...xs) { return xs.filter(Boolean).join(' ') }
 
@@ -338,6 +339,13 @@ function JobDetailView({ job, profiles, currentUserName, isAdmin, canUpdateStage
   const notesRef = useRef(null)
   const meta = job.field_meta && typeof job.field_meta === 'object' ? job.field_meta : {}
 
+  const { user: authUser, profile: authProfile } = useAuth()
+
+  const autoFillTimersRef = useRef([])
+  useEffect(() => {
+    return () => { autoFillTimersRef.current.forEach(clearTimeout) }
+  }, [])
+
 
   const loadExtractedFields = async () => {
     setLoadingExtracted(true)
@@ -375,7 +383,7 @@ function JobDetailView({ job, profiles, currentUserName, isAdmin, canUpdateStage
     const isReload = ['details', 'ocr', 'fields'].includes(hash)
     if (!isReload) {
       setDetailTab('details')
-      window.location.hash = 'details'
+      window.history.replaceState(null, '', window.location.pathname + window.location.search + '#details')
     } else {
       setDetailTab(hash)
     }
@@ -544,7 +552,8 @@ function JobDetailView({ job, profiles, currentUserName, isAdmin, canUpdateStage
     }
 
     setImportedFields(prev => ({ ...prev, [fieldKey]: true }))
-    setTimeout(() => setImportedFields(prev => ({ ...prev, [fieldKey]: false })), 2500)
+    const t1 = setTimeout(() => setImportedFields(prev => ({ ...prev, [fieldKey]: false })), 2500)
+    autoFillTimersRef.current.push(t1)
   }
 
   const handleAutoFillAll = async () => {
@@ -607,7 +616,8 @@ function JobDetailView({ job, profiles, currentUserName, isAdmin, canUpdateStage
 
     toast(`✓ ${fillableKeys.length} fields filled from OCR. Please review highlighted fields.`, 'success')
 
-    setTimeout(() => setImportedFields({}), 3000)
+    const t2 = setTimeout(() => setImportedFields({}), 3000)
+    autoFillTimersRef.current.push(t2)
   }
 
   const renderFieldInput = (key) => {
@@ -801,15 +811,15 @@ Write the summary:`
 
       <div className="px-4 sm:px-6 border-b border-[#e2e6ed] bg-[#f8f9fb]">
         <div className="flex gap-1 py-2">
-          <button type="button" onClick={() => { setDetailTab('details'); window.location.hash = 'details' }}
+          <button type="button" onClick={() => { setDetailTab('details'); window.history.replaceState(null, '', window.location.pathname + window.location.search + '#details') }}
             className={classNames('px-4 py-1.5 text-xs font-bold rounded-lg transition-colors', detailTab === 'details' ? 'bg-white text-[#1a4fa0] shadow-sm border border-[#e2e6ed]' : 'text-[#8a96a8] hover:text-[#1a4fa0]')}>
             Job Details
           </button>
-          <button type="button" onClick={() => { setDetailTab('ocr'); window.location.hash = 'ocr' }}
+          <button type="button" onClick={() => { setDetailTab('ocr'); window.history.replaceState(null, '', window.location.pathname + window.location.search + '#ocr') }}
             className={classNames('px-4 py-1.5 text-xs font-bold rounded-lg transition-colors', detailTab === 'ocr' ? 'bg-white text-[#1a4fa0] shadow-sm border border-[#e2e6ed]' : 'text-[#8a96a8] hover:text-[#1a4fa0]')}>
             ✦ OCR Extract
           </button>
-          <button type="button" onClick={() => { setDetailTab('fields'); window.location.hash = 'fields' }}
+          <button type="button" onClick={() => { setDetailTab('fields'); window.history.replaceState(null, '', window.location.pathname + window.location.search + '#fields') }}
             className={classNames('px-4 py-1.5 text-xs font-bold rounded-lg transition-colors', detailTab === 'fields' ? 'bg-white text-[#1a4fa0] shadow-sm border border-[#e2e6ed]' : 'text-[#8a96a8] hover:text-[#1a4fa0]')}>
             ✦ Extracted Fields
           </button>
@@ -929,10 +939,18 @@ Write the summary:`
                   <div className="px-4 pb-3 flex justify-end">
                     <button
                       onClick={async () => {
-                        await supabase.from('jobs').update({ notes: form.notes }).eq('id', job.id)
-                        await onSaved()
-                        setHasUnsavedNotes(false)
-                        toast && toast('Notes saved', 'success')
+                        try {
+                          const newMeta = { ...(meta || {}), notes: { by: currentUserName, ts: Date.now() } }
+                          const { error } = await supabase.from('jobs')
+                            .update({ notes: form.notes, field_meta: newMeta, updated_at: new Date().toISOString() })
+                            .eq('id', job.id)
+                          if (error) throw error
+                          await onSaved()
+                          setHasUnsavedNotes(false)
+                          toast && toast('Notes saved', 'success')
+                        } catch (e) {
+                          toast && toast(e?.message || 'Failed to save notes', 'error')
+                        }
                       }}
                       className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-[#1a4fa0] text-white hover:bg-[#0f3d8a]"
                     >
@@ -1000,32 +1018,32 @@ Write the summary:`
                       k === 'containers' ? (
                         <ContainerChipInput
                           value={form.containers || ''}
-                          onChange={val => { setForm(p => ({...p, containers: val})); setError('') }}
+                          onChange={val => { setForm(p => ({...p, containers: val})) }}
                         />
                       ) : k === 'mode' ? (
-                        <select value={form[k] || ''} onChange={e => { setForm(p => ({...p, [k]: e.target.value})); setError('') }}
+                        <select value={form[k] || ''} onChange={e => { setForm(p => ({...p, [k]: e.target.value})) }}
                           className="w-full rounded-lg border border-[#e2e6ed] bg-white px-3 py-2 text-sm text-[#1a2233] focus:border-[#1a4fa0] focus:outline-none focus:ring-1 focus:ring-[#1a4fa0]">
                           <option value="">Select mode</option>
                           {['Sea FCL','Sea LCL','Air','Courier','Land'].map(m => <option key={m} value={m}>{m}</option>)}
                         </select>
                       ) : k === 'priority' ? (
-                        <select value={form[k] || ''} onChange={e => { setForm(p => ({...p, [k]: e.target.value})); setError('') }}
+                        <select value={form[k] || ''} onChange={e => { setForm(p => ({...p, [k]: e.target.value})) }}
                           className="w-full rounded-lg border border-[#e2e6ed] bg-white px-3 py-2 text-sm text-[#1a2233] focus:border-[#1a4fa0] focus:outline-none focus:ring-1 focus:ring-[#1a4fa0]">
                           <option value="">Select priority</option>
                           {['normal','high','urgent'].map(p => <option key={p} value={p}>{p}</option>)}
                         </select>
                       ) : k === 'eta' || k === 'be_date' ? (
-                        <input type="date" value={(form[k] || '').slice(0,10)} onChange={e => { setForm(p => ({...p, [k]: e.target.value})); setError('') }}
+                        <input type="date" value={(form[k] || '').slice(0,10)} onChange={e => { setForm(p => ({...p, [k]: e.target.value})) }}
                           className="w-full rounded-lg border border-[#e2e6ed] bg-white px-3 py-2 text-sm text-[#1a2233] focus:border-[#1a4fa0] focus:outline-none focus:ring-1 focus:ring-[#1a4fa0]" />
                       ) : k === 'bg_required' || k === 'detention_risk' ? (
-                        <select value={form[k] || ''} onChange={e => { setForm(p => ({...p, [k]: e.target.value})); setError('') }}
+                        <select value={form[k] || ''} onChange={e => { setForm(p => ({...p, [k]: e.target.value})) }}
                           className="w-full rounded-lg border border-[#e2e6ed] bg-white px-3 py-2 text-sm text-[#1a2233] focus:border-[#1a4fa0] focus:outline-none focus:ring-1 focus:ring-[#1a4fa0]">
                           <option value="">Select</option>
                           <option value="Yes">Yes</option>
                           <option value="No">No</option>
                         </select>
                       ) : (
-                        <input type="text" value={form[k] || ''} onChange={e => { setForm(p => ({...p, [k]: e.target.value})); setError('') }}
+                        <input type="text" value={form[k] || ''} onChange={e => { setForm(p => ({...p, [k]: e.target.value})) }}
                           className={`w-full rounded-lg border px-3 py-2 text-sm text-[#1a2233] focus:outline-none focus:ring-1 focus:ring-[#1a4fa0] ${wasJustFilled ? 'border-emerald-400 bg-emerald-50 focus:border-emerald-500' : 'border-[#e2e6ed] bg-white focus:border-[#1a4fa0]'}`} />
                       )
                     ) : (
@@ -1190,8 +1208,8 @@ Write the summary:`
             showToast={toast}
             preloadedExtraction={extractedFields}
             currentUserName={currentUserName}
-            user={null}
-            profile={null}
+            user={authUser}
+            profile={authProfile}
             onSaved={loadExtractedFields}
           />
         </div>

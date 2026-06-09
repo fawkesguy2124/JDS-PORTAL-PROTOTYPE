@@ -4,16 +4,33 @@ export async function fetchAllTracking() {
   const { data, error } = await supabase
     .from('container_tracking')
     .select('*')
-    .order('created_at', { ascending: false })
+    .order('last_update', { ascending: false })
   if (error) throw new Error(error.message)
   return (data || []).map(rowToContainer)
 }
 
 export async function lookupAndSaveContainer(containerNo, carrier, jobNo = null, jobId = null) {
+  if (!containerNo) return
   const cn = containerNo.trim().toUpperCase()
+  if (!cn) return
+
+  const { data: existing } = await supabase
+    .from('container_tracking')
+    .select('container_no')
+    .eq('container_no', cn)
+    .maybeSingle()
+
+  if (existing) {
+    await supabase
+      .from('container_tracking')
+      .update({ job_no: jobNo, job_id: jobId, carrier: carrier })
+      .eq('container_no', cn)
+    return
+  }
+
   const { error } = await supabase
     .from('container_tracking')
-    .upsert({
+    .insert({
       container_no:     cn,
       carrier:          carrier,
       job_no:           jobNo,
@@ -27,24 +44,32 @@ export async function lookupAndSaveContainer(containerNo, carrier, jobNo = null,
       notes:            null,
       last_update:      new Date().toISOString(),
       milestones:       [],
-    }, { onConflict: 'container_no' })
-  if (error) throw new Error(error.message)
+    })
+  if (error && !error.message.includes('duplicate')) throw new Error(error.message)
 }
 
 export async function updateContainerStatus(containerNo, updates) {
+  if (!containerNo) throw new Error('Container number is required')
+
+  const freeDays = (() => {
+    if (updates.freeDays === '' || updates.freeDays === null || updates.freeDays === undefined) return null
+    const n = Number(updates.freeDays)
+    return Number.isFinite(n) ? n : null
+  })()
+
   const { error } = await supabase
     .from('container_tracking')
     .update({
-      status:           updates.status,
-      status_text:      updates.statusText,
-      current_location: updates.currentLocation,
-      vessel:           updates.vessel,
-      eta:              updates.eta,
-      free_days:        updates.freeDays,
-      notes:            updates.notes,
-      port_in:          updates.portIn    || null,
-      port_out:         updates.portOut   || null,
-      cfs_gate_in:      updates.cfsGateIn || null,
+      status:           updates.status           || null,
+      status_text:      updates.statusText       || null,
+      current_location: updates.currentLocation  || null,
+      vessel:           updates.vessel           || null,
+      eta:              updates.eta              || null,
+      free_days:        freeDays,
+      notes:            updates.notes            || null,
+      port_in:          updates.portIn           || null,
+      port_out:         updates.portOut          || null,
+      cfs_gate_in:      updates.cfsGateIn        || null,
       last_update:      new Date().toISOString(),
       updated_at:       new Date().toISOString(),
     })
@@ -52,19 +77,36 @@ export async function updateContainerStatus(containerNo, updates) {
   if (error) throw new Error(error.message)
 }
 
-export async function addMilestone(containerNo, description, location) {
+export async function addMilestone(containerNo, milestoneOrDescription, location) {
+  if (!containerNo) throw new Error('Container number is required')
+
+  let description, milestoneLocation, milestoneDate
+  if (milestoneOrDescription && typeof milestoneOrDescription === 'object') {
+    description       = milestoneOrDescription.description
+    milestoneLocation = milestoneOrDescription.location || ''
+    milestoneDate     = milestoneOrDescription.date || new Date().toISOString()
+  } else {
+    description       = milestoneOrDescription
+    milestoneLocation = location || ''
+    milestoneDate     = new Date().toISOString()
+  }
+
+  if (!description) throw new Error('Milestone description is required')
+
   const { data, error } = await supabase
     .from('container_tracking')
     .select('milestones')
     .eq('container_no', containerNo)
-    .single()
+    .maybeSingle()
+
   if (error) throw new Error(error.message)
+  if (!data) throw new Error(`Container ${containerNo} not found in tracking`)
 
   const existing = data?.milestones || []
   const newMilestone = {
     description,
-    location: location || '',
-    date: new Date().toISOString(),
+    location: milestoneLocation,
+    date: milestoneDate,
   }
   const updated = [newMilestone, ...existing]
 
@@ -76,10 +118,13 @@ export async function addMilestone(containerNo, description, location) {
 }
 
 export async function deleteTracking(containerNo) {
+  if (!containerNo) throw new Error('Container number is required for deletion')
+  const cn = (containerNo || '').trim().toUpperCase()
+  if (!cn) throw new Error('Container number is required for deletion')
   const { error } = await supabase
     .from('container_tracking')
     .delete()
-    .eq('container_no', containerNo)
+    .eq('container_no', cn)
   if (error) throw new Error(error.message)
 }
 

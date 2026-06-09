@@ -36,7 +36,7 @@ function riskChip(risk) {
   if (r === 'high') return { text: 'High Risk', cls: 'bg-[#fef2f2] text-[#991b1b] border border-[#fecaca]' }
   if (r === 'medium') return { text: 'Medium', cls: 'bg-[#fffbeb] text-[#92400e] border border-[#fde68a]' }
   if (r === 'low') return { text: 'Low', cls: 'bg-[#f0fdf4] text-[#15803d] border border-[#bbf7d0]' }
-  return { text: rms || '—', cls: 'bg-[#f9fafb] text-[#4a5568] border border-[#d0d6e0]' }
+  return { text: risk ? String(risk).toUpperCase() : '—', cls: 'bg-[#f9fafb] text-[#4a5568] border border-[#d0d6e0]' }
 }
 
 function timeAgo(ts) {
@@ -62,7 +62,8 @@ function JobCard({ job, profiles, onOpen }) {
   const mode = modeChip(job.mode)
   const rms = rmsChip(job.rms_status)
   const risk = riskChip(job.detention_risk)
-  const assignedName = job.assigned_to ? profiles[job.assigned_to] ?? '—' : '—'
+  const safeProfiles = profiles || {}
+  const assignedName = job.assigned_to ? safeProfiles[job.assigned_to] ?? '—' : '—'
   const daysOld = (() => {
     if (!job.created_at && !job.updated_at) return 0
     return Math.floor(Math.max(0, Date.now() - new Date(job.created_at || job.updated_at).getTime()) / (1000 * 60 * 60 * 24))
@@ -70,7 +71,7 @@ function JobCard({ job, profiles, onOpen }) {
   const meta = job.field_meta && typeof job.field_meta === 'object' ? job.field_meta : null
   const lastUpdatedBy = meta?.updated_by?.by || meta?.stage?.by || meta?.notes?.by || meta?.job_no?.by || null
   const lastUpdatedTs = meta?.updated_by?.ts || meta?.stage?.ts || meta?.notes?.ts || meta?.job_no?.ts || null
-  const lastUpdatedName = lastUpdatedBy && profiles[lastUpdatedBy] ? profiles[lastUpdatedBy] : lastUpdatedBy
+  const lastUpdatedName = lastUpdatedBy && safeProfiles[lastUpdatedBy] ? safeProfiles[lastUpdatedBy] : lastUpdatedBy
   const priorityBorder = String(job.priority || '').toLowerCase() === 'urgent' ? 'border-l-red-600'
     : String(job.priority || '').toLowerCase() === 'high' ? 'border-l-amber-500' : 'border-l-blue-600'
 
@@ -128,7 +129,7 @@ function JobCard({ job, profiles, onOpen }) {
 }
 
 export default function AllJobsDesktop({
-  jobs,
+  // jobs prop removed — parent passes pre-filtered jobs via filteredJobs
   searchQuery,
   setSearchQuery,
   stageFilter,

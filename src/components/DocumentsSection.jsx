@@ -20,16 +20,23 @@ function DocumentsSection({ jobs, profiles, currentUserName, showToast, initialE
   const [uploadFile, setUploadFile] = useState(null)
   const [docSearch, setDocSearch] = useState('')
   const fileInputRef = useRef(null)
+  const uploadIntervalRef = useRef(null)
 
   useEffect(() => {
-    if (initialExpandJobId) {
-      setExpandedJobId(initialExpandJobId)
-      onExpandConsumed?.()
-      setTimeout(() => {
-        const el = document.getElementById(`doc-job-${initialExpandJobId}`)
-        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
-      }, 150)
+    return () => {
+      if (uploadIntervalRef.current) clearInterval(uploadIntervalRef.current)
     }
+  }, [])
+
+  useEffect(() => {
+    if (!initialExpandJobId) return
+    setExpandedJobId(initialExpandJobId)
+    onExpandConsumed?.()
+    const timer = setTimeout(() => {
+      const el = document.getElementById(`doc-job-${initialExpandJobId}`)
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }, 150)
+    return () => clearTimeout(timer)
   }, [initialExpandJobId])
 
   const DOC_TYPE_COLORS = {
@@ -50,7 +57,7 @@ function DocumentsSection({ jobs, profiles, currentUserName, showToast, initialE
     let mounted = true
     ;(async () => {
       setLoadingDocs(true)
-      const { data, error } = await supabase.from('documents').select('*').order('created_at', { ascending: false })
+      const { data, error } = await supabase.from('documents').select('*').order('created_at', { ascending: false }).limit(500)
       if (mounted) {
         if (!error) setDocuments(data ?? [])
         setLoadingDocs(false)
@@ -98,7 +105,8 @@ function DocumentsSection({ jobs, profiles, currentUserName, showToast, initialE
     if (!uploadFile || !uploadDocType || !uploadModal.job) return
     setUploading(true)
     setUploadProgress(0)
-    const sim = setInterval(() => setUploadProgress((p) => Math.min(p + 8, 85)), 250)
+      const sim = setInterval(() => setUploadProgress((p) => Math.min(p + 8, 85)), 250)
+      uploadIntervalRef.current = sim
     try {
       const job = uploadModal.job
       const safeName = sanitizeFilename(uploadFile.name)
@@ -114,7 +122,7 @@ function DocumentsSection({ jobs, profiles, currentUserName, showToast, initialE
         doc_type: uploadDocType,
         file_url: publicUrl,
         file_path: filePath,
-        uploaded_by: user?.id || '',
+        uploaded_by: user?.id || null,
         uploaded_by_name: profile?.name || currentUserName,
         file_size: uploadFile.size,
         created_at: new Date().toISOString(),
@@ -128,38 +136,51 @@ function DocumentsSection({ jobs, profiles, currentUserName, showToast, initialE
       setUploadDocType('BL')
       const { data: newDocs } = await supabase.from('documents').select('*').order('created_at', { ascending: false })
       setDocuments(newDocs ?? [])
-      await supabase.from('activity_log').insert({
-        type: 'document_upload',
-        action: 'document_upload',
-        title: `${job.job_no} — ${uploadDocType} uploaded`,
-        note: `${uploadFile.name} uploaded by ${profile?.name || currentUserName}`,
-        job_no: job.job_no,
-        job_id: job.id,
-        done_by: user?.id || null,
-        done_by_name: profile?.name || currentUserName,
-        user_name: profile?.name || currentUserName,
-        meta: {
-          job_id: job.id,
+      try {
+        await supabase.from('activity_log').insert({
+          type: 'document_upload',
+          action: 'document_upload',
+          title: `${job.job_no} — ${uploadDocType} uploaded`,
+          note: `${uploadFile.name} uploaded by ${profile?.name || currentUserName}`,
           job_no: job.job_no,
-          file_name: uploadFile.name,
-          doc_type: uploadDocType,
-        },
-        created_at: new Date().toISOString(),
-      })
+          job_id: job.id,
+          done_by: user?.id || null,
+          done_by_name: profile?.name || currentUserName,
+          user_name: profile?.name || currentUserName,
+          meta: { job_id: job.id, job_no: job.job_no, file_name: uploadFile.name, doc_type: uploadDocType },
+          created_at: new Date().toISOString(),
+        })
+      } catch (logErr) {
+        console.warn('[Documents] activity_log insert failed:', logErr.message)
+      }
     } catch (e) {
       clearInterval(sim)
       setUploadProgress(0)
       showToast(e?.message || 'Upload failed.', 'error')
     } finally {
-      setTimeout(() => setUploading(false), 600)
+      setTimeout(() => {
+        setUploading(false)
+        setUploadProgress(0)
+      }, 600)
     }
   }
 
   const handleDelete = async (doc) => {
     if (!window.confirm(`Delete "${doc.file_name}"?`)) return
     try {
-      await supabase.storage.from('job-documents').remove([doc.file_path])
-      await supabase.from('documents').delete().eq('id', doc.id)
+      if (doc.file_path) {
+        const { error: storageErr } = await supabase.storage
+          .from('job-documents')
+          .remove([doc.file_path])
+        if (storageErr) {
+          console.warn('[Documents] Storage delete failed:', storageErr.message)
+        }
+      }
+      const { error: dbErr } = await supabase
+        .from('documents')
+        .delete()
+        .eq('id', doc.id)
+      if (dbErr) throw dbErr
       setDocuments((prev) => prev.filter((d) => d.id !== doc.id))
       showToast('Document deleted.', 'success')
     } catch (e) {
@@ -181,11 +202,26 @@ function DocumentsSection({ jobs, profiles, currentUserName, showToast, initialE
           setExpandedJobId={setExpandedJobId}
           onUpload={(job) => setUploadModal({ open: true, job })}
           onPreview={(doc) => setPreviewModal({ open: true, doc })}
-          onDownload={(doc) => {
-            const a = document.createElement('a')
-            a.href = doc.file_url
-            a.download = doc.file_name
-            a.click()
+          onDownload={async (doc) => {
+            try {
+              const res = await fetch(doc.file_url)
+              if (!res.ok) throw new Error(`HTTP ${res.status}`)
+              const blob = await res.blob()
+              const url = URL.createObjectURL(blob)
+              const a = document.createElement('a')
+              a.href = url
+              a.download = doc.file_name
+              document.body.appendChild(a)
+              a.click()
+              document.body.removeChild(a)
+              setTimeout(() => URL.revokeObjectURL(url), 1000)
+            } catch {
+              const a = document.createElement('a')
+              a.href = doc.file_url
+              a.download = doc.file_name
+              a.target = '_blank'
+              a.click()
+            }
           }}
           onDelete={handleDelete}
           isAdmin={isAdmin}
@@ -202,11 +238,26 @@ function DocumentsSection({ jobs, profiles, currentUserName, showToast, initialE
           setExpandedJobId={setExpandedJobId}
           onUpload={(job) => setUploadModal({ open: true, job })}
           onPreview={(doc) => setPreviewModal({ open: true, doc })}
-          onDownload={(doc) => {
-            const a = document.createElement('a')
-            a.href = doc.file_url
-            a.download = doc.file_name
-            a.click()
+          onDownload={async (doc) => {
+            try {
+              const res = await fetch(doc.file_url)
+              if (!res.ok) throw new Error(`HTTP ${res.status}`)
+              const blob = await res.blob()
+              const url = URL.createObjectURL(blob)
+              const a = document.createElement('a')
+              a.href = url
+              a.download = doc.file_name
+              document.body.appendChild(a)
+              a.click()
+              document.body.removeChild(a)
+              setTimeout(() => URL.revokeObjectURL(url), 1000)
+            } catch {
+              const a = document.createElement('a')
+              a.href = doc.file_url
+              a.download = doc.file_name
+              a.target = '_blank'
+              a.click()
+            }
           }}
           onDelete={handleDelete}
           isAdmin={isAdmin}
@@ -239,7 +290,7 @@ function DocumentsSection({ jobs, profiles, currentUserName, showToast, initialE
                   onClick={() => fileInputRef.current?.click()}
                   onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add('border-blue-400', 'bg-blue-50') }}
                   onDragLeave={(e) => { e.currentTarget.classList.remove('border-blue-400', 'bg-blue-50') }}
-                  onDrop={(e) => { e.preventDefault(); e.currentTarget.classList.remove('border-blue-400', 'bg-blue-50'); const f = e.dataTransfer?.files?.[0]; if (f) { if (f.size > 10 * 1024 * 1024) { showToast('File size must be under 10MB.', 'error') } else { setUploadFile(f) } } }}
+                  onDrop={(e) => { e.preventDefault(); e.currentTarget.classList.remove('border-blue-400', 'bg-blue-50'); const f = e.dataTransfer?.files?.[0]; if (!f) return; const validTypes = ['application/pdf', 'image/jpeg', 'image/jpg', 'image/png']; const validExts = ['.pdf', '.jpg', '.jpeg', '.png']; const ext = '.' + f.name.split('.').pop().toLowerCase(); if (!validTypes.includes(f.type) && !validExts.includes(ext)) { showToast('Unsupported file type. Use PDF, JPG, or PNG.', 'error'); return } if (f.size > 10 * 1024 * 1024) { showToast('File size must be under 10MB.', 'error'); return } setUploadFile(f) }}
                   className={`border-2 border-dashed rounded-xl px-4 py-8 text-center cursor-pointer transition-colors ${uploadFile ? 'border-green-300 bg-green-50' : 'border-[#d0d6e0] hover:border-blue-300'}`}
                 >
                   <input ref={fileInputRef} type="file" accept=".pdf,.jpg,.jpeg,.png" onChange={(e) => { const f = e.target.files?.[0]; if (f) { if (f.size > 10 * 1024 * 1024) { showToast('File size must be under 10MB.', 'error') } else { setUploadFile(f) } } }} className="hidden" />

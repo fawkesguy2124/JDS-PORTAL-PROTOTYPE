@@ -87,8 +87,9 @@ If it IS a shipping document, extract ONLY these fields and return ONLY valid JS
   "vessel": "vessel name",
   "eta": "estimated arrival date in YYYY-MM-DD format if found else null",
   "goods": "brief goods description",
-  "hs_code": "HS code if found else null"
-}
+  "hs_code": "HS code if found else null",
+  "free_days": "number of free days (also called free time or detention free period) mentioned in the BL — usually 7, 14, or 21 days — null if not found"
+ }
 
 If a field is not found set it to null. Extract ALL container numbers visible in the document.`
 
@@ -162,7 +163,7 @@ const INITIAL_FORM = {
   rms_status: 'pending',
   bg_required: 'no',
   destination: '',
-  free_days: '14',
+  free_days: '',
   detention_risk: 'low',
   stage: '0',
   delay_reason: '',
@@ -211,6 +212,12 @@ export default function CreateJob({ isModal = false, onCancel, onCreated }) {
   const [extractedFields, setExtractedFields] = useState(null)
   const [autoFillApplied, setAutoFillApplied] = useState({})
   const quickUploadRef = useRef(null)
+  const extractingRef = useRef(false)
+  const mountedRef = useRef(true)
+  useEffect(() => {
+    mountedRef.current = true
+    return () => { mountedRef.current = false }
+  }, [])
 
   const fieldClass = (fieldKey) =>
     `w-full border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1e3a5f] focus:border-transparent ${
@@ -291,7 +298,18 @@ export default function CreateJob({ isModal = false, onCancel, onCreated }) {
 
   const handleQuickExtract = async (file, docType, docId) => {
     if (!file) return
+    if (extractingRef.current) return
+    extractingRef.current = true
     setExtracting(true)
+
+    const groqKey = import.meta.env.VITE_GROQ_API_KEY
+    const geminiKey = import.meta.env.VITE_GEMINI_API_KEY
+    if (!groqKey && !geminiKey) {
+      setExtractedFields({ _error: true })
+      setExtractStatus('No AI API key configured — contact Jose.')
+      extractingRef.current = false
+      return
+    }
     setExtractedFields(null)
     setAutoFillApplied({})
     setExtractProgress(0)
@@ -468,9 +486,12 @@ if (parsed.client && shouldFill('client')) {
       setExtractStatus('')
     } finally {
       setTimeout(() => {
-        setExtracting(false)
-        setExtractProgress(0)
-        setExtractStatus('')
+        extractingRef.current = false
+        if (mountedRef.current) {
+          setExtracting(false)
+          setExtractProgress(0)
+          setExtractStatus('')
+        }
       }, 800)
     }
   }
@@ -507,23 +528,39 @@ if (parsed.client && shouldFill('client')) {
       goods: form.goods.trim() || null,
       priority: form.priority,
       bl_no: form.bl_no.trim() || null,
-      containers: form.containers.split(/[\s,;]+/).map(c => c.trim()).filter(Boolean).join(', ') || null,
+      containers: (() => {
+        const raw = (form.containers || '').split(/[\s,;]+/).map(c => c.trim().toUpperCase()).filter(Boolean)
+        return raw.join(', ') || null
+      })(),
       shipping_line: form.carrier === '__other__' ? (form.carrierOther.trim() || null) : (form.carrier || null),
       vessel: form.vessel.trim() || null,
       eta: form.eta || null,
       cfs_name: form.cfs_name.trim() || null,
-      cfs_amount: form.cfs_amount !== '' ? Number(form.cfs_amount) : null,
+      cfs_amount: (() => {
+        const n = Number(form.cfs_amount)
+        return form.cfs_amount !== '' && Number.isFinite(n) ? n : null
+      })(),
       be_no: form.be_no.trim() || null,
       be_date: form.be_date || null,
       hs_code: form.hs_code.trim() || null,
       rms_status: form.rms_status,
       bg_required: form.bg_required,
       destination: form.destination.trim() || null,
-      free_days: form.free_days !== '' ? Number(form.free_days) : 14,
+      free_days: (() => {
+        const n = Number(form.free_days)
+        return Number.isFinite(n) && n > 0 ? n : null
+      })(),
       detention_risk: form.detention_risk,
       stage: Number(form.stage),
       delay_reason: form.delay_reason.trim() || null,
       created_by: user.id,
+    }
+
+    // Validate before DB insert
+    if (form.containers.trim() && !form.carrier) {
+      setError('Shipping Line is required when containers are specified.')
+      setSaving(false)
+      return
     }
 
     const { data: insertedJob, error: insertError } = await supabase
@@ -553,9 +590,14 @@ if (parsed.client && shouldFill('client')) {
         return
       }
       const containerList = form.containers.trim().split(/[\s,;]+/).filter(Boolean)
-      await Promise.allSettled(containerList.map((cn) =>
-        linkContainer(cn.toUpperCase(), jobId, jobNo, form.carrier).catch(() => {})
-      ))
+      const linkResults = await Promise.allSettled(
+        containerList.map((cn) => linkContainer(cn.toUpperCase(), jobId, jobNo, form.carrier))
+      )
+      linkResults.forEach((result, i) => {
+        if (result.status === 'rejected') {
+          console.warn(`[CreateJob] linkContainer failed for ${containerList[i]}:`, result.reason)
+        }
+      })
     }
 
     if (stagedDocs.length > 0) {
@@ -563,7 +605,8 @@ if (parsed.client && shouldFill('client')) {
       await Promise.allSettled(stagedDocs.map(async (item) => {
         try {
           const sanitized = item.file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
-          const filePath = `${jobId}/${Date.now()}_${sanitized}`
+          const randomSuffix = Math.random().toString(36).slice(2, 8)
+          const filePath = `${jobId}/${Date.now()}_${randomSuffix}_${sanitized}`
           const { error: upErr } = await supabase.storage
             .from('job-documents')
             .upload(filePath, item.file, { cacheControl: '3600', upsert: false })
@@ -592,19 +635,22 @@ if (parsed.client && shouldFill('client')) {
       setUploadingDocs(false)
     }
 
-    await supabase.from('activity_log').insert({
-      type: 'job_created',
-      action: 'job_created',
-      title: `${payload.job_no} — Job created`,
-      note: `${payload.client} · ${payload.mode || ''} · ${payload.containers ? payload.containers.split(/[\s,;]+/).filter(Boolean).length + ' containers' : 'no containers'}`,
-      job_no: payload.job_no,
-      job_id: insertedJob.id,
-      done_by: user.id,
-      done_by_name: profile?.name || 'Unknown',
-      meta: { job_id: insertedJob.id, job_no: payload.job_no },
-      created_at: new Date().toISOString(),
-    })
-
+    try {
+      await supabase.from('activity_log').insert({
+        type: 'job_created',
+        action: 'job_created',
+        title: `${payload.job_no} — Job created`,
+        note: `${payload.client} · ${payload.mode || ''} · ${payload.containers ? payload.containers.split(/[\s,;]+/).filter(Boolean).length + ' containers' : 'no containers'}`,
+        job_no: payload.job_no,
+        job_id: insertedJob.id,
+        done_by: user.id,
+        done_by_name: profile?.name || 'Unknown',
+        meta: { job_id: insertedJob.id, job_no: payload.job_no },
+        created_at: new Date().toISOString(),
+      })
+    } catch (logErr) {
+      console.warn('[CreateJob] activity_log insert failed:', logErr.message)
+    }
     setSaving(false)
 
     if (onCreated) {

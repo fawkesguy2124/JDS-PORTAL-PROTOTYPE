@@ -75,14 +75,14 @@ export default function DocumentsDesktop({
       ) : (
         <div className="bg-white border-[1.5px] border-[#e2e6ed] rounded-xl shadow-sm overflow-hidden">
           {accordionItems.map((job) => {
-            const isExpanded = expandedJobId === job.id
+            const isExpanded = expandedJobId === job.job_no
             const docCount = job.docs.length
             return (
-              <div key={job.id} id={`doc-job-${job.id}`} className="border-b border-[#e2e6ed] last:border-b-0">
+              <div key={job.id} id={`doc-job-${job.job_no}`} className="border-b border-[#e2e6ed] last:border-b-0">
                 <div
                   role="button" tabIndex={0}
-                  onClick={() => setExpandedJobId(isExpanded ? null : job.id)}
-                  onKeyDown={(e) => { if (e.key === 'Enter') setExpandedJobId(isExpanded ? null : job.id) }}
+                  onClick={() => setExpandedJobId(isExpanded ? null : job.job_no)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') setExpandedJobId(isExpanded ? null : job.job_no) }}
                   className="flex items-center gap-3 px-4 py-3 cursor-pointer bg-[#f8f9fb] hover:bg-[#e8eef8] border-b border-[#e2e6ed] transition-colors"
                 >
                   <div className="min-w-0 flex-1 flex items-center gap-2">

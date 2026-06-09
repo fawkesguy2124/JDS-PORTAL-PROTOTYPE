@@ -260,7 +260,7 @@ export const OCR_FIELD_MAP = {
   shipping_line:            null,
   cfs_name:                 null,
   cfs_amount:               null,
-  free_days:                null,
+  free_days:                'free_days',
   notes:                    null,
   bg_required:              null,
   rms_status:               null,
@@ -314,6 +314,7 @@ export const MULTI_VALUE_FIELDS = [
 
 async function urlToBase64(url) {
   const response = await fetch(url)
+  if (!response.ok) throw new Error(`Failed to fetch document: HTTP ${response.status}`)
   const blob = await response.blob()
   return new Promise((resolve) => {
     const reader = new FileReader()
@@ -326,7 +327,7 @@ async function urlToBase64(url) {
 }
 
 async function compressImage(base64, mimeType, maxWidth = 1000, quality = 0.6) {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const img = new Image()
     img.onload = () => {
       let w = img.width; let h = img.height
@@ -339,16 +340,17 @@ async function compressImage(base64, mimeType, maxWidth = 1000, quality = 0.6) {
       const compressed = canvas.toDataURL(mimeType || 'image/jpeg', quality).split(',')[1]
       resolve({ base64: compressed, mimeType: mimeType || 'image/jpeg' })
     }
+    img.onerror = () => reject(new Error('Failed to load image for compression'))
     img.src = `data:${mimeType || 'image/jpeg'};base64,${base64}`
   })
 }
 
-async function pdfToImages(base64) {
+async function pdfToImages(base64, maxPageCount = 8) {
   const pdfjsLib = await import('pdfjs-dist')
   pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl
   const data = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0))
   const pdf = await pdfjsLib.getDocument({ data }).promise
-  const maxPages = Math.min(pdf.numPages, 8)
+  const maxPages = Math.min(pdf.numPages, maxPageCount)
   const images = []
   for (let i = 1; i <= maxPages; i++) {
     const page = await pdf.getPage(i)
@@ -388,7 +390,8 @@ async function withRetry(fn, maxRetries = 3, baseDelay = 2000) {
 }
 
 function mergeResults(results, rankMap = { high: 3, medium: 2, low: 1 }) {
-  const allKeys = Object.keys(results[0] || {})
+  // Collect union of all keys across all results
+  const allKeys = [...new Set(results.flatMap(r => Object.keys(r || {})))]
   const merged = {}
   for (const key of allKeys) merged[key] = { value: null, confidence: null, source: null }
   for (const partial of results) {
@@ -512,7 +515,7 @@ function normalizeResult(flat) {
   return wrapped
 }
 
-async function extractWithFallback(docs, prompt) {
+async function extractWithFallback(docs, prompt, onProgress = () => {}) {
   // Auto-detect BE documents from doc_type or file_name
   const isBE = docs.some(d =>
     (d.doc_type || '').toLowerCase().includes('bill of entry') ||
@@ -527,7 +530,7 @@ async function extractWithFallback(docs, prompt) {
   for (const doc of docs) {
     const { base64, mimeType } = await urlToBase64(doc.file_url)
     if (mimeType === 'application/pdf' || doc.file_name?.toLowerCase().endsWith('.pdf')) {
-      const pages = await pdfToImages(base64)
+      const pages = await pdfToImages(base64, isBE ? 15 : 8)
       allImages.push(...pages)
     } else {
       const compressed = await compressImage(base64, mimeType)
@@ -544,6 +547,7 @@ async function extractWithFallback(docs, prompt) {
   try {
     const allResults = []
     for (let ci = 0; ci < chunks.length; ci++) {
+      onProgress(`Processing batch ${ci + 1} of ${chunks.length}...`)
       if (ci > 0) await new Promise((r) => setTimeout(r, 800 + Math.random() * 400))
       const parsed = await withRetry(() => vertexExtract(chunks[ci], activePrompt), 2, 1500)
       allResults.push(normalizeResult(parsed))
@@ -554,9 +558,11 @@ async function extractWithFallback(docs, prompt) {
   }
 
   // Fallback: Gemini 2.5 Flash
+  onProgress('Trying Gemini 2.5 Flash...')
   try {
     const allResults = []
     for (let ci = 0; ci < chunks.length; ci++) {
+      onProgress(`Processing batch ${ci + 1} of ${chunks.length}...`)
       if (ci > 0) await new Promise((r) => setTimeout(r, 1000 + Math.random() * 1000))
       const parsed = await withRetry(() => geminiExtract(chunks[ci], activePrompt), 2, 1500)
       allResults.push(normalizeResult(parsed))
@@ -565,9 +571,11 @@ async function extractWithFallback(docs, prompt) {
   } catch (geminiError) {
     // Groq Llama 4 Scout as final fallback
     console.warn('Gemini failed, trying Groq fallback:', geminiError.message)
+    onProgress('Trying Groq fallback...')
     try {
       const allResults = []
       for (let ci = 0; ci < chunks.length; ci++) {
+        onProgress(`Processing batch ${ci + 1} of ${chunks.length}...`)
         if (ci > 0) await new Promise((r) => setTimeout(r, 2000 + Math.random() * 2000))
         const parsed = await withRetry(() => groqExtract(chunks[ci], activePrompt), 2, 2000)
         allResults.push(normalizeResult(parsed))
@@ -624,7 +632,11 @@ export default function OCRSection({ job: preselectedJob, jobs, currentUserName,
     }
   }, [preselectedJob?.id, preloadedExtraction?.id])
 
+  const recentLoadingRef = useRef(false)
+
   const loadRecentExtractions = async () => {
+    if (recentLoadingRef.current) return
+    recentLoadingRef.current = true
     setLoadingRecent(true)
     try {
       const { data, error } = await supabase
@@ -655,6 +667,7 @@ export default function OCRSection({ job: preselectedJob, jobs, currentUserName,
     } catch (e) {
       console.warn('Could not load recent extractions:', e)
     } finally {
+      recentLoadingRef.current = false
       setLoadingRecent(false)
     }
   }
@@ -667,8 +680,12 @@ export default function OCRSection({ job: preselectedJob, jobs, currentUserName,
         .eq('job_id', job.id)
         .order('extracted_at', { ascending: false })
         .limit(1)
-        .single()
-      if (error || !data) {
+        .maybeSingle()
+      if (error) {
+        showToast('Error loading extraction: ' + error.message, 'error')
+        return
+      }
+      if (!data) {
         showToast('No saved extraction found for this job.', 'error')
         return
       }
@@ -708,8 +725,14 @@ export default function OCRSection({ job: preselectedJob, jobs, currentUserName,
 
   const fetchDocuments = async (job) => {
     setLoadingDocs(true)
-    const { data, error } = await supabase.from('documents').select('*').eq('job_id', job.id)
-    if (!error) setDocuments(data ?? [])
+    try {
+      const { data, error } = await supabase.from('documents').select('*').eq('job_id', job.id).order('created_at', { ascending: false })
+      if (error) throw error
+      setDocuments(data ?? [])
+    } catch (e) {
+      console.warn('Failed to fetch documents:', e)
+      setDocuments([])
+    }
     setLoadingDocs(false)
   }
 
@@ -775,8 +798,8 @@ export default function OCRSection({ job: preselectedJob, jobs, currentUserName,
     setExtractProgress('Preparing documents...')
     setExtractError(null)
     try {
-      setExtractProgress('Extracting data with AI...')
-      const { result, provider } = await extractWithFallback(selectedDocs, EXTRACTION_PROMPT)
+      setExtractProgress('Preparing documents...')
+      const { result, provider } = await extractWithFallback(selectedDocs, EXTRACTION_PROMPT, (msg) => setExtractProgress(msg))
       setExtractedData({ result, provider })
       setExtractEdits(JSON.parse(JSON.stringify(result)))
       showToast('Extraction complete!', 'success')
@@ -849,6 +872,17 @@ export default function OCRSection({ job: preselectedJob, jobs, currentUserName,
     }
     if (!file) return
 
+    const MAX_SIZE = 20 * 1024 * 1024
+    const ALLOWED_TYPES = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp']
+    if (file.size > MAX_SIZE) {
+      showToast('File too large. Maximum 20MB.', 'error')
+      return
+    }
+    if (!ALLOWED_TYPES.includes(file.type)) {
+      showToast('Invalid file type. Only PDF, JPEG, PNG, and WebP are accepted.', 'error')
+      return
+    }
+
     setUploading(true)
     try {
       const ext      = file.name.split('.').pop()
@@ -871,7 +905,7 @@ export default function OCRSection({ job: preselectedJob, jobs, currentUserName,
         file_path:        filePath,
         doc_type:         uploadDocType,
         file_url:         publicUrl,
-        uploaded_by:      ocrUser?.id || '',
+        uploaded_by:      ocrUser?.id || null,
         uploaded_by_name: ocrProfile?.name || currentUserName,
         file_size:        file.size,
       })
@@ -884,9 +918,10 @@ export default function OCRSection({ job: preselectedJob, jobs, currentUserName,
         .from('documents')
         .select('*')
         .eq('job_id', selectedJob.id)
+        .order('created_at', { ascending: false })
       setDocuments(freshDocs || [])
       if (freshDocs?.length) {
-        setSelectedDocIds(prev => new Set([...prev, freshDocs[freshDocs.length - 1].id]))
+        setSelectedDocIds(prev => new Set([...prev, freshDocs[0].id]))
       }
     } catch (e) {
       showToast(`Upload failed: ${e.message}`, 'error')
@@ -1328,6 +1363,9 @@ export default function OCRSection({ job: preselectedJob, jobs, currentUserName,
             <div className="bg-white border-[1.5px] border-[#e2e6ed] rounded-xl px-5 py-4 flex items-center justify-between shadow-sm">
               <button type="button"
                 onClick={async () => {
+                  const hasEdits = Object.keys(extractEdits).length > 0 && savedExtraction &&
+                    JSON.stringify(extractEdits) !== JSON.stringify(savedExtraction.extracted_data)
+                  if (hasEdits && !window.confirm('You have unsaved edits. Discard them and start over?')) return
                   setExtractedData(null)
                   setExtractEdits({})
                   setExtractError(null)

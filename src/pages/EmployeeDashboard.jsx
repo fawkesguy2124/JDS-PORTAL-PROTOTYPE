@@ -30,7 +30,7 @@ function formatDateSlash(value) {
   return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`
 }
 
-function EmpContainerSection({ jobs, showToast }) {
+function EmpContainerSection({ jobs, showToast, pendingNavAction, onNavActionConsumed }) {
   const [trackingData, setTrackingData] = useState({})
   const [loadingTracking, setLoadingTracking] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
@@ -67,6 +67,16 @@ function EmpContainerSection({ jobs, showToast }) {
     }
     load()
   }, [])
+
+  useEffect(() => {
+    if (!pendingNavAction || pendingNavAction.tab !== 'containers') return
+    if (!pendingNavAction.jobId) return
+    const job = (jobs || []).find(j => j.id === pendingNavAction.jobId)
+    if (job) {
+      setDetailJob(job)
+      onNavActionConsumed?.()
+    }
+  }, [pendingNavAction, jobs])
 
   const parseContainers = (str) => {
     if (!str || typeof str !== 'string') return []
@@ -486,7 +496,6 @@ export default function EmployeeDashboard() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [selectedJob, setSelectedJob] = useState(null)
   const [expandedDocJobId, setExpandedDocJobId] = useState(null)
-  const [documentExpandJobId, setDocumentExpandJobId] = useState(null)
   const [extractModal, setExtractModal] = useState({ open: false, job: null })
   const [uploadModal, setUploadModal] = useState({ open: false, job: null })
   const [uploadFile, setUploadFile] = useState(null)
@@ -502,19 +511,30 @@ export default function EmployeeDashboard() {
   const [extractProgress, setExtractProgress] = useState('')
 
   useEffect(() => {
-    if (pendingNavAction?.tab === 'jobs' && pendingNavAction?.jobId && jobs.length > 0) {
+    if (!pendingNavAction || jobs.length === 0) return
+
+    if (pendingNavAction.tab === 'jobs' && pendingNavAction.jobId) {
       const job = jobs.find(j => j.id === pendingNavAction.jobId)
       if (job) {
         setSelectedJob(job)
         setPendingNavAction(null)
       }
     }
-    if (pendingNavAction?.tab === 'documents' && pendingNavAction?.jobNo) {
+
+    if (pendingNavAction.tab === 'documents' && pendingNavAction.jobNo) {
       const job = jobs.find(j => j.job_no === pendingNavAction.jobNo)
       if (job) {
-        setDocumentExpandJobId(job.job_no)
+        setExpandedDocJobId(job.job_no)
         setPendingNavAction(null)
+        setTimeout(() => {
+          const el = document.getElementById(`doc-job-${job.job_no}`)
+          if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+        }, 200)
       }
+    }
+
+    if (pendingNavAction.tab === 'containers' && pendingNavAction.cn) {
+      setPendingNavAction(null)
     }
   }, [pendingNavAction, jobs])
 
@@ -1980,7 +2000,12 @@ export default function EmployeeDashboard() {
                 onNavActionConsumed={() => setPendingNavAction(null)}
               />
             ) : (
-              <EmpContainerSection jobs={jobs} showToast={showToast} />
+              <EmpContainerSection
+                jobs={jobs}
+                showToast={showToast}
+                pendingNavAction={pendingNavAction}
+                onNavActionConsumed={() => setPendingNavAction(null)}
+              />
             )
           )}
         </main>

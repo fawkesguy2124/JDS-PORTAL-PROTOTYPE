@@ -1,6 +1,5 @@
-import { useEffect, useState } from 'react'
 import { Navigate } from 'react-router-dom'
-import { supabase } from '../supabase'
+import { useAuth } from '../contexts/AuthContext'
 
 function FullPageSpinner() {
   return (
@@ -11,53 +10,16 @@ function FullPageSpinner() {
 }
 
 export default function ProtectedRoute({ allowedRole, children }) {
-  const [status, setStatus] = useState('loading')
+  const { user, profile, loading } = useAuth()
+  const allowed = Array.isArray(allowedRole) ? allowedRole : [allowedRole]
 
-  useEffect(() => {
-    let cancelled = false
-    const allowed = Array.isArray(allowedRole) ? allowedRole : [allowedRole]
+  if (loading) return <FullPageSpinner />
 
-    async function checkAccess() {
-      let { data: { session } } = await supabase.auth.getSession()
-      if (cancelled) return
+  if (!user) return <Navigate to="/login" replace />
 
-      if (!session?.user) {
-        await new Promise(r => setTimeout(r, 300))
-        if (cancelled) return
-        const retry = await supabase.auth.getSession()
-        session = retry.data?.session
-      }
+  if (!profile) return <FullPageSpinner />
 
-      if (!session?.user) {
-        setStatus('denied')
-        return
-      }
-
-      const { data: profile, error } = await supabase
-        .from('profiles')
-        .select('role')
-        .eq('id', session.user.id)
-        .single()
-
-      if (cancelled) return
-
-      if (error || !profile || !allowed.includes(profile.role)) {
-        setStatus('denied')
-        return
-      }
-
-      setStatus('allowed')
-    }
-
-    checkAccess()
-
-    return () => {
-      cancelled = true
-    }
-  }, [allowedRole])
-
-  if (status === 'loading') return <FullPageSpinner />
-  if (status === 'denied') return <Navigate to="/login" replace />
+  if (!allowed.includes(profile.role)) return <Navigate to="/login" replace />
 
   return children
 }

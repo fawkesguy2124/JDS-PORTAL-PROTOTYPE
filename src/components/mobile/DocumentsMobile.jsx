@@ -31,11 +31,11 @@ export default function DocumentsMobile({
       {Object.values(grouped).filter(({ docs, job }) =>
         !docSearch || job.job_no?.toLowerCase().includes(docSearch.toLowerCase()) || job.client?.toLowerCase().includes(docSearch.toLowerCase())
       ).map(({ job, docs }) => {
-        const isOpen = expandedJobId === job.id
+        const isOpen = expandedJobId === job.job_no
         return (
           <div key={job.id} style={{ background:'white', border:'1.5px solid #e2e6ed', borderRadius:'12px', overflow:'hidden' }}>
             <div
-              onClick={() => setExpandedJobId(isOpen ? null : job.id)}
+              onClick={() => setExpandedJobId(isOpen ? null : job.job_no)}
               style={{ padding:'14px 16px', cursor:'pointer', display:'flex', justifyContent:'space-between', alignItems:'center' }}
             >
               <div>

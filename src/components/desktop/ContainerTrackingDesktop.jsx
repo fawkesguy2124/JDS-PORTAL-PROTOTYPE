@@ -385,7 +385,7 @@ export default function ContainerTrackingDesktop({
                                       e.currentTarget.style.color = isDet ? '#A32D2D' : cnSt.color
                                     }
                                   }}
-                                >{isDet ? '⚠ ' : ''}{cn}</span>
+                                >{cn}</span>
                               )
                             })}
                           </div>

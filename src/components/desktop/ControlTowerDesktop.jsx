@@ -296,12 +296,13 @@ export default function ControlTowerDesktop({
                 {activityLog.length === 0 ? (
                   <div className="text-xs text-[#8a96a8] py-4 text-center">No recent activity.</div>
                 ) : activityLog.slice(0, 8).map((a, i) => {
+                  const t = a.type || a.action || ''
                   const dotColor =
-                    a.action?.includes('stage')    ? 'bg-green-500'
-                    : a.action?.includes('upload') ? 'bg-blue-500'
-                    : a.action?.includes('payment')? 'bg-amber-500'
-                    : a.action?.includes('delete') ? 'bg-red-500'
-                    : a.action?.includes('create') ? 'bg-purple-500'
+                    t.includes('stage')    ? 'bg-green-500'
+                    : t.includes('upload') || t.includes('document') ? 'bg-blue-500'
+                    : t.includes('payment')? 'bg-amber-500'
+                    : t.includes('delete') ? 'bg-red-500'
+                    : t.includes('create') || t.includes('job_created') ? 'bg-purple-500'
                     : 'bg-[#8a96a8]'
 
                   const relTime = (() => {
@@ -320,8 +321,8 @@ export default function ControlTowerDesktop({
                       <span className={`w-2 h-2 rounded-full ${dotColor} mt-1.5 shrink-0`} />
                       <div className="min-w-0">
                         <p className="text-sm text-[#1a2233]">
-                          {a.user_name && <span className="font-semibold">{a.user_name} </span>}
-                          {a.description || a.action || 'updated a job'}
+                          {a.done_by_name && <span className="font-semibold">{a.done_by_name} </span>}
+                          {a.title || a.note || a.description || a.action || 'updated a job'}
                           {a.job_no && <span className="font-mono text-[#1a4fa0]"> {a.job_no}</span>}
                         </p>
                         <p className="text-xs text-[#8a96a8] font-mono mt-0.5">{relTime}</p>

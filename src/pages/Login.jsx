@@ -1,15 +1,37 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
+import { Navigate } from 'react-router-dom'
 import { supabase } from '../supabase'
+import { useAuth } from '../contexts/AuthContext'
+
+function FullPageSpinner() {
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-gray-50">
+      <div className="h-10 w-10 border-4 border-[#1e3a5f] border-t-transparent rounded-full animate-spin" />
+    </div>
+  )
+}
 
 export default function Login() {
-  const [phone, setPhone]       = useState('')
-  const [password, setPassword] = useState('')
-  const [error, setError]       = useState('')
-  const [loading, setLoading]   = useState(false)
+  const { user, profile, loading: authLoading } = useAuth()
+
+  const [phone, setPhone]               = useState('')
+  const [password, setPassword]         = useState('')
+  const [error, setError]               = useState('')
+  const [loading, setLoading]           = useState(false)
   const [showPassword, setShowPassword] = useState(false)
+  const submittingRef                   = useRef(false)
+
+  if (authLoading) return <FullPageSpinner />
+
+  if (user && profile) {
+    if (profile.role === 'admin') return <Navigate to="/admin" replace />
+    if (profile.role === 'field_ops') return <Navigate to="/field" replace />
+    return <Navigate to="/dashboard" replace />
+  }
 
   const handleSubmit = async (e) => {
     e.preventDefault()
+    if (submittingRef.current) return
     setError('')
 
     const digits = phone.replace(/\D/g, '')
@@ -18,6 +40,7 @@ export default function Login() {
       return
     }
 
+    submittingRef.current = true
     setLoading(true)
     try {
       // Convert phone number to internal email format
@@ -70,13 +93,20 @@ export default function Login() {
     } catch (err) {
       setError(err?.message || 'Something went wrong. Please try again.')
     } finally {
+      submittingRef.current = false
       setLoading(false)
     }
   }
 
   // Format phone number as user types — adds spaces: 98765 43210
   const handlePhoneChange = (e) => {
-    const digits = e.target.value.replace(/\D/g, '').slice(0, 10)
+    let digits = e.target.value.replace(/\D/g, '')
+    if (digits.length === 12 && digits.startsWith('91')) {
+      digits = digits.slice(2)
+    } else if (digits.length === 11 && digits.startsWith('0')) {
+      digits = digits.slice(1)
+    }
+    digits = digits.slice(0, 10)
     let formatted = digits
     if (digits.length > 5) {
       formatted = digits.slice(0, 5) + ' ' + digits.slice(5)

@@ -33,7 +33,18 @@ function JobDetailPanel({ job, trackingData, onClose, onUpdate, onAddEvent, onRe
   const isDragging = useRef(false)
   const [closing, setClosing] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
-  const isMobile = window.innerWidth < 768
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768)
+  const closeTimerRef = useRef(null)
+
+  useEffect(() => {
+    const handler = () => setIsMobile(window.innerWidth < 768)
+    window.addEventListener('resize', handler)
+    return () => window.removeEventListener('resize', handler)
+  }, [])
+
+  useEffect(() => {
+    return () => { if (closeTimerRef.current) clearTimeout(closeTimerRef.current) }
+  }, [])
 
   useEffect(() => {
     if (activeContainer) {
@@ -54,7 +65,7 @@ function JobDetailPanel({ job, trackingData, onClose, onUpdate, onAddEvent, onRe
 
   const handleClose = () => {
     setClosing(true)
-    setTimeout(() => {
+    closeTimerRef.current = setTimeout(() => {
       setClosing(false)
       onClose()
     }, 220)
@@ -83,7 +94,8 @@ function JobDetailPanel({ job, trackingData, onClose, onUpdate, onAddEvent, onRe
     delayed:        { bg:'#FCEBEB', color:'#791F1F', border:'#F7C1C1',  header:'#1f0808' },
   }
 
-  const cn = cnList[activeCnIdx]
+  const safeIdx = Math.min(activeCnIdx, Math.max(0, cnList.length - 1))
+  const cn = cnList[safeIdx] || cnList[0]
   const td = trackingData[cn] || {}
   const status = td.status || 'in_transit'
   const isDetention = td.freeDays != null && td.freeDays <= 2
@@ -91,9 +103,12 @@ function JobDetailPanel({ job, trackingData, onClose, onUpdate, onAddEvent, onRe
   const st = STATUS_STYLES_MAP[effectiveStatus] || STATUS_STYLES_MAP['in_transit']
   const headerBg = st.header
 
-  const freePct = td.freeDays != null ? Math.max(0, Math.min(100, ((14 - td.freeDays) / 14) * 100)) : 0
+  const contractualFreeDays = job.free_days ? Math.min(30, Math.max(1, Number(job.free_days) || 1)) : null
+  const freePct = contractualFreeDays != null && td.freeDays != null
+    ? Math.max(0, Math.min(100, ((contractualFreeDays - td.freeDays) / contractualFreeDays) * 100))
+    : 0
   const detentionDate = td.portIn
-    ? new Date(new Date(td.portIn).getTime() + (td.freeDays || 14) * 86400000)
+    ? new Date(new Date(td.portIn).getTime() + contractualFreeDays * 86400000)
         .toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric', timeZone:'Asia/Kolkata' })
     : null
 
@@ -102,7 +117,7 @@ function JobDetailPanel({ job, trackingData, onClose, onUpdate, onAddEvent, onRe
     if (d.includes('GATE CROSSED') || d.includes('GATE OUT')) return { color:'#185FA5', dot:'blue' }
     if (d.includes('PORT IN') || d.includes('PORTIN'))         return { color:'#185FA5', dot:'blue' }
     if (d.includes('PORT OUT') || d.includes('PORTOUT'))       return { color:'#0F6E56', dot:'green' }
-    if (d.includes('CFS') || d.includes('DPD'))                return { color:'#854F0B', dot:'amber' }
+    if (d.includes('CFS') || d.includes('ICD') || d.includes('DPD')) return { color:'#854F0B', dot:'amber' }
     if (d.includes('VESSEL') || d.includes('LOADING'))         return { color:'#0F6E56', dot:'green' }
     if (d.includes('CUSTOMS') || d.includes('HOLD'))           return { color:'#A32D2D', dot:'red' }
     return { color:'var(--color-text-primary)', dot:'gray' }
@@ -260,7 +275,7 @@ function JobDetailPanel({ job, trackingData, onClose, onUpdate, onAddEvent, onRe
                       border: `0.5px solid ${isActive ? headerBg : cDet ? '#F7C1C1' : cSt.border}`,
                       whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis',
                     }}
-                  >{cDet ? '⚠ ' : ''}{c}</button>
+                  >{c}</button>
                 )
               })}
             </div>
@@ -293,7 +308,7 @@ function JobDetailPanel({ job, trackingData, onClose, onUpdate, onAddEvent, onRe
                       color: isActive ? 'white' : cDet ? '#A32D2D' : 'var(--color-text-secondary)',
                       border: isActive ? `0.5px solid ${headerBg}` : cDet ? '0.5px solid #F7C1C1' : '0.5px solid var(--color-border-tertiary)',
                     }}
-                  >{cDet ? '⚠ ' : ''}{c}</button>
+                  >{c}</button>
                 )
               })}
             </div>
@@ -374,6 +389,14 @@ function JobDetailPanel({ job, trackingData, onClose, onUpdate, onAddEvent, onRe
               </div>
             )}
 
+            {!isMobile && td.freeDays == null && td.portIn && (
+              <div style={{ background: '#fffbeb', border: '0.5px solid #FAC775', borderRadius: '8px', padding: '10px 12px', marginTop: '10px' }}>
+                <div style={{ fontSize: '11px', fontWeight: 500, color: '#854F0B' }}>
+                  ⚠ Free days not set
+                </div>
+              </div>
+            )}
+
             {!isMobile && td.freeDays != null && (
               <div style={{ background: isDetention ? '#FCEBEB' : '#EAF3DE', border:`0.5px solid ${isDetention ? '#F7C1C1' : '#C0DD97'}`, borderRadius:'8px', padding:'10px 12px', marginTop:'10px' }}>
                 <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'6px' }}>
@@ -427,12 +450,13 @@ function JobDetailPanel({ job, trackingData, onClose, onUpdate, onAddEvent, onRe
                 { label:'Vessel IMO',       value: td.vesselImo,       mono: true, muted: true },
                 ...(isMobile ? [
                   { label:'Free Days', value: td.freeDays != null ? `${td.freeDays} days${isDetention ? ' ⚠' : ''}` : null },
+                  { label:'Detention from', value: detentionDate || null, color: isDetention ? '#dc2626' : td.freeDays != null && td.freeDays <= 5 ? '#b45309' : null },
                   { label:'DPD', value: td.dpdFlag ? '✓ Yes' : td.dpdFlag === false ? 'No' : null, ok: td.dpdFlag },
                 ] : []),
               ].map(f => (
                 <div key={f.label} style={f.full ? { gridColumn:'1/-1' } : {}}>
                   <div style={{ fontSize:'10px', fontWeight:500, textTransform:'uppercase', letterSpacing:'0.06em', color:'var(--color-text-secondary)', marginBottom:'4px' }}>{f.label}</div>
-                    <div style={{ color: f.muted ? 'var(--color-text-secondary)' : 'var(--color-text-primary)', fontFamily: f.mono ? "'JetBrains Mono',monospace" : 'inherit', fontSize:'13px' }}>
+                    <div style={{ color: f.color || (f.muted ? 'var(--color-text-secondary)' : 'var(--color-text-primary)'), fontFamily: f.mono ? "'JetBrains Mono',monospace" : 'inherit', fontSize:'13px', fontWeight: f.color ? 500 : 'inherit' }}>
                     {f.value || '—'}
                   </div>
                 </div>
@@ -1038,6 +1062,7 @@ function ContainerTrackingSection({ showToast, jobs, pendingNavAction, onNavActi
   const carriers = ['Maersk','MSC','Hapag-Lloyd','CMA-CGM','Evergreen','ONE','OOCL','COSCO','ZIM','HMM','Yang Ming','Wan Hai','TS Line','Interasia','Emirates','Akkon','Other']
 
   useEffect(() => {
+    let mounted = true
     const load = async () => {
       setLoadingTracking(true)
       try {
@@ -1075,15 +1100,15 @@ function ContainerTrackingSection({ showToast, jobs, pendingNavAction, onNavActi
             expectedPortOut:  row.expected_port_out || null,
           }
         }
-        setTrackingData(map)
+        if (mounted) setTrackingData(map)
       } catch (e) {
         console.warn('Could not load tracking data:', e)
       } finally {
-        setLoadingTracking(false)
+        if (mounted) setLoadingTracking(false)
       }
 
       // Auto-refresh from LDB on tab open
-      if ((jobs || []).filter(j => j.containers).length > 0) {
+      if (mounted && (jobs || []).filter(j => j.containers).length > 0) {
         try {
           await refreshAllContainers(jobs, {})
           const { data: fresh } = await supabase.from('container_tracking').select('*')
@@ -1120,13 +1145,14 @@ function ContainerTrackingSection({ showToast, jobs, pendingNavAction, onNavActi
               expectedPortOut: row.expected_port_out || null,
             }
           }
-          setTrackingData(map)
+          if (mounted) setTrackingData(map)
         } catch (e) {
           console.warn('Auto-refresh failed:', e)
         }
       }
     }
     load()
+    return () => { mounted = false }
   }, [jobs])
 
   const refreshTracking = async () => {

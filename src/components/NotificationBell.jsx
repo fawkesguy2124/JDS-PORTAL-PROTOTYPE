@@ -1,17 +1,33 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { supabase } from '../supabase'
 
 const getStorageKey = (userId) => `jds_notif_last_seen_${userId || 'unknown'}`
 
-function timeAgo(ts) {
+function formatNotifTime(ts) {
   if (!ts) return ''
-  const diff = Date.now() - new Date(ts).getTime()
-  const mins = Math.floor(diff / 60000)
-  if (mins < 1) return 'just now'
-  if (mins < 60) return `${mins}m ago`
-  const hrs = Math.floor(mins / 60)
-  if (hrs < 24) return `${hrs}h ago`
-  return `${Math.floor(hrs / 24)}d ago`
+  const d = new Date(ts)
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const yesterday = new Date(today)
+  yesterday.setDate(today.getDate() - 1)
+  const notifDay = new Date(d)
+  notifDay.setHours(0, 0, 0, 0)
+
+  const timeStr = d.toLocaleTimeString('en-IN', {
+    hour: '2-digit', minute: '2-digit',
+    hour12: true, timeZone: 'Asia/Kolkata'
+  }).toUpperCase()
+
+  if (notifDay.getTime() === today.getTime()) {
+    return timeStr
+  }
+  if (notifDay.getTime() === yesterday.getTime()) {
+    return `Yesterday, ${timeStr}`
+  }
+  const dateStr = d.toLocaleDateString('en-IN', {
+    day: '2-digit', month: 'short', timeZone: 'Asia/Kolkata'
+  })
+  return `${dateStr}, ${timeStr}`
 }
 
 function groupByDay(notifications) {
@@ -34,10 +50,17 @@ export default function NotificationBell({ onNavigate, profile }) {
   const [open, setOpen] = useState(false)
   const [notifications, setNotifications] = useState([])
   const [filter, setFilter] = useState('all')
-  const STORAGE_KEY = getStorageKey(profile?.id)
-  const [lastSeen, setLastSeen] = useState(() => localStorage.getItem(STORAGE_KEY) || null)
+  const [lastSeen, setLastSeen] = useState(null)
   const dropdownRef = useRef(null)
   const bellRef = useRef(null)
+
+  // Load lastSeen after profile is available
+  useEffect(() => {
+    if (profile?.id) {
+      const stored = localStorage.getItem(getStorageKey(profile.id))
+      setLastSeen(stored || null)
+    }
+  }, [profile?.id])
 
   useEffect(() => {
     const load = async () => {
@@ -71,13 +94,16 @@ export default function NotificationBell({ onNavigate, profile }) {
     return () => document.removeEventListener('mousedown', handler)
   }, [])
 
-  const unreadCount = notifications.filter(n =>
-    !lastSeen || new Date(n.created_at) > new Date(lastSeen)
-  ).length
+  const unreadCount = useMemo(() =>
+    notifications.filter(n =>
+      !lastSeen || new Date(n.created_at) > new Date(lastSeen)
+    ).length
+  , [notifications, lastSeen])
 
   const markAllRead = () => {
     const now = new Date().toISOString()
-    localStorage.setItem(STORAGE_KEY, now)
+    const key = getStorageKey(profile?.id)
+    localStorage.setItem(key, now)
     setLastSeen(now)
   }
 
@@ -87,7 +113,8 @@ export default function NotificationBell({ onNavigate, profile }) {
 
   const handleItemClick = (n) => {
     const now = new Date().toISOString()
-    localStorage.setItem(STORAGE_KEY, now)
+    const key = getStorageKey(profile?.id)
+    localStorage.setItem(key, now)
     setLastSeen(now)
     setOpen(false)
 
@@ -178,11 +205,14 @@ export default function NotificationBell({ onNavigate, profile }) {
         <div
           ref={dropdownRef}
           style={{
-            position: 'absolute', top: 'calc(100% + 10px)', right: 0,
-            width: '360px', background: 'white',
+            position: 'fixed',
+            top: window.innerWidth >= 768 ? '56px' : '68px',
+            right: window.innerWidth >= 768 ? '72px' : '8px',
+            width: 'min(360px, calc(100vw - 16px))', background: 'white',
             border: '1.5px solid #d0d9e8', borderRadius: '14px',
             boxShadow: '0 8px 32px rgba(0,0,0,0.14)', zIndex: 9999,
             overflow: 'hidden',
+            maxHeight: 'calc(100vh - 88px)',
             animation: 'bellDropdown 0.18s cubic-bezier(0.16,1,0.3,1)',
           }}
         >
@@ -226,7 +256,7 @@ export default function NotificationBell({ onNavigate, profile }) {
             ))}
           </div>
 
-          <div style={{ maxHeight: '340px', overflowY: 'auto' }}>
+          <div style={{ overflowY: 'auto', maxHeight: '360px' }}>
             {filteredNotifications.length === 0 ? (
               <div style={{ padding: '32px 16px', textAlign: 'center' }}>
                 <div style={{ fontSize: '28px', marginBottom: '8px' }}>🎉</div>
@@ -274,7 +304,7 @@ export default function NotificationBell({ onNavigate, profile }) {
                             </div>
                           </div>
                           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px', flexShrink: 0 }}>
-                            <span style={{ fontSize: '10px', color: '#8a96a8', whiteSpace: 'nowrap' }}>{timeAgo(n.created_at)}</span>
+                            <span style={{ fontSize: '10px', color: '#8a96a8', whiteSpace: 'nowrap' }}>{formatNotifTime(n.created_at)}</span>
                             {isUnread && <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#1a4fa0' }} />}
                           </div>
                         </div>

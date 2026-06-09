@@ -32,6 +32,7 @@ function ControlTowerSection({ jobs, profiles, currentUserName, selectedJob, onO
       const { data } = await supabase
         .from('activity_log')
         .select('*')
+        .not('type', 'in', '("container_update","detention_alert")')
         .order('created_at', { ascending: false })
         .limit(20)
       setActivityLog(data || [])
