@@ -1152,7 +1152,63 @@ function ContainerTrackingSection({ showToast, jobs, pendingNavAction, onNavActi
       }
     }
     load()
-    return () => { mounted = false }
+
+    let channel = null
+
+    const subscribeToTracking = () => {
+      if (!mounted) return
+      channel = supabase
+        .channel('container_tracking_changes')
+        .on('postgres_changes', {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'container_tracking',
+        }, (payload) => {
+          if (!mounted) return
+          const row = payload.new
+          setTrackingData(prev => ({
+            ...prev,
+            [row.container_no]: {
+              status:          row.status || 'in_transit',
+              statusText:      row.status_text || 'In Transit',
+              currentLocation: row.current_location,
+              vessel:          row.vessel,
+              freeDays:        row.free_days,
+              notes:           row.notes,
+              lastUpdate:      row.last_update,
+              milestones:      row.milestones || [],
+              eta:             row.eta,
+              portIn:          row.port_in,
+              portOut:         row.port_out,
+              cfsGateIn:       row.cfs_gate_in || null,
+              terminal:        row.terminal        || null,
+              dpdFlag:         row.dpd_flag        || false,
+              isEmpty:         row.is_empty        || false,
+              vesselImo:       row.vessel_imo      || null,
+              shippingLineLdb: row.shipping_line_ldb || null,
+              containerSize:   row.container_size  || null,
+              expectedPortOut: row.expected_port_out || null,
+            }
+          }))
+        })
+        .subscribe((status) => {
+          if (!mounted) return
+          if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+            console.warn('[ContainerTracking] Realtime subscription error — reconnecting in 5s')
+            supabase.removeChannel(channel)
+            setTimeout(() => {
+              if (mounted) subscribeToTracking()
+            }, 5000)
+          }
+        })
+    }
+
+    subscribeToTracking()
+
+    return () => {
+      mounted = false
+      if (channel) supabase.removeChannel(channel)
+    }
   }, [jobs])
 
   const refreshTracking = async () => {
