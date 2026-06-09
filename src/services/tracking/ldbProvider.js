@@ -268,7 +268,7 @@ export async function persistLDBTracking(containerNo, jobContext, ldbData) {
       const notifTitle = `${containerNo} — ${ldbData.statusText || ldbData.status}`
       if (!(await wasAlreadyLogged(notifTitle, jobContext.job_no))) {
         try {
-          await supabase.from('activity_log').insert({
+          await supabase.from('activity_log').upsert({
             ...entryBase,
             type:       'container_update',
             action:     'container_update',
@@ -276,7 +276,7 @@ export async function persistLDBTracking(containerNo, jobContext, ldbData) {
             note:       `Status: ${existing.status} → ${ldbData.status}`,
             meta:       { job_id: jobContext.id, container_no: containerNo, old_status: existing.status, new_status: ldbData.status },
             created_at: ldbData.milestones?.[0]?.date || new Date().toISOString(),
-          })
+          }, { onConflict: 'title,job_no', ignoreDuplicates: true })
         } catch (logErr) {
           console.warn('[LDB] activity_log status insert failed:', logErr.message)
         }
@@ -302,7 +302,7 @@ export async function persistLDBTracking(containerNo, jobContext, ldbData) {
       const notifTitle = `${containerNo} — ${latest.description}`
       if (!(await wasAlreadyLogged(notifTitle, jobContext.job_no))) {
         try {
-          await supabase.from('activity_log').insert({
+          await supabase.from('activity_log').upsert({
             ...entryBase,
             type:       'container_update',
             action:     'container_update',
@@ -312,7 +312,7 @@ export async function persistLDBTracking(containerNo, jobContext, ldbData) {
               : `${latest.description} · ${latest.location || ''}`,
             meta:       { job_id: jobContext.id, container_no: containerNo },
             created_at: latest.date || new Date().toISOString(),
-          })
+          }, { onConflict: 'title,job_no', ignoreDuplicates: true })
         } catch (logErr) {
           console.warn('[LDB] activity_log milestone insert failed:', logErr.message)
         }
@@ -343,7 +343,7 @@ export async function persistLDBTracking(containerNo, jobContext, ldbData) {
       const notifTitle = `${containerNo} — Detention risk`
       if (!(await wasAlreadyLogged(notifTitle, jobContext.job_no))) {
         try {
-          await supabase.from('activity_log').insert({
+          await supabase.from('activity_log').upsert({
             ...entryBase,
             type:       'detention_alert',
             action:     'detention_alert',
@@ -351,7 +351,7 @@ export async function persistLDBTracking(containerNo, jobContext, ldbData) {
             note:       `Only ${calculatedFreeDays} free day${calculatedFreeDays !== 1 ? 's' : ''} left · Port in: ${ldbData.portIn ? new Date(ldbData.portIn).toLocaleDateString('en-IN', { day:'2-digit', month:'short', timeZone:'Asia/Kolkata' }) : '—'} · ${jobContext.job_no}`,
             meta:       { job_id: jobContext.id, container_no: containerNo, port_in: ldbData.portIn || null, free_days_remaining: calculatedFreeDays },
             created_at: ldbData.portIn || new Date().toISOString(),
-          })
+          }, { onConflict: 'title,job_no', ignoreDuplicates: true })
         } catch (logErr) {
           console.warn('[LDB] activity_log detention insert failed:', logErr.message)
         }

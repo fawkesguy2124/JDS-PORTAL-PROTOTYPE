@@ -198,7 +198,7 @@ async function persistAndNotify(cn: string, job: any, ldbData: any) {
       const notifTitle = `${cn} — ${ldbData.statusText || ldbData.status}`
       if (!(await wasAlreadyLogged(notifTitle, job.job_no))) {
         try {
-          await supabase.from('activity_log').insert({
+          await supabase.from('activity_log').upsert({
             ...entryBase,
             type:       'container_update',
             action:     'container_update',
@@ -206,7 +206,7 @@ async function persistAndNotify(cn: string, job: any, ldbData: any) {
             note:       `Status: ${existing.status} → ${ldbData.status}`,
             meta:       { job_id: job.id, container_no: cn, old_status: existing.status, new_status: ldbData.status },
             created_at: ldbData.milestones?.[0]?.date || new Date().toISOString(),
-          })
+          }, { onConflict: 'title,job_no', ignoreDuplicates: true })
         } catch (e: any) { console.warn('[CRON] activity_log status insert failed:', e.message) }
       }
     }
@@ -230,7 +230,7 @@ async function persistAndNotify(cn: string, job: any, ldbData: any) {
       const notifTitle = `${cn} — ${latest.description}`
       if (!(await wasAlreadyLogged(notifTitle, job.job_no))) {
         try {
-          await supabase.from('activity_log').insert({
+          await supabase.from('activity_log').upsert({
             ...entryBase,
             type:       'container_update',
             action:     'container_update',
@@ -240,7 +240,7 @@ async function persistAndNotify(cn: string, job: any, ldbData: any) {
               : `${latest.description} · ${latest.location || ''}`,
             meta:       { job_id: job.id, container_no: cn },
             created_at: latest.date || new Date().toISOString(),
-          })
+          }, { onConflict: 'title,job_no', ignoreDuplicates: true })
         } catch (e: any) { console.warn('[CRON] activity_log milestone insert failed:', e.message) }
       }
     }
@@ -258,7 +258,7 @@ async function persistAndNotify(cn: string, job: any, ldbData: any) {
       const notifTitle = `${cn} — Detention risk`
       if (!(await wasAlreadyLogged(notifTitle, job.job_no))) {
         try {
-          await supabase.from('activity_log').insert({
+          await supabase.from('activity_log').upsert({
             ...entryBase,
             type:       'detention_alert',
             action:     'detention_alert',
@@ -266,7 +266,7 @@ async function persistAndNotify(cn: string, job: any, ldbData: any) {
             note:       `Only ${freeDays} free day${freeDays !== 1 ? 's' : ''} left · Port in: ${ldbData.portIn ? new Date(ldbData.portIn).toLocaleDateString('en-IN', { day:'2-digit', month:'short', timeZone:'Asia/Kolkata' }) : '—'} · ${job.job_no}`,
             meta:       { job_id: job.id, container_no: cn, port_in: ldbData.portIn || null, free_days_remaining: freeDays },
             created_at: ldbData.portIn || new Date().toISOString(),
-          })
+          }, { onConflict: 'title,job_no', ignoreDuplicates: true })
         } catch (e: any) { console.warn('[CRON] activity_log detention insert failed:', e.message) }
       }
     }
