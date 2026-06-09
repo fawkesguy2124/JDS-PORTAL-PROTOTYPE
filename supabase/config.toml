@@ -1,0 +1,2 @@
+[functions.refresh-containers]
+verify_jwt = false
