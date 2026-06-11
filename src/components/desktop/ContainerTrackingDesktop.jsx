@@ -2,11 +2,13 @@ import { memo, useState, useRef, useEffect } from 'react'
 
 function normalizeTrackingData(td) {
   if (!td || typeof td !== 'object') return {}
-  const freeDaysRaw = Number(td.freeDays)
+  const freeDaysRaw = td.freeDays === null || td.freeDays === undefined || td.freeDays === ''
+    ? null
+    : Number(td.freeDays)
   return {
     ...td,
     status: typeof td.status === 'string' ? td.status : 'in_transit',
-    freeDays: Number.isFinite(freeDaysRaw) ? freeDaysRaw : null,
+    freeDays: freeDaysRaw !== null && Number.isFinite(freeDaysRaw) ? freeDaysRaw : null,
     currentLocation: typeof td.currentLocation === 'string' ? td.currentLocation : '',
     portIn: td.portIn && !isNaN(new Date(td.portIn).getTime()) ? td.portIn : null,
     portOut: td.portOut && !isNaN(new Date(td.portOut).getTime()) ? td.portOut : null,

@@ -244,7 +244,7 @@ function EmpContainerSection({ jobs, showToast, pendingNavAction, onNavActionCon
                   const td     = trackingData[cn] || {}
                   const status = td.status || 'in_transit'
                   const st     = STATUS_STYLES_MAP[status] || STATUS_STYLES_MAP['in_transit']
-                  const isDetention = td.freeDays != null && td.freeDays <= 2
+                  const isDetention = !['delivered', 'empty_returned'].includes(td.status || 'in_transit') && td.freeDays != null && td.freeDays <= 2
 
                   return (
                     <div key={cn}>
@@ -334,7 +334,7 @@ function EmpJobDetailPanel({ job, trackingData, onClose }) {
   }
 
   const progressColor = (status, freeDays) => {
-    if (freeDays != null && freeDays <= 2) return '#dc2626'
+    if (!['delivered', 'empty_returned'].includes(status) && freeDays != null && freeDays <= 2) return '#dc2626'
     if (['delivered','arrived','at_cfs','on_rail'].includes(status)) return '#16a34a'
     if (['customs_hold','delayed'].includes(status)) return '#dc2626'
     return '#f59e0b'
@@ -384,7 +384,7 @@ function EmpJobDetailPanel({ job, trackingData, onClose }) {
                 const st     = STATUS_STYLES_MAP[status] || STATUS_STYLES_MAP['in_transit']
                 const pct    = statusProgress(status)
                 const pColor = progressColor(status, td.freeDays)
-                const isDetention = td.freeDays != null && td.freeDays <= 2
+                const isDetention = !['delivered', 'empty_returned'].includes(td.status || 'in_transit') && td.freeDays != null && td.freeDays <= 2
 
                 return (
                   <div key={cn} style={{ border:'1.5px solid #e2e6ed', borderRadius:'12px', overflow:'hidden', borderTop:`3px solid ${pColor}` }}>
@@ -421,8 +421,8 @@ function EmpJobDetailPanel({ job, trackingData, onClose }) {
                           { label:'Port In',          value: td.portIn },
                           { label:'Port Out',         value: td.portOut },
                           { label:'CFS Gate In',      value: td.cfsGateIn },
-                          { label:'Free Days Left',   value: td.freeDays != null ? `${td.freeDays} days${td.freeDays <= 2 ? ' ⚠' : ''}` : '—',
-                            color: td.freeDays != null && td.freeDays <= 2 ? '#dc2626' : td.freeDays != null && td.freeDays <= 5 ? '#b45309' : '#1a2233' },
+                          { label:'Free Days Left',   value: td.freeDays != null ? `${td.freeDays} days${(!['delivered','empty_returned'].includes(status) && td.freeDays <= 2) ? ' ⚠' : ''}` : '—',
+                            color: (!['delivered','empty_returned'].includes(status) && td.freeDays != null && td.freeDays <= 2) ? '#dc2626' : td.freeDays != null && td.freeDays <= 5 ? '#b45309' : '#1a2233' },
                           { label:'Last Update',      value: formatDT(td.lastUpdate) },
                         ].map(f => (
                           <div key={f.label}>
@@ -1990,23 +1990,14 @@ export default function EmployeeDashboard() {
           )}
 
           {activeNav === 'containers' && (
-            isFieldOps ? (
-              <ContainerTrackingSection
-                jobs={jobs}
-                showToast={showToast}
-                profile={profile}
-                currentUserName={currentUserName}
-                pendingNavAction={activeNav === 'containers' ? pendingNavAction : null}
-                onNavActionConsumed={() => setPendingNavAction(null)}
-              />
-            ) : (
-              <EmpContainerSection
-                jobs={jobs}
-                showToast={showToast}
-                pendingNavAction={pendingNavAction}
-                onNavActionConsumed={() => setPendingNavAction(null)}
-              />
-            )
+            <ContainerTrackingSection
+              jobs={jobs}
+              showToast={showToast}
+              profile={profile}
+              currentUserName={currentUserName}
+              pendingNavAction={activeNav === 'containers' ? pendingNavAction : null}
+              onNavActionConsumed={() => setPendingNavAction(null)}
+            />
           )}
         </main>
       </div>
