@@ -857,7 +857,7 @@ export default function EmployeeDashboard() {
       if (filterStage !== '' && String(j.stage) !== String(filterStage)) return false
       if (filterPriority && String(j.priority || '').toLowerCase() !== filterPriority) return false
       if (filterMode && String(j.mode || '') !== filterMode) return false
-      if (showMyJobs && user?.id && j.assigned_to !== user.id) return false
+      if (showMyJobs && user?.id && j.created_by !== user.id) return false
       return true
     }
 

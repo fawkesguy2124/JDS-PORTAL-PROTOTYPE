@@ -50,6 +50,12 @@ function groupByDay(notifications) {
   return groups
 }
 
+const ROLE_FILTERS = {
+  admin:     null,
+  field_ops: ['container_update', 'detention_alert'],
+  employee:  ['container_update', 'detention_alert', 'job_created', 'stage_update', 'document_upload'],
+}
+
 export default function NotificationBell({ onNavigate, profile }) {
   const [open, setOpen] = useState(false)
   const [notifications, setNotifications] = useState([])
@@ -68,11 +74,16 @@ export default function NotificationBell({ onNavigate, profile }) {
 
   useEffect(() => {
     const load = async () => {
-      const { data } = await supabase
+      const allowedTypes = ROLE_FILTERS[profile?.role] ?? ['container_update', 'detention_alert']
+      let query = supabase
         .from('activity_log')
         .select('*')
         .order('created_at', { ascending: false })
         .limit(50)
+      if (profile?.role !== 'admin') {
+        query = query.in('type', allowedTypes)
+      }
+      const { data } = await query
       if (data) setNotifications(data)
     }
     load()
@@ -80,7 +91,10 @@ export default function NotificationBell({ onNavigate, profile }) {
     const channel = supabase
       .channel('activity_log_changes')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'activity_log' }, payload => {
-        setNotifications(prev => [payload.new, ...prev].slice(0, 50))
+        const allowedTypes = ROLE_FILTERS[profile?.role] ?? ['container_update', 'detention_alert']
+        if (profile?.role === 'admin' || allowedTypes.includes(payload.new.type)) {
+          setNotifications(prev => [payload.new, ...prev].slice(0, 50))
+        }
       })
       .subscribe()
 
@@ -112,7 +126,14 @@ export default function NotificationBell({ onNavigate, profile }) {
   }
 
   const handleOpen = () => {
-    setOpen(prev => !prev)
+    const nowOpen = !open
+    setOpen(nowOpen)
+    if (nowOpen) {
+      const now = new Date().toISOString()
+      const key = getStorageKey(profile?.id)
+      localStorage.setItem(key, now)
+      setLastSeen(now)
+    }
   }
 
   const handleItemClick = (n) => {
