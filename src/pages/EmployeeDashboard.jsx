@@ -698,55 +698,9 @@ export default function EmployeeDashboard() {
     number_of_packages:'Packages',gross_weight:'Gross Weight',net_weight:'Net Weight',
   }
 
-  const FIELD_PERMS_BY_NAME = {
-    Uphadhya: [
-      'job_no',
-      'client',
-      'mode',
-      'bl_no',
-      'containers',
-      'shipping_line',
-      'vessel',
-      'eta',
-      'cfs_name',
-      'container_size',
-    ],
-    Akshyani: [
-      'job_no',
-      'client',
-      'mode',
-      'bl_no',
-      'containers',
-      'container_size',
-      'shipping_line',
-      'vessel',
-      'eta',
-      'cfs_name',
-      'be_no',
-      'be_date',
-      'hs_code',
-      'rms_status',
-      'bg_required',
-    ],
-    Trupti: ['be_no', 'be_date', 'hs_code', 'rms_status'],
-    Kiran: ['cfs_amount'],
-    Virendra: ['cfs_amount'],
-    Mayur: ['cfs_amount'],
-    Anil: ['cfs_amount', 'bg_required'],
-    Pramod: [],
-    Samita: [],
-    'Rabina Chauhan': [],
-  }
+  const FIELD_PERMS_BY_NAME = {}
 
-  const ALL_EMPLOYEE_FIELDS = [
-    'destination',
-    'priority',
-    'goods',
-    'free_days',
-    'detention_risk',
-    'delay_reason',
-    'notes',
-  ]
+  const ALL_EMPLOYEE_FIELDS = ['free_days']
 
   const editableFields = useMemo(() => {
     const base = new Set([...(FIELD_PERMS_BY_NAME[currentUserName] || []), ...ALL_EMPLOYEE_FIELDS])

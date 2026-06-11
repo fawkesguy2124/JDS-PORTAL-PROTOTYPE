@@ -61,13 +61,13 @@ const FIELD_PERMS = {
   rms_status: { can: ['Akshyani', 'Trupti', 'Durgesh'] },
   bg_required: { can: ['Anil', 'Akshyani', 'Durgesh'] },
   cfs_amount: { can: ['Kiran', 'Virendra', 'Mayur', 'Anil'] },
-  destination: { can: 'all' },
-  priority: { can: 'all' },
-  goods: { can: 'all' },
+  destination: { can: ['Durgesh'] },
+  priority: { can: ['Durgesh'] },
+  goods: { can: ['Durgesh'] },
   free_days: { can: 'all' },
-  detention_risk: { can: 'all' },
-  delay_reason: { can: 'all' },
-  notes: { can: 'all' },
+  detention_risk: { can: ['Durgesh'] },
+  delay_reason: { can: ['Durgesh'] },
+  notes: { can: ['Durgesh'] },
   stage: { can: ['Trupti', 'Uphadhya'] },
 }
 
@@ -896,19 +896,21 @@ Write the summary:`
               <div className="flex flex-col rounded-lg border border-[#e2e6ed] bg-[#f8f9fb] overflow-hidden">
                 <div className="px-4 py-3 border-b border-[#e2e6ed] flex items-center justify-between">
                   <p className="text-xs font-semibold uppercase tracking-wide text-[#8a96a8]">Notes</p>
-                  <button
-                    type="button"
-                    onClick={handleAISummary}
-                    disabled={summarising}
-                    style={{
-                      padding:'2px 8px', borderRadius:'6px', fontSize:'11px', fontWeight:600,
-                      background: summarising ? '#f4f6f9' : '#eff6ff',
-                      color: summarising ? '#8a96a8' : '#1a4fa0',
-                      border:'1px solid #bfdbfe', cursor: summarising ? 'default' : 'pointer',
-                    }}
-                  >
-                    {summarising ? '...' : '✦ AI Summary'}
-                  </button>
+                  {isAdmin && (
+                    <button
+                      type="button"
+                      onClick={handleAISummary}
+                      disabled={summarising}
+                      style={{
+                        padding:'2px 8px', borderRadius:'6px', fontSize:'11px', fontWeight:600,
+                        background: summarising ? '#f4f6f9' : '#eff6ff',
+                        color: summarising ? '#8a96a8' : '#1a4fa0',
+                        border:'1px solid #bfdbfe', cursor: summarising ? 'default' : 'pointer',
+                      }}
+                    >
+                      {summarising ? '...' : '✦ AI Summary'}
+                    </button>
+                  )}
                 </div>
                 <div className="px-4 py-3">
                   <textarea
@@ -1079,19 +1081,21 @@ Write the summary:`
               <div className="flex flex-col rounded-lg border border-[#e2e6ed] bg-[#f8f9fb] overflow-hidden">
                 <div className="px-4 py-3 border-b border-[#e2e6ed] flex items-center justify-between">
                   <p className="text-xs font-semibold uppercase tracking-wide text-[#8a96a8]">Notes</p>
-                  <button
-                    type="button"
-                    onClick={handleAISummary}
-                    disabled={summarising}
-                    style={{
-                      padding:'2px 8px', borderRadius:'6px', fontSize:'11px', fontWeight:600,
-                      background: summarising ? '#f4f6f9' : '#eff6ff',
-                      color: summarising ? '#8a96a8' : '#1a4fa0',
-                      border:'1px solid #bfdbfe', cursor: summarising ? 'default' : 'pointer',
-                    }}
-                  >
-                    {summarising ? '...' : '✦ AI Summary'}
-                  </button>
+                  {isAdmin && (
+                    <button
+                      type="button"
+                      onClick={handleAISummary}
+                      disabled={summarising}
+                      style={{
+                        padding:'2px 8px', borderRadius:'6px', fontSize:'11px', fontWeight:600,
+                        background: summarising ? '#f4f6f9' : '#eff6ff',
+                        color: summarising ? '#8a96a8' : '#1a4fa0',
+                        border:'1px solid #bfdbfe', cursor: summarising ? 'default' : 'pointer',
+                      }}
+                    >
+                      {summarising ? '...' : '✦ AI Summary'}
+                    </button>
+                  )}
                 </div>
                 <div className="px-4 py-3">
                   <textarea
