@@ -771,9 +771,10 @@ Write the summary:`
     }
   }
 
-  const content = (
+  const renderContent = (showDesktopHeader) => (
     <>
     <div className="bg-white border-[1.5px] border-[#e2e6ed] rounded-xl shadow-sm overflow-hidden">
+      {showDesktopHeader && (
       <div className="px-4 sm:px-6 py-4 border-b border-[#e2e6ed] flex flex-wrap items-center justify-between gap-3">
         <button type="button" onClick={onBack} className="h-9 px-3 text-xs rounded-lg bg-white border-[1.5px] border-[#d0d6e0] text-[#4a5568] hover:border-[#1a4fa0] hover:text-[#1a4fa0] hover:bg-[#e8eef8] font-semibold">
           ← Back to Jobs
@@ -808,6 +809,7 @@ Write the summary:`
           )}
         </div>
       </div>
+      )}
 
       <div className="px-4 sm:px-6 border-b border-[#e2e6ed] bg-[#f8f9fb]">
         <div className="flex gap-1 py-2">
@@ -874,7 +876,7 @@ Write the summary:`
         {!editMode ? (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {/* Left — job fields, 2 columns wide */}
-            <div className="lg:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-5">
+            <div className="lg:col-span-2 grid grid-cols-2 md:grid-cols-2 gap-x-4 gap-y-4 md:gap-x-8 md:gap-y-5">
               {fieldRows.filter(f => f.key !== 'notes').map((f) => (
                 <DetailField key={f.key} label={f.label} value={f.value} meta={meta?.[f.key]} profiles={profiles} showProvenance={f.key !== 'notes'} />
               ))}
@@ -1002,7 +1004,7 @@ Write the summary:`
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {/* Left — editable fields, 2 columns wide */}
-            <div className="lg:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-5">
+            <div className="lg:col-span-2 grid grid-cols-2 md:grid-cols-2 gap-x-4 gap-y-4 md:gap-x-8 md:gap-y-5">
               {['job_no','client','mode','priority','goods','bl_no','be_no','be_date','containers','container_size','shipping_line','vessel','eta','cfs_name','cfs_amount','hs_code','rms_status','bg_required','destination','free_days','detention_risk','delay_reason'].map((k) => {
                 const hasOcrValue   = OCR_FIELD_MAP[k] !== undefined && OCR_FIELD_MAP[k] !== null && !!extractedData?.[OCR_FIELD_MAP[k]]?.value
                 const isEditable    = canEditField(k)
@@ -1299,10 +1301,10 @@ Write the summary:`
   return (
     <>
       <div className="block md:hidden">
-        <JobDetailMobile job={job} onBack={onBack}>{content}</JobDetailMobile>
+        <JobDetailMobile job={job} onBack={onBack} onEdit={() => setEditMode(true)}>{renderContent(false)}</JobDetailMobile>
       </div>
       <div className="hidden md:block">
-        {content}
+        {renderContent(true)}
       </div>
     </>
   )
