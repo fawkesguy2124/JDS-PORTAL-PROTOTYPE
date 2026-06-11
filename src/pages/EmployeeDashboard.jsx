@@ -2200,7 +2200,7 @@ export default function EmployeeDashboard() {
       )}
 
       {showCreateJob && (
-        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 backdrop-blur-sm px-4 py-6">
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 backdrop-blur-sm px-4 py-6">
           <div className="w-full max-w-5xl overflow-hidden rounded-xl bg-white shadow-2xl border border-[#e2e6ed]">
             <CreateJob
               isModal
