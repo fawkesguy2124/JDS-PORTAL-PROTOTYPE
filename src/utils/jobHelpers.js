@@ -36,3 +36,22 @@ export function priorityBadgeClass(priority) {
   if (p === 'high') return 'bg-amber-100 text-amber-800'
   return 'bg-slate-100 text-slate-700'
 }
+
+export function parseContainerNos(value) {
+  if (Array.isArray(value)) {
+    return value
+      .map(c => typeof c === 'object' ? (c.no || '') : String(c))
+      .map(s => s.trim().toUpperCase())
+      .filter(s => s.length >= 4)
+  }
+  return (value || '')
+    .split(/[\s,;/]+/)
+    .map(s => s.trim().toUpperCase())
+    .filter(s => s.length >= 4)
+}
+
+export function getContainerSize(job, containerNo) {
+  if (!job || !containerNo) return null
+  const sizes = job.container_sizes || {}
+  return sizes[containerNo.trim().toUpperCase()] || null
+}

@@ -6,6 +6,7 @@ import { STAGE_NAMES } from '../utils/jobHelpers'
 import { linkContainer } from '../api/trackingApi'
 
 const MODES = ['Sea FCL', 'Sea LCL', 'Air', 'BPT/MBPT']
+const CONTAINER_SIZES = ['20GP','40GP','40HC','45HC','20RF','40RF','40RFHC','20OT','40OT','20FR','40FR','20TK']
 const PRIORITIES = ['normal', 'high', 'urgent']
 const RMS_STATUSES = ['pending', 'rms', 'apr', 'acl', 'check', 'hold']
 const BG_OPTIONS = ['no', 'yes', '100percent']
@@ -146,11 +147,11 @@ const INITIAL_FORM = {
   job_no: '',
   client: '',
   mode: 'Sea FCL',
-  container_size: '20 Feet',
+  containers: [],
+  containerRaw: '',
   goods: '',
   priority: 'normal',
   bl_no: '',
-  containers: '',
   carrier: '',
   carrierOther: '',
   vessel: '',
@@ -207,6 +208,7 @@ export default function CreateJob({ isModal = false, onCancel, onCreated }) {
   const [uploadingDocs, setUploadingDocs] = useState(false)
 
   const [extracting, setExtracting] = useState(false)
+  const [showRowWarning, setShowRowWarning] = useState(false)
   const [extractProgress, setExtractProgress] = useState(0)
   const [extractStatus, setExtractStatus] = useState('')
   const [extractedFields, setExtractedFields] = useState(null)
@@ -256,7 +258,18 @@ export default function CreateJob({ isModal = false, onCancel, onCreated }) {
   }, [])
 
   const set = (field) => (e) => {
-    setForm((prev) => ({ ...prev, [field]: e.target.value }))
+    const value = e.target.value
+    setForm((prev) => {
+      const next = { ...prev, [field]: value }
+      if (field === 'mode') {
+        if (value === 'Sea FCL') {
+          next.containers = prev.containers.length === 0 ? [{ no: '', size: '' }] : prev.containers
+        } else {
+          next.containers = []
+        }
+      }
+      return next
+    })
     setError('')
   }
 
@@ -459,7 +472,13 @@ if (parsed.client && shouldFill('client')) {
         applied.client = true
       }
       if (parsed.bl_no && shouldFill('bl_no'))           { updates.bl_no = parsed.bl_no;         applied.bl_no = true }
-      if (parsed.containers && shouldFill('containers')) { updates.containers = parsed.containers; applied.containers = true }
+      if (parsed.containers) {
+        const extractedNos = parsed.containers.split(/[\s,;/]+/).map(s => s.trim().toUpperCase()).filter(s => s.length >= 4)
+        if (form.mode === 'Sea FCL' && extractedNos.length > 0 && form.containers.length === 0) {
+          updates.containers = extractedNos.map(no => ({ no, size: '' }))
+          applied.containers = true
+        }
+      }
       if (parsed.shipping_line && shouldFill('carrier')) {
         const matchedLine = fuzzyMatchShippingLine(parsed.shipping_line)
         updates.carrier = matchedLine || '__other__'
@@ -520,18 +539,25 @@ if (parsed.client && shouldFill('client')) {
       return
     }
 
+    const containersString = form.mode === 'Sea FCL'
+      ? form.containers.map(c => c.no).filter(Boolean).join(' ')
+      : ''
+    const containerSizes = form.mode === 'Sea FCL'
+      ? form.containers.reduce((acc, c) => {
+          if (c.no && c.size) acc[c.no] = c.size
+          return acc
+        }, {})
+      : {}
+
     const payload = {
       job_no: `J-${form.job_no.trim()}`,
       client: form.client === '__other__' ? (form.clientOther?.trim() || '') : form.client.trim(),
       mode: form.mode,
-      container_size: ['Sea FCL', 'Sea LCL'].includes(form.mode) ? form.container_size : null,
       goods: form.goods.trim() || null,
       priority: form.priority,
       bl_no: form.bl_no.trim() || null,
-      containers: (() => {
-        const raw = (form.containers || '').split(/[\s,;]+/).map(c => c.trim().toUpperCase()).filter(Boolean)
-        return raw.join(', ') || null
-      })(),
+      containers: containersString || null,
+      container_sizes: Object.keys(containerSizes).length > 0 ? containerSizes : null,
       shipping_line: form.carrier === '__other__' ? (form.carrierOther.trim() || null) : (form.carrier || null),
       vessel: form.vessel.trim() || null,
       eta: form.eta || null,
@@ -557,7 +583,7 @@ if (parsed.client && shouldFill('client')) {
     }
 
     // Validate before DB insert
-    if (form.containers.trim() && !form.carrier) {
+    if (containersString && !form.carrier) {
       setError('Shipping Line is required when containers are specified.')
       setSaving(false)
       return
@@ -583,13 +609,13 @@ if (parsed.client && shouldFill('client')) {
     const jobNo = payload.job_no
 
     // Validate shipping line before uploading documents
-    if (form.containers.trim()) {
+    if (containersString) {
       if (!form.carrier) {
         setError('Shipping Line is required when containers are specified.')
         setSaving(false)
         return
       }
-      const containerList = form.containers.trim().split(/[\s,;]+/).filter(Boolean)
+      const containerList = containersString.split(/\s+/).filter(Boolean)
       const linkResults = await Promise.allSettled(
         containerList.map((cn) => linkContainer(cn.toUpperCase(), jobId, jobNo, form.carrier))
       )
@@ -640,7 +666,7 @@ if (parsed.client && shouldFill('client')) {
         type: 'job_created',
         action: 'job_created',
         title: `${payload.job_no} — Job created`,
-        note: `${payload.client} · ${payload.mode || ''} · ${payload.containers ? payload.containers.split(/[\s,;]+/).filter(Boolean).length + ' containers' : 'no containers'}`,
+        note: `${payload.client} · ${payload.mode || ''} · ${containersString ? containersString.split(/\s+/).filter(Boolean).length + ' containers' : 'no containers'}`,
         job_no: payload.job_no,
         job_id: insertedJob.id,
         done_by: user.id,
@@ -658,6 +684,15 @@ if (parsed.client && shouldFill('client')) {
       return
     }
     navigate(profile?.role === 'field_ops' ? '/field' : '/admin')
+  }
+
+  const lastRow = form.containers[form.containers.length - 1]
+  const canAddRow = !lastRow || (lastRow.no.trim().length >= 4 && lastRow.size !== '')
+  useEffect(() => { if (canAddRow) setShowRowWarning(false) }, [canAddRow])
+  const handleAddRow = () => {
+    if (!canAddRow) { setShowRowWarning(true); return }
+    setShowRowWarning(false)
+    setForm(p => ({ ...p, containers: [...p.containers, { no: '', size: '' }] }))
   }
 
   return (
@@ -880,15 +915,6 @@ if (parsed.client && shouldFill('client')) {
                 </select>
               </Field>
 
-              {['Sea FCL', 'Sea LCL'].includes(form.mode) && (
-                <Field label="Container Size">
-                  <select value={form.container_size} onChange={set('container_size')} className={inputClass}>
-                    <option value="20 Feet">20 Feet</option>
-                    <option value="40 Feet">40 Feet</option>
-                  </select>
-                </Field>
-              )}
-
               <Field label="Goods Description">
                 <input
                   type="text"
@@ -961,16 +987,96 @@ if (parsed.client && shouldFill('client')) {
                 )}
               </Field>
 
-              <Field label="Container Numbers (comma separated)">
-                <input
-                  type="text"
-                  value={form.containers}
-                  onChange={set('containers')}
-                  className={fieldClass('containers')}
-                  placeholder="e.g. MSCU1234567, OOLU7654321, CMAU9988776"
-                />
-                <p className="text-xs text-gray-400 mt-1">Enter multiple container numbers separated by commas</p>
-              </Field>
+              {/* Containers — per-container rows for Sea FCL, notice for others */}
+              {form.mode === 'Sea FCL' ? (
+                <div className="col-span-full">
+                  <label className={labelClass}>Containers</label>
+                  <div className="border border-gray-300 rounded-lg overflow-hidden">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="bg-gray-50 border-b border-gray-200">
+                          <th className="text-left px-3 py-2 text-xs font-medium text-gray-500 uppercase tracking-wide w-1/2">Container No.</th>
+                          <th className="text-left px-3 py-2 text-xs font-medium text-gray-500 uppercase tracking-wide w-1/3">Size</th>
+                          <th className="px-3 py-2 w-10" />
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {form.containers.map((row, i) => (
+                          <tr key={i} className="border-b border-gray-100 last:border-b-0">
+                            <td className="px-3 py-1.5">
+                              <input
+                                type="text"
+                                value={row.no}
+                                onChange={e => {
+                                  const val = e.target.value.toUpperCase()
+                                  setForm(p => {
+                                    const next = [...p.containers]
+                                    next[i] = { ...next[i], no: val }
+                                    return { ...p, containers: next }
+                                  })
+                                }}
+                                placeholder="e.g. MSCU1234567"
+                                className="w-full border border-gray-200 rounded px-2 py-1.5 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-[#1e3a5f] focus:border-transparent"
+                              />
+                            </td>
+                            <td className="px-3 py-1.5">
+                              <select
+                                value={row.size}
+                                onChange={e => {
+                                  setForm(p => {
+                                    const next = [...p.containers]
+                                    next[i] = { ...next[i], size: e.target.value }
+                                    return { ...p, containers: next }
+                                  })
+                                }}
+                                className="w-full border border-gray-200 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-[#1e3a5f] focus:border-transparent"
+                              >
+                                <option value="">Select size</option>
+                                {CONTAINER_SIZES.map(s => <option key={s} value={s}>{s}</option>)}
+                              </select>
+                            </td>
+                            <td className="px-3 py-1.5 text-center">
+                              <button
+                                type="button"
+                                disabled={form.containers.length <= 1}
+                                onClick={() => {
+                                  setForm(p => ({ ...p, containers: p.containers.filter((_, idx) => idx !== i) }))
+                                }}
+                                className="text-gray-400 hover:text-red-500 disabled:opacity-30 disabled:cursor-not-allowed text-lg leading-none"
+                                title="Remove container"
+                              >×</button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    <div className="px-3 py-2 border-t border-gray-100 bg-gray-50/50">
+                      <button
+                        type="button"
+                        onClick={handleAddRow}
+                        disabled={!canAddRow}
+                        className="text-xs font-semibold text-[#1e3a5f] disabled:opacity-40 disabled:cursor-not-allowed"
+                      >+ Add container</button>
+                      {showRowWarning && (
+                        <p className="text-xs text-red-500 mt-1">Please complete the container number and size above before adding another</p>
+                      )}
+                    </div>
+                  </div>
+                  <p className="text-xs text-gray-400 mt-1">Each container can have a different size as per BL</p>
+                </div>
+              ) : form.mode === 'Sea LCL' ? (
+                <Field label="Containers">
+                  <p className="text-sm text-gray-400 italic">Sea LCL — container numbers not applicable. Shipment is consolidated.</p>
+                </Field>
+              ) : form.mode === 'Air' ? (
+                <Field label="Containers">
+                  <p className="text-sm text-gray-400 italic">Air — container numbers not applicable. Enter AWB number in BL field.</p>
+                </Field>
+              ) : form.mode === 'BPT/MBPT' ? (
+                <Field label="Containers">
+                  <p className="text-sm text-gray-400 italic">BPT/MBPT — container numbers not applicable.</p>
+                </Field>
+              ) : null}
 
               <Field label="Vessel / Flight">
                 <input type="text" value={form.vessel} onChange={set('vessel')} className={fieldClass('vessel')} />

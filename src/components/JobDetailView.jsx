@@ -1,12 +1,20 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react'
 import { supabase } from '../supabase'
-import { getStageName } from '../utils/jobHelpers'
+import { getStageName, parseContainerNos, getContainerSize } from '../utils/jobHelpers'
 import OCRSection, { FIELD_LABELS_OCR, OCR_SECTIONS, OCR_FIELD_MAP, MULTI_VALUE_FIELDS } from '../components/OCRSection'
 import JobDetailMobile from './mobile/JobDetailMobile'
 import JobDetailDesktop from './desktop/JobDetailDesktop'
 import { useAuth } from '../contexts/AuthContext'
 
 function classNames(...xs) { return xs.filter(Boolean).join(' ') }
+
+const CONTAINER_SIZES = [
+  '20GP','40GP','40HC','45HC',
+  '20RF','40RF','40RFHC',
+  '20OT','40OT',
+  '20FR','40FR',
+  '20TK'
+]
 
 const STAGE_LIST = Array.from({ length: 11 }).map((_, i) => ({
   value: i,
@@ -69,6 +77,12 @@ const FIELD_PERMS = {
   delay_reason: { can: ['Durgesh'] },
   notes: { can: ['Durgesh'] },
   stage: { can: ['Trupti', 'Uphadhya'] },
+}
+
+function parseContainersWithSizes(containers, containerSizes) {
+  const nos = parseContainerNos(containers)
+  const sizes = containerSizes || {}
+  return nos.map(no => ({ no, size: sizes[no] || '' }))
 }
 
 function formatDateSlash(value) {
@@ -212,7 +226,7 @@ function MiniStatus({ title, value, tone }) {
   )
 }
 
-function DetailField({ label, value, meta, profiles, showProvenance = true }) {
+function DetailField({ label, value, meta, profiles, showProvenance = true, containerSizes }) {
   const hasValue = value && value !== '—' && value !== '-' && String(value).trim() !== ''
   const isContainers = label === 'Containers'
   return (
@@ -222,13 +236,23 @@ function DetailField({ label, value, meta, profiles, showProvenance = true }) {
       </div>
       {isContainers && hasValue ? (
         <div style={{ display:'flex', flexWrap:'wrap', gap:'4px', marginTop:'2px' }}>
-          {String(value).split(/[\s,;/]+/).map(s => s.trim().toUpperCase()).filter(s => s.length >= 4).map(cn => (
+          {parseContainerNos(value).map(cn => (
             <span key={cn} style={{
               fontFamily:"'JetBrains Mono',monospace", fontSize:'11px', fontWeight:500,
               padding:'2px 8px', borderRadius:'5px',
               background:'#E6F1FB', color:'#185FA5', border:'0.5px solid #B5D4F4',
-              display:'inline-flex', alignItems:'center',
-            }}>{cn}</span>
+              display:'inline-flex', alignItems:'center', gap:'4px',
+            }}>
+              {cn}
+              {containerSizes?.[cn] && (
+                <span style={{
+                  fontSize:'10px', padding:'1px 5px', borderRadius:'4px',
+                  background:'#dce8fa', color:'#185FA5', border:'0.5px solid #b5d4f4',
+                }}>
+                  {containerSizes[cn]}
+                </span>
+              )}
+            </span>
           ))}
         </div>
       ) : (
@@ -401,6 +425,10 @@ function JobDetailView({ job, profiles, currentUserName, isAdmin, canUpdateStage
   const canEditField = (fieldKey) => {
     if (isAdmin) return true
     if (['assigned_to','created_by','created_at','updated_at'].includes(fieldKey)) return false
+    // Restricted employees — everyone except Akshyani and Uphadhya — can only edit free_days
+    if (!['Akshyani', 'Uphadhya'].includes(currentUserName)) {
+      return fieldKey === 'free_days'
+    }
     const rule = FIELD_PERMS[fieldKey]
     if (!rule) return false
     if (rule.can === 'all') return true
@@ -416,8 +444,7 @@ function JobDetailView({ job, profiles, currentUserName, isAdmin, canUpdateStage
     { key: 'bl_no', label: 'BL Number', value: displayValue(job.bl_no) },
     { key: 'be_no', label: 'BE Number', value: displayValue(job.be_no) },
     { key: 'be_date', label: 'BE Date', value: formatDateSlash(job.be_date) },
-    { key: 'containers', label: 'Containers', value: displayValue(job.containers) },
-    { key: 'container_size', label: 'Container Size', value: displayValue(job.container_size) },
+    { key: 'containers', label: 'Containers', value: displayValue(job.containers), custom: true },
     { key: 'shipping_line', label: 'Shipping Line', value: displayValue(job.shipping_line) },
     { key: 'vessel', label: 'Vessel / Flight', value: displayValue(job.vessel) },
     { key: 'eta', label: 'ETA', value: formatDateSlash(job.eta) },
@@ -445,12 +472,52 @@ function JobDetailView({ job, profiles, currentUserName, isAdmin, canUpdateStage
 
   const updateForm = (key) => (e) => setForm((prev) => ({ ...prev, [key]: e.target.value }))
 
+  const updateContainerRow = (i, field, value) => {
+    const rows = parseContainersWithSizes(form.containers, form.container_sizes)
+    rows[i] = { ...rows[i], [field]: value }
+    setForm(prev => ({
+      ...prev,
+      containers: rows.map(r => r.no).filter(Boolean).join(' '),
+      container_sizes: rows.reduce((acc, r) => {
+        if (r.no && r.size) acc[r.no] = r.size
+        return acc
+      }, {})
+    }))
+  }
+
+  const addContainerRow = () => {
+    const rows = parseContainersWithSizes(form.containers, form.container_sizes)
+    rows.push({ no: '', size: '' })
+    setForm(prev => ({
+      ...prev,
+      containers: rows.map(r => r.no).filter(Boolean).join(' '),
+      container_sizes: rows.reduce((acc, r) => {
+        if (r.no && r.size) acc[r.no] = r.size
+        return acc
+      }, {})
+    }))
+  }
+
+  const removeContainerRow = (i) => {
+    const rows = parseContainersWithSizes(form.containers, form.container_sizes)
+    if (rows.length === 1) return
+    rows.splice(i, 1)
+    setForm(prev => ({
+      ...prev,
+      containers: rows.map(r => r.no).filter(Boolean).join(' '),
+      container_sizes: rows.reduce((acc, r) => {
+        if (r.no && r.size) acc[r.no] = r.size
+        return acc
+      }, {})
+    }))
+  }
+
   const handleSave = async () => {
     setSaving(true)
     try {
       const updates = {}
       const newMeta = { ...(meta || {}) }
-      const candidates = ['job_no','client','mode','bl_no','containers','container_size','shipping_line','vessel','eta','cfs_name','be_no','be_date','hs_code','rms_status','bg_required','cfs_amount','destination','priority','goods','free_days','detention_risk','delay_reason','notes']
+      const candidates = ['job_no','client','mode','bl_no','containers','shipping_line','vessel','eta','cfs_name','be_no','be_date','hs_code','rms_status','bg_required','cfs_amount','destination','priority','goods','free_days','detention_risk','delay_reason','notes']
       candidates.forEach((k) => {
         if (!canEditField(k)) return
         const prev = job[k]
@@ -460,6 +527,10 @@ function JobDetailView({ job, profiles, currentUserName, isAdmin, canUpdateStage
         if (typeof next === 'string') { next = next.trim(); if (next === '') next = null }
         if ((prev ?? null) !== (next ?? null)) { updates[k] = next; newMeta[k] = { by: currentUserName, ts: Date.now() } }
       })
+      // Save container_sizes if it changed
+      const prevSizes = JSON.stringify(job.container_sizes || {})
+      const nextSizes = JSON.stringify(form.container_sizes || {})
+      if (prevSizes !== nextSizes) { updates.container_sizes = form.container_sizes || {} }
       if (Object.keys(updates).length === 0) { toast('No changes to save.', 'info'); setEditMode(false); return }
       updates.field_meta = newMeta
       updates.updated_at = new Date().toISOString()
@@ -524,12 +595,13 @@ function JobDetailView({ job, profiles, currentUserName, isAdmin, canUpdateStage
     const now = Date.now()
 
     if (MULTI_VALUE_FIELDS.includes(fieldKey)) {
-      const existing = (form[fieldKey] || '')
-        .split(/[\s,;/]+/).map(s => s.trim().toUpperCase()).filter(Boolean)
+      const existing = parseContainerNos(form.containers)
       const incoming = extractedValue
         .split(/[\s,;/]+/).map(s => s.trim().toUpperCase()).filter(Boolean)
       const merged = [...new Set([...existing, ...incoming])]
-      setForm(prev => ({ ...prev, [fieldKey]: merged.join(', ') }))
+      const sizes = { ...(form.container_sizes || {}) }
+      // New containers from OCR get no size — user selects manually
+      setForm(prev => ({ ...prev, containers: merged.join(' '), container_sizes: sizes }))
       toast(`✓ Added ${incoming.length} container(s) to ${FIELD_LABELS[fieldKey]}.`, 'success')
     } else {
       setForm(prev => ({ ...prev, [fieldKey]: extractedValue }))
@@ -562,8 +634,8 @@ function JobDetailView({ job, profiles, currentUserName, isAdmin, canUpdateStage
       return
     }
 
-    const fillableKeys = ['job_no','client','mode','goods','bl_no','containers','container_size',
-      'shipping_line','vessel','eta','hs_code','destination','importer_gstin','importer_iec',
+      const fillableKeys = ['job_no','client','mode','goods','bl_no','containers',
+        'shipping_line','vessel','eta','hs_code','destination','importer_gstin','importer_iec',
       'ad_code','igm_no','igm_date','hawb_no','hawb_date','bl_date','port_of_loading',
       'port_of_shipment','port_of_discharge','country_of_origin','country_of_consignment',
       'package_count','gross_weight','net_weight','supplier_name','supplier_address','supplier_country'
@@ -589,9 +661,10 @@ function JobDetailView({ job, profiles, currentUserName, isAdmin, canUpdateStage
       const confidence = extracted.confidence || 'low'
 
       if (MULTI_VALUE_FIELDS.includes(k)) {
-        const existing = (newForm[k] || '').split(/[\s,;/]+/).map(s => s.trim().toUpperCase()).filter(Boolean)
+        const existing = parseContainerNos(newForm.containers)
         const incoming = extractedValue.split(/[\s,;/]+/).map(s => s.trim().toUpperCase()).filter(Boolean)
-        newForm[k] = [...new Set([...existing, ...incoming])].join(', ')
+        newForm.containers = [...new Set([...existing, ...incoming])].join(' ')
+        if (!newForm.container_sizes) newForm.container_sizes = {}
       } else {
         newForm[k] = extractedValue
       }
@@ -877,9 +950,38 @@ Write the summary:`
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {/* Left — job fields, 2 columns wide */}
             <div className="lg:col-span-2 grid grid-cols-2 md:grid-cols-2 gap-x-4 gap-y-4 md:gap-x-8 md:gap-y-5">
-              {fieldRows.filter(f => f.key !== 'notes').map((f) => (
-                <DetailField key={f.key} label={f.label} value={f.value} meta={meta?.[f.key]} profiles={profiles} showProvenance={f.key !== 'notes'} />
-              ))}
+              {fieldRows.filter(f => f.key !== 'notes').map((f) => {
+                if (f.key === 'containers' && f.custom) {
+                  const cnList = parseContainerNos(job.containers)
+                  const sizes = job.container_sizes || {}
+                  return (
+                    <div key="containers">
+                      <p className="text-xs uppercase tracking-wide text-[#8a96a8] font-medium">Containers</p>
+                      {cnList.length === 0 ? (
+                        <p className="text-sm text-[#d0d6e0] mt-0.5">—</p>
+                      ) : (
+                        <div style={{ display:'flex', flexWrap:'wrap', gap:'6px', marginTop:'4px' }}>
+                          {cnList.map(cn => (
+                            <span key={cn} style={{ display:'inline-flex', alignItems:'center', gap:'4px',
+                              padding:'3px 8px', borderRadius:'6px', border:'0.5px solid #b5d4f4',
+                              background:'#e8eef8' }}>
+                              <span style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:'12px',
+                                fontWeight:500, color:'#185FA5' }}>{cn}</span>
+                              {sizes[cn] && (
+                                <span style={{ fontSize:'10px', color:'#0c447c', borderLeft:'0.5px solid #b5d4f4',
+                                  paddingLeft:'4px' }}>{sizes[cn]}</span>
+                              )}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )
+                }
+                return (
+                  <DetailField key={f.key} label={f.label} value={f.value} meta={meta?.[f.key]} profiles={profiles} showProvenance={f.key !== 'notes'} />
+                )
+              })}
             </div>
 
             {/* Right — notes + delay reason */}
@@ -1005,7 +1107,7 @@ Write the summary:`
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {/* Left — editable fields, 2 columns wide */}
             <div className="lg:col-span-2 grid grid-cols-2 md:grid-cols-2 gap-x-4 gap-y-4 md:gap-x-8 md:gap-y-5">
-              {['job_no','client','mode','priority','goods','bl_no','be_no','be_date','containers','container_size','shipping_line','vessel','eta','cfs_name','cfs_amount','hs_code','rms_status','bg_required','destination','free_days','detention_risk','delay_reason'].map((k) => {
+              {['job_no','client','mode','priority','goods','bl_no','be_no','be_date','containers','shipping_line','vessel','eta','cfs_name','cfs_amount','hs_code','rms_status','bg_required','destination','free_days','detention_risk','delay_reason'].map((k) => {
                 const hasOcrValue   = OCR_FIELD_MAP[k] !== undefined && OCR_FIELD_MAP[k] !== null && !!extractedData?.[OCR_FIELD_MAP[k]]?.value
                 const isEditable    = canEditField(k)
                 const wasJustFilled = importedFields[k]
@@ -1020,10 +1122,39 @@ Write the summary:`
                     </div>
                     {isEditable ? (
                       k === 'containers' ? (
-                        <ContainerChipInput
-                          value={form.containers || ''}
-                          onChange={val => { setForm(p => ({...p, containers: val})) }}
-                        />
+                        (() => {
+                          const rows = parseContainersWithSizes(form.containers, form.container_sizes)
+                          const lastRow = rows[rows.length - 1]
+                          const canAdd = !lastRow || (lastRow.no.trim().length >= 4 && lastRow.size !== '')
+                          return (
+                            <div className="flex flex-col gap-1">
+                              <div style={{ display:'grid', gridTemplateColumns:'1fr 130px 32px', gap:'8px', marginBottom:'4px' }}>
+                                <span className="text-[10px] font-medium uppercase tracking-wide text-[#8a96a8]">Container no.</span>
+                                <span className="text-[10px] font-medium uppercase tracking-wide text-[#8a96a8]">Size</span>
+                                <span />
+                              </div>
+                              {rows.map((row, i) => (
+                                <div key={i} style={{ display:'grid', gridTemplateColumns:'1fr 130px 32px', gap:'8px', alignItems:'center' }}>
+                                  <input type="text" value={row.no}
+                                    onChange={e => updateContainerRow(i, 'no', e.target.value.toUpperCase())}
+                                    placeholder="e.g. MSCU1234567"
+                                    className="w-full rounded-lg border border-[#e2e6ed] bg-white px-3 py-2 text-sm font-mono text-[#1a2233] focus:border-[#1a4fa0] focus:outline-none focus:ring-1 focus:ring-[#1a4fa0]" />
+                                  <select value={row.size}
+                                    onChange={e => updateContainerRow(i, 'size', e.target.value)}
+                                    className="w-full rounded-lg border border-[#e2e6ed] bg-white px-3 py-2 text-sm text-[#1a2233] focus:border-[#1a4fa0] focus:outline-none focus:ring-1 focus:ring-[#1a4fa0]">
+                                    <option value="">Select size</option>
+                                    {CONTAINER_SIZES.map(s => <option key={s} value={s}>{s}</option>)}
+                                  </select>
+                                  <button type="button" onClick={() => removeContainerRow(i)}
+                                    disabled={rows.length === 1}
+                                    className="text-gray-400 hover:text-red-500 disabled:opacity-30 disabled:cursor-not-allowed text-lg leading-none text-center">×</button>
+                                </div>
+                              ))}
+                              <button type="button" onClick={addContainerRow} disabled={!canAdd}
+                                className="text-xs font-semibold text-[#1e3a5f] disabled:opacity-40 disabled:cursor-not-allowed text-left mt-1">+ Add container</button>
+                            </div>
+                          )
+                        })()
                       ) : k === 'mode' ? (
                         <select value={form[k] || ''} onChange={e => { setForm(p => ({...p, [k]: e.target.value})) }}
                           className="w-full rounded-lg border border-[#e2e6ed] bg-white px-3 py-2 text-sm text-[#1a2233] focus:border-[#1a4fa0] focus:outline-none focus:ring-1 focus:ring-[#1a4fa0]">
@@ -1074,9 +1205,13 @@ Write the summary:`
               {/* Delay reason */}
               <div className="flex flex-col gap-1">
                 <p className="text-xs text-[#8a96a8] font-medium uppercase tracking-wide">Delay Reason</p>
-                <input type="text" value={form.delay_reason || ''} onChange={e => setForm(p => ({...p, delay_reason: e.target.value}))}
-                  placeholder="Enter delay reason..."
-                  className="w-full rounded-lg border border-[#e2e6ed] bg-white px-3 py-2 text-sm text-[#1a2233] focus:border-[#1a4fa0] focus:outline-none focus:ring-1 focus:ring-[#1a4fa0]" />
+                {canEditField('delay_reason') ? (
+                  <input type="text" value={form.delay_reason || ''} onChange={e => setForm(p => ({...p, delay_reason: e.target.value}))}
+                    placeholder="Enter delay reason..."
+                    className="w-full rounded-lg border border-[#e2e6ed] bg-white px-3 py-2 text-sm text-[#1a2233] focus:border-[#1a4fa0] focus:outline-none focus:ring-1 focus:ring-[#1a4fa0]" />
+                ) : (
+                  <p className="text-sm text-[#1a2233] py-2">{form.delay_reason || <span className="text-[#d0d6e0]">—</span>}</p>
+                )}
               </div>
 
               {/* Notes */}
@@ -1100,28 +1235,32 @@ Write the summary:`
                   )}
                 </div>
                 <div className="px-4 py-3">
-                  <textarea
-                    value={form.notes || ''}
-                    onChange={e => {
-                      setForm(p => ({ ...p, notes: e.target.value }))
-                      e.target.style.height = 'auto'
-                      e.target.style.height = e.target.scrollHeight + 'px'
-                    }}
-                    onInput={e => {
-                      e.target.style.height = 'auto'
-                      e.target.style.height = e.target.scrollHeight + 'px'
-                    }}
-                    ref={el => {
-                      if (el) {
-                        el.style.height = 'auto'
-                        el.style.height = el.scrollHeight + 'px'
-                      }
-                    }}
-                    placeholder="Add notes here..."
-                    rows={2}
-                    style={{ overflow:'hidden', minHeight:'48px' }}
-                    className="w-full text-sm text-[#1a2233] bg-transparent border-none outline-none resize-none leading-relaxed placeholder:text-[#d0d6e0] font-[inherit]"
-                  />
+                  {canEditField('notes') ? (
+                    <textarea
+                      value={form.notes || ''}
+                      onChange={e => {
+                        setForm(p => ({ ...p, notes: e.target.value }))
+                        e.target.style.height = 'auto'
+                        e.target.style.height = e.target.scrollHeight + 'px'
+                      }}
+                      onInput={e => {
+                        e.target.style.height = 'auto'
+                        e.target.style.height = e.target.scrollHeight + 'px'
+                      }}
+                      ref={el => {
+                        if (el) {
+                          el.style.height = 'auto'
+                          el.style.height = el.scrollHeight + 'px'
+                        }
+                      }}
+                      placeholder="Add notes here..."
+                      rows={2}
+                      style={{ overflow:'hidden', minHeight:'48px' }}
+                      className="w-full text-sm text-[#1a2233] bg-transparent border-none outline-none resize-none leading-relaxed placeholder:text-[#d0d6e0] font-[inherit]"
+                    />
+                  ) : (
+                    <p className="text-sm text-[#1a2233] whitespace-pre-wrap">{form.notes || <span className="text-[#d0d6e0]">—</span>}</p>
+                  )}
                 </div>
               </div>
 

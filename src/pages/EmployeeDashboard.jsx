@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom'
 import { supabase } from '../supabase'
 import { fetchAllTracking } from '../services/trackingService'
 import { useAuth } from '../contexts/AuthContext'
-import { getStageName } from '../utils/jobHelpers'
+import { getStageName, parseContainerNos } from '../utils/jobHelpers'
 import CreateJob from './CreateJob'
 import * as XLSX from 'xlsx'
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
@@ -77,14 +77,9 @@ function EmpContainerSection({ jobs, showToast, pendingNavAction, onNavActionCon
     }
   }, [pendingNavAction, jobs])
 
-  const parseContainers = (str) => {
-    if (!str || typeof str !== 'string') return []
-    return str.split(/[\s,;/]+/).map(s => s.trim().toUpperCase()).filter(s => s.length >= 4)
-  }
-
   const allJobCards = useMemo(() => {
     return (jobs || [])
-      .map(job => ({ job, cnList: parseContainers(job.containers) }))
+      .map(job => ({ job, cnList: parseContainerNos(job.containers) }))
       .filter(({ cnList }) => cnList.length > 0)
       .sort((a, b) => {
         const na = parseInt((a.job.job_no || '').replace(/\D/g, '')) || 0
@@ -303,10 +298,7 @@ function EmpContainerSection({ jobs, showToast, pendingNavAction, onNavActionCon
 }
 
 function EmpJobDetailPanel({ job, trackingData, onClose }) {
-  const cnList = (job.containers || '')
-    .split(/[\s,;/]+/)
-    .map(s => s.trim().toUpperCase())
-    .filter(s => s.length >= 4)
+  const cnList = parseContainerNos(job.containers)
 
   const formatD  = (d) => d ? new Date(d).toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' }) : '—'
   const formatDT = (d) => d ? new Date(d).toLocaleString('en-IN', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' }) : '—'

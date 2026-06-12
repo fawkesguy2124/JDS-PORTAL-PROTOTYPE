@@ -4,6 +4,7 @@ import { updateContainerStatus, addMilestone } from '../services/trackingService
 import { refreshAllContainers, forceRefreshAllContainers, fetchLDBTracking, persistLDBTracking } from '../services/tracking/ldbProvider'
 import ContainerTrackingMobile  from './mobile/ContainerTrackingMobile'
 import ContainerTrackingDesktop from './desktop/ContainerTrackingDesktop'
+import { parseContainerNos } from '../utils/jobHelpers'
 
 function formatContainerDate(ts) {
   if (!ts) return '\u2014'
@@ -14,9 +15,7 @@ function formatContainerDate(ts) {
 }
 
 function JobDetailPanel({ job, trackingData, onClose, onUpdate, onAddEvent, onRefresh, showToast, activeContainer, onCloseRef }) {
-  const cnList = (job.containers || '')
-    .split(/[\s,;/]+/)
-    .map(s => s.trim().toUpperCase())
+  const cnList = parseContainerNos(job.containers)
     .filter(s => s.length >= 4)
 
   const initialIdx = activeContainer
@@ -120,6 +119,7 @@ function JobDetailPanel({ job, trackingData, onClose, onUpdate, onAddEvent, onRe
     if (d.includes('CFS') || d.includes('ICD') || d.includes('DPD')) return { color:'#854F0B', dot:'amber' }
     if (d.includes('VESSEL') || d.includes('LOADING'))         return { color:'#0F6E56', dot:'green' }
     if (d.includes('CUSTOMS') || d.includes('HOLD'))           return { color:'#A32D2D', dot:'red' }
+    if (d.includes('TOLL PLAZA') || d.includes('TOLL'))        return { color:'#5b21b6', dot:'purple' }
     return { color:'var(--color-text-primary)', dot:'gray' }
   }
 
@@ -128,6 +128,7 @@ function JobDetailPanel({ job, trackingData, onClose, onUpdate, onAddEvent, onRe
     green: { bg:'#EAF3DE', border:'#1D9E75', inner:'#1D9E75' },
     amber: { bg:'#FAEEDA', border:'#EF9F27', inner:'#EF9F27' },
     red:   { bg:'#FCEBEB', border:'#E24B4A', inner:'#E24B4A' },
+    purple:{ bg:'#f5f3ff', border:'#7c3aed', inner:'#7c3aed' },
     gray:  { bg:'var(--color-background-secondary)', border:'var(--color-border-tertiary)', inner:'var(--color-border-tertiary)' },
   }
 
@@ -1255,15 +1256,10 @@ function ContainerTrackingSection({ showToast, jobs, pendingNavAction, onNavActi
       setTrackingData(map)
     }
 
-  const parseContainers = (str) => {
-    if (!str || typeof str !== 'string') return []
-    return str.split(/[\s,;/]+/).map(s => s.trim().toUpperCase()).filter(s => s.length >= 4)
-  }
-
   // One entry per job that has containers
   const allJobCards = useMemo(() => {
     return (jobs || [])
-      .map(job => ({ job, cnList: parseContainers(job.containers) }))
+      .map(job => ({ job, cnList: parseContainerNos(job.containers) }))
       .filter(({ cnList }) => cnList.length > 0)
   }, [jobs])
 
