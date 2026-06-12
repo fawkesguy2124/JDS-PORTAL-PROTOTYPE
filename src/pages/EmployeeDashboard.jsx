@@ -7,7 +7,6 @@ import { getStageName } from '../utils/jobHelpers'
 import CreateJob from './CreateJob'
 import * as XLSX from 'xlsx'
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
-import OCRSection from '../components/OCRSection'
 import NotificationBell from '../components/NotificationBell'
 import ContainerTrackingSection from '../components/ContainerTrackingSection'
 import JobDetailView from '../components/JobDetailView'
@@ -556,12 +555,6 @@ export default function EmployeeDashboard() {
         { id: 'jobs',       label: 'All Jobs',           icon: '≡'  },
         { id: 'containers', label: 'Container Tracking',  icon: '⊟' },
         { id: 'documents',  label: 'Documents',           icon: '📄' },
-      ],
-    },
-    {
-      label: 'AI TOOLS',
-      items: [
-        { id: 'ocr', label: 'OCR Extract', icon: '✦' },
       ],
     },
   ], [isFieldOps])
@@ -1473,7 +1466,7 @@ export default function EmployeeDashboard() {
         </div>
         <nav className="flex-1 overflow-y-auto py-1">
           {NAV_SECTIONS.map((section) => {
-            if (false) return null // AI TOOLS visible to all employees
+            if (false) return null
             return (
               <div key={section.label}>
                 <div className="px-4 pt-4 pb-1 text-[10px] font-bold text-white/45 uppercase tracking-[0.1em]">
@@ -1534,8 +1527,7 @@ export default function EmployeeDashboard() {
           <div className="min-w-0">
             <div className="text-[17px] font-bold text-[#1a2233] truncate">
               {activeNav === 'documents' ? 'Documents'
-              : activeNav === 'containers' ? 'Container Tracking'
-              : activeNav === 'ocr' ? 'OCR Extract'
+               : activeNav === 'containers' ? 'Container Tracking'
               : 'All Jobs'}
             </div>
             {activeNav === 'jobs' && (
@@ -1931,16 +1923,6 @@ export default function EmployeeDashboard() {
                 </div>
               )}
             </div>
-          )}
-
-          {activeNav === 'ocr' && (
-            <OCRSection
-              jobs={jobs}
-              currentUserName={currentUserName}
-              showToast={showToast}
-              user={user}
-              profile={profile}
-            />
           )}
 
           {activeNav === 'containers' && (
