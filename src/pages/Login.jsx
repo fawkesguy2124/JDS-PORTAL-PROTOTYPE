@@ -397,6 +397,28 @@ export default function Login() {
             <path d="M0 105 L0 76 Q0 64 18 60 L60 52 L410 52 Q438 52 440 76 L440 100 Q440 105 432 105 Z" fill="#b4b2a9" />
             <rect x="0" y="98" width="440" height="9" fill="#0c2d4a" />
 
+            {/* Bridge tower — larger, bow/left, matching bulk carrier reference */}
+            <g transform="translate(10,-18)">
+              <rect x="0" y="0" width="85" height="78" fill="#f1f1ef" />
+              <rect x="0" y="-12" width="85" height="12" fill="#dcdcd8" />
+              <path d="M0 -12 L-14 0 L0 0 Z" fill="#dcdcd8" />
+
+              <rect x="8" y="10" width="14" height="14" fill="#7d8a96" />
+              <rect x="28" y="10" width="14" height="14" fill="#7d8a96" />
+              <rect x="48" y="10" width="14" height="14" fill="#7d8a96" />
+              <rect x="68" y="10" width="14" height="14" fill="#7d8a96" />
+
+              <rect x="8" y="32" width="14" height="14" fill="#7d8a96" />
+              <rect x="28" y="32" width="14" height="14" fill="#7d8a96" />
+              <rect x="48" y="32" width="14" height="14" fill="#7d8a96" />
+              <rect x="68" y="32" width="14" height="14" fill="#7d8a96" />
+
+              <rect x="8" y="54" width="14" height="14" fill="#7d8a96" />
+              <rect x="28" y="54" width="14" height="14" fill="#7d8a96" />
+              <rect x="48" y="54" width="14" height="14" fill="#7d8a96" />
+              <rect x="68" y="54" width="14" height="14" fill="#7d8a96" />
+            </g>
+
             <path d="M105 60 Q135 30 165 60 L165 60 Z" fill="#fac775" />
             <path d="M185 60 Q215 30 245 60 L245 60 Z" fill="#fac775" />
             <path d="M265 60 Q295 30 325 60 L325 60 Z" fill="#fac775" />
