@@ -351,7 +351,8 @@ function ContainerChipInput({ value, onChange }) {
   )
 }
 
-function JobDetailView({ job, profiles, currentUserName, isAdmin, canUpdateStage, onBack, onSaved, toast, onDelete, showToast, onJobUpdated }) {
+// hideTabs: tabs whose checks live on their own pages instead (e.g. ['customs', 'vessel', 'truck'])
+function JobDetailView({ job, profiles, currentUserName, isAdmin, canUpdateStage, onBack, onSaved, toast, onDelete, showToast, onJobUpdated, hideTabs = [] }) {
   // EmployeeDashboard passes showToast / onJobUpdated instead of toast / onSaved
   toast = toast || showToast || (() => {})
   onSaved = onSaved || onJobUpdated || (async () => {})
@@ -361,7 +362,7 @@ function JobDetailView({ job, profiles, currentUserName, isAdmin, canUpdateStage
   const [showFullAccountability, setShowFullAccountability] = useState(false)
   const [detailTab, setDetailTab] = useState(() => {
     const hash = window.location.hash.replace('#', '')
-    return ['details', 'ocr', 'fields', 'customs', ...JOB_TABS.map(t => t.id)].includes(hash) ? hash : 'details'
+    return ['details', 'ocr', 'fields', 'customs', ...JOB_TABS.map(t => t.id)].filter(t => !hideTabs.includes(t)).includes(hash) ? hash : 'details'
   })
   const [extractedFields, setExtractedFields] = useState(null)
   const [loadingExtracted, setLoadingExtracted] = useState(false)
@@ -913,11 +914,11 @@ Write the summary:`
             className={classNames('px-4 py-1.5 text-xs font-bold rounded-lg transition-colors', detailTab === 'fields' ? 'bg-white text-[#1a4fa0] shadow-sm border border-[#e2e6ed]' : 'text-[#8a96a8] hover:text-[#1a4fa0]')}>
             ✦ Extracted Fields
           </button>
-          {job.job_type !== 'export' && <button type="button" onClick={() => { setDetailTab('customs'); window.history.replaceState(null, '', window.location.pathname + window.location.search + '#customs') }}
+          {job.job_type !== 'export' && !hideTabs.includes('customs') && <button type="button" onClick={() => { setDetailTab('customs'); window.history.replaceState(null, '', window.location.pathname + window.location.search + '#customs') }}
             className={classNames('px-4 py-1.5 text-xs font-bold rounded-lg transition-colors', detailTab === 'customs' ? 'bg-white text-[#1a4fa0] shadow-sm border border-[#e2e6ed]' : 'text-[#8a96a8] hover:text-[#1a4fa0]')}>
             Customs & BE
           </button>}
-          {JOB_TABS.filter(t => t.showIf(job)).map(t => (
+          {JOB_TABS.filter(t => t.showIf(job) && !hideTabs.includes(t.id)).map(t => (
             <button key={t.id} type="button" onClick={() => { setDetailTab(t.id); window.history.replaceState(null, '', window.location.pathname + window.location.search + '#' + t.id) }}
               className={classNames('px-4 py-1.5 text-xs font-bold rounded-lg transition-colors whitespace-nowrap', detailTab === t.id ? 'bg-white text-[#1a4fa0] shadow-sm border border-[#e2e6ed]' : 'text-[#8a96a8] hover:text-[#1a4fa0]')}>
               {t.label}
@@ -1470,7 +1471,7 @@ Write the summary:`
         </div>
       )}
 
-      {detailTab === 'customs' && job.job_type !== 'export' && (
+      {detailTab === 'customs' && job.job_type !== 'export' && !hideTabs.includes('customs') && (
         <div className="px-4 sm:px-6 py-6">
           <div className="max-w-2xl mx-auto">
             <CustomsStatusCard
@@ -1489,7 +1490,7 @@ Write the summary:`
         </div>
       )}
 
-      {JOB_TABS.filter(t => t.id === detailTab && t.showIf(job)).map(t => (
+      {JOB_TABS.filter(t => t.id === detailTab && t.showIf(job) && !hideTabs.includes(t.id)).map(t => (
         <div key={t.id} className="px-4 sm:px-6 py-6">
           <div className="max-w-3xl mx-auto">
             <UlipSection key={job.id + t.id} job={job} groups={t.groups} onJobChange={() => onSaved()} />

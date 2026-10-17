@@ -1,0 +1,83 @@
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { parseContainerNos } from '../utils/jobHelpers'
+import { useJourney } from './JourneyContext'
+import { Icon, phaseChip } from './ui'
+
+// Ctrl K: one box for every job number, client, BE, BL, container and truck,
+// plus the pages. Searches saved data only.
+export default function CommandPalette({ open, ...rest }) {
+  return open ? <Palette {...rest} /> : null
+}
+
+function Palette({ onClose, pages, onGo, onOpenJob }) {
+  const { rows } = useJourney() || { rows: [] }
+  const [q, setQ] = useState('')
+  const [hl, setHl] = useState(0)
+  const inputRef = useRef(null)
+
+  useEffect(() => { inputRef.current?.focus() }, [])
+
+  const items = useMemo(() => {
+    const needle = q.trim().toLowerCase().replace(/\s+/g, '')
+    const jobs = rows.filter(({ job }) => {
+      if (!needle) return true
+      const hay = [job.job_no, job.client, job.be_no, job.bl_no, job.truck_no, job.ulip_refs?.igm_no, job.ulip_refs?.sb_no, ...parseContainerNos(job.containers)]
+      return hay.filter(Boolean).some((x) => String(x).toLowerCase().replace(/\s+/g, '').includes(needle))
+    }).slice(0, 8).map(({ job, j }) => {
+      const hit = needle && !String(job.job_no || '').toLowerCase().includes(needle) && !String(job.client || '').toLowerCase().includes(needle)
+        ? [['BE', job.be_no], ['BL', job.bl_no], ['Truck', job.truck_no], ['IGM', job.ulip_refs?.igm_no], ...parseContainerNos(job.containers).map((c) => ['Container', c])]
+          .find(([, v]) => v && String(v).toLowerCase().replace(/\s+/g, '').includes(needle)) : null
+      return { type: 'job', id: job.id, job, j, hit }
+    })
+    const pg = pages.filter((p) => !needle || p.label.toLowerCase().replace(/\s+/g, '').includes(needle)).slice(0, 5).map((p) => ({ type: 'page', ...p }))
+    return [...jobs, ...pg]
+  }, [q, rows, pages])
+
+  const pick = (it) => {
+    onClose()
+    if (it.type === 'job') onOpenJob(it.id)
+    else onGo(it.id)
+  }
+  const onKey = (e) => {
+    if (e.key === 'ArrowDown') { e.preventDefault(); setHl((h) => Math.min(items.length - 1, h + 1)) }
+    if (e.key === 'ArrowUp') { e.preventDefault(); setHl((h) => Math.max(0, h - 1)) }
+    if (e.key === 'Enter' && items[hl]) { e.preventDefault(); pick(items[hl]) }
+    if (e.key === 'Escape') onClose()
+  }
+  const jobItems = items.filter((i) => i.type === 'job')
+  const pageItems = items.filter((i) => i.type === 'page')
+
+  return (
+    <div className="ix-pal-bg" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose() }}>
+      <div className="ix-pal" role="dialog" aria-label="Search">
+        <input ref={inputRef} value={q} onChange={(e) => { setQ(e.target.value); setHl(0) }} onKeyDown={onKey}
+          placeholder="Type a job no, client, BE, BL, container or truck…" autoComplete="off" />
+        <div className="ix-pal-res">
+          {jobItems.length > 0 && <div className="ix-pal-group">Jobs</div>}
+          {jobItems.map((it) => {
+            const idx = items.indexOf(it)
+            const c = phaseChip(it.job, it.j)
+            return (
+              <div key={it.id} className={`ix-pal-item ${idx === hl ? 'hl' : ''}`} onMouseEnter={() => setHl(idx)} onClick={() => pick(it)}>
+                <Icon name="package" /><b className="mono">{it.job.job_no}</b>
+                <span className="c">{it.job.client}</span>
+                <span className="k">{it.hit ? `${it.hit[0]} ${it.hit[1]}` : c.label}</span>
+              </div>
+            )
+          })}
+          {pageItems.length > 0 && <div className="ix-pal-group">Go to</div>}
+          {pageItems.map((it) => {
+            const idx = items.indexOf(it)
+            return (
+              <div key={it.id} className={`ix-pal-item ${idx === hl ? 'hl' : ''}`} onMouseEnter={() => setHl(idx)} onClick={() => pick(it)}>
+                <Icon name={it.icon} />{it.label}<span className="k">Page</span>
+              </div>
+            )
+          })}
+          {items.length === 0 && <div className="ix-empty">Nothing matches “{q}”.</div>}
+        </div>
+        <div className="ix-pal-foot"><span>↑ ↓ to move</span><span>Enter to open</span><span>Esc to close</span></div>
+      </div>
+    </div>
+  )
+}

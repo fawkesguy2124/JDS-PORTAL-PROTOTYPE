@@ -1,73 +1,49 @@
-﻿import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { supabase } from '../supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { getStageName, isEtaThisWeek } from '../utils/jobHelpers'
-import NotificationBell from '../components/NotificationBell'
 import ControlTowerSection from '../components/ControlTower'
 import JobDetailView from '../components/JobDetailView'
 import DocumentsSection from '../components/DocumentsSection'
 import ContainerTrackingSection from '../components/ContainerTrackingSection'
-import AllJobsMobile from '../components/mobile/AllJobsMobile'
-import AllJobsDesktop from '../components/desktop/AllJobsDesktop'
 import PaymentsSection from '../components/PaymentsSection'
 import ComplianceSection from '../components/ComplianceSection'
-import BEFilingSection from '../components/BEFilingSection'
-import ShipmentTracker from '../components/ShipmentTracker'
-import TodayPage from './v2/TodayPage'
-import ShipmentBoardPage from './v2/ShipmentBoardPage'
-import TrucksPage from './v2/TrucksPage'
-import CustomsDeskPage from './v2/CustomsDeskPage'
 import SearchPage from './v2/SearchPage'
 import ClientsPage from './v2/ClientsPage'
 import DetentionPage from './v2/DetentionPage'
 import CreateJob from './CreateJob'
+import '../industrial/industrial.css'
+import { JourneyProvider, useJourney } from '../industrial/JourneyContext'
+import Shell from '../industrial/Shell'
+import JobDrawer from '../industrial/JobDrawer'
+import IxTodayPage from '../industrial/pages/TodayPage'
+import IxJobsPage from '../industrial/pages/JobsPage'
+import IxBoardPage from '../industrial/pages/BoardPage'
+import IxCustomsPage from '../industrial/pages/CustomsPage'
+import IxTrucksPage from '../industrial/pages/TrucksPage'
 import { forceRefreshAllContainers } from '../services/tracking/ldbProvider'
 
 const NAV_SECTIONS = [
-  {
-    label: 'TODAY',
-    items: [
-      { id: 'today', label: 'Today', icon: '🏠' },
-    ]
-  },
-  {
-    label: 'SHIPMENTS',
-    items: [
-      { id: 'jobs', label: 'All Jobs', icon: '≡' },
-      { id: 'board', label: 'Shipment Board', icon: '🗺' },
-      { id: 'containers', label: 'Containers', icon: '⊟' },
-      { id: 'trucks', label: 'Trucks', icon: '🚚' },
-    ]
-  },
-  {
-    label: 'CUSTOMS',
-    items: [
-      { id: 'customs', label: 'BE & OOC', icon: '🧾' },
-    ]
-  },
-  {
-    label: 'DOCUMENTS',
-    items: [
-      { id: 'documents', label: 'Documents & OCR', icon: '📄' },
-    ]
-  },
-  {
-    label: 'MONEY',
-    items: [
-      { id: 'payments', label: 'Payments', icon: '₹' },
-      { id: 'detention', label: 'Detention', icon: '⏱' },
-    ]
-  },
-  {
-    label: 'TOOLS',
-    items: [
-      { id: 'search', label: 'Search anything', icon: '🔎' },
-      { id: 'clients', label: 'Clients', icon: '👥' },
-      { id: 'overview', label: 'Team & stages', icon: '⊞' },
-      { id: 'compliance', label: 'BIS & Licences', icon: '✓' },
-    ]
-  },
+  { label: 'TODAY', items: [{ id: 'today', label: 'Today', icon: 'home' }] },
+  { label: 'SHIPMENTS', items: [
+    { id: 'jobs', label: 'All jobs', icon: 'list-details' },
+    { id: 'board', label: 'Shipment board', icon: 'layout-kanban' },
+    { id: 'containers', label: 'Containers', icon: 'box' },
+    { id: 'trucks', label: 'Trucks', icon: 'truck' },
+  ] },
+  { label: 'CUSTOMS', items: [{ id: 'customs', label: 'BE & OOC', icon: 'file-certificate' }] },
+  { label: 'DOCUMENTS', items: [{ id: 'documents', label: 'Documents & OCR', icon: 'files' }] },
+  { label: 'MONEY', items: [
+    { id: 'payments', label: 'Payments', icon: 'currency-rupee' },
+    { id: 'detention', label: 'Detention', icon: 'clock-exclamation', alert: true },
+  ] },
+  { label: 'TOOLS', items: [
+    { id: 'search', label: 'Search anything', icon: 'search' },
+    { id: 'clients', label: 'Clients', icon: 'users' },
+    { id: 'overview', label: 'Team & stages', icon: 'chart-bar' },
+    { id: 'compliance', label: 'BIS & Licences', icon: 'certificate' },
+  ] },
 ]
 
 // Old page names still work (bookmarks, bell links)
@@ -375,7 +351,9 @@ function JobCard({ job, profiles, onOpen, onDelete }) {
   )
 }
 
-export default function AdminDashboard() {
+function AdminDashboardInner() {
+  const journey = useJourney()
+  const [drawer, setDrawer] = useState(null) // { id, tab }
   const navigate = useNavigate()
   const location = useLocation()
   const { user, profile } = useAuth()
@@ -601,6 +579,7 @@ export default function AdminDashboard() {
   }
 
   const refreshJobs = async () => {
+    journey?.refresh()
     const { data: jobsData } = await supabase.from('jobs').select('*').order('updated_at', { ascending: false })
     setJobs(jobsData ?? [])
     if (selectedJob?.id) {
@@ -617,17 +596,29 @@ export default function AdminDashboard() {
   // Open a job on a given tab (used by Today, Board, Trucks, Customs, Search …).
   // 'truck' goes to the Trucks page, where trucks are assigned. Each open is a
   // new history entry, so the browser's Back button returns to the page you came from.
-  const openJob = async (jobId, tab = 'details') => {
+  const DRAWER_TABS = ['overview', 'containers', 'timeline', 'docs', 'notes']
+  const openFullJob = async (jobId, tab = 'details') => {
+    setDrawer(null)
+    // customs and truck checks now live on their own pages
+    if (tab === 'customs') { navigate(`/admin?tab=customs&job=${jobId}`); return }
+    if (tab === 'truck') { navigate(`/admin?tab=trucks&job=${jobId}`); return }
     const { data: fresh } = await supabase.from('jobs').select('*').eq('id', jobId).maybeSingle()
-    if (tab === 'truck') {
-      navigate(`/admin?tab=trucks&q=${encodeURIComponent(fresh?.job_no || '')}`)
-      return
-    }
     navigate(`/admin?tab=jobs&jobId=${jobId}#${tab}`)
     if (fresh) {
       setSelectedJob(fresh)
       setJobs(prev => prev.map(j => (j.id === fresh.id ? fresh : j)))
     }
+  }
+  const openTruck = (jobId) => {
+    setDrawer(null)
+    const job = journey?.byId?.[jobId]?.job || jobs.find((j) => j.id === jobId)
+    navigate(`/admin?tab=trucks&q=${encodeURIComponent(job?.job_no || '')}`)
+  }
+  const openJob = async (jobId, tab = 'overview') => {
+    if (tab === 'truck') return openTruck(jobId)
+    // a job the shared data has not loaded yet (just created): open it in full
+    if (!journey?.byId?.[jobId]) return openFullJob(jobId, DRAWER_TABS.includes(tab) ? 'details' : tab)
+    setDrawer({ id: jobId, tab: DRAWER_TABS.includes(tab) ? tab : 'overview' })
   }
   const canEditBE = isAdmin || ['Akshyani', 'Trupti'].includes(currentUserName)
   const pageProps = { profile, currentUserName, onOpenJob: openJob, showToast, canUpdateStage, canEditBE }
@@ -688,277 +679,109 @@ export default function AdminDashboard() {
     selectedJob,
   }
 
+  const navCounts = {
+    jobs: journey?.active?.length || null,
+    customs: journey?.active?.filter((r) => r.j.phase === 'ooc').length || null,
+    trucks: journey?.active?.filter((r) => r.j.readyForTruck).length || null,
+    detention: journey?.active?.filter((r) => r.j.freeDaysLeft !== null && r.j.freeDaysLeft <= 2).length || null,
+  }
+  const urlJob = new URLSearchParams(location.search).get('job')
+  const legacy = (node) => <div className="ix-legacy">{node}</div>
+  const fullJob = selectedJob && (activeNav === 'jobs' || activeNav === 'overview')
+  const closeFullJob = () => {
+    setSelectedJob(null)
+    const params = new URLSearchParams(window.location.search)
+    params.delete('jobId')
+    window.history.replaceState({}, '', `${window.location.pathname}?${params.toString()}`)
+  }
+  const ixProps = { ...pageProps, onGo: handleNavClick, onCreateJob: () => setShowCreateJob(true) }
+
   return (
-    <div className="min-h-screen flex bg-[#f4f6f9] text-[14px]">
-      {sidebarOpen && (
-        <div className="fixed inset-0 bg-black/50 z-40 lg:hidden" onClick={() => setSidebarOpen(false)} />
+    <Shell
+      sections={NAV_SECTIONS}
+      active={activeNav}
+      counts={navCounts}
+      onGo={handleNavClick}
+      onOpenJob={(id) => openJob(id)}
+      onCreateJob={() => setShowCreateJob(true)}
+      onLogout={handleLogout}
+      profile={profile}
+      onBellNavigate={(action) => {
+        setPendingNavAction(action)
+        handleNavClick(action.tab)
+        if (action.hash) setTimeout(() => { window.location.hash = action.hash }, 100)
+      }}
+    >
+      {fullJob && legacy(
+        <>
+          <button type="button" className="ix-btn sm" style={{ marginBottom: 12 }} onClick={closeFullJob}>← Back</button>
+          <JobDetailView
+            job={selectedJob} profiles={profiles} currentUserName={currentUserName}
+            isAdmin={isAdmin} canUpdateStage={canUpdateStage}
+            hideTabs={['customs', 'vessel', 'truck']}
+            onBack={closeFullJob}
+            onSaved={refreshJobs} toast={showToast}
+            onDelete={() => handleDeleteJob(selectedJob)}
+          />
+        </>
       )}
 
-      <aside className={[
-        'w-[230px] bg-[#1a4fa0] flex flex-col h-screen fixed left-0 top-0 z-50 transition-transform duration-300',
-        'lg:translate-x-0',
-        sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0',
-      ].join(' ')}>
+      {!fullJob && activeNav === 'today' && <IxTodayPage {...ixProps} />}
+      {!fullJob && activeNav === 'jobs' && <IxJobsPage {...ixProps} selectedId={drawer?.id} />}
+      {activeNav === 'board' && <IxBoardPage {...ixProps} />}
+      {activeNav === 'customs' && <IxCustomsPage key={urlJob || 'none'} {...ixProps} />}
+      {activeNav === 'trucks' && <IxTrucksPage key={urlJob || 'none'} {...ixProps} />}
 
-        <div className="px-5 py-4 border-b border-white/15 flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-white text-[#1a4fa0] flex items-center justify-center font-extrabold text-sm">JDS</div>
-          <div className="min-w-0">
-            <div className="text-sm font-bold text-white truncate">JDS Logistics</div>
-            <div className="text-xs text-white/60 truncate">Operations Portal</div>
-          </div>
-          <button type="button" onClick={() => setSidebarOpen(false)} className="ml-auto lg:hidden text-white/70 hover:text-white p-1">✕</button>
-        </div>
-        <nav className="flex-1 overflow-y-auto py-1">
-          {NAV_SECTIONS.map((section) => (
-            <div key={section.label}>
-              <div className="px-4 pt-4 pb-1 text-[10px] font-bold text-white/45 uppercase tracking-[0.1em]">
-                {section.label}
-              </div>
-              {section.items.map((item) => {
-                const isActive = activeNav === item.id
-                let badge = null
-                if (item.id === 'jobs' && stats?.active > 0)
-                  badge = <span className="ml-auto bg-white/20 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center">{stats.active}</span>
-                if (item.id === 'containers' && stats?.freeDaysAtRisk > 0)
-                  badge = <span className="ml-auto bg-amber-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center">{stats.freeDaysAtRisk}</span>
-                if (item.id === 'payments' && stats?.paymentsPending > 0)
-                  badge = <span className="ml-auto bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center">{stats.paymentsPending}</span>
-                if (item.id === 'compliance')
-                  badge = <span className="ml-auto bg-amber-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center">2</span>
-                return (
-                  <button
-                    key={item.id}
-                    type="button"
-                    onClick={() => { handleNavClick(item.id); setSidebarOpen(false) }}
-                    className={[
-                      'w-full text-left px-5 py-2.5 text-sm flex items-center gap-2.5 border-l-2 transition-colors',
-                      isActive
-                        ? 'bg-white/15 text-white border-white font-semibold'
-                        : 'text-white/70 hover:bg-white/10 hover:text-white border-transparent'
-                    ].join(' ')}
-                  >
-                    <span className="w-4 text-center shrink-0 text-sm opacity-90">{item.icon}</span>
-                    <span className="truncate flex-1">{item.label}</span>
-                    {item.id === 'overview' && isActive
-                      ? <span className="ml-auto w-2 h-2 rounded-full bg-green-400 animate-pulse flex-shrink-0" />
-                      : badge
-                    }
-                  </button>
-                )
-              })}
-            </div>
-          ))}
-        </nav>
-        <div className="mt-auto border-t border-white/15 px-5 py-3 flex items-center gap-3">
-          <div className="w-7 h-7 rounded-full bg-white/20 border-2 border-white/30 text-white flex items-center justify-center text-xs font-bold">
-            {(profile?.name || 'A').slice(0,2).toUpperCase()}
-          </div>
-          <div className="min-w-0">
-            <div className="text-sm font-bold text-white truncate">{profile?.name || 'Admin'}</div>
-            <div className="text-xs text-white/55 truncate">Administrator</div>
-          </div>
-          <span className="ml-auto w-2 h-2 rounded-full bg-green-400" title="Live" />
-        </div>
-      </aside>
-
-      <div className="flex-1 flex flex-col min-w-0 overflow-hidden lg:ml-[230px] bg-[#f4f6f9]">
-        <header className="h-[60px] bg-white border-b border-[#e2e6ed] shadow-sm px-4 sm:px-6 flex items-center gap-3 flex-shrink-0">
-
-          <button type="button" onClick={() => setSidebarOpen(true)}
-            className="lg:hidden flex flex-col justify-center items-center w-9 h-9 rounded-lg hover:bg-[#f4f6f9] gap-1.5 shrink-0"
-            aria-label="Open menu">
-            <span className="w-5 h-0.5 bg-[#1a2233] rounded-full" />
-            <span className="w-5 h-0.5 bg-[#1a2233] rounded-full" />
-            <span className="w-3.5 h-0.5 bg-[#1a2233] rounded-full" />
-          </button>
-
-          <div className="min-w-0">
-            <div className="text-[17px] font-bold text-[#1a2233] truncate">{pageTitle}</div>
-            <div className="text-sm text-[#8a96a8] truncate">JDS Logistics · all shipments in one place</div>
-          </div>
-          <div className="ml-auto flex items-center gap-2">
-            <NotificationBell
-              onNavigate={action => {
-                setPendingNavAction(action)
-                handleNavClick(action.tab)
-                if (action.hash) {
-                  setTimeout(() => {
-                    window.location.hash = action.hash
-                  }, 100)
-                }
-              }}
-              profile={profile}
-            />
-            <button type="button" onClick={() => setShowCreateJob(true)}
-              className="h-9 px-3 sm:px-4 text-sm rounded-lg bg-[#1a4fa0] text-white hover:bg-[#153d82] font-semibold">
-              <span className="hidden sm:inline">+ Create Job</span>
-              <span className="sm:hidden">+</span>
-            </button>
-            <button type="button" onClick={handleLogout}
-              className="h-9 px-3 sm:px-4 text-sm rounded-lg bg-white border-[1.5px] border-[#d0d6e0] text-red-600 hover:bg-[#fef2f2] hover:border-red-300 font-semibold">
-              <span className="hidden sm:inline">Logout</span>
-              <span className="sm:hidden">⏻</span>
-            </button>
-          </div>
-        </header>
-
-        <main className="flex-1 overflow-y-auto p-4 sm:p-6">
-          {activeNav === 'overview' && (
-            selectedJob ? (
-              <JobDetailView
-                job={selectedJob} profiles={profiles} currentUserName={currentUserName}
-                isAdmin={isAdmin} canUpdateStage={canUpdateStage}
-                onBack={() => {
-                  setSelectedJob(null)
-                  const params = new URLSearchParams(window.location.search)
-                  params.delete('jobId')
-                  window.history.replaceState({}, '', `${window.location.pathname}?${params.toString()}`)
-                  window.history.replaceState({}, '', window.location.pathname + '?' + params.toString())
-                }} onSaved={refreshJobs} toast={showToast}
-                onDelete={() => handleDeleteJob(selectedJob)}
-              />
-            ) : (
-              <ControlTowerSection
-                jobs={jobs} profiles={profiles} currentUserName={currentUserName}
-                selectedJob={selectedJob}
-                onOpenJob={(job) => {
-                  setSelectedJob(job)
-                  const params = new URLSearchParams(window.location.search)
-                  params.set('jobId', job.id)
-                  window.history.replaceState({}, '', `${window.location.pathname}?${params.toString()}${window.location.hash}`)
-                }}
-                onStageFilter={(stage) => { setFilterStage(stage); navigate('/admin?tab=jobs') }}
-                showToast={showToast}
-              />
-            )
-          )}
-
-          {activeNav === 'jobs' && (
-            selectedJob ? (
-              <JobDetailView
-                job={selectedJob} profiles={profiles} currentUserName={currentUserName}
-                isAdmin={isAdmin} canUpdateStage={canUpdateStage}
-                onBack={() => {
-                  setSelectedJob(null)
-                  const params = new URLSearchParams(window.location.search)
-                  params.delete('jobId')
-                  window.history.replaceState({}, '', `${window.location.pathname}?${params.toString()}`)
-                  window.history.replaceState({}, '', window.location.pathname + '?' + params.toString())
-                }} onSaved={refreshJobs} toast={showToast}
-                onDelete={() => handleDeleteJob(selectedJob)}
-              />
-            ) : (
-              <>
-                <div className="block md:hidden">
-                  <AllJobsMobile
-                    jobs={filteredJobs}
-                    searchQuery={search} setSearchQuery={setSearch}
-                    stageFilter={filterStage} setStageFilter={setFilterStage}
-                    priorityFilter={filterPriority} setPriorityFilter={setFilterPriority}
-                    onOpenJob={(job) => {
-                      setSelectedJob(job)
-                      const params = new URLSearchParams(window.location.search)
-                      params.set('jobId', job.id)
-                      window.history.replaceState({}, '', `${window.location.pathname}?${params.toString()}${window.location.hash}`)
-                    }}
-                    getStageName={getStageName}
-                    canCreateJob={true}
-                    onCreateJob={() => setShowCreateJob(true)}
-                  />
-                </div>
-                <div className="hidden md:block">
-                  {desktopFilters}
-                  <AllJobsDesktop
-                    jobs={filteredJobs}
-                    filteredJobs={filteredJobs}
-                    loadingJobs={loadingJobs}
-                    selectedJob={selectedJob}
-                    onOpenJob={(job) => {
-                      setSelectedJob(job)
-                      const params = new URLSearchParams(window.location.search)
-                      params.set('jobId', job.id)
-                      window.history.replaceState({}, '', `${window.location.pathname}?${params.toString()}${window.location.hash}`)
-                    }}
-                    profiles={profiles}
-                    currentUserName={currentUserName}
-                    isAdmin={isAdmin}
-                    getStageName={getStageName}
-                    searchQuery={search} setSearchQuery={setSearch}
-                    stageFilter={filterStage} setStageFilter={setFilterStage}
-                    priorityFilter={filterPriority} setPriorityFilter={setFilterPriority}
-                    canCreateJob={true}
-                    onCreateJob={() => setShowCreateJob(true)}
-                  />
-                </div>
-              </>
-            )
-          )}
-
-          {activeNav === 'documents' && (
-            <DocumentsSection
-              jobs={jobs}
-              profiles={profiles}
-              currentUserName={currentUserName}
-              showToast={showToast}
-              initialExpandJobId={documentExpandJobId}
-              onExpandConsumed={() => setDocumentExpandJobId(null)}
-            />
-          )}
-
-          {activeNav === 'containers' && (
-            <ContainerTrackingSection
-              showToast={showToast}
-              jobs={jobs}
-              pendingNavAction={activeNav === 'containers' ? pendingNavAction : null}
-              onNavActionConsumed={() => setPendingNavAction(null)}
-            />
-          )}
-
-          {activeNav === 'shipment-tracker' && (
-            <ShipmentTracker
-              jobs={jobs}
-              profiles={profiles}
-              currentUserName={currentUserName}
-              showToast={showToast}
-            />
-          )}
-
-          {activeNav === 'today' && <TodayPage {...pageProps} />}
-          {activeNav === 'board' && <ShipmentBoardPage {...pageProps} />}
-          {activeNav === 'trucks' && <TrucksPage {...pageProps} />}
-          {activeNav === 'customs' && <CustomsDeskPage {...pageProps} />}
-          {activeNav === 'search' && <SearchPage {...pageProps} />}
-          {activeNav === 'clients' && <ClientsPage {...pageProps} />}
-          {activeNav === 'detention' && <DetentionPage {...pageProps} />}
-
-          {activeNav === 'payments' && (
-            <PaymentsSection jobs={jobs} profiles={profiles} showToast={showToast} getStageName={getStageName} />
-          )}
-
-          {activeNav === 'compliance' && (
-            <ComplianceSection showToast={showToast} />
-          )}
-
-          {activeNav === 'be-filing' && (
-            <BEFilingSection jobs={jobs} currentUserName={currentUserName} showToast={showToast} user={user} />
-          )}
-
-          {!NAV_ITEMS.some(n => n.id === activeNav) && (
-            <div className="bg-white border-[1.5px] border-[#e2e6ed] rounded-xl shadow-sm p-10 text-center text-[#8a96a8]">
-              Coming soon
-            </div>
-          )}
-        </main>
-      </div>
-
-      {toastState && (
-        <div className={classNames('fixed bottom-5 right-5 z-50 px-4 py-3 rounded-xl text-sm font-semibold shadow-lg',
-          toastState.type === 'success' && 'bg-[#16a34a] text-white rounded-xl',
-          toastState.type === 'error' && 'bg-[#dc2626] text-white rounded-xl',
-          toastState.type === 'info' && 'bg-[#1a2233] text-white rounded-xl')}>
-          {toastState.message}
-        </div>
+      {!fullJob && activeNav === 'overview' && legacy(
+        <ControlTowerSection
+          jobs={jobs} profiles={profiles} currentUserName={currentUserName}
+          selectedJob={selectedJob}
+          onOpenJob={(job) => openJob(job.id)}
+          onStageFilter={(stage) => { setFilterStage(stage); navigate('/admin?tab=jobs') }}
+          showToast={showToast}
+        />
       )}
+
+      {/* Containers: kept exactly as it was */}
+      {activeNav === 'containers' && legacy(
+        <ContainerTrackingSection
+          showToast={showToast}
+          jobs={jobs}
+          pendingNavAction={activeNav === 'containers' ? pendingNavAction : null}
+          onNavActionConsumed={() => setPendingNavAction(null)}
+        />
+      )}
+
+      {activeNav === 'documents' && legacy(
+        <DocumentsSection
+          jobs={jobs} profiles={profiles} currentUserName={currentUserName} showToast={showToast}
+          initialExpandJobId={documentExpandJobId} onExpandConsumed={() => setDocumentExpandJobId(null)}
+        />
+      )}
+      {activeNav === 'search' && legacy(<SearchPage {...pageProps} />)}
+      {activeNav === 'clients' && legacy(<ClientsPage {...pageProps} />)}
+      {activeNav === 'detention' && legacy(<DetentionPage {...pageProps} />)}
+      {activeNav === 'payments' && legacy(<PaymentsSection jobs={jobs} profiles={profiles} showToast={showToast} getStageName={getStageName} />)}
+      {activeNav === 'compliance' && legacy(<ComplianceSection showToast={showToast} />)}
+
+      {!NAV_ITEMS.some(n => n.id === activeNav) && (
+        <div className="ix-page"><div className="ix-card ix-empty">This page does not exist. Pick one from the menu.</div></div>
+      )}
+
+      {drawer && (
+        <JobDrawer
+          key={`${drawer.id}-${drawer.tab}`}
+          jobId={drawer.id}
+          initialTab={drawer.tab}
+          onClose={() => setDrawer(null)}
+          onOpenFull={openFullJob}
+          onOpenTruck={openTruck}
+          currentUserName={currentUserName}
+          showToast={showToast}
+        />
+      )}
+
+      {toastState && <div className={`ix-toast ${toastState.type}`}>{toastState.message}</div>}
 
       {showCreateJob && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 backdrop-blur-sm px-4 py-6">
@@ -975,7 +798,14 @@ export default function AdminDashboard() {
           </div>
         </div>
       )}
+    </Shell>
+  )
+}
 
-    </div>
+export default function AdminDashboard() {
+  return (
+    <JourneyProvider>
+      <AdminDashboardInner />
+    </JourneyProvider>
   )
 }
