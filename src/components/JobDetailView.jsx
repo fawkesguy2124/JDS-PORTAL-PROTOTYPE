@@ -5,6 +5,7 @@ import OCRSection, { FIELD_LABELS_OCR, OCR_SECTIONS, OCR_FIELD_MAP, MULTI_VALUE_
 import JobDetailMobile from './mobile/JobDetailMobile'
 import JobDetailDesktop from './desktop/JobDetailDesktop'
 import { useAuth } from '../contexts/AuthContext'
+import BEStatusCard from './BEStatusCard'
 
 function classNames(...xs) { return xs.filter(Boolean).join(' ') }
 
@@ -350,7 +351,7 @@ function JobDetailView({ job, profiles, currentUserName, isAdmin, canUpdateStage
   const [showFullAccountability, setShowFullAccountability] = useState(false)
   const [detailTab, setDetailTab] = useState(() => {
     const hash = window.location.hash.replace('#', '')
-    return ['details', 'ocr', 'fields'].includes(hash) ? hash : 'details'
+    return ['details', 'ocr', 'fields', 'customs'].includes(hash) ? hash : 'details'
   })
   const [extractedFields, setExtractedFields] = useState(null)
   const [loadingExtracted, setLoadingExtracted] = useState(false)
@@ -898,6 +899,10 @@ Write the summary:`
             className={classNames('px-4 py-1.5 text-xs font-bold rounded-lg transition-colors', detailTab === 'fields' ? 'bg-white text-[#1a4fa0] shadow-sm border border-[#e2e6ed]' : 'text-[#8a96a8] hover:text-[#1a4fa0]')}>
             ✦ Extracted Fields
           </button>
+          <button type="button" onClick={() => { setDetailTab('customs'); window.history.replaceState(null, '', window.location.pathname + window.location.search + '#customs') }}
+            className={classNames('px-4 py-1.5 text-xs font-bold rounded-lg transition-colors', detailTab === 'customs' ? 'bg-white text-[#1a4fa0] shadow-sm border border-[#e2e6ed]' : 'text-[#8a96a8] hover:text-[#1a4fa0]')}>
+            Customs & BE
+          </button>
         </div>
       </div>
 
@@ -1430,6 +1435,14 @@ Write the summary:`
               <p className="text-xs text-[#8a96a8]">Use the <strong>OCR Extract</strong> tab above to extract fields from uploaded documents</p>
             </div>
           )}
+        </div>
+      )}
+
+      {detailTab === 'customs' && (
+        <div className="px-4 sm:px-6 py-6">
+          <div className="max-w-2xl mx-auto">
+            <BEStatusCard jobNo={job.job_no} initialBeNumber={job.be_no || ''} />
+          </div>
         </div>
       )}
 

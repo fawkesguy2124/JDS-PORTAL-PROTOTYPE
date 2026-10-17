@@ -13,6 +13,7 @@ import AllJobsDesktop from '../components/desktop/AllJobsDesktop'
 import PaymentsSection from '../components/PaymentsSection'
 import ComplianceSection from '../components/ComplianceSection'
 import BEFilingSection from '../components/BEFilingSection'
+import ShipmentTracker from '../components/ShipmentTracker'
 import CreateJob from './CreateJob'
 import { forceRefreshAllContainers } from '../services/tracking/ldbProvider'
 
@@ -22,9 +23,15 @@ const NAV_SECTIONS = [
     items: [
       { id: 'overview', label: 'Control Tower', icon: '⊞' },
       { id: 'jobs', label: 'All Jobs', icon: '≡' },
-      { id: 'containers', label: 'Container Tracking', icon: '⊟' },
       { id: 'be-filing', label: 'BE Filing', icon: '📋' },
       { id: 'documents', label: 'Documents', icon: '📄' },
+    ]
+  },
+  {
+    label: 'TRACKING',
+    items: [
+      { id: 'shipment-tracker', label: 'Shipment Tracker', icon: '🚢' },
+      { id: 'containers', label: 'Container Tracking', icon: '⊟' },
     ]
   },
   {
@@ -730,6 +737,11 @@ export default function AdminDashboard() {
               onNavigate={action => {
                 setPendingNavAction(action)
                 handleNavClick(action.tab)
+                if (action.hash) {
+                  setTimeout(() => {
+                    window.location.hash = action.hash
+                  }, 100)
+                }
               }}
               profile={profile}
             />
@@ -855,6 +867,15 @@ export default function AdminDashboard() {
               jobs={jobs}
               pendingNavAction={activeNav === 'containers' ? pendingNavAction : null}
               onNavActionConsumed={() => setPendingNavAction(null)}
+            />
+          )}
+
+          {activeNav === 'shipment-tracker' && (
+            <ShipmentTracker
+              jobs={jobs}
+              profiles={profiles}
+              currentUserName={currentUserName}
+              showToast={showToast}
             />
           )}
 

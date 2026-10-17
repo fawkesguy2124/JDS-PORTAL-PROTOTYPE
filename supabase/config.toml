@@ -1,2 +1,188 @@
 [functions.refresh-containers]
 verify_jwt = false
+
+[functions.ldb-track]
+verify_jwt = true
+
+[functions.ulip-auth]
+verify_jwt = true
+
+[functions.jnpt-be-status]
+verify_jwt = true
+
+[functions.aaiclas-export]
+verify_jwt = true
+
+[functions.aaiclas-import]
+verify_jwt = true
+
+[functions.acmes-export]
+verify_jwt = true
+
+[functions.acmes-import]
+verify_jwt = true
+
+[functions.kale-mawb]
+verify_jwt = true
+
+[functions.kale-hawb]
+verify_jwt = true
+
+[functions.dgft-iec]
+verify_jwt = true
+
+[functions.dgft-policy]
+verify_jwt = true
+
+[functions.ewaybill]
+verify_jwt = true
+
+[functions.fastag-vehicle]
+verify_jwt = true
+
+[functions.fastag-tag]
+verify_jwt = true
+
+[functions.sarathi-dl]
+verify_jwt = true
+
+[functions.sarathi-dl-basic]
+verify_jwt = true
+
+[functions.icegate-igm]
+verify_jwt = true
+
+[functions.icegate-be]
+verify_jwt = true
+
+[functions.icegate-ooc]
+verify_jwt = true
+
+[functions.icegate-rotation]
+verify_jwt = true
+
+[functions.icegate-sb]
+verify_jwt = true
+
+[functions.icegate-leo]
+verify_jwt = true
+
+[functions.icegate-igm-detail]
+verify_jwt = true
+
+[functions.icegate-egm]
+verify_jwt = true
+
+[functions.icegate-air-igm]
+verify_jwt = true
+
+[functions.icegate-air-hawb]
+verify_jwt = true
+
+[functions.icegate-air-egm]
+verify_jwt = true
+
+[functions.icegate-export-sb]
+verify_jwt = true
+
+[functions.icegate-eseal]
+verify_jwt = true
+
+[functions.icegate-icd-bl]
+verify_jwt = true
+
+[functions.icegate-sb-detail]
+verify_jwt = true
+
+[functions.iportman-vessel]
+verify_jwt = true
+
+[functions.iportman-be]
+verify_jwt = true
+
+[functions.iportman-sb]
+verify_jwt = true
+
+[functions.mbpt-vessel]
+verify_jwt = true
+
+[functions.mbpt-be]
+verify_jwt = true
+
+[functions.mbpt-sb]
+verify_jwt = true
+
+[functions.mpt-vessel]
+verify_jwt = true
+
+[functions.mpt-be]
+verify_jwt = true
+
+[functions.mpt-sb]
+verify_jwt = true
+
+[functions.fois-consignment]
+verify_jwt = true
+
+[functions.fois-freight]
+verify_jwt = true
+
+[functions.fois-parcel]
+verify_jwt = true
+
+[functions.vahan-vehicle]
+verify_jwt = true
+
+[functions.vahan-chassis]
+verify_jwt = true
+
+[functions.vahan-engine]
+verify_jwt = true
+
+[functions.pcs-igm]
+verify_jwt = true
+
+[functions.pcs-sb-export]
+verify_jwt = true
+
+[functions.pcs-sb-leo]
+verify_jwt = true
+
+[functions.pcs-be-detail]
+verify_jwt = true
+
+[functions.pcs-be-ooc]
+verify_jwt = true
+
+[functions.pcs-event]
+verify_jwt = true
+
+[functions.pcs-sb-basic]
+verify_jwt = true
+
+[functions.pcs-be-basic]
+verify_jwt = true
+
+[functions.pcs-message]
+verify_jwt = true
+
+[functions.jnpt-vessel]
+verify_jwt = true
+
+[functions.jnpt-sb]
+verify_jwt = true
+
+[functions.accs-mawb]
+verify_jwt = true
+
+[functions.accs-hawb]
+verify_jwt = true
+
+[functions.echallan]
+verify_jwt = true
+
+[functions.sarathi-dl-full]
+verify_jwt = true
+
+[functions.toll-plaza]
+verify_jwt = true

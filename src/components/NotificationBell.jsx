@@ -99,7 +99,7 @@ export default function NotificationBell({ onNavigate, profile }) {
       .subscribe()
 
     return () => supabase.removeChannel(channel)
-  }, [])
+  }, [profile?.role])
 
   useEffect(() => {
     const handler = (e) => {
@@ -147,6 +147,10 @@ export default function NotificationBell({ onNavigate, profile }) {
     const meta = n.meta || {}
     const t = n.type || n.action || ''
 
+    if (t === 'be_status_check') {
+      onNavigate({ tab: 'jobs', jobId: meta.job_id || n.job_id, hash: 'customs' })
+      return
+    }
     if (t === 'container_update' || t === 'detention_alert' || t.includes('container')) {
       onNavigate({ tab: 'containers', jobId: meta.job_id || n.job_id, cn: meta.container_no })
     } else if (t.includes('stage') || t.includes('job') || t === 'job_update' || t === 'job_created') {
@@ -160,10 +164,11 @@ export default function NotificationBell({ onNavigate, profile }) {
     ? notifications
     : notifications.filter(n => {
         const t = n.type || n.action || ''
-        if (filter === 'container') return t.includes('container') || t === 'detention_alert'
-        if (filter === 'alert') return t === 'detention_alert'
-        if (filter === 'job') return t.includes('job') || t.includes('stage') || t === 'job_created'
-        if (filter === 'document') return t.includes('upload') || t.includes('document')
+if (filter === 'container') return t.includes('container') || t === 'detention_alert'
+      if (filter === 'alert') return t === 'detention_alert'
+      if (filter === 'job') return t.includes('job') || t.includes('stage') || t === 'job_created'
+      if (filter === 'document') return t.includes('upload') || t.includes('document')
+      if (filter === 'ulip') return t === 'be_status_check' || t.includes('ulip')
         return true
       })
 
@@ -174,6 +179,7 @@ export default function NotificationBell({ onNavigate, profile }) {
     container: { bg: '#E6F1FB', color: '#0C447C', border: '#B5D4F4' },
     job:       { bg: '#EAF3DE', color: '#27500A', border: '#C0DD97' },
     document:  { bg: '#FAEEDA', color: '#633806', border: '#FAC775' },
+    ulip:      { bg: '#ecfdf5', color: '#065f46', border: '#d1fae5' },
     default:   { bg: '#f4f6f9', color: '#4a5568', border: '#e2e6ed' },
   }
 
@@ -247,7 +253,7 @@ export default function NotificationBell({ onNavigate, profile }) {
           </div>
 
           <div style={{ display: 'flex', gap: '5px', padding: '8px 16px', borderBottom: '0.5px solid #f4f6f9', overflowX: 'auto' }}>
-            {['all', 'container', 'alert', 'job', 'document'].map(f => (
+            {['all', 'container', 'alert', 'job', 'document', 'ulip'].map(f => (
               <button
                 key={f}
                 onClick={() => setFilter(f)}
@@ -281,7 +287,7 @@ export default function NotificationBell({ onNavigate, profile }) {
                     {items.map((n, i) => {
                       const isUnread = !lastSeen || new Date(n.created_at) > new Date(lastSeen)
                       const t = n.type || n.action || ''
-                      const tagCls = t === 'detention_alert' ? 'alert' : t.includes('container') ? 'container' : t.includes('job') || t.includes('stage') ? 'job' : t.includes('upload') || t.includes('document') ? 'document' : 'default'
+                      const tagCls = t === 'detention_alert' ? 'alert' : t.includes('container') ? 'container' : t.includes('job') || t.includes('stage') ? 'job' : t.includes('upload') || t.includes('document') ? 'document' : t === 'be_status_check' || t.includes('ulip') ? 'ulip' : 'default'
                       const ts = tagStyles[tagCls] || tagStyles.default
                       return (
                         <div

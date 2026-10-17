@@ -9,6 +9,7 @@ import * as XLSX from 'xlsx'
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 import NotificationBell from '../components/NotificationBell'
 import ContainerTrackingSection from '../components/ContainerTrackingSection'
+import ShipmentTracker from '../components/ShipmentTracker'
 import JobDetailView from '../components/JobDetailView'
 import { forceRefreshAllContainers } from '../services/tracking/ldbProvider'
 
@@ -536,8 +537,14 @@ export default function EmployeeDashboard() {
       label: 'OPERATIONS',
       items: [
         { id: 'jobs',       label: 'All Jobs',           icon: '≡'  },
-        { id: 'containers', label: 'Container Tracking',  icon: '⊟' },
         { id: 'documents',  label: 'Documents',           icon: '📄' },
+      ],
+    },
+    {
+      label: 'TRACKING',
+      items: [
+        { id: 'shipment-tracker', label: 'Shipment Tracker',  icon: '🚢' },
+        { id: 'containers', label: 'Container Tracking',  icon: '⊟' },
       ],
     },
   ] : [
@@ -545,8 +552,14 @@ export default function EmployeeDashboard() {
       label: 'OPERATIONS',
       items: [
         { id: 'jobs',       label: 'All Jobs',           icon: '≡'  },
-        { id: 'containers', label: 'Container Tracking',  icon: '⊟' },
         { id: 'documents',  label: 'Documents',           icon: '📄' },
+      ],
+    },
+    {
+      label: 'TRACKING',
+      items: [
+        { id: 'shipment-tracker', label: 'Shipment Tracker',  icon: '🚢' },
+        { id: 'containers', label: 'Container Tracking',  icon: '⊟' },
       ],
     },
   ], [isFieldOps])
@@ -1520,6 +1533,7 @@ export default function EmployeeDashboard() {
             <div className="text-[17px] font-bold text-[#1a2233] truncate">
               {activeNav === 'documents' ? 'Documents'
                : activeNav === 'containers' ? 'Container Tracking'
+               : activeNav === 'shipment-tracker' ? 'Shipment Tracker'
               : 'All Jobs'}
             </div>
             {activeNav === 'jobs' && (
@@ -1925,6 +1939,15 @@ export default function EmployeeDashboard() {
               currentUserName={currentUserName}
               pendingNavAction={activeNav === 'containers' ? pendingNavAction : null}
               onNavActionConsumed={() => setPendingNavAction(null)}
+            />
+          )}
+
+          {activeNav === 'shipment-tracker' && (
+            <ShipmentTracker
+              jobs={jobs}
+              profiles={profiles}
+              currentUserName={currentUserName}
+              showToast={showToast}
             />
           )}
         </main>

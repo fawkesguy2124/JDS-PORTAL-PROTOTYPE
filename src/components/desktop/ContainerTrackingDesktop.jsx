@@ -269,10 +269,6 @@ export default function ContainerTrackingDesktop({
           <span style={{ display:'inline-block', animation: refreshingAll ? 'spin 0.7s linear infinite' : 'none' }}>↻</span>
           {refreshingAll ? 'Refreshing...' : 'Refresh all'}
         </button>
-
-        <span style={{ fontSize:'12px', color:'var(--color-text-secondary)' }}>
-          {sortedJobCards.length} job{sortedJobCards.length !== 1 ? 's' : ''} · {kpis.total} container{kpis.total !== 1 ? 's' : ''}
-        </span>
       </div>
 
       {/* Empty state */}

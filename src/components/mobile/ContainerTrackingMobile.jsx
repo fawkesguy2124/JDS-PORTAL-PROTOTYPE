@@ -67,11 +67,6 @@ export default function ContainerTrackingMobile({
         >↻</button>
       </div>
 
-      {/* ── COUNT ── */}
-      <div style={{ fontSize:'12px', color:'#8a96a8' }}>
-        {sortedJobCards.length} job{sortedJobCards.length !== 1 ? 's' : ''} · {kpis.total} container{kpis.total !== 1 ? 's' : ''}
-      </div>
-
       {/* ── EMPTY STATE ── */}
       {sortedJobCards.length === 0 && (
         <div style={{ background:'white', border:'1.5px solid #e2e6ed', borderRadius:'12px', padding:'40px 20px', textAlign:'center' }}>

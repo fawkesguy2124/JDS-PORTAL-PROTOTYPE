@@ -8,7 +8,6 @@ function safeLogAdd(key) {
   _loggedThisRun.add(key)
 }
 
-const LDB_PROXY_URL = '/api/ldb-track'
 const FRESHNESS_DAYS = 30
 const CACHE_HOURS = 12
 
@@ -33,7 +32,7 @@ function isCacheStale(lastRefreshedAt) {
 function mapEventToStatus(eventName) {
   if (!eventName) return 'in_transit'
   const e = eventName.toUpperCase().trim()
-  if (e === 'CFS OUT' || e === 'GATE OUT' || e === 'GATEOUT' || e === 'GATE CROSSED')
+  if (e === 'CFS OUT' || e === 'GATE OUT' || e === 'GATEOUT' || e === 'GATE CROSSED' || e === 'ICD OUT')
     return 'delivered'
   if (e === 'CFS IN' || e === 'GATE IN' || e === 'CFS GATE IN' || e === 'ICD IN' || e === 'ICD GATE IN')
     return 'at_cfs'
@@ -157,17 +156,17 @@ export async function fetchLDBTracking(containerNo) {
   const cn = (containerNo || '').trim().toUpperCase()
   if (!cn) return { ok: false, status: 'INVALID_TRACKING_RESPONSE' }
   const requestedAt = new Date().toISOString()
-  log(cn, `Requesting LDB tracking. Proxy: ${LDB_PROXY_URL}`)
+  log(cn, `Requesting LDB tracking via Edge Function`)
   let raw
   try {
-    const res = await fetch(`${LDB_PROXY_URL}?cntrNo=${encodeURIComponent(cn)}`)
+    const { data, error: fnError } = await supabase.functions.invoke('ldb-track', { body: { cntrNo: cn } })
     const respondedAt = new Date().toISOString()
-    log(cn, `LDB response received`, { httpStatus: res.status, respondedAt })
-    if (!res.ok) {
-      log(cn, `HTTP error from proxy`, { status: res.status })
-      return { ok: false, status: 'TRACKING_PROVIDER_ERROR', userMessage: `LDB returned HTTP ${res.status} for ${cn}` }
+    if (fnError) {
+      log(cn, `Edge Function error`, { error: fnError.message, respondedAt })
+      return { ok: false, status: 'TRACKING_PROVIDER_ERROR', userMessage: `LDB is currently unavailable for ${cn}: ${fnError.message}` }
     }
-    raw = await res.json()
+    raw = data
+    log(cn, `LDB response received`, { respondedAt })
     console.log('[LDB] Raw response for', cn, ':', JSON.stringify(raw, null, 2))
   } catch (err) {
     log(cn, `Network/parse error`, { error: err.message })
@@ -268,7 +267,7 @@ export async function persistLDBTracking(containerNo, jobContext, ldbData) {
       const notifTitle = `${containerNo} — ${ldbData.statusText || ldbData.status}`
       if (!(await wasAlreadyLogged(notifTitle, jobContext.job_no))) {
         try {
-          await supabase.from('activity_log').upsert({
+          const { error: logErr } = await supabase.from('activity_log').upsert({
             ...entryBase,
             type:       'container_update',
             action:     'container_update',
@@ -277,6 +276,7 @@ export async function persistLDBTracking(containerNo, jobContext, ldbData) {
             meta:       { job_id: jobContext.id, container_no: containerNo, old_status: existing.status, new_status: ldbData.status },
             created_at: ldbData.milestones?.[0]?.date || new Date().toISOString(),
           }, { onConflict: 'title,job_no', ignoreDuplicates: true })
+          if (logErr) console.warn('[LDB] activity_log status insert failed:', logErr.message)
         } catch (logErr) {
           console.warn('[LDB] activity_log status insert failed:', logErr.message)
         }
@@ -302,7 +302,7 @@ export async function persistLDBTracking(containerNo, jobContext, ldbData) {
       const notifTitle = `${containerNo} — ${latest.description}`
       if (!(await wasAlreadyLogged(notifTitle, jobContext.job_no))) {
         try {
-          await supabase.from('activity_log').upsert({
+          const { error: logErr } = await supabase.from('activity_log').upsert({
             ...entryBase,
             type:       'container_update',
             action:     'container_update',
@@ -313,6 +313,7 @@ export async function persistLDBTracking(containerNo, jobContext, ldbData) {
             meta:       { job_id: jobContext.id, container_no: containerNo },
             created_at: latest.date || new Date().toISOString(),
           }, { onConflict: 'title,job_no', ignoreDuplicates: true })
+          if (logErr) console.warn('[LDB] activity_log milestone insert failed:', logErr.message)
         } catch (logErr) {
           console.warn('[LDB] activity_log milestone insert failed:', logErr.message)
         }
@@ -343,7 +344,7 @@ export async function persistLDBTracking(containerNo, jobContext, ldbData) {
       const notifTitle = `${containerNo} — Detention risk`
       if (!(await wasAlreadyLogged(notifTitle, jobContext.job_no))) {
         try {
-          await supabase.from('activity_log').upsert({
+          const { error: logErr } = await supabase.from('activity_log').upsert({
             ...entryBase,
             type:       'detention_alert',
             action:     'detention_alert',
@@ -352,6 +353,7 @@ export async function persistLDBTracking(containerNo, jobContext, ldbData) {
             meta:       { job_id: jobContext.id, container_no: containerNo, port_in: ldbData.portIn || null, free_days_remaining: calculatedFreeDays },
             created_at: ldbData.portIn || new Date().toISOString(),
           }, { onConflict: 'title,job_no', ignoreDuplicates: true })
+          if (logErr) console.warn('[LDB] activity_log detention insert failed:', logErr.message)
         } catch (logErr) {
           console.warn('[LDB] activity_log detention insert failed:', logErr.message)
         }
