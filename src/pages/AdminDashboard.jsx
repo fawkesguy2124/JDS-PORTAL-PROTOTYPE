@@ -14,41 +14,64 @@ import PaymentsSection from '../components/PaymentsSection'
 import ComplianceSection from '../components/ComplianceSection'
 import BEFilingSection from '../components/BEFilingSection'
 import ShipmentTracker from '../components/ShipmentTracker'
-import QuickLookup from '../components/ulip/QuickLookup'
+import TodayPage from './v2/TodayPage'
+import ShipmentBoardPage from './v2/ShipmentBoardPage'
+import TrucksPage from './v2/TrucksPage'
+import CustomsDeskPage from './v2/CustomsDeskPage'
+import SearchPage from './v2/SearchPage'
+import ClientsPage from './v2/ClientsPage'
+import DetentionPage from './v2/DetentionPage'
 import CreateJob from './CreateJob'
 import { forceRefreshAllContainers } from '../services/tracking/ldbProvider'
 
 const NAV_SECTIONS = [
   {
-    label: 'OPERATIONS',
+    label: 'TODAY',
     items: [
-      { id: 'overview', label: 'Control Tower', icon: '⊞' },
+      { id: 'today', label: 'Today', icon: '🏠' },
+    ]
+  },
+  {
+    label: 'SHIPMENTS',
+    items: [
       { id: 'jobs', label: 'All Jobs', icon: '≡' },
-      { id: 'be-filing', label: 'BE Filing', icon: '📋' },
-      { id: 'documents', label: 'Documents', icon: '📄' },
+      { id: 'board', label: 'Shipment Board', icon: '🗺' },
+      { id: 'containers', label: 'Containers', icon: '⊟' },
+      { id: 'trucks', label: 'Trucks', icon: '🚚' },
     ]
   },
   {
-    label: 'TRACKING',
+    label: 'CUSTOMS',
     items: [
-      { id: 'shipment-tracker', label: 'Shipment Tracker', icon: '🚢' },
-      { id: 'containers', label: 'Container Tracking', icon: '⊟' },
-      { id: 'lookup', label: 'Quick Lookup', icon: '🔎' },
+      { id: 'customs', label: 'BE & OOC', icon: '🧾' },
     ]
   },
   {
-    label: 'FINANCE',
+    label: 'DOCUMENTS',
+    items: [
+      { id: 'documents', label: 'Documents & OCR', icon: '📄' },
+    ]
+  },
+  {
+    label: 'MONEY',
     items: [
       { id: 'payments', label: 'Payments', icon: '₹' },
+      { id: 'detention', label: 'Detention', icon: '⏱' },
     ]
   },
   {
-    label: 'COMPLIANCE',
+    label: 'TOOLS',
     items: [
+      { id: 'search', label: 'Search anything', icon: '🔎' },
+      { id: 'clients', label: 'Clients', icon: '👥' },
+      { id: 'overview', label: 'Team & stages', icon: '⊞' },
       { id: 'compliance', label: 'BIS & Licences', icon: '✓' },
     ]
   },
 ]
+
+// Old page names still work (bookmarks, bell links)
+const OLD_TAB_NAMES = { lookup: 'search', 'shipment-tracker': 'board', 'be-filing': 'customs' }
 
 const NAV_ITEMS = NAV_SECTIONS.flatMap(s => s.items)
 
@@ -373,7 +396,8 @@ export default function AdminDashboard() {
 
   const activeNav = useMemo(() => {
     const params = new URLSearchParams(location.search)
-    return params.get('tab') || 'overview'
+    const t = params.get('tab') || 'today'
+    return OLD_TAB_NAMES[t] || t
   }, [location.search])
 
   useEffect(() => {
@@ -588,7 +612,16 @@ export default function AdminDashboard() {
   const currentUserName = profile?.name || '—'
   const isAdmin = profile?.role === 'admin'
   const canUpdateStage = isAdmin || ['Trupti', 'Uphadhya'].includes(currentUserName)
-  const pageTitle = NAV_ITEMS.find((n) => n.id === activeNav)?.label ?? 'Control Tower'
+  const pageTitle = NAV_ITEMS.find((n) => n.id === activeNav)?.label ?? 'Today'
+
+  // Open a job on a given tab (used by Today, Board, Trucks, Customs, Search …)
+  const openJob = (jobId, tab = 'details') => {
+    navigate(`/admin?tab=jobs&jobId=${jobId}#${tab}`, { replace: true })
+    const job = jobs.find(j => j.id === jobId)
+    if (job) setSelectedJob(job)
+    else setPendingNavAction({ tab: 'jobs', jobId })
+  }
+  const pageProps = { profile, currentUserName, onOpenJob: openJob, showToast }
   const desktopFilters = (
     <div className="bg-[#f8f9fb] border-b border-[#e2e6ed] rounded-xl shadow-sm mb-2">
       <div className="p-2 flex flex-wrap gap-1 items-center">
@@ -732,7 +765,7 @@ export default function AdminDashboard() {
 
           <div className="min-w-0">
             <div className="text-[17px] font-bold text-[#1a2233] truncate">{pageTitle}</div>
-            <div className="text-sm text-[#8a96a8] truncate">Live operations overview</div>
+            <div className="text-sm text-[#8a96a8] truncate">JDS Logistics · all shipments in one place</div>
           </div>
           <div className="ml-auto flex items-center gap-2">
             <NotificationBell
@@ -881,7 +914,13 @@ export default function AdminDashboard() {
             />
           )}
 
-          {activeNav === 'lookup' && <QuickLookup />}
+          {activeNav === 'today' && <TodayPage {...pageProps} />}
+          {activeNav === 'board' && <ShipmentBoardPage {...pageProps} />}
+          {activeNav === 'trucks' && <TrucksPage {...pageProps} />}
+          {activeNav === 'customs' && <CustomsDeskPage {...pageProps} />}
+          {activeNav === 'search' && <SearchPage {...pageProps} />}
+          {activeNav === 'clients' && <ClientsPage {...pageProps} />}
+          {activeNav === 'detention' && <DetentionPage {...pageProps} />}
 
           {activeNav === 'payments' && (
             <PaymentsSection jobs={jobs} profiles={profiles} showToast={showToast} getStageName={getStageName} />

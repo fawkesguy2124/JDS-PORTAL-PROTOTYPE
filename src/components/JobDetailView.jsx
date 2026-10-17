@@ -413,9 +413,9 @@ function JobDetailView({ job, profiles, currentUserName, isAdmin, canUpdateStage
     setStageUpdating(false)
     setForm({ ...job })
 
-    // On reload restore tab from hash — on fresh job open reset to details
+    // Open on the tab named in the link (#customs, #truck …), otherwise Job Details
     const hash = window.location.hash.replace('#', '')
-    const isReload = ['details', 'ocr', 'fields'].includes(hash)
+    const isReload = ['details', 'ocr', 'fields', 'customs', ...JOB_TABS.map(t => t.id)].includes(hash)
     if (!isReload) {
       setDetailTab('details')
       window.history.replaceState(null, '', window.location.pathname + window.location.search + '#details')

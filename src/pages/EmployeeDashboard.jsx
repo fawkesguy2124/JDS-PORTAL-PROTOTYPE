@@ -10,7 +10,13 @@ import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 import NotificationBell from '../components/NotificationBell'
 import ContainerTrackingSection from '../components/ContainerTrackingSection'
 import ShipmentTracker from '../components/ShipmentTracker'
-import QuickLookup from '../components/ulip/QuickLookup'
+import TodayPage from './v2/TodayPage'
+import ShipmentBoardPage from './v2/ShipmentBoardPage'
+import TrucksPage from './v2/TrucksPage'
+import CustomsDeskPage from './v2/CustomsDeskPage'
+import SearchPage from './v2/SearchPage'
+import ClientsPage from './v2/ClientsPage'
+import DetentionPage from './v2/DetentionPage'
 import JobDetailView from '../components/JobDetailView'
 import { forceRefreshAllContainers } from '../services/tracking/ldbProvider'
 
@@ -533,36 +539,57 @@ export default function EmployeeDashboard() {
 
   const isFieldOps = profile?.role === 'field_ops'
 
+  // Field staff (phones) see only what they need on the road; office staff see the customs desk too
   const NAV_SECTIONS = useMemo(() => isFieldOps ? [
     {
-      label: 'OPERATIONS',
+      label: 'ON THE ROAD',
       items: [
+        { id: 'trucks',     label: 'Trucks',             icon: '🚚' },
+        { id: 'containers', label: 'Containers',         icon: '⊟' },
         { id: 'jobs',       label: 'All Jobs',           icon: '≡'  },
-        { id: 'documents',  label: 'Documents',           icon: '📄' },
       ],
     },
     {
-      label: 'TRACKING',
+      label: 'TOOLS',
       items: [
-        { id: 'shipment-tracker', label: 'Shipment Tracker',  icon: '🚢' },
-        { id: 'containers', label: 'Container Tracking',  icon: '⊟' },
-        { id: 'lookup',     label: 'Quick Lookup',        icon: '🔎' },
+        { id: 'search',     label: 'Search anything',    icon: '🔎' },
+        { id: 'documents',  label: 'Documents',          icon: '📄' },
       ],
     },
   ] : [
     {
-      label: 'OPERATIONS',
+      label: 'TODAY',
       items: [
-        { id: 'jobs',       label: 'All Jobs',           icon: '≡'  },
-        { id: 'documents',  label: 'Documents',           icon: '📄' },
+        { id: 'today',      label: 'Today',              icon: '🏠' },
       ],
     },
     {
-      label: 'TRACKING',
+      label: 'SHIPMENTS',
       items: [
-        { id: 'shipment-tracker', label: 'Shipment Tracker',  icon: '🚢' },
-        { id: 'containers', label: 'Container Tracking',  icon: '⊟' },
-        { id: 'lookup',     label: 'Quick Lookup',        icon: '🔎' },
+        { id: 'jobs',       label: 'All Jobs',           icon: '≡'  },
+        { id: 'board',      label: 'Shipment Board',     icon: '🗺' },
+        { id: 'containers', label: 'Containers',         icon: '⊟' },
+        { id: 'trucks',     label: 'Trucks',             icon: '🚚' },
+      ],
+    },
+    {
+      label: 'CUSTOMS',
+      items: [
+        { id: 'customs',    label: 'BE & OOC',           icon: '🧾' },
+      ],
+    },
+    {
+      label: 'DOCUMENTS',
+      items: [
+        { id: 'documents',  label: 'Documents & OCR',    icon: '📄' },
+      ],
+    },
+    {
+      label: 'MORE',
+      items: [
+        { id: 'detention',  label: 'Detention',          icon: '⏱' },
+        { id: 'search',     label: 'Search anything',    icon: '🔎' },
+        { id: 'clients',    label: 'Clients',            icon: '👥' },
       ],
     },
   ], [isFieldOps])
@@ -571,7 +598,8 @@ export default function EmployeeDashboard() {
 
   const activeNav = useMemo(() => {
     const params = new URLSearchParams(location.search)
-    return params.get('tab') || 'jobs'
+    const t = params.get('tab') || (isFieldOps ? 'trucks' : 'today')
+    return ({ lookup: 'search', 'shipment-tracker': 'board' })[t] || t
   }, [location.search])
 
   const handleNavClick = (id) => {
@@ -927,6 +955,15 @@ export default function EmployeeDashboard() {
     setSelectedJob(job)
     setJobParam(job)
   }
+
+  // Open a job on a given tab (used by Today, Board, Trucks, Customs, Search …)
+  const openJob = (jobId, tab = 'details') => {
+    const base = isFieldOps ? '/field' : '/dashboard'
+    navigate(`${base}?tab=jobs&jobId=${jobId}#${tab}`, { replace: true })
+    const job = jobs.find(j => j.id === jobId)
+    if (job) setSelectedJob(job)
+  }
+  const pageProps = { profile, currentUserName, onOpenJob: openJob, showToast }
 
   const handleCardClick = (e, job) => {
     const tag = e.target?.tagName?.toLowerCase?.() || ''
@@ -1537,7 +1574,13 @@ export default function EmployeeDashboard() {
               {activeNav === 'documents' ? 'Documents'
                : activeNav === 'containers' ? 'Container Tracking'
                : activeNav === 'shipment-tracker' ? 'Shipment Tracker'
-               : activeNav === 'lookup' ? 'Quick Lookup'
+               : activeNav === 'search' ? 'Search anything'
+               : activeNav === 'today' ? 'Today'
+               : activeNav === 'board' ? 'Shipment Board'
+               : activeNav === 'trucks' ? 'Trucks'
+               : activeNav === 'customs' ? 'BE & OOC'
+               : activeNav === 'clients' ? 'Clients'
+               : activeNav === 'detention' ? 'Detention'
               : 'All Jobs'}
             </div>
             {activeNav === 'jobs' && (
@@ -1954,7 +1997,13 @@ export default function EmployeeDashboard() {
               showToast={showToast}
             />
           )}
-          {activeNav === 'lookup' && <QuickLookup />}
+          {activeNav === 'today' && <TodayPage {...pageProps} />}
+          {activeNav === 'board' && <ShipmentBoardPage {...pageProps} />}
+          {activeNav === 'trucks' && <TrucksPage {...pageProps} />}
+          {activeNav === 'customs' && <CustomsDeskPage {...pageProps} />}
+          {activeNav === 'search' && <SearchPage {...pageProps} />}
+          {activeNav === 'clients' && <ClientsPage {...pageProps} />}
+          {activeNav === 'detention' && <DetentionPage {...pageProps} />}
         </main>
       </div>
 
