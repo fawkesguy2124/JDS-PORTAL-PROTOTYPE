@@ -166,6 +166,7 @@ const INITIAL_FORM = {
   rms_status: 'pending',
   igm_no: '',
   igm_date: '',
+  igm_item_no: '',
   bg_required: 'no',
   destination: '',
   free_days: '',
@@ -601,6 +602,7 @@ if (parsed.client && shouldFill('client')) {
       ulip_refs: {
         ...(form.igm_no.trim() ? { igm_no: form.igm_no.trim() } : {}),
         ...(form.igm_date ? { igm_date: form.igm_date } : {}),
+        ...(form.igm_item_no.trim() ? { igm_item_no: form.igm_item_no.trim() } : {}),
       },
       bg_required: form.bg_required,
       destination: form.destination.trim() || null,
@@ -1173,6 +1175,12 @@ if (parsed.client && shouldFill('client')) {
 
               <Field label="IGM Date">
                 <input type="date" value={form.igm_date} onChange={set('igm_date')} className={fieldClass('igm_date')} />
+              </Field>
+
+              <Field label="IGM Item (line) No">
+                <input type="text" inputMode="numeric" value={form.igm_item_no}
+                  onChange={(e) => setForm((f) => ({ ...f, igm_item_no: e.target.value.replace(/\D/g, '').slice(0, 4) }))}
+                  placeholder="Optional — finds this client's line in the IGM" className={fieldClass('igm_item_no')} />
               </Field>
 
               <Field label="RMS Status">
