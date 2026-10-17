@@ -186,3 +186,5 @@ verify_jwt = true
 
 [functions.toll-plaza]
 verify_jwt = true
+[functions.customs-status]
+verify_jwt = true

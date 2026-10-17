@@ -43,8 +43,8 @@ async function getUlipToken(): Promise<string> {
 }
 
 function normaliseBEStatus(raw: any, requestedBeNo: string) {
-  // ULIP JNPT/02 response — records nested under [0].response or .response
-  const records = raw?.[0]?.response ?? raw?.response ?? raw?.data?.response ?? []
+  // ULIP JNPT/02 response: { response: [ { response: [ record, ... ] } ] }
+  const records = raw?.response?.[0]?.response ?? raw?.[0]?.response ?? []
   const first = Array.isArray(records) ? records[0] : records
 
   if (!first || typeof first !== 'object') {

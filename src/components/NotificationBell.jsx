@@ -52,8 +52,8 @@ function groupByDay(notifications) {
 
 const ROLE_FILTERS = {
   admin:     null,
-  field_ops: ['container_update', 'detention_alert'],
-  employee:  ['container_update', 'detention_alert', 'job_created', 'stage_update', 'document_upload'],
+  field_ops: ['container_update', 'detention_alert', 'ooc_granted'],
+  employee:  ['container_update', 'detention_alert', 'job_created', 'stage_update', 'document_upload', 'ooc_granted'],
 }
 
 export default function NotificationBell({ onNavigate, profile }) {
@@ -74,7 +74,7 @@ export default function NotificationBell({ onNavigate, profile }) {
 
   useEffect(() => {
     const load = async () => {
-      const allowedTypes = ROLE_FILTERS[profile?.role] ?? ['container_update', 'detention_alert']
+      const allowedTypes = ROLE_FILTERS[profile?.role] ?? ['container_update', 'detention_alert', 'ooc_granted']
       let query = supabase
         .from('activity_log')
         .select('*')
@@ -91,7 +91,7 @@ export default function NotificationBell({ onNavigate, profile }) {
     const channel = supabase
       .channel('activity_log_changes')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'activity_log' }, payload => {
-        const allowedTypes = ROLE_FILTERS[profile?.role] ?? ['container_update', 'detention_alert']
+        const allowedTypes = ROLE_FILTERS[profile?.role] ?? ['container_update', 'detention_alert', 'ooc_granted']
         if (profile?.role === 'admin' || allowedTypes.includes(payload.new.type)) {
           setNotifications(prev => [payload.new, ...prev].slice(0, 50))
         }
@@ -147,7 +147,7 @@ export default function NotificationBell({ onNavigate, profile }) {
     const meta = n.meta || {}
     const t = n.type || n.action || ''
 
-    if (t === 'be_status_check') {
+    if (t === 'be_status_check' || t === 'ooc_granted') {
       onNavigate({ tab: 'jobs', jobId: meta.job_id || n.job_id, hash: 'customs' })
       return
     }
@@ -168,7 +168,7 @@ if (filter === 'container') return t.includes('container') || t === 'detention_a
       if (filter === 'alert') return t === 'detention_alert'
       if (filter === 'job') return t.includes('job') || t.includes('stage') || t === 'job_created'
       if (filter === 'document') return t.includes('upload') || t.includes('document')
-      if (filter === 'ulip') return t === 'be_status_check' || t.includes('ulip')
+      if (filter === 'ulip') return t === 'be_status_check' || t === 'ooc_granted' || t.includes('ulip')
         return true
       })
 
@@ -287,7 +287,7 @@ if (filter === 'container') return t.includes('container') || t === 'detention_a
                     {items.map((n, i) => {
                       const isUnread = !lastSeen || new Date(n.created_at) > new Date(lastSeen)
                       const t = n.type || n.action || ''
-                      const tagCls = t === 'detention_alert' ? 'alert' : t.includes('container') ? 'container' : t.includes('job') || t.includes('stage') ? 'job' : t.includes('upload') || t.includes('document') ? 'document' : t === 'be_status_check' || t.includes('ulip') ? 'ulip' : 'default'
+                      const tagCls = t === 'detention_alert' ? 'alert' : t.includes('container') ? 'container' : t.includes('job') || t.includes('stage') ? 'job' : t.includes('upload') || t.includes('document') ? 'document' : t === 'be_status_check' || t === 'ooc_granted' || t.includes('ulip') ? 'ulip' : 'default'
                       const ts = tagStyles[tagCls] || tagStyles.default
                       return (
                         <div

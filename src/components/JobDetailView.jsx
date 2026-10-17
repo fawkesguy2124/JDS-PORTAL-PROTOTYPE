@@ -5,7 +5,7 @@ import OCRSection, { FIELD_LABELS_OCR, OCR_SECTIONS, OCR_FIELD_MAP, MULTI_VALUE_
 import JobDetailMobile from './mobile/JobDetailMobile'
 import JobDetailDesktop from './desktop/JobDetailDesktop'
 import { useAuth } from '../contexts/AuthContext'
-import BEStatusCard from './BEStatusCard'
+import CustomsStatusCard from './CustomsStatusCard'
 
 function classNames(...xs) { return xs.filter(Boolean).join(' ') }
 
@@ -344,7 +344,10 @@ function ContainerChipInput({ value, onChange }) {
   )
 }
 
-function JobDetailView({ job, profiles, currentUserName, isAdmin, canUpdateStage, onBack, onSaved, toast, onDelete }) {
+function JobDetailView({ job, profiles, currentUserName, isAdmin, canUpdateStage, onBack, onSaved, toast, onDelete, showToast, onJobUpdated }) {
+  // EmployeeDashboard passes showToast / onJobUpdated instead of toast / onSaved
+  toast = toast || showToast || (() => {})
+  onSaved = onSaved || onJobUpdated || (async () => {})
   const [editMode, setEditMode] = useState(false)
   const [saving, setSaving] = useState(false)
   const [stageUpdating, setStageUpdating] = useState(false)
@@ -1441,7 +1444,15 @@ Write the summary:`
       {detailTab === 'customs' && (
         <div className="px-4 sm:px-6 py-6">
           <div className="max-w-2xl mx-auto">
-            <BEStatusCard jobNo={job.job_no} initialBeNumber={job.be_no || ''} />
+            <CustomsStatusCard
+              key={job.id}
+              job={job}
+              canEditBE={canEditField('be_no') && canEditField('be_date')}
+              canUpdateStage={canUpdateStage}
+              onMoveToStage={stage => handleStageChange({ target: { value: stage } })}
+              onSaved={onSaved}
+              toast={toast}
+            />
           </div>
         </div>
       )}
