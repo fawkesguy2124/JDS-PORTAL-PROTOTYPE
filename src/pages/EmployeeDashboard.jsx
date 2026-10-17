@@ -10,6 +10,7 @@ import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 import NotificationBell from '../components/NotificationBell'
 import ContainerTrackingSection from '../components/ContainerTrackingSection'
 import ShipmentTracker from '../components/ShipmentTracker'
+import QuickLookup from '../components/ulip/QuickLookup'
 import JobDetailView from '../components/JobDetailView'
 import { forceRefreshAllContainers } from '../services/tracking/ldbProvider'
 
@@ -545,6 +546,7 @@ export default function EmployeeDashboard() {
       items: [
         { id: 'shipment-tracker', label: 'Shipment Tracker',  icon: '🚢' },
         { id: 'containers', label: 'Container Tracking',  icon: '⊟' },
+        { id: 'lookup',     label: 'Quick Lookup',        icon: '🔎' },
       ],
     },
   ] : [
@@ -560,6 +562,7 @@ export default function EmployeeDashboard() {
       items: [
         { id: 'shipment-tracker', label: 'Shipment Tracker',  icon: '🚢' },
         { id: 'containers', label: 'Container Tracking',  icon: '⊟' },
+        { id: 'lookup',     label: 'Quick Lookup',        icon: '🔎' },
       ],
     },
   ], [isFieldOps])
@@ -1534,6 +1537,7 @@ export default function EmployeeDashboard() {
               {activeNav === 'documents' ? 'Documents'
                : activeNav === 'containers' ? 'Container Tracking'
                : activeNav === 'shipment-tracker' ? 'Shipment Tracker'
+               : activeNav === 'lookup' ? 'Quick Lookup'
               : 'All Jobs'}
             </div>
             {activeNav === 'jobs' && (
@@ -1950,6 +1954,7 @@ export default function EmployeeDashboard() {
               showToast={showToast}
             />
           )}
+          {activeNav === 'lookup' && <QuickLookup />}
         </main>
       </div>
 

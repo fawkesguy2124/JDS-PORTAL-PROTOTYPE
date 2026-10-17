@@ -4,6 +4,7 @@ import { supabase } from '../supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { STAGE_NAMES } from '../utils/jobHelpers'
 import { linkContainer } from '../api/trackingApi'
+import { PORTS } from '../utils/ports'
 
 const MODES = ['Sea FCL', 'Sea LCL', 'Air', 'BPT/MBPT']
 const CONTAINER_SIZES = ['20GP','40GP','40HC','45HC','20RF','40RF','40RFHC','20OT','40OT','20FR','40FR','20TK']
@@ -147,6 +148,8 @@ const INITIAL_FORM = {
   job_no: '',
   client: '',
   mode: 'Sea FCL',
+  job_type: 'import',
+  port_code: 'INNSA1',
   containers: [],
   containerRaw: '',
   goods: '',
@@ -262,6 +265,8 @@ export default function CreateJob({ isModal = false, onCancel, onCreated }) {
     setForm((prev) => {
       const next = { ...prev, [field]: value }
       if (field === 'mode') {
+        if (value === 'Air' && (prev.port_code === 'INNSA1' || prev.port_code === 'INBOM1')) next.port_code = 'INBOM4'
+        if (value !== 'Air' && prev.port_code === 'INBOM4') next.port_code = 'INNSA1'
         if (value === 'Sea FCL') {
           next.containers = prev.containers.length === 0 ? [{ no: '', size: '' }] : prev.containers
         } else {
@@ -553,6 +558,8 @@ if (parsed.client && shouldFill('client')) {
       job_no: `J-${form.job_no.trim()}`,
       client: form.client === '__other__' ? (form.clientOther?.trim() || '') : form.client.trim(),
       mode: form.mode,
+      job_type: form.job_type,
+      port_code: form.port_code || null,
       goods: form.goods.trim() || null,
       priority: form.priority,
       bl_no: form.bl_no.trim() || null,
@@ -911,6 +918,21 @@ if (parsed.client && shouldFill('client')) {
                     <option key={m} value={m}>
                       {m}
                     </option>
+                  ))}
+                </select>
+              </Field>
+
+              <Field label="Import / Export" required>
+                <select value={form.job_type} onChange={set('job_type')} className={inputClass}>
+                  <option value="import">Import</option>
+                  <option value="export">Export</option>
+                </select>
+              </Field>
+
+              <Field label="Port" required>
+                <select value={form.port_code} onChange={set('port_code')} className={inputClass}>
+                  {PORTS.map((p) => (
+                    <option key={p.code} value={p.code}>{p.name} ({p.code})</option>
                   ))}
                 </select>
               </Field>

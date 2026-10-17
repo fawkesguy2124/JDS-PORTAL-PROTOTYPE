@@ -14,6 +14,7 @@ import PaymentsSection from '../components/PaymentsSection'
 import ComplianceSection from '../components/ComplianceSection'
 import BEFilingSection from '../components/BEFilingSection'
 import ShipmentTracker from '../components/ShipmentTracker'
+import QuickLookup from '../components/ulip/QuickLookup'
 import CreateJob from './CreateJob'
 import { forceRefreshAllContainers } from '../services/tracking/ldbProvider'
 
@@ -32,6 +33,7 @@ const NAV_SECTIONS = [
     items: [
       { id: 'shipment-tracker', label: 'Shipment Tracker', icon: '🚢' },
       { id: 'containers', label: 'Container Tracking', icon: '⊟' },
+      { id: 'lookup', label: 'Quick Lookup', icon: '🔎' },
     ]
   },
   {
@@ -878,6 +880,8 @@ export default function AdminDashboard() {
               showToast={showToast}
             />
           )}
+
+          {activeNav === 'lookup' && <QuickLookup />}
 
           {activeNav === 'payments' && (
             <PaymentsSection jobs={jobs} profiles={profiles} showToast={showToast} getStageName={getStageName} />

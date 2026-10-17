@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:ulip": "node --experimental-strip-types --no-warnings --test \"supabase/functions/ulip/apis/*.test.ts\""
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.106.2",

@@ -6,6 +6,9 @@ import JobDetailMobile from './mobile/JobDetailMobile'
 import JobDetailDesktop from './desktop/JobDetailDesktop'
 import { useAuth } from '../contexts/AuthContext'
 import CustomsStatusCard from './CustomsStatusCard'
+import { PORTS, portLabel } from '../utils/ports'
+import UlipSection from './ulip/UlipSection'
+import { JOB_TABS, CUSTOMS_TAB_GROUPS } from './ulip/ulipChecks'
 
 function classNames(...xs) { return xs.filter(Boolean).join(' ') }
 
@@ -26,6 +29,8 @@ const FIELD_LABELS = {
   job_no: 'Job Number',
   client: 'Client',
   mode: 'Mode',
+  job_type: 'Import / Export',
+  port_code: 'Port',
   bl_no: 'BL Number',
   containers: 'Containers',
   shipping_line: 'Shipping Line',
@@ -57,6 +62,8 @@ const FIELD_PERMS = {
   job_no: { can: ['Uphadhya', 'Akshyani', 'Durgesh'] },
   client: { can: ['Uphadhya', 'Akshyani', 'Durgesh'] },
   mode: { can: ['Uphadhya', 'Akshyani', 'Durgesh'] },
+  job_type: { can: ['Uphadhya', 'Akshyani', 'Durgesh'] },
+  port_code: { can: ['Uphadhya', 'Akshyani', 'Durgesh'] },
   bl_no: { can: ['Uphadhya', 'Akshyani', 'Durgesh'] },
   containers: { can: ['Uphadhya', 'Akshyani', 'Durgesh'] },
   shipping_line: { can: ['Uphadhya', 'Akshyani', 'Durgesh'] },
@@ -354,7 +361,7 @@ function JobDetailView({ job, profiles, currentUserName, isAdmin, canUpdateStage
   const [showFullAccountability, setShowFullAccountability] = useState(false)
   const [detailTab, setDetailTab] = useState(() => {
     const hash = window.location.hash.replace('#', '')
-    return ['details', 'ocr', 'fields', 'customs'].includes(hash) ? hash : 'details'
+    return ['details', 'ocr', 'fields', 'customs', ...JOB_TABS.map(t => t.id)].includes(hash) ? hash : 'details'
   })
   const [extractedFields, setExtractedFields] = useState(null)
   const [loadingExtracted, setLoadingExtracted] = useState(false)
@@ -889,7 +896,7 @@ Write the summary:`
       )}
 
       <div className="px-4 sm:px-6 border-b border-[#e2e6ed] bg-[#f8f9fb]">
-        <div className="flex gap-1 py-2">
+        <div className="flex gap-1 py-2 overflow-x-auto">
           <button type="button" onClick={() => { setDetailTab('details'); window.history.replaceState(null, '', window.location.pathname + window.location.search + '#details') }}
             className={classNames('px-4 py-1.5 text-xs font-bold rounded-lg transition-colors', detailTab === 'details' ? 'bg-white text-[#1a4fa0] shadow-sm border border-[#e2e6ed]' : 'text-[#8a96a8] hover:text-[#1a4fa0]')}>
             Job Details
@@ -906,6 +913,12 @@ Write the summary:`
             className={classNames('px-4 py-1.5 text-xs font-bold rounded-lg transition-colors', detailTab === 'customs' ? 'bg-white text-[#1a4fa0] shadow-sm border border-[#e2e6ed]' : 'text-[#8a96a8] hover:text-[#1a4fa0]')}>
             Customs & BE
           </button>
+          {JOB_TABS.filter(t => t.showIf(job)).map(t => (
+            <button key={t.id} type="button" onClick={() => { setDetailTab(t.id); window.history.replaceState(null, '', window.location.pathname + window.location.search + '#' + t.id) }}
+              className={classNames('px-4 py-1.5 text-xs font-bold rounded-lg transition-colors whitespace-nowrap', detailTab === t.id ? 'bg-white text-[#1a4fa0] shadow-sm border border-[#e2e6ed]' : 'text-[#8a96a8] hover:text-[#1a4fa0]')}>
+              {t.label}
+            </button>
+          ))}
         </div>
       </div>
 
@@ -1002,7 +1015,7 @@ Write the summary:`
                     placeholder="Enter delay reason..."
                     className="w-full rounded-lg border border-[#e2e6ed] bg-white px-3 py-2 text-sm text-[#1a2233] focus:border-[#1a4fa0] focus:outline-none focus:ring-1 focus:ring-[#1a4fa0]" />
                 ) : (
-                  <p className="text-sm text-[#4a5568]">{job.delay_reason?.trim() || <span className="text-[#d0d6e0]">\u2014</span>}</p>
+                  <p className="text-sm text-[#4a5568]">{job.delay_reason?.trim() || <span className="text-[#d0d6e0]">—</span>}</p>
                 )}
               </div>
               <div className="flex flex-col rounded-lg border border-[#e2e6ed] bg-[#f8f9fb] overflow-hidden">
@@ -1115,7 +1128,7 @@ Write the summary:`
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {/* Left — editable fields, 2 columns wide */}
             <div className="lg:col-span-2 grid grid-cols-2 md:grid-cols-2 gap-x-4 gap-y-4 md:gap-x-8 md:gap-y-5">
-              {['job_no','client','mode','priority','goods','bl_no','be_no','be_date','containers','shipping_line','vessel','eta','cfs_name','cfs_amount','hs_code','rms_status','bg_required','destination','free_days','detention_risk','delay_reason'].map((k) => {
+              {['job_no','client','mode','job_type','port_code','priority','goods','bl_no','be_no','be_date','containers','shipping_line','vessel','eta','cfs_name','cfs_amount','hs_code','rms_status','bg_required','destination','free_days','detention_risk','delay_reason'].map((k) => {
                 const hasOcrValue   = OCR_FIELD_MAP[k] !== undefined && OCR_FIELD_MAP[k] !== null && !!extractedData?.[OCR_FIELD_MAP[k]]?.value
                 const isEditable    = canEditField(k)
                 const wasJustFilled = importedFields[k]
@@ -1125,7 +1138,7 @@ Write the summary:`
                     <div className="flex items-center gap-1 flex-wrap">
                       <p className="text-xs text-[#8a96a8] font-medium uppercase tracking-wide">{FIELD_LABELS[k] || k}</p>
                       {wasJustFilled && (
-                        <span className="text-[10px] text-emerald-600 font-semibold">\u2713 Auto-filled</span>
+                        <span className="text-[10px] text-emerald-600 font-semibold">✓ Auto-filled</span>
                       )}
                     </div>
                     {isEditable ? (
@@ -1178,6 +1191,18 @@ Write the summary:`
                       ) : k === 'eta' || k === 'be_date' ? (
                         <input type="date" value={(form[k] || '').slice(0,10)} onChange={e => { setForm(p => ({...p, [k]: e.target.value})) }}
                           className="w-full rounded-lg border border-[#e2e6ed] bg-white px-3 py-2 text-sm text-[#1a2233] focus:border-[#1a4fa0] focus:outline-none focus:ring-1 focus:ring-[#1a4fa0]" />
+                      ) : k === 'job_type' ? (
+                        <select value={form[k] || 'import'} onChange={e => { setForm(p => ({...p, [k]: e.target.value})) }}
+                          className="w-full rounded-lg border border-[#e2e6ed] bg-white px-3 py-2 text-sm text-[#1a2233] focus:border-[#1a4fa0] focus:outline-none focus:ring-1 focus:ring-[#1a4fa0]">
+                          <option value="import">Import</option>
+                          <option value="export">Export</option>
+                        </select>
+                      ) : k === 'port_code' ? (
+                        <select value={form[k] || ''} onChange={e => { setForm(p => ({...p, [k]: e.target.value || null})) }}
+                          className="w-full rounded-lg border border-[#e2e6ed] bg-white px-3 py-2 text-sm text-[#1a2233] focus:border-[#1a4fa0] focus:outline-none focus:ring-1 focus:ring-[#1a4fa0]">
+                          <option value="">Select port</option>
+                          {PORTS.map(p => <option key={p.code} value={p.code}>{p.name} ({p.code})</option>)}
+                        </select>
                       ) : k === 'bg_required' || k === 'detention_risk' ? (
                         <select value={form[k] || ''} onChange={e => { setForm(p => ({...p, [k]: e.target.value})) }}
                           className="w-full rounded-lg border border-[#e2e6ed] bg-white px-3 py-2 text-sm text-[#1a2233] focus:border-[#1a4fa0] focus:outline-none focus:ring-1 focus:ring-[#1a4fa0]">
@@ -1190,7 +1215,7 @@ Write the summary:`
                           className={`w-full rounded-lg border px-3 py-2 text-sm text-[#1a2233] focus:outline-none focus:ring-1 focus:ring-[#1a4fa0] ${wasJustFilled ? 'border-emerald-400 bg-emerald-50 focus:border-emerald-500' : 'border-[#e2e6ed] bg-white focus:border-[#1a4fa0]'}`} />
                       )
                     ) : (
-                      <p className="text-sm text-[#1a2233] py-2">{form[k] || <span className="text-[#d0d6e0]">\u2014</span>}</p>
+                      <p className="text-sm text-[#1a2233] py-2">{(k === 'port_code' && form[k] ? portLabel(form[k]) : k === 'job_type' && form[k] ? (form[k] === 'export' ? 'Export' : 'Import') : form[k]) || <span className="text-[#d0d6e0]">—</span>}</p>
                     )}
                     {fieldConfidence[k] && (
                       <span className={`inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full border w-fit ${
@@ -1453,9 +1478,20 @@ Write the summary:`
               onSaved={onSaved}
               toast={toast}
             />
+            <div className="mt-6">
+              <UlipSection key={job.id} job={job} groups={CUSTOMS_TAB_GROUPS} />
+            </div>
           </div>
         </div>
       )}
+
+      {JOB_TABS.filter(t => t.id === detailTab && t.showIf(job)).map(t => (
+        <div key={t.id} className="px-4 sm:px-6 py-6">
+          <div className="max-w-3xl mx-auto">
+            <UlipSection key={job.id + t.id} job={job} groups={t.groups} />
+          </div>
+        </div>
+      ))}
 
     </div>
     </>
