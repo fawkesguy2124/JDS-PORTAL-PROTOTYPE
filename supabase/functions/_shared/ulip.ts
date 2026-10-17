@@ -5,7 +5,7 @@
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 const ULIP_BASE        = 'http://13.200.155.29:3000/ulip/v1.0.0'
-const ULIP_TIMEOUT_MS  = 12000
+const ULIP_TIMEOUT_MS  = 30000 // production ULIP can take 10+ seconds
 const TOKEN_REUSE_MINS = 25
 
 export const corsHeaders = {
