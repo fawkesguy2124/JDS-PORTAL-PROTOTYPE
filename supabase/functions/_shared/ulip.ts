@@ -13,6 +13,7 @@ import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-
 
 const ULIP_BASE              = 'http://13.200.155.29:3000/ulip/v1.0.0'
 const ULIP_TIMEOUT_MS        = 20_000
+const ICEGATE_TIMEOUT_MS     = 35_000
 const TOKEN_REUSE_MINS       = 25
 const LOGIN_LOCK_SECS        = 30
 const LOGIN_RETRY_AFTER_MINS = 5
@@ -51,7 +52,9 @@ export async function getCaller(req: Request, admin: SupabaseClient) {
 
 async function postToProxy(path: string, payload: unknown, token?: string) {
   const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), ULIP_TIMEOUT_MS)
+  // ICEGATE is often slow to answer; everything else gets the normal limit
+  const limit = path.startsWith("ICEGATE/") ? ICEGATE_TIMEOUT_MS : ULIP_TIMEOUT_MS
+  const timeout = setTimeout(() => controller.abort(), limit)
   try {
     const headers: Record<string, string> = {
       'x-proxy-key': Deno.env.get('ULIP_PROXY_KEY') ?? '',
@@ -219,6 +222,19 @@ function classify(status: number, body: any): UlipResult {
     const inner = body?.response?.[0]?.response
     const detail = typeof inner === 'string' ? inner : (body?.message || '')
     return { ok: false, status, body, error: `ULIP reported an error${detail ? `: ${detail}` : ''} | ${JSON.stringify(body).slice(0, 400)}` }
+  }
+  // ULIP says "Success" on the outside but the government system behind it
+  // failed, e.g. { responseStatus: 'ERROR', message: { text: '3rd party API Error: Request Time out' } }.
+  // That is a failure, not "no record".
+  const first = Array.isArray(body?.response) ? body.response[0] : null
+  const innerText = typeof first?.message === 'string' ? first.message : first?.message?.text
+  const innerPayload = first?.response
+  if (
+    (innerText && /3rd party|third party|time ?out|timed out|service is down|not reachable|unavailable/i.test(innerText)) ||
+    (typeof innerPayload === 'string' && /3rd party|third party|time ?out|timed out|service is down|not reachable|unavailable/i.test(innerPayload))
+  ) {
+    const why = innerText || innerPayload
+    return { ok: false, status, body, error: `The government system did not answer (${why}) | ${JSON.stringify(body).slice(0, 400)}` }
   }
   return { ok: true, status, body }
 }
