@@ -85,7 +85,7 @@ const CUSTOMS_GROUPS = [
 // ── Job tab: Vessel (sea jobs) ──────────────────────────────────────────────
 const VESSEL_GROUPS = [
   {
-    title: 'Vessel arrival',
+    title: 'Ship & arrival',
     description: 'Free days usually start from the vessel\'s arrival. You need the vessel call number (VCN) from the shipping line or port.',
     checks: [
       { api: 'JNPT/01', title: 'Vessel at JNPT', showIf: at('JNPT'), button: 'Check vessel', refs: { vcnNo: 'vcn_no' }, labels: { vcnNo: 'Vessel call number (VCN)' } },
@@ -97,8 +97,8 @@ const VESSEL_GROUPS = [
       },
       {
         api: 'ICEGATE/04', title: 'Shipping line and agent for this arrival (rotation)',
-        description: 'Needs the vessel code and IMO number. These are filled in after "Ship arrival from the IGM" on the Customs tab.',
-        button: 'Check rotation',
+        description: 'Needs the vessel code and IMO number. These are filled in after the IGM check above.',
+        showIf: (job) => !isAir(job), button: 'Check rotation',
         refs: { siteId: 'port_code', imoCode: 'imo_code', vesselCode: 'vessel_code', arrivalDate: 'eta' },
         labels: { siteId: 'Port code' },
       },
@@ -113,6 +113,7 @@ const EXPORT_GROUPS = [
     checks: [
       { api: 'ICEGATE/06', title: 'Has LEO been given?', button: 'Check LEO', refs: { sbNo: 'sb_no', sbDt: 'sb_date' } },
       { api: 'ICEGATE/05', title: 'Shipping bill details', button: 'Check shipping bill', refs: { sbNo: 'sb_no', sbDt: 'sb_date' } },
+      { api: 'ICEGATE/12', title: 'Manual, courier or postal shipping bill', description: 'Only for shipping bills filed by hand, courier or post. Location code example: INBOM4.', button: 'Check shipping bill', refs: { location: 'port_code', sbNo: 'sb_no', sbDate: 'sb_date' } },
     ],
   },
   {
@@ -184,6 +185,19 @@ const TRUCK_GROUPS = [
       { api: 'EWAYBILL/01', title: 'E-way bill validity', button: 'Check e-way bill', refs: { ewbNo: 'ewb_no' } },
     ],
   },
+  {
+    title: 'If the checks above give no answer',
+    checks: [
+      { api: 'VAHAN/05', title: 'Truck papers by chassis number', description: 'ULIP changed what this check needs on 16 Oct 2026, so it may not answer until we update it.', button: 'Check by chassis', refs: { chasisnumber: 'chassis_no' } },
+      { api: 'SARATHI/01', title: 'Driver’s licence, full details', description: 'Needs the driver’s date of birth.', button: 'Check licence', refs: { dlnumber: 'dl_no' } },
+    ],
+  },
+  {
+    title: 'Trip cost',
+    checks: [
+      { api: 'TOLL/01', title: 'Toll plaza rates', description: 'Give one of: toll plaza code, toll plaza name, or state.', button: 'Check toll rates' },
+    ],
+  },
 ]
 
 export const JOB_TABS = [
@@ -194,14 +208,16 @@ export const JOB_TABS = [
 ]
 
 export const CUSTOMS_TAB_GROUPS = CUSTOMS_GROUPS
+export const SHIP_GROUPS = VESSEL_GROUPS
 
 // ── Quick Lookup ────────────────────────────────────────────────────────────
+// VAHAN/01, 02, 03 and 06 were switched off by ULIP on 16 Oct 2026 and are not listed.
 const CATEGORY_APIS = [
   { id: 'import', icon: '🧾', label: 'Import (BE / IGM)', apis: ['ICEGATE/03', 'ICEGATE/02', 'ICEGATE/07', 'ICEGATE/01', 'JNPT/02', 'MBPT/02', 'IPORTMAN/02', 'PCS/05', 'PCS/04', 'PCS/01'] },
   { id: 'export', icon: '📦', label: 'Export (shipping bill)', apis: ['ICEGATE/06', 'ICEGATE/05', 'ICEGATE/12', 'ICEGATE/08', 'ICEGATE/13', 'JNPT/03', 'MBPT/03', 'IPORTMAN/03', 'PCS/03', 'PCS/02'] },
   { id: 'vessel', icon: '🚢', label: 'Vessel', apis: ['JNPT/01', 'MBPT/01', 'IPORTMAN/01', 'ICEGATE/04'] },
   { id: 'container', icon: '⊟', label: 'Container', apis: ['LDB/01'] },
-  { id: 'truck', icon: '🚚', label: 'Truck & driver', apis: ['FASTAG/01', 'FASTAG/02', 'VAHAN/04', 'VAHAN/05', 'VAHAN/06', 'VAHAN/01', 'VAHAN/02', 'VAHAN/03', 'SARATHI/02', 'SARATHI/01', 'ECHALLAN/01', 'EWAYBILL/01', 'TOLL/01'] },
+  { id: 'truck', icon: '🚚', label: 'Truck & driver', apis: ['FASTAG/01', 'FASTAG/02', 'VAHAN/04', 'VAHAN/05', 'SARATHI/02', 'SARATHI/01', 'ECHALLAN/01', 'EWAYBILL/01', 'TOLL/01'] },
   { id: 'air', icon: '✈', label: 'Air cargo', apis: ['ICEGATE/09', 'ICEGATE/10', 'ICEGATE/11', 'ACMES/02', 'AAICLAS/02', 'ACMES/01', 'AAICLAS/01'] },
   { id: 'client', icon: '🏢', label: 'Client & goods', apis: ['DGFT/01', 'DGFT/02'] },
   { id: 'rail', icon: '🚆', label: 'Rail', apis: ['FOIS/01', 'FOIS/04', 'FOIS/02'] },
@@ -211,10 +227,6 @@ const CATEGORY_APIS = [
 const LOOKUP_TEXT = {
   'VAHAN/04': { title: 'Truck papers (RC, fitness, insurance) — by truck number' },
   'VAHAN/05': { title: 'Truck papers — by chassis number' },
-  'VAHAN/06': { title: 'Truck papers — by engine number' },
-  'VAHAN/01': { title: 'Truck papers by truck number (backup source)', description: 'Use only if the check above gives no answer.' },
-  'VAHAN/02': { title: 'Truck papers by chassis number (backup source)', description: 'Use only if the check above gives no answer.' },
-  'VAHAN/03': { title: 'Truck papers by engine number (backup source)', description: 'Use only if the check above gives no answer.' },
   'SARATHI/02': { title: 'Driver’s licence' },
   'SARATHI/01': { title: 'Driver’s licence, full details (needs date of birth)' },
   'PCS/05': { title: 'Out of charge (PCS, any port)' },

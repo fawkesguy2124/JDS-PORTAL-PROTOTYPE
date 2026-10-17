@@ -2,7 +2,7 @@ import { useMemo, useRef, useState } from 'react'
 import { journeyFor, isExportJob } from '../../services/journey'
 import { markBeFiled, markSbFiled } from '../../services/jobActions'
 import UlipCheck from '../../components/ulip/UlipCheck'
-import { CUSTOMS_TAB_GROUPS } from '../../components/ulip/ulipChecks'
+import { CUSTOMS_TAB_GROUPS, SHIP_GROUPS } from '../../components/ulip/ulipChecks'
 import { JobPicker, CustomsWorkspace, NoJobChosen } from '../JobChecks'
 import { useJourney } from '../JourneyContext'
 import { Icon, fmtDate, timeAgo } from '../ui'
@@ -230,7 +230,7 @@ export default function CustomsPage({ currentUserName, onOpenJob, showToast, can
           />
           {selId
             ? <CustomsWorkspace jobId={selId} onOpenJob={onOpenJob} canEditBE={canEditBE} canUpdateStage={canUpdateStage}
-                currentUserName={currentUserName} showToast={showToast} groups={CUSTOMS_TAB_GROUPS} />
+                currentUserName={currentUserName} showToast={showToast} groups={[...CUSTOMS_TAB_GROUPS, ...SHIP_GROUPS]} />
             : <NoJobChosen text="Pick a job on the left to see its customs status: BE, OOC, cargo details, IGM and more. Each check asks Customs only when you press its button." />}
         </div>
       ) : (
