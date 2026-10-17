@@ -102,7 +102,8 @@ export async function callUlip(
     if (status !== 200) {
       result = { ok: false, status, body, error: `${body?.message || `ULIP returned HTTP ${status}`} | ${JSON.stringify(body).slice(0, 400)}` }
     } else if (body?.error === 'true' || body?.error === true) {
-      const detail = [body?.code, body?.message].filter(Boolean).join(' ')
+      const inner = body?.response?.[0]?.response
+      const detail = typeof inner === "string" ? inner : (body?.message || "")
       result = { ok: false, status, body, error: `ULIP reported an error${detail ? `: ${detail}` : ''} | ${JSON.stringify(body).slice(0, 400)}` }
     } else {
       result = { ok: true, status, body }
