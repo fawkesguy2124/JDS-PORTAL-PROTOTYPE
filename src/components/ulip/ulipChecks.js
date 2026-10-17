@@ -55,7 +55,8 @@ const CUSTOMS_GROUPS = [
   },
   {
     title: 'Port Community System (works for every port)',
-    description: 'Use these if the port check above has no record yet.',
+    description: 'Backup checks. Use these if the checks above have no record yet.',
+    collapsed: true,
     checks: [
       { api: 'PCS/05', title: 'Out of charge (PCS)', button: 'Check OOC in PCS', refs: { boeNumber: 'be_no' } },
       { api: 'PCS/04', title: 'Bill of Entry details (PCS)', button: 'Check BE in PCS', refs: { boeNumber: 'be_no' } },
@@ -64,6 +65,8 @@ const CUSTOMS_GROUPS = [
   },
   {
     title: 'Client and goods',
+    description: 'Client IEC and HS code import policy.',
+    collapsed: true,
     checks: [
       {
         api: 'DGFT/01', title: 'Is the client\'s IEC valid?',
@@ -204,10 +207,32 @@ const CATEGORY_APIS = [
   { id: 'rail', icon: '🚆', label: 'Rail', apis: ['FOIS/01', 'FOIS/04', 'FOIS/02'] },
 ]
 
+// Plainer titles where the registry name is technical
+const LOOKUP_TEXT = {
+  'VAHAN/04': { title: 'Truck papers (RC, fitness, insurance) — by truck number' },
+  'VAHAN/05': { title: 'Truck papers — by chassis number' },
+  'VAHAN/06': { title: 'Truck papers — by engine number' },
+  'VAHAN/01': { title: 'Truck papers by truck number (backup source)', description: 'Use only if the check above gives no answer.' },
+  'VAHAN/02': { title: 'Truck papers by chassis number (backup source)', description: 'Use only if the check above gives no answer.' },
+  'VAHAN/03': { title: 'Truck papers by engine number (backup source)', description: 'Use only if the check above gives no answer.' },
+  'SARATHI/02': { title: 'Driver’s licence' },
+  'SARATHI/01': { title: 'Driver’s licence, full details (needs date of birth)' },
+  'PCS/05': { title: 'Out of charge (PCS, any port)' },
+  'PCS/04': { title: 'Bill of Entry details (PCS, any port)' },
+  'PCS/01': { title: 'Containers on the IGM (PCS, any port)' },
+  'ICEGATE/04': { description: 'Needs the port code, the vessel’s IMO number, vessel code and expected arrival date.' },
+  'IPORTMAN/01': { description: 'For ports other than JNPT and Mumbai Port. Port code example: INMUN1 (Mundra).' },
+  'IPORTMAN/02': { description: 'For ports other than JNPT and Mumbai Port. Port code example: INMUN1 (Mundra).' },
+  'IPORTMAN/03': { description: 'For ports other than JNPT and Mumbai Port. Port code example: INMUN1 (Mundra).' },
+  'ICEGATE/09': { description: 'Airport code example: INBOM4 for Mumbai air cargo.' },
+  'ICEGATE/11': { description: 'Airport code example: INBOM4. Manifest type: IGM for import, EGM for export.' },
+  'ICEGATE/12': { description: 'For shipping bills filed manually, by courier or by post. Location code example: INBOM4.' },
+}
+
 export const LOOKUP_CATEGORIES = CATEGORY_APIS.map((c) => ({
   ...c,
   checks: c.apis
     .map((id) => ALL_APIS.find((a) => a.id === id))
     .filter(Boolean)
-    .map((a) => ({ api: a.id, title: a.name, button: 'Check' })),
+    .map((a) => ({ api: a.id, title: a.name, button: 'Check', ...(LOOKUP_TEXT[a.id] || {}) })),
 }))

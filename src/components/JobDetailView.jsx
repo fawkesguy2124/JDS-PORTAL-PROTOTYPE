@@ -450,6 +450,8 @@ function JobDetailView({ job, profiles, currentUserName, isAdmin, canUpdateStage
     { key: 'job_no', label: 'Job Number', value: displayValue(job.job_no) },
     { key: 'client', label: 'Client', value: displayValue(job.client) },
     { key: 'mode', label: 'Mode', value: displayValue(job.mode) },
+    { key: 'job_type', label: 'Import / Export', value: job.job_type === 'export' ? 'Export' : 'Import' },
+    { key: 'port_code', label: 'Port', value: job.port_code ? portLabel(job.port_code) : 'Not set (JNPT assumed)' },
     { key: 'priority', label: 'Priority', value: displayValue(job.priority) },
     { key: 'goods', label: 'Goods', value: displayValue(job.goods) },
     { key: 'bl_no', label: 'BL Number', value: displayValue(job.bl_no) },
@@ -708,6 +710,8 @@ function JobDetailView({ job, profiles, currentUserName, isAdmin, canUpdateStage
     const disabled = !canEditField(key) || saving
     const value = form[key] ?? ''
     if (key === 'mode') return <select value={value||''} onChange={updateForm(key)} disabled={disabled} className={inputBase}><option value="">—</option><option value="Sea FCL">Sea FCL</option><option value="Sea LCL">Sea LCL</option><option value="Air">Air</option><option value="BPT/MBPT">BPT/MBPT</option></select>
+    if (key === 'job_type') return <select value={value||'import'} onChange={updateForm(key)} disabled={disabled} className={inputBase}><option value="import">Import</option><option value="export">Export</option></select>
+    if (key === 'port_code') return <select value={value||''} onChange={updateForm(key)} disabled={disabled} className={inputBase}><option value="">Select port</option>{PORTS.map(p => <option key={p.code} value={p.code}>{p.name} ({p.code})</option>)}</select>
     if (key === 'priority') return <select value={value||'normal'} onChange={updateForm(key)} disabled={disabled} className={inputBase}><option value="normal">Normal</option><option value="high">High</option><option value="urgent">Urgent</option></select>
     if (key === 'rms_status') return <select value={value||'pending'} onChange={updateForm(key)} disabled={disabled} className={inputBase}><option value="pending">pending</option><option value="rms">rms</option><option value="apr">apr</option><option value="acl">acl</option><option value="check">check</option><option value="hold">hold</option></select>
     if (key === 'bg_required') return <select value={value||'no'} onChange={updateForm(key)} disabled={disabled} className={inputBase}><option value="no">no</option><option value="yes">yes</option><option value="100percent">100percent</option></select>

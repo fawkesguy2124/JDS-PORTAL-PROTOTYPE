@@ -108,18 +108,21 @@ export default function UlipCheck({ check, job, saved, onResult, onJobChange, co
       {check.description && (
         <div style={{ fontSize: '13px', color: '#5b6678', marginTop: '3px', lineHeight: 1.5 }}>{check.description}</div>
       )}
+      {api.oneOf && (
+        <div style={{ fontSize: '13px', color: '#5b6678', marginTop: '3px' }}>Fill in just one of the boxes below.</div>
+      )}
 
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginTop: '14px', alignItems: 'flex-end' }}>
         {visibleInputs.map((input) => (
           <label key={input.key} style={{ display: 'flex', flexDirection: 'column', gap: '5px', flex: isDate(input) ? '0 1 180px' : '1 1 200px', minWidth: 0 }}>
-            <span style={labelStyle}>{labelOf(input)}{input.optional ? ' (optional)' : ''}</span>
+            <span style={labelStyle}>{labelOf(input)}{input.optional && !api.oneOf ? ' (optional)' : ''}</span>
             <input
               type={isDate(input) ? 'date' : 'text'}
               value={valueOf(input)}
-              onChange={(e) => setEdited((prev) => ({ ...prev, [input.key]: e.target.value }))}
+              onChange={(e) => { const v = input.upper ? e.target.value.toUpperCase() : e.target.value; setEdited((prev) => ({ ...prev, [input.key]: v })) }}
               onKeyDown={(e) => { if (e.key === 'Enter') run() }}
               placeholder={isDate(input) ? '' : input.hint}
-              style={{ ...inputStyle, fontFamily: isDate(input) ? 'inherit' : "'JetBrains Mono', monospace", textTransform: input.upper ? 'uppercase' : 'none' }}
+              style={{ ...inputStyle, fontFamily: isDate(input) ? 'inherit' : "'JetBrains Mono', monospace" }}
             />
           </label>
         ))}

@@ -13,6 +13,7 @@ export default function UlipSection({ job: jobProp, groups, intro, onJobChange }
   const [patch, setPatch] = useState({})
   const job = { ...jobProp, ...patch, ulip_refs: { ...(jobProp.ulip_refs || {}), ...(patch.ulip_refs || {}) } }
   const [saved, setSaved] = useState(null)
+  const [opened, setOpened] = useState({})
 
   useEffect(() => {
     let cancelled = false
@@ -35,7 +36,13 @@ export default function UlipSection({ job: jobProp, groups, intro, onJobChange }
       {saved === null ? (
         <div style={{ fontSize: '13px', color: '#8a96a8', padding: '20px 0' }}>Loading…</div>
       ) : (
-        visibleGroups.map((g) => (
+        visibleGroups.map((g) => g.collapsed && !opened[g.title] ? (
+          <button key={g.title} type="button" onClick={() => setOpened((p) => ({ ...p, [g.title]: true }))}
+            style={{ textAlign: 'left', padding: '14px 16px', borderRadius: '12px', border: '1.5px dashed #c9d2e0', background: '#f8fafc', cursor: 'pointer', fontFamily: 'inherit' }}>
+            <div style={{ fontSize: '14px', fontWeight: 700, color: '#1a4fa0' }}>＋ {g.title} ({g.checks.length} more {g.checks.length === 1 ? 'check' : 'checks'})</div>
+            {g.description && <div style={{ fontSize: '13px', color: '#5b6678', marginTop: '3px' }}>{g.description}</div>}
+          </button>
+        ) : (
           <section key={g.title}>
             <div style={{ fontSize: '12px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#1a4fa0', marginBottom: '4px' }}>
               {g.title}
