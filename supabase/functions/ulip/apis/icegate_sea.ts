@@ -309,10 +309,12 @@ export const ICEGATE_SEA_APIS: ApiDef[] = [
       return {
         found: true,
         tone: 'info',
-        summary: 'IGM found' + (importer ? ' for ' + importer : '') + (dest ? ', destination ' + dest : '') +
-          ', ' + plural(list.length, 'container', 'containers') + ' listed.',
+        // One IGM covers the whole ship; ICEGATE names only one importer for it,
+        // which is usually NOT the job's client, so it is kept out of the summary.
+        summary: 'IGM found' + (clean(p.vesselCode) ? ': vessel ' + clean(p.vesselCode) : '') +
+          (clean(p.voyageNo) ? ', voyage ' + clean(p.voyageNo) : '') + (dest ? ', destination ' + dest : '') +
+          ', ' + plural(list.length, 'container', 'containers') + ' on this IGM (the whole ship).',
         fields: filled([
-          field('Importer', importer),
           field('Port of destination', dest),
           field('Port of shipment', clean(p.portOfShipment)),
           field('Vessel code', clean(p.vesselCode)),
@@ -323,7 +325,7 @@ export const ICEGATE_SEA_APIS: ApiDef[] = [
         tables: rows.length ? [{ title: 'Containers', columns: ['Container number', 'Packages'], rows }] : [],
         extra: {
           igmNo: text(p.igmNo), igmDate: isoDate(p.igmDt), imoCode: clean(p.imoCodeOfVessel),
-          vesselCode: clean(p.vesselCode), voyageNo: clean(p.voyageNo), importerName: importer,
+          vesselCode: clean(p.vesselCode), voyageNo: clean(p.voyageNo), firstLineImporter: importer,
           containerNumbers: list.map((c) => text(c.containerNo)).filter((x) => x !== null),
         },
       }
