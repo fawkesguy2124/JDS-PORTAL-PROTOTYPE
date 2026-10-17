@@ -14,26 +14,34 @@ function igm(parsed, job) {
   const found = mine.filter((c) => onIgm.has(c))
   const missing = mine.filter((c) => !onIgm.has(c))
   const ship = [extra.vesselCode && `vessel ${extra.vesselCode}`, extra.voyageNo && `voyage ${extra.voyageNo}`].filter(Boolean).join(', ')
-  const count = `${onIgm.size} container${onIgm.size === 1 ? '' : 's'} on this IGM (the whole ship)`
+  const lines = (extra.containerNumbers || []).length
+  const count = `${onIgm.size} container${onIgm.size === 1 ? '' : 's'}${lines > onIgm.size ? ` on ${lines} lines` : ''} on this IGM (the whole ship)`
+  const who = (n) => `${job?.client ? `${job.client}'s` : "This job's"} container${n === 1 ? '' : 's'}`
   let summary = `IGM found${ship ? `: ${ship}` : ''}, ${count}.`
   let tone = 'info'
   if (mine.length && found.length === mine.length) {
-    summary += ` This job's container${found.length === 1 ? '' : 's'} ${found.length > 3 ? `(all ${found.length})` : found.join(', ')} ${found.length === 1 ? 'is' : 'are'} on it.`
+    summary += ` ${who(found.length)} ${found.length > 3 ? `(all ${found.length})` : found.join(', ')} ${found.length === 1 ? 'is' : 'are'} on it.`
     tone = 'good'
   } else if (mine.length && found.length) {
-    summary += ` ${found.length} of this job's ${mine.length} containers are on it; not found: ${missing.slice(0, 3).join(', ')}${missing.length > 3 ? '…' : ''}.`
+    summary += ` ${found.length} of ${who(mine.length)} (${mine.length}) are on it; not found: ${missing.slice(0, 3).join(', ')}${missing.length > 3 ? '…' : ''}.`
     tone = 'warn'
   } else if (mine.length) {
-    summary += ` This job's container${mine.length === 1 ? '' : 's'} ${mine.length > 3 ? '' : mine.join(', ') + ' '}${mine.length === 1 ? 'is' : 'are'} NOT on this IGM. Check the IGM number and date.`
+    summary += ` ${who(mine.length)} ${mine.length > 3 ? '' : mine.join(', ') + ' '}${mine.length === 1 ? 'is' : 'are'} NOT on this IGM. Check the IGM number and date.`
     tone = 'bad'
   }
-  const fields = (parsed.fields || []).filter((f) => f.label !== 'Importer')
+  const fields = [
+    ...(job?.client ? [{ label: 'Client (this job)', value: job.client }] : []),
+    ...(found.length ? [{ label: "This job's containers on it", value: found.length > 3 ? `${found.length} of ${mine.length}` : found.join(', ') }] : []),
+    ...(parsed.fields || []).filter((f) => f.label !== 'Importer'),
+  ]
+  const tables = (parsed.tables || []).map((t) => (t.title === 'Containers' ? { ...t, title: 'All lines on this IGM' } : t))
   return {
     ...parsed,
     summary,
     tone,
     fields,
-    note: 'ICEGATE gives only one importer name for the whole ship, so it is not shown. Your client is matched by container number.',
+    tables,
+    note: 'ICEGATE does not say which company owns each container (it gives one importer name for the whole ship), so the client shown is the one on this job, matched by container number.',
   }
 }
 
