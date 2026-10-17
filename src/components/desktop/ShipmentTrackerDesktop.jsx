@@ -153,7 +153,7 @@ export default function ShipmentTrackerDesktop({
           </div>
           {selectedJob && (
             <button
-              onClick={() => loadUlipData(selectedJob)}
+              onClick={() => loadUlipData(selectedJob, { refresh: true })}
               style={{
                 height: '34px', padding: '0 12px', fontSize: '12px', fontWeight: 500,
                 border: '1px solid #e2e6ed', borderRadius: '8px',

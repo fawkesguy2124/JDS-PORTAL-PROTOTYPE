@@ -2,6 +2,14 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
 import ShipmentTrackerDesktop from './desktop/ShipmentTrackerDesktop'
 import ShipmentTrackerMobile from './mobile/ShipmentTrackerMobile'
+import { runUlipCheck } from '../services/ulip/ulipClient'
+
+// '2026-10-12' -> '12 Oct 2026'
+function formatDay(iso) {
+  if (!iso) return null
+  const d = new Date(String(iso).slice(0, 10) + 'T00:00:00')
+  return isNaN(d) ? String(iso) : d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+}
 
 export default function ShipmentTracker({ jobs, profiles, currentUserName, showToast }) {
   const [search, setSearch] = useState('')
@@ -24,39 +32,63 @@ export default function ShipmentTracker({ jobs, profiles, currentUserName, showT
     )
   })
 
-  // Load ULIP data for selected job
-  const loadUlipData = async (job) => {
+  // Load saved government data for a job. Opening a job never calls ULIP:
+  // it reads what was saved by earlier checks. Only { refresh: true } (the
+  // person pressing the refresh button) asks ULIP again, and the server
+  // ignores repeats of the same check within 5 minutes.
+  const loadUlipData = async (job, { refresh = false } = {}) => {
     if (!job) return
     setLoadingUlip(true)
     const data = {}
 
     try {
-      // JNPT/02 — BE status, OOC, vehicle numbers
-      if (job.be_no) {
-        const { data: beData } = await supabase.functions.invoke('jnpt-be-status', {
-          body: { beNumber: job.be_no }
-        })
-        if (beData?.success) data.beStatus = beData.data
+      if (refresh) {
+        if (job.be_no && job.be_date) {
+          await supabase.functions.invoke('customs-status', { body: { jobId: job.id } })
+        }
+        const truck = job.truck_no || truckInputs[job.id]
+        if (truck) await runUlipCheck({ api: 'FASTAG/01', params: { vehiclenumber: truck }, jobId: job.id })
       }
 
-      // LDB/01 — container events (use existing ldb-track function)
-      if (job.containers) {
-        const containerNos = job.containers.split(/[\s,;/]+/).map(s => s.trim().toUpperCase()).filter(Boolean)
-        if (containerNos[0]) {
-          const { data: ldbData } = await supabase.functions.invoke('ldb-track', {
-            body: { cntrNo: containerNos[0] }
-          })
-          if (ldbData) data.ldbStatus = ldbData
+      const firstContainer = (job.containers || '').split(/[s,;/]+/).map(x => x.trim().toUpperCase()).find(Boolean)
+      const [csRes, fastagRes, ctRes] = await Promise.all([
+        supabase.from('customs_status').select('*').eq('job_id', job.id).maybeSingle(),
+        supabase.from('ulip_results').select('parsed, checked_at').eq('job_id', job.id).eq('api', 'FASTAG/01')
+          .order('checked_at', { ascending: false, nullsFirst: false }).limit(1),
+        firstContainer
+          ? supabase.from('container_tracking').select('milestones').eq('container_no', firstContainer).limit(1)
+          : Promise.resolve({ data: [] }),
+      ])
+
+      // Customs status (ICEGATE/03 + JNPT/02), saved by the customs-status check
+      const cs = csRes.data
+      if (cs) {
+        data.beStatus = {
+          beNumber: cs.be_no,
+          oocDate: formatDay(cs.ooc_date),
+          oocNo: cs.ooc_no,
+          doNumber: cs.do_no,
+          doDate: formatDay(cs.do_date),
+          igmNumber: cs.igm_no,
+          vehicleNumbers: (Array.isArray(cs.vehicles) ? cs.vehicles : []).map(v => v.number).filter(Boolean),
+          checkedAt: cs.checked_at,
         }
       }
 
-      // FASTAG/01 — truck toll crossings
-      const truckNo = job.truck_no || truckInputs[job.id] || data.beStatus?.vehicleNumbers?.[0]
-      if (truckNo) {
-        const { data: fastagData } = await supabase.functions.invoke('fastag-vehicle', {
-          body: { vehiclenumber: truckNo }
-        })
-        if (fastagData?.success) data.fastagStatus = fastagData.data
+      // FASTag toll crossings (FASTAG/01), newest first
+      const fastag = fastagRes.data?.[0]
+      const crossings = fastag?.parsed?.tables?.[0]?.rows || []
+      if (fastag) {
+        data.fastagStatus = {
+          tollCrossings: crossings.map(([plaza, time, direction]) => ({ tollPlazaName: plaza, readTime: time, laneDirection: direction })),
+          checkedAt: fastag.checked_at,
+        }
+      }
+
+      // Container events, saved by Container Tracking (LDB)
+      const milestones = ctRes.data?.[0]?.milestones
+      if (Array.isArray(milestones)) {
+        data.ldbStatus = { events: milestones.map(m => ({ eventname: String(m.description || '').toUpperCase().trim(), timestamptimezone: m.date })) }
       }
 
       // Truck dispatched log — for sidebar accountability
@@ -157,9 +189,9 @@ export default function ShipmentTracker({ jobs, profiles, currentUserName, showT
       {
         id: 'igm',
         label: 'IGM filed',
-        done: !!job.igm_no,
-        detail: job.igm_no ? `IGM: ${job.igm_no}` : null,
-        sub: job.igm_date ? new Date(job.igm_date).toLocaleDateString('en-IN', { day:'2-digit', month:'short' }) : null,
+        done: !!(be.igmNumber || job.ulip_refs?.igm_no),
+        detail: (be.igmNumber || job.ulip_refs?.igm_no) ? `IGM: ${be.igmNumber || job.ulip_refs?.igm_no}` : null,
+        sub: job.ulip_refs?.igm_date ? new Date(job.ulip_refs.igm_date).toLocaleDateString('en-IN', { day:'2-digit', month:'short' }) : null,
         api: 'ICEGATE/01'
       },
       {

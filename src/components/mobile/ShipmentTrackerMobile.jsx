@@ -103,7 +103,7 @@ export default function ShipmentTrackerMobile({
           <div className="text-[14px] font-semibold text-[#1a2233] font-mono truncate">{selectedJob?.job_no}</div>
           <div className="text-[11px] text-[#8a96a8] truncate">{selectedJob?.client} · {selectedJob?.mode}</div>
         </div>
-        <button onClick={() => loadUlipData(selectedJob)} className="text-[#8a96a8] text-lg">↻</button>
+        <button onClick={() => loadUlipData(selectedJob, { refresh: true })} className="text-[#8a96a8] text-lg">↻</button>
       </div>
 
       {loadingUlip && (
@@ -218,7 +218,7 @@ export default function ShipmentTrackerMobile({
           <div className="text-[13px] font-semibold text-[#1a2233] font-mono">{truckNo}</div>
           <div className="text-[11px] text-[#8a96a8] truncate">{selectedJob?.job_no} · {selectedJob?.containers?.split(/[\s,;/]+/)[0]}</div>
         </div>
-        <button onClick={() => loadUlipData(selectedJob)} className="text-[#8a96a8] text-lg">↻</button>
+        <button onClick={() => loadUlipData(selectedJob, { refresh: true })} className="text-[#8a96a8] text-lg">↻</button>
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3">
