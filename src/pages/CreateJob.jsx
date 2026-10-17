@@ -5,6 +5,8 @@ import { useAuth } from '../contexts/AuthContext'
 import { STAGE_NAMES } from '../utils/jobHelpers'
 import { linkContainer } from '../api/trackingApi'
 import { PORTS } from '../utils/ports'
+import { CLIENT_NAMES, matchClient } from '../utils/clients'
+import { parseBePdf } from '../utils/beParser'
 
 const MODES = ['Sea FCL', 'Sea LCL', 'Air', 'BPT/MBPT']
 const CONTAINER_SIZES = ['20GP','40GP','40HC','45HC','20RF','40RF','40RFHC','20OT','40OT','20FR','40FR','20TK']
@@ -18,13 +20,7 @@ const SHIPPING_LINES = [
 ]
 const DETENTION_RISKS = ['low', 'medium', 'high']
 
-const CLIENT_LIST = [
-  'PCM','Adorn (ALS Series)','Deepa Traders','Divine / NNC','Eboney',
-  'Limitless Components EXIM','Infinite EXIM','Uddaybharat Techno Pvt. Ltd.',
-  'Leon International','Green Soul','Enkay Machinery','TRW','Grupo',
-  'Integral','Maxlord','Gefit','REAL','Mahalaxmi','Macksmatec','Finearc',
-  'Electrica','Ishita','Cotswold','INTO','Rivaan','Nikam',
-]
+const CLIENT_LIST = CLIENT_NAMES
 
 const CLIENT_ALIASES = {
   'putzmeister': 'PCM',
@@ -48,7 +44,10 @@ const normalise = (str) => (str || '')
   .replace(/\s+/g, ' ')
   .trim()
 
-const fuzzyMatchClient = (extracted) => {
+const fuzzyMatchClient = (extracted, iec) => {
+  if (!extracted && !iec) return null
+  const known = matchClient({ iec, name: extracted })
+  if (known) return known.name
   if (!extracted) return null
   const normExtracted = normalise(extracted)
 
@@ -165,6 +164,8 @@ const INITIAL_FORM = {
   be_date: '',
   hs_code: '',
   rms_status: 'pending',
+  igm_no: '',
+  igm_date: '',
   bg_required: 'no',
   destination: '',
   free_days: '',
@@ -349,14 +350,20 @@ export default function CreateJob({ isModal = false, onCancel, onCreated }) {
 
       const isPdf = file.name.toLowerCase().endsWith('.pdf')
       let images = []
+      let beText = null
 
       if (isPdf) {
         const pdfjs = await import('pdfjs-dist')
         const workerUrl = new URL('pdfjs-dist/build/pdf.worker.mjs', import.meta.url)
         pdfjs.GlobalWorkerOptions.workerSrc = workerUrl.href
         const pdfBytes = Uint8Array.from(atob(base64), c => c.charCodeAt(0))
+        try {
+          beText = await parseBePdf(pdfjs, pdfBytes.slice())
+        } catch (e) {
+          console.warn('BE text reader failed, using AI instead:', e.message)
+        }
         const pdf = await pdfjs.getDocument({ data: pdfBytes }).promise
-        const maxPages = Math.min(pdf.numPages, 4)
+        const maxPages = beText ? 0 : Math.min(pdf.numPages, 4)
         for (let p = 1; p <= maxPages; p++) {
           const page = await pdf.getPage(p)
           const viewport = page.getViewport({ scale: 0.9 })
@@ -390,12 +397,15 @@ export default function CreateJob({ isModal = false, onCancel, onCreated }) {
       setExtractProgress(55)
       setExtractStatus('Extracting fields...')
 
-      let parsed = null
+      let parsed = beText ? {
+        ...beText,
+        containers: (beText.containers || []).join(' '),
+      } : null
 
-      // Try Gemini first
-      try {
+      // Try Gemini first (only when the BE text reader did not work)
+      if (!parsed) try {
         const res = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${import.meta.env.VITE_GEMINI_API_KEY}`,
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${import.meta.env.VITE_GEMINI_API_KEY}`,
           {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -406,7 +416,7 @@ export default function CreateJob({ isModal = false, onCancel, onCreated }) {
                   ...images.map(img => ({ inline_data: { mime_type: img.mimeType, data: img.base64 } }))
                 ]
               }],
-              generationConfig: { temperature: 0.1, maxOutputTokens: 1024 },
+              generationConfig: { temperature: 0.1, maxOutputTokens: 4096, thinkingConfig: { thinkingBudget: 0 } },
             }),
           }
         )
@@ -473,7 +483,7 @@ const updates = {}
 const applied = {}
 
 if (parsed.client && shouldFill('client')) {
-        const matchedClient = fuzzyMatchClient(parsed.client)
+        const matchedClient = fuzzyMatchClient(parsed.client, parsed.iec)
         if (matchedClient) { updates.client = matchedClient }
         else { updates.client = '__other__'; updates.clientOther = parsed.client }
         applied.client = true
@@ -498,6 +508,15 @@ if (parsed.client && shouldFill('client')) {
       if (parsed.hs_code && shouldFill('hs_code'))       { updates.hs_code = parsed.hs_code;     applied.hs_code = true }
       if (parsed.be_no && shouldFill('be_no'))           { updates.be_no = parsed.be_no;         applied.be_no = true }
       if (parsed.be_date && shouldFill('be_date'))       { updates.be_date = parsed.be_date;     applied.be_date = true }
+      if (parsed.igm_no && shouldFill('igm_no'))         { updates.igm_no = parsed.igm_no;       applied.igm_no = true }
+      if (parsed.igm_date && shouldFill('igm_date'))     { updates.igm_date = parsed.igm_date;   applied.igm_date = true }
+      if (parsed.rms_status && parsed.rms_status !== 'pending' && form.rms_status === 'pending') {
+        updates.rms_status = parsed.rms_status; applied.rms_status = true
+      }
+      if (parsed._source === 'be-text') {
+        if (parsed.port_code && PORTS.some(pt => pt.code === parsed.port_code)) updates.port_code = parsed.port_code
+        if (parsed.mode === 'Air' && form.mode !== 'Air') updates.mode = 'Air'
+      }
 
       setForm(prev => ({ ...prev, ...updates }))
       setStagedDocs(prev => prev.map(d => d.id === docId ? { ...d, extracted: true } : d))
@@ -579,6 +598,10 @@ if (parsed.client && shouldFill('client')) {
       be_date: form.be_date || null,
       hs_code: form.hs_code.trim() || null,
       rms_status: form.rms_status,
+      ulip_refs: {
+        ...(form.igm_no.trim() ? { igm_no: form.igm_no.trim() } : {}),
+        ...(form.igm_date ? { igm_date: form.igm_date } : {}),
+      },
       bg_required: form.bg_required,
       destination: form.destination.trim() || null,
       free_days: (() => {
@@ -870,7 +893,12 @@ if (parsed.client && shouldFill('client')) {
               {/* Auto-filled fields summary */}
               {Object.keys(autoFillApplied).length > 0 && (
                 <div className="mt-3 bg-white rounded-lg border border-green-200 p-3">
-                  <p className="text-xs font-semibold text-green-700 mb-2">✓ Fields applied to form</p>
+                  <p className="text-xs font-semibold text-green-700 mb-2">
+                    ✓ Fields applied to form
+                    {extractedFields?._source === 'be-text' && (
+                      <span className="font-normal text-gray-500"> · read directly from the ICEGATE {extractedFields.copy_type === 'OOC' ? 'OOC copy' : 'BE'}, no AI used</span>
+                    )}
+                  </p>
                   <div className="flex flex-wrap gap-x-4 gap-y-1">
                     {Object.entries(autoFillApplied).filter(([, v]) => v).map(([key]) => (
                       <div key={key} className="flex items-center gap-1.5">
@@ -1139,14 +1167,25 @@ if (parsed.client && shouldFill('client')) {
                 <input type="text" value={form.hs_code} onChange={set('hs_code')} className={fieldClass('hs_code')} />
               </Field>
 
+              <Field label="IGM Number">
+                <input type="text" value={form.igm_no} onChange={set('igm_no')} placeholder="From the BE" className={fieldClass('igm_no')} />
+              </Field>
+
+              <Field label="IGM Date">
+                <input type="date" value={form.igm_date} onChange={set('igm_date')} className={fieldClass('igm_date')} />
+              </Field>
+
               <Field label="RMS Status">
-                <select value={form.rms_status} onChange={set('rms_status')} className={inputClass}>
+                <select value={form.rms_status} onChange={set('rms_status')} className={fieldClass('rms_status')}>
                   {RMS_STATUSES.map((s) => (
                     <option key={s} value={s}>
                       {s.toUpperCase()}
                     </option>
                   ))}
                 </select>
+                {extractedFields?.rms_label && (
+                  <p className="text-xs text-gray-500 mt-1">From the BE: {extractedFields.rms_label}</p>
+                )}
               </Field>
 
               <Field label="BG Required">

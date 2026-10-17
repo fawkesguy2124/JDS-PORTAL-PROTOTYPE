@@ -2,6 +2,8 @@ import { useRef, useState } from 'react'
 import { findApi } from '../../../supabase/functions/ulip/apis/index.ts'
 import { runUlipCheck, isoToDate8, date8ToIso } from '../../services/ulip/ulipClient'
 import { refValue, rememberRefs } from './jobRefs'
+import ResultTable from './ResultTable'
+import { parseContainerNos } from '../../utils/jobHelpers'
 
 // One ULIP check: the boxes it needs, one big button, and the answer in
 // plain words. Values already on the job are filled in automatically.
@@ -28,6 +30,12 @@ export default function UlipCheck({ check, job, saved, onResult, onJobChange, co
   const running = useRef(false)
 
   if (!api) return null
+
+  // This job's own numbers, so its rows stand out in long lists like the IGM
+  const jobMarks = [
+    ...parseContainerNos(job?.containers),
+    job?.bl_no, job?.be_no, job?.ulip_refs?.igm_item_no,
+  ].filter(Boolean)
 
   const isDate = (input) => input.kind === 'date8' || input.kind === 'isoDate'
   const labelOf = (input) => check.labels?.[input.key] || input.label
@@ -164,21 +172,7 @@ export default function UlipCheck({ check, job, saved, onResult, onJobChange, co
           )}
 
           {(parsed.tables || []).map((t, ti) => t.rows?.length > 0 && (
-            <div key={ti} style={{ marginTop: '14px' }}>
-              <div style={labelStyle}>{t.title}</div>
-              <div style={{ overflowX: 'auto', marginTop: '6px', border: '1px solid #e2e6ed', borderRadius: '8px' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
-                  <thead>
-                    <tr>{t.columns.map((c, ci) => <th key={ci} style={th}>{c}</th>)}</tr>
-                  </thead>
-                  <tbody>
-                    {t.rows.map((r, ri) => (
-                      <tr key={ri}>{r.map((v, ci) => <td key={ci} style={td}>{v ?? '—'}</td>)}</tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
+            <ResultTable key={ti} table={t} highlight={jobMarks} labelStyle={labelStyle} />
           ))}
         </div>
       )}
@@ -216,8 +210,6 @@ const card = { background: 'white', border: '1.5px solid #e2e6ed', borderRadius:
 const labelStyle = { fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#8a96a8' }
 const inputStyle = { height: '44px', padding: '0 12px', border: '1.5px solid #e2e6ed', borderRadius: '8px', fontSize: '14px', color: '#1a2233', background: '#f8fafc', outline: 'none', boxSizing: 'border-box', width: '100%' }
 const box = (bg, border) => ({ padding: '10px 12px', background: bg, border: `1.5px solid ${border}`, borderRadius: '8px', fontSize: '13px' })
-const th = { textAlign: 'left', padding: '8px 10px', background: '#f8f9fb', color: '#8a96a8', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', borderBottom: '1px solid #e2e6ed', whiteSpace: 'nowrap' }
-const td = { padding: '8px 10px', borderBottom: '1px solid #f1f3f6', color: '#1a2233', whiteSpace: 'nowrap' }
 const buttonStyle = (busy) => ({
   height: '44px', padding: '0 20px', background: busy ? '#94a3b8' : '#1a4fa0', color: 'white', border: 'none',
   borderRadius: '8px', fontSize: '14px', fontWeight: 700, cursor: busy ? 'default' : 'pointer',
