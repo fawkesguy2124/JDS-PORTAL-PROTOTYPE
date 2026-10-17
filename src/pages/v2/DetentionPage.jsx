@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { loadJourneyData, isDelivered } from '../../services/journey'
+import { loadJourneyData, isDelivered, freeDaysLeftFor } from '../../services/journey'
 import { parseContainerNos, getStageName } from '../../utils/jobHelpers'
 
 // Free days and detention risk, per container. Reads saved data only - no ULIP calls.
@@ -26,12 +26,20 @@ const shortDate = (v) => {
 export default function DetentionPage({ onOpenJob }) {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState(null)
 
   useEffect(() => {
     let cancelled = false
     async function load() {
-      const d = await loadJourneyData()
-      if (!cancelled) { setData(d); setLoading(false) }
+      let d = null
+      let err
+      try {
+        d = await loadJourneyData()
+        err = d?.error || null
+      } catch (e) {
+        err = e?.message || 'Something went wrong'
+      }
+      if (!cancelled) { setData(d); setLoadError(err); setLoading(false) }
     }
     load()
     return () => { cancelled = true }
@@ -44,8 +52,9 @@ export default function DetentionPage({ onOpenJob }) {
       if (isDelivered(job)) continue
       for (const no of parseContainerNos(job.containers)) {
         const ct = data.containersByNo[no]
-        const raw = ct?.free_days
-        const days = raw === null || raw === undefined || raw === '' || isNaN(Number(raw)) ? null : Number(raw)
+        if (ct && ['delivered', 'empty_returned'].includes(ct.status)) continue
+        const raw = ct ? freeDaysLeftFor(job, ct) : null
+        const days = raw === null || raw === undefined || isNaN(Number(raw)) ? null : Number(raw)
         out.push({ key: `${job.id}-${no}`, job, no, days, portIn: ct?.port_in || null, status: ct?.status_text || ct?.status || null })
       }
     }
@@ -76,7 +85,12 @@ export default function DetentionPage({ onOpenJob }) {
       </div>
 
       {loading && <div style={{ color: '#5b6678' }}>Loading…</div>}
-      {!loading && rows.length === 0 && (
+      {loadError && (
+        <div style={{ background: '#fef2f2', border: '1.5px solid #fecaca', color: '#991b1b', borderRadius: '12px', padding: '14px 16px', marginBottom: '12px', fontWeight: 600 }}>
+          Could not load the latest data — {loadError}. Press Refresh.
+        </div>
+      )}
+      {!loading && !loadError && rows.length === 0 && (
         <div style={{ background: 'white', border: '1.5px solid #e2e6ed', borderRadius: '12px', padding: '20px', color: '#5b6678' }}>
           No containers waiting on open jobs 🎉
         </div>

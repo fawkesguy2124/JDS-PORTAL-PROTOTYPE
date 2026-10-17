@@ -599,8 +599,10 @@ export default function EmployeeDashboard() {
   const activeNav = useMemo(() => {
     const params = new URLSearchParams(location.search)
     const t = params.get('tab') || (isFieldOps ? 'trucks' : 'today')
-    return ({ lookup: 'search', 'shipment-tracker': 'board' })[t] || t
-  }, [location.search])
+    const id = ({ lookup: 'search', 'shipment-tracker': 'board' })[t] || t
+    const allowed = NAV_SECTIONS.flatMap(s => s.items).map(i => i.id)
+    return allowed.includes(id) ? id : (isFieldOps ? 'trucks' : 'today')
+  }, [location.search, isFieldOps, NAV_SECTIONS])
 
   const handleNavClick = (id) => {
     const base = isFieldOps ? '/field' : '/dashboard'
@@ -956,14 +958,24 @@ export default function EmployeeDashboard() {
     setJobParam(job)
   }
 
-  // Open a job on a given tab (used by Today, Board, Trucks, Customs, Search …)
-  const openJob = (jobId, tab = 'details') => {
-    const base = isFieldOps ? '/field' : '/dashboard'
-    navigate(`${base}?tab=jobs&jobId=${jobId}#${tab}`, { replace: true })
-    const job = jobs.find(j => j.id === jobId)
-    if (job) setSelectedJob(job)
+  // Open a job on a given tab (used by Today, Board, Trucks, Customs, Search …).
+  // 'truck' goes to the Trucks page, where trucks are assigned. Each open is a
+  // new history entry, so the browser's Back button returns to the page you came from.
+  const openJob = async (jobId, tab = 'details') => {
+    const { data: fresh } = await supabase.from('jobs').select('*').eq('id', jobId).maybeSingle()
+    if (tab === 'truck') {
+      navigate(`${isFieldOps ? '/field' : '/dashboard'}?tab=trucks&q=${encodeURIComponent(fresh?.job_no || '')}`)
+      return
+    }
+    navigate(`${isFieldOps ? '/field' : '/dashboard'}?tab=jobs&jobId=${jobId}#${tab}`)
+    if (fresh) {
+      setSelectedJob(fresh)
+      setJobs(prev => prev.map(j => (j.id === fresh.id ? fresh : j)))
+    }
   }
-  const pageProps = { profile, currentUserName, onOpenJob: openJob, showToast }
+  // Same rule as the job screen: Akshyani (and admins) record BEs
+  const canEditBE = profile?.role === 'admin' || currentUserName === 'Akshyani'
+  const pageProps = { profile, currentUserName, onOpenJob: openJob, showToast, canUpdateStage, canEditBE }
 
   const handleCardClick = (e, job) => {
     const tag = e.target?.tagName?.toLowerCase?.() || ''

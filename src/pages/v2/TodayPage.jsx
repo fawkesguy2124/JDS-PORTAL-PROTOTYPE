@@ -38,25 +38,31 @@ export default function TodayPage({ onOpenJob }) {
   const [loading, setLoading] = useState(true)
   const [reloadKey, setReloadKey] = useState(0)
   const [filter, setFilter] = useState(null)
+  const [error, setError] = useState(null)
 
   useEffect(() => {
     let cancelled = false
     const run = async () => {
       const [d, logRes] = await Promise.all([
         loadJourneyData(),
-        supabase.from('activity_log').select('*').in('type', GOV_TYPES)
+        supabase.from('activity_log').select('*')
+          .or(`type.in.(${GOV_TYPES.join(',')}),action.eq.stage_update`)
           .order('created_at', { ascending: false }).limit(10),
       ])
       if (cancelled) return
       setData(d)
       setLog(logRes.data || [])
+      setError(d?.error || logRes.error?.message || null)
       setLoading(false)
     }
-    run().catch((e) => { console.warn('[today] load failed:', e?.message); if (!cancelled) setLoading(false) })
+    run().catch((e) => {
+      console.warn('[today] load failed:', e?.message)
+      if (!cancelled) { setError(e?.message || 'something went wrong'); setLoading(false) }
+    })
     return () => { cancelled = true }
   }, [reloadKey])
 
-  const refresh = () => { setLoading(true); setReloadKey((k) => k + 1) }
+  const refresh = () => { setLoading(true); setError(null); setReloadKey((k) => k + 1) }
 
   const { tiles, jobSets } = useMemo(() => {
     const sets = { active: new Set(), ooc: new Set(), nottruck: new Set(), truck: new Set(), free: new Set() }
@@ -67,9 +73,9 @@ export default function TodayPage({ onOpenJob }) {
         if (j.phase === 'delivered') continue
         sets.active.add(job.id)
         if (j.phase === 'ooc') sets.ooc.add(job.id)
-        if (j.oocDate && !j.truck) sets.nottruck.add(job.id)
+        if (j.readyForTruck) sets.nottruck.add(job.id)
         if (j.phase === 'truck') sets.truck.add(job.id)
-        if (j.freeDaysLeft !== null && j.freeDaysLeft !== undefined && j.freeDaysLeft <= 2) sets.free.add(job.id)
+        if ((j.containers?.tracked || []).some((t) => t.freeLeft !== null && t.freeLeft !== undefined && t.freeLeft <= 2)) sets.free.add(job.id)
       }
     }
     return {
@@ -90,12 +96,18 @@ export default function TodayPage({ onOpenJob }) {
     return filter ? all.filter((i) => jobSets[filter].has(i.jobId)) : all
   }, [data, filter, jobSets])
 
-  const open = (item) => onOpenJob?.(item.jobId, item.action === 'containers' ? 'details' : item.action)
+  const open = (item) => {
+    let tab = item.action
+    if (tab === 'containers') tab = 'details'
+    else if (tab === 'export' && data?.jobs.find((j) => j.id === item.jobId)?.mode === 'Air') tab = 'air'
+    onOpenJob?.(item.jobId, tab)
+  }
   const today = new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })
   const activeTile = tiles.find((t) => t.id === filter)
 
   return (
     <div style={{ fontFamily: FONT, color: '#1a2233', fontSize: 14, background: '#f4f6f9', padding: 16, maxWidth: 960, margin: '0 auto', boxSizing: 'border-box' }}>
+      <div style={{ fontSize: 13, fontWeight: 700, color: '#1a4fa0' }}>Today</div>
       <div style={{ fontSize: 22, fontWeight: 700, marginBottom: 14 }}>{today}</div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10, marginBottom: 20 }}>
@@ -119,7 +131,11 @@ export default function TodayPage({ onOpenJob }) {
         {filter && <button onClick={() => setFilter(null)} style={{ marginLeft: 10, border: 'none', background: 'none', color: '#1a4fa0', cursor: 'pointer', fontSize: 13, fontFamily: FONT, minHeight: 40 }}>Show all</button>}
       </h2>
 
-      {loading && !data ? (
+      {error ? (
+        <div style={{ ...card, padding: 16, color: '#d93025', borderColor: '#d93025' }}>
+          Could not load the latest data — {error}. Press Refresh.
+        </div>
+      ) : loading && !data ? (
         <div style={{ ...card, padding: 16, color: '#5b6678' }}>Loading…</div>
       ) : items.length === 0 ? (
         <div style={{ ...card, padding: 16, color: '#5b6678' }}>
@@ -156,9 +172,11 @@ export default function TodayPage({ onOpenJob }) {
         })
       )}
 
-      <h2 style={{ fontSize: 16, fontWeight: 700, margin: '22px 0 8px' }}>Latest government updates</h2>
+      <h2 style={{ fontSize: 16, fontWeight: 700, margin: '22px 0 8px' }}>Latest updates</h2>
       <div style={{ ...card, overflow: 'hidden' }}>
-        {log.length === 0 ? (
+        {error ? (
+          <div style={{ padding: 16, color: '#5b6678' }}>Not available right now.</div>
+        ) : log.length === 0 ? (
           <div style={{ padding: 16, color: '#5b6678' }}>No updates yet.</div>
         ) : log.map((r, idx) => (
           <div key={r.id ?? idx} onClick={() => r.job_id && onOpenJob?.(r.job_id)}

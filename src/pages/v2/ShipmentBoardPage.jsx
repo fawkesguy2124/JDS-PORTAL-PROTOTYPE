@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useRef, useEffect, useMemo, useState } from 'react'
 import { loadJourneyData, journeyFor, PHASES, EXPORT_PHASES, isExportJob } from '../../services/journey'
 
 const C = { navy: '#1a4fa0', text: '#1a2233', muted: '#5b6678', faint: '#8a96a8', bg: '#f4f6f9', border: '#e2e6ed', red: '#d93025', amber: '#e08a00' }
@@ -27,8 +27,9 @@ function useIsPhone() {
 function Card({ item, onOpen }) {
   const { job, journey, level } = item
   const current = journey.steps.find((s) => s.current)
-  const free = journey.freeDaysLeft
-  const showFree = free !== null && free !== undefined && free <= 5
+  const lefts = (journey.containers?.tracked || []).map((t) => t.freeLeft).filter((v) => v !== null && v !== undefined && !Number.isNaN(Number(v))).map(Number)
+  const free = lefts.length ? Math.min(...lefts) : null
+  const showFree = free !== null && free <= 5
   const freeColor = free <= 2 ? C.red : C.amber
   const attnText = journey.attention.map((a) => `• ${a.text}`).join('\n')
   const containers = (journey.containers?.nos || []).length
@@ -56,7 +57,7 @@ function Card({ item, onOpen }) {
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6, alignItems: 'center' }}>
         {showFree && (
           <span style={{ fontSize: 12, fontWeight: 600, color: '#fff', background: freeColor, borderRadius: 999, padding: '2px 8px' }}>
-            {free <= 0 ? 'Free days over' : `${free} free day${free === 1 ? '' : 's'}`}
+            {free < 0 ? 'Detention running' : free === 0 ? 'Last free day' : `${free} free day${free === 1 ? '' : 's'}`}
           </span>
         )}
         {containers > 0 && <span style={{ fontSize: 12, color: C.faint }}>{containers} container{containers === 1 ? '' : 's'}</span>}
@@ -88,6 +89,8 @@ export default function ShipmentBoardPage({ onOpenJob, showToast }) {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [tick, setTick] = useState(0)
+  const toastRef = useRef(showToast)
+  useEffect(() => { toastRef.current = showToast })
   const [kind, setKind] = useState('import')
   const [query, setQuery] = useState('')
   const [hideDelivered, setHideDelivered] = useState(true)
@@ -101,14 +104,14 @@ export default function ShipmentBoardPage({ onOpenJob, showToast }) {
         const d = await loadJourneyData()
         if (!cancelled) setData(d)
       } catch (e) {
-        if (!cancelled) showToast?.(`Could not load shipments: ${e.message || e}`, 'error')
+        if (!cancelled) setData({ jobs: [], customsByJob: {}, resultsByJob: {}, containersByNo: {}, error: e.message || String(e) })
       } finally {
         if (!cancelled) setLoading(false)
       }
     }
     run()
     return () => { cancelled = true }
-  }, [tick, showToast])
+  }, [tick])
 
   const refresh = useCallback(() => { setLoading(true); setTick((t) => t + 1) }, [])
 
@@ -154,7 +157,7 @@ export default function ShipmentBoardPage({ onOpenJob, showToast }) {
   return (
     <div style={{ background: C.bg, color: C.text, fontFamily: 'Inter, system-ui, sans-serif', fontSize: 14, padding: phone ? 12 : 20, display: 'flex', flexDirection: 'column', gap: 12, height: phone ? 'auto' : 'calc(100vh - 80px)', minHeight: 400, boxSizing: 'border-box', maxWidth: '100%', overflowX: 'hidden' }}>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>
-        <h1 style={{ fontSize: 20, fontWeight: 700, margin: 0, marginRight: 8 }}>Shipment board</h1>
+        <h1 style={{ fontSize: 20, fontWeight: 700, margin: 0, marginRight: 8 }}>Shipment Board</h1>
         <div style={{ display: 'flex' }}>{tabBtn('import', 'Imports')}{tabBtn('export', 'Exports')}</div>
         <input
           type="search"
@@ -172,9 +175,15 @@ export default function ShipmentBoardPage({ onOpenJob, showToast }) {
         </button>
       </div>
 
+      {data?.error && (
+        <div style={{ background: '#fdecea', border: `1.5px solid ${C.red}`, color: '#8a1f17', borderRadius: 12, padding: '10px 14px' }}>
+          Could not load the latest data — {data.error}. Press Refresh.
+        </div>
+      )}
+
       {loading && !data ? (
         <div style={{ color: C.muted, padding: 24, textAlign: 'center' }}>Loading shipments…</div>
-      ) : phone ? (
+      ) : data?.error && !data.jobs.length ? null : phone ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           <select
             value={activePhaseId || ''}

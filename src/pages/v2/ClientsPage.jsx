@@ -23,6 +23,7 @@ export default function ClientsPage({ onOpenJob }) {
   const [jobs, setJobs] = useState([])
   const [iecRows, setIecRows] = useState({})
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState(null)
   const [search, setSearch] = useState('')
   const [expanded, setExpanded] = useState(null)
   const [checking, setChecking] = useState(null)
@@ -30,13 +31,20 @@ export default function ClientsPage({ onOpenJob }) {
   useEffect(() => {
     let cancelled = false
     async function load() {
-      const [mRes, jRes, rRes] = await Promise.all([
-        supabase.from('client_master').select('*').order('client_name'),
-        supabase.from('jobs').select('id, job_no, client, stage').order('job_no', { ascending: false }),
-        supabase.from('ulip_results').select('api, params, found, parsed, checked_at').eq('api', 'DGFT/01')
-          .order('checked_at', { ascending: false, nullsFirst: false }),
-      ])
+      let mRes, jRes, rRes
+      try {
+        [mRes, jRes, rRes] = await Promise.all([
+          supabase.from('client_master').select('*').order('client_name'),
+          supabase.from('jobs').select('id, job_no, client, stage').order('job_no', { ascending: false }),
+          supabase.from('ulip_results').select('api, params, found, parsed, checked_at').eq('api', 'DGFT/01')
+            .order('checked_at', { ascending: false, nullsFirst: false }),
+        ])
+      } catch (e) {
+        if (!cancelled) { setLoadError(e?.message || 'Something went wrong'); setLoading(false) }
+        return
+      }
       if (cancelled) return
+      const err = [mRes, jRes, rRes].find((r) => r.error)?.error
       const byIec = {}
       for (const r of rRes.data || []) {
         const k = r.params?.iecnumber
@@ -45,6 +53,7 @@ export default function ClientsPage({ onOpenJob }) {
       setMaster(mRes.data || [])
       setJobs(jRes.data || [])
       setIecRows(byIec)
+      setLoadError(err ? err.message : null)
       setLoading(false)
     }
     load()
@@ -81,7 +90,12 @@ export default function ClientsPage({ onOpenJob }) {
         style={{ width: '100%', boxSizing: 'border-box', height: '44px', padding: '0 12px', border: '1.5px solid #e2e6ed', borderRadius: '10px', fontSize: '14px', marginBottom: '14px', background: 'white' }} />
 
       {loading && <div style={{ color: '#5b6678' }}>Loading…</div>}
-      {!loading && shown.length === 0 && (
+      {loadError && (
+        <div style={{ background: '#fef2f2', border: '1.5px solid #fecaca', color: '#991b1b', borderRadius: '12px', padding: '14px 16px', marginBottom: '12px', fontWeight: 600 }}>
+          Could not load the latest data — {loadError}. Press Refresh.
+        </div>
+      )}
+      {!loading && !loadError && shown.length === 0 && (
         <div style={{ background: 'white', border: '1.5px solid #e2e6ed', borderRadius: '12px', padding: '20px', color: '#5b6678' }}>No clients match your search.</div>
       )}
 
@@ -121,7 +135,7 @@ export default function ClientsPage({ onOpenJob }) {
                       <span style={{ background: badge.bg, border: `1.5px solid ${badge.border}`, color: badge.color, borderRadius: '999px', padding: '5px 12px', fontSize: '13px', fontWeight: 600 }}>{badge.text}</span>
                       <button type="button" onClick={() => setChecking(checking === c.key ? null : c.key)}
                         style={{ height: '40px', padding: '0 16px', background: 'white', color: '#1a4fa0', border: '1.5px solid #1a4fa0', borderRadius: '8px', fontWeight: 700, fontSize: '14px', cursor: 'pointer' }}>
-                        {checking === c.key ? 'Close' : 'Check IEC'}
+                        {checking === c.key ? 'Close' : 'Check IEC…'}
                       </button>
                     </>
                   )}
@@ -131,7 +145,7 @@ export default function ClientsPage({ onOpenJob }) {
               {checking === c.key && iecOk && (
                 <div style={{ padding: '0 16px 14px' }}>
                   <UlipCheck compact
-                    check={{ api: 'DGFT/01', title: `Is the IEC valid? ${c.name}`, description: 'Checks the importer-exporter code with DGFT.', button: 'Check IEC', defaults: { iecnumber: () => iec } }}
+                    check={{ api: 'DGFT/01', title: `Is the IEC valid? ${c.name}`, description: 'Checks the importer-exporter code with DGFT.', button: 'Ask DGFT now', defaults: { iecnumber: () => iec } }}
                     saved={iecRows[iec] || null}
                     onResult={(row) => setIecRows((prev) => ({ ...prev, [iec]: row }))} />
                 </div>

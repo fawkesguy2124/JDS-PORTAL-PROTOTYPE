@@ -614,14 +614,23 @@ export default function AdminDashboard() {
   const canUpdateStage = isAdmin || ['Trupti', 'Uphadhya'].includes(currentUserName)
   const pageTitle = NAV_ITEMS.find((n) => n.id === activeNav)?.label ?? 'Today'
 
-  // Open a job on a given tab (used by Today, Board, Trucks, Customs, Search …)
-  const openJob = (jobId, tab = 'details') => {
-    navigate(`/admin?tab=jobs&jobId=${jobId}#${tab}`, { replace: true })
-    const job = jobs.find(j => j.id === jobId)
-    if (job) setSelectedJob(job)
-    else setPendingNavAction({ tab: 'jobs', jobId })
+  // Open a job on a given tab (used by Today, Board, Trucks, Customs, Search …).
+  // 'truck' goes to the Trucks page, where trucks are assigned. Each open is a
+  // new history entry, so the browser's Back button returns to the page you came from.
+  const openJob = async (jobId, tab = 'details') => {
+    const { data: fresh } = await supabase.from('jobs').select('*').eq('id', jobId).maybeSingle()
+    if (tab === 'truck') {
+      navigate(`/admin?tab=trucks&q=${encodeURIComponent(fresh?.job_no || '')}`)
+      return
+    }
+    navigate(`/admin?tab=jobs&jobId=${jobId}#${tab}`)
+    if (fresh) {
+      setSelectedJob(fresh)
+      setJobs(prev => prev.map(j => (j.id === fresh.id ? fresh : j)))
+    }
   }
-  const pageProps = { profile, currentUserName, onOpenJob: openJob, showToast }
+  const canEditBE = isAdmin || ['Akshyani', 'Trupti'].includes(currentUserName)
+  const pageProps = { profile, currentUserName, onOpenJob: openJob, showToast, canUpdateStage, canEditBE }
   const desktopFilters = (
     <div className="bg-[#f8f9fb] border-b border-[#e2e6ed] rounded-xl shadow-sm mb-2">
       <div className="p-2 flex flex-wrap gap-1 items-center">
@@ -934,7 +943,7 @@ export default function AdminDashboard() {
             <BEFilingSection jobs={jobs} currentUserName={currentUserName} showToast={showToast} user={user} />
           )}
 
-          {activeNav !== 'overview' && activeNav !== 'jobs' && activeNav !== 'documents' && activeNav !== 'containers' && activeNav !== 'payments' && activeNav !== 'compliance' && activeNav !== 'be-filing' && (
+          {!NAV_ITEMS.some(n => n.id === activeNav) && (
             <div className="bg-white border-[1.5px] border-[#e2e6ed] rounded-xl shadow-sm p-10 text-center text-[#8a96a8]">
               Coming soon
             </div>

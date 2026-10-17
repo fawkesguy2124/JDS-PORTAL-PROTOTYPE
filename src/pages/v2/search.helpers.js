@@ -22,7 +22,7 @@ export function detectNumberType(raw) {
       ], also: [],
     }
   }
-  if (/^[A-Z]{2}\d{13}$/.test(compact)) {
+  if (/^[A-Z]{2}\d{13,14}$/.test(compact)) {
     return {
       kind: 'licence', label: 'Looks like a driving licence number', checks: [
         mk('SARATHI/02', 'Driver licence', 'Is the licence valid for driving a truck?', 'Check licence', 'dlnumber', compact),
@@ -92,5 +92,20 @@ export function jobMatches(job, query) {
   if (refs && typeof refs === 'object') {
     for (const v of Object.values(refs)) if (v !== null && v !== undefined && String(v).toLowerCase().includes(q)) return true
   }
+  return false
+}
+
+// A job may be attached to a check only when the number is an EXACT match on
+// the field that fits the detected type. Anything else returns false.
+export function jobExactlyMatches(job, kind, raw) {
+  const n = cleanNumber(raw).replace(/[\s-]/g, '')
+  if (!job || !n) return false
+  const digitsOf = (v) => String(v || '').replace(/\D/g, '')
+  if (kind === 'container') {
+    return String(job.containers || '').split(/[\s,;/]+/).some((c) => c.trim().toUpperCase() === n)
+  }
+  if (kind === 'truck') return String(job.truck_no || '').toUpperCase().replace(/[\s-]/g, '') === n
+  if (kind === 'be7') return String(job.be_no || '').trim() === n || String(job.ulip_refs?.sb_no || '').trim() === n
+  if (kind === 'awb') return job.mode === 'Air' && digitsOf(job.bl_no) === n
   return false
 }

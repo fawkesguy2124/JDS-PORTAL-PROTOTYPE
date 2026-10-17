@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { supabase } from '../../supabase'
 import { loadJourneyData, journeyFor, isExportJob, isDelivered } from '../../services/journey'
 import { markBeFiled, markSbFiled, setStage } from '../../services/jobActions'
@@ -6,6 +6,7 @@ import { runUlipCheck, isoToDate8 } from '../../services/ulip/ulipClient'
 
 const NAVY = '#1a4fa0'
 const SHOW_FIRST = 20
+const lock = { busy: false, take() { this.busy = true }, free() { this.busy = false } }   // one action at a time
 
 const fmtDate = (v) => {
   if (!v) return '—'
@@ -24,7 +25,7 @@ const daysSince = (v) => {
 }
 const daysText = (n) => (n === null ? '' : n === 0 ? 'today' : n === 1 ? '1 day ago' : `${n} days ago`)
 
-export default function CustomsDeskPage({ currentUserName, onOpenJob, showToast }) {
+export default function CustomsDeskPage({ currentUserName, onOpenJob, showToast, canEditBE, canUpdateStage }) {
   const [view, setView] = useState('imports')
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -34,14 +35,14 @@ export default function CustomsDeskPage({ currentUserName, onOpenJob, showToast 
   const [rowErrors, setRowErrors] = useState({})
   const [rowNotes, setRowNotes] = useState({})
   const [showAll, setShowAll] = useState({})
-  const running = useRef(false)
+  const [reloadKey, setReloadKey] = useState(0)
 
   useEffect(() => {
     let cancelled = false
     async function load() {
       try {
         const d = await loadJourneyData()
-        if (!cancelled) setData(d)
+        if (!cancelled) { setData(d); setLoadError(d?.error || '') }
       } catch (e) {
         if (!cancelled) setLoadError(e?.message || 'Could not load jobs.')
       }
@@ -49,7 +50,10 @@ export default function CustomsDeskPage({ currentUserName, onOpenJob, showToast 
     }
     load()
     return () => { cancelled = true }
-  }, [])
+  }, [reloadKey])
+
+  const refresh = () => { setLoading(true); setLoadError(''); setReloadKey((k) => k + 1) }
+  const plainSaveError = (msg) => (/permission|policy|row-level|not allowed|denied|no permission/i.test(msg || '') ? "You don't have permission to change this job." : msg)
 
   const setErr = (id, msg) => setRowErrors((p) => ({ ...p, [id]: msg }))
   const setNote = (id, msg) => setRowNotes((p) => ({ ...p, [id]: msg }))
@@ -78,20 +82,27 @@ export default function CustomsDeskPage({ currentUserName, onOpenJob, showToast 
 
   // ── actions ──
   const saveFiled = async (job, kind, values) => {
+    if (lock.busy) return
+    lock.take()
     setBusyId(job.id); setErr(job.id, '')
-    const res = kind === 'be'
-      ? await markBeFiled(job, values, currentUserName)
-      : await markSbFiled(job, values, currentUserName)
-    setBusyId(null)
-    if (!res.ok) { setErr(job.id, res.error); return }
+    let res
+    try {
+      res = kind === 'be'
+        ? await markBeFiled(job, values, currentUserName)
+        : await markSbFiled(job, values, currentUserName)
+    } finally {
+      lock.free()
+      setBusyId(null)
+    }
+    if (!res.ok) { setErr(job.id, plainSaveError(res.error)); return }
     patchJob(res.job)
     setFormFor(null)
     showToast?.(kind === 'be' ? `BE saved for ${job.job_no}` : `Shipping bill saved for ${job.job_no}`, 'success')
   }
 
   const checkOoc = async (job) => {
-    if (running.current) return
-    running.current = true
+    if (lock.busy) return
+    lock.take()
     setBusyId(job.id); setErr(job.id, ''); setNote(job.id, '')
     try {
       const { data: res, error: fnErr } = await supabase.functions.invoke('customs-status', { body: { jobId: job.id } })
@@ -109,17 +120,17 @@ export default function CustomsDeskPage({ currentUserName, onOpenJob, showToast 
         setNote(job.id, 'OOC not given yet.')
       }
     } finally {
-      running.current = false
+      lock.free()
       setBusyId(null)
     }
   }
 
   const checkLeo = async (job) => {
-    if (running.current) return
+    if (lock.busy) return
     const refs = job.ulip_refs || {}
     const sbDt = isoToDate8(refs.sb_date)
     if (!refs.sb_no || !sbDt) { setErr(job.id, 'The shipping bill number or date is missing. Open the job to add it.'); return }
-    running.current = true
+    lock.take()
     setBusyId(job.id); setErr(job.id, ''); setNote(job.id, '')
     try {
       const res = await runUlipCheck({ api: 'ICEGATE/06', params: { sbNo: String(refs.sb_no), sbDt }, jobId: job.id })
@@ -129,25 +140,32 @@ export default function CustomsDeskPage({ currentUserName, onOpenJob, showToast 
       setNote(job.id, row?.parsed?.summary || 'Checked.')
       if (row?.parsed?.extra?.leoDate) showToast?.(`LEO given — ${job.job_no}`, 'success')
     } finally {
-      running.current = false
+      lock.free()
       setBusyId(null)
     }
   }
 
   const moveStage7 = async (job) => {
+    if (lock.busy) return
+    lock.take()
     setBusyId(job.id); setErr(job.id, '')
-    const res = await setStage(job, 7, 'OOC', currentUserName)
-    setBusyId(null)
-    if (!res.ok) { setErr(job.id, res.error); return }
+    let res
+    try {
+      res = await setStage(job, 7, 'OOC', currentUserName)
+    } finally {
+      lock.free()
+      setBusyId(null)
+    }
+    if (!res.ok) { setErr(job.id, plainSaveError(res.error)); return }
     patchJob(res.job)
-    showToast?.(`${job.job_no} moved to stage 7`, 'success')
+    showToast?.(`${job.job_no} moved to OOC stage`, 'success')
   }
 
   const anyBusy = busyId !== null
 
   return (
     <div style={{ fontFamily: "'Inter', sans-serif", color: '#1a2233', fontSize: '14px', maxWidth: '960px', margin: '0 auto', padding: '16px', width: '100%', boxSizing: 'border-box' }}>
-      <h1 style={{ fontSize: '20px', fontWeight: 800, margin: '0 0 4px' }}>Customs desk</h1>
+      <h1 style={{ fontSize: '20px', fontWeight: 800, margin: '0 0 4px' }}>BE &amp; OOC</h1>
       <div style={{ color: '#5b6678', marginBottom: '14px' }}>File in LiveImpex, then record it here. Check customs when you are ready.</div>
 
       <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginBottom: '18px' }}>
@@ -160,9 +178,14 @@ export default function CustomsDeskPage({ currentUserName, onOpenJob, showToast 
       </div>
 
       {loading && <div style={{ ...card, color: '#5b6678' }}>Loading jobs…</div>}
-      {loadError && <div style={{ ...card, color: '#991b1b', background: '#fef2f2', borderColor: '#fecaca' }}>⚠ {loadError}</div>}
+      {loadError && (
+        <div style={{ ...card, color: '#991b1b', background: '#fef2f2', borderColor: '#fecaca', marginBottom: '14px' }}>
+          ⚠ Could not load the latest data — {loadError}. Press Refresh.
+          <div style={{ marginTop: '10px' }}><Btn onClick={refresh}>Refresh</Btn></div>
+        </div>
+      )}
 
-      {!loading && lists.map((list) => {
+      {!loading && !loadError && lists.map((list) => {
         const expanded = !!showAll[`${view}-${list.id}`]
         const shown = expanded ? list.items : list.items.slice(0, SHOW_FIRST)
         return (
@@ -171,14 +194,15 @@ export default function CustomsDeskPage({ currentUserName, onOpenJob, showToast 
               {list.title}
               <span style={{ background: '#e8effa', color: NAVY, borderRadius: '999px', padding: '2px 10px', fontSize: '13px', fontFamily: "'JetBrains Mono', monospace" }}>{list.items.length}</span>
             </h2>
+            {list.id === 'ooc' && <div style={{ fontSize: '13px', color: '#5b6678', margin: '-4px 0 10px' }}>Check only when you expect OOC — each check asks Customs.</div>}
             {list.items.length === 0 && <div style={{ ...card, color: '#5b6678' }}>{list.empty}</div>}
             {shown.map(({ job, jr }) => (
               <Row key={job.id} job={job} onOpen={() => onOpenJob?.(job.id)} error={rowErrors[job.id]} note={rowNotes[job.id]} busy={busyId === job.id}>
-                {list.id === 'be' && (
-                  <FiledAction label="BE filed" numLabel="BE number (7 digits)" dateLabel="BE date" open={formFor === job.id} busy={busyId === job.id}
+                {list.id === 'be' && (!canEditBE ? <Info>Ask Akshyani or an admin to record the BE.</Info> : (
+                  <FiledAction initialNo={job.be_no} locked={anyBusy} label="BE filed" numLabel="BE number (7 digits)" dateLabel="BE date" open={formFor === job.id} busy={busyId === job.id}
                     onOpen={() => { setFormFor(job.id); setErr(job.id, '') }} onCancel={() => setFormFor(null)}
                     onSave={(no, date) => saveFiled(job, 'be', { beNo: no, beDate: date })} />
-                )}
+                ))}
                 {list.id === 'ooc' && (
                   <>
                     <Info>BE <b style={mono}>{job.be_no}</b> dated {fmtDate(job.be_date)} · filed {daysText(daysSince(job.be_date))}</Info>
@@ -190,15 +214,15 @@ export default function CustomsDeskPage({ currentUserName, onOpenJob, showToast 
                   <>
                     <Info>OOC <b>{fmtDate(jr.oocDate)}</b>{jr.customs?.ooc_no ? <> · No. <b style={mono}>{jr.customs.ooc_no}</b></> : null}</Info>
                     <Info>Stage {Number(job.stage) || 0}{job.truck_no ? ` · Truck ${job.truck_no}` : ' · No truck yet'}</Info>
-                    {(Number(job.stage) || 0) < 7 && <Btn disabled={anyBusy} onClick={() => moveStage7(job)}>{busyId === job.id ? 'Saving…' : 'Move to stage 7'}</Btn>}
+                    {canUpdateStage && (Number(job.stage) || 0) < 7 && <Btn disabled={anyBusy} onClick={() => moveStage7(job)}>{busyId === job.id ? 'Saving…' : 'Move to OOC stage'}</Btn>}
                     <Btn secondary disabled={anyBusy} onClick={() => onOpenJob?.(job.id, 'truck')}>Assign truck</Btn>
                   </>
                 )}
-                {list.id === 'sb' && (
-                  <FiledAction label="SB filed" numLabel="Shipping bill number (7 digits)" dateLabel="Shipping bill date" open={formFor === job.id} busy={busyId === job.id}
+                {list.id === 'sb' && (!canEditBE ? <Info>Ask Akshyani or an admin to record the shipping bill.</Info> : (
+                  <FiledAction locked={anyBusy} label="SB filed" numLabel="Shipping bill number (7 digits)" dateLabel="Shipping bill date" open={formFor === job.id} busy={busyId === job.id}
                     onOpen={() => { setFormFor(job.id); setErr(job.id, '') }} onCancel={() => setFormFor(null)}
                     onSave={(no, date) => saveFiled(job, 'sb', { sbNo: no, sbDate: date })} />
-                )}
+                ))}
                 {list.id === 'leo' && (
                   <>
                     <Info>Shipping bill <b style={mono}>{jr.sbNo}</b> dated {fmtDate(job.ulip_refs?.sb_date)} · filed {daysText(daysSince(job.ulip_refs?.sb_date))}</Info>
@@ -241,10 +265,10 @@ function Row({ job, onOpen, error, note, busy, children }) {
   )
 }
 
-function FiledAction({ label, numLabel, dateLabel, open, busy, onOpen, onCancel, onSave }) {
-  const [no, setNo] = useState('')
+function FiledAction({ label, numLabel, dateLabel, open, busy, locked, initialNo, onOpen, onCancel, onSave }) {
+  const [no, setNo] = useState(String(initialNo || '').replace(/\D/g, '').slice(0, 7))
   const [date, setDate] = useState('')
-  if (!open) return <Btn onClick={onOpen}>{label}</Btn>
+  if (!open) return <Btn disabled={locked} onClick={onOpen}>{label}</Btn>
   return (
     <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', width: '100%', alignItems: 'flex-end' }}>
       <label style={{ flex: '1 1 170px', display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#5b6678' }}>
@@ -253,7 +277,7 @@ function FiledAction({ label, numLabel, dateLabel, open, busy, onOpen, onCancel,
       </label>
       <label style={{ flex: '0 1 180px', display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#5b6678' }}>
         {dateLabel}
-        <input type="date" value={date} onChange={(e) => setDate(e.target.value)} style={inputStyle} />
+        <input type="date" max={new Date().toISOString().slice(0, 10)} value={date} onChange={(e) => setDate(e.target.value)} style={inputStyle} />
       </label>
       <Btn disabled={busy} onClick={() => onSave(no, date)}>{busy ? 'Saving…' : 'Save'}</Btn>
       <Btn secondary disabled={busy} onClick={onCancel}>Cancel</Btn>

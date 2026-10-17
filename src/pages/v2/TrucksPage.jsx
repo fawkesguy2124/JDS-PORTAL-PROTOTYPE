@@ -36,46 +36,63 @@ function ago(iso) {
   return `${Math.round(h / 24)} days ago`
 }
 
-export default function TrucksPage({ currentUserName, onOpenJob, showToast }) {
+export default function TrucksPage({ currentUserName, onOpenJob, showToast, canUpdateStage }) {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
-  const [search, setSearch] = useState('')
+  const [search, setSearch] = useState(() => {
+    try { return new URLSearchParams(window.location.search).get('q') || '' } catch { return '' }
+  })
+  const [loadError, setLoadError] = useState('')
+  const mounted = useRef(true)
   const [busy, setBusy] = useState(null) // { jobId, text } while ONE action runs
   const [forms, setForms] = useState({}) // jobId -> { truckNo, dlNo, error }
   const [outcome, setOutcome] = useState({}) // jobId -> { lines:[{tone,text}] }
   const running = useRef(false)
 
   const reload = useCallback(async () => {
-    const d = await loadJourneyData()
-    setData(d)
-    setLoading(false)
+    try {
+      const d = await loadJourneyData()
+      if (!mounted.current) return
+      setData(d)
+      setLoadError(d?.error || '')
+    } catch (e) {
+      if (mounted.current) setLoadError(e?.message || 'Something went wrong')
+    }
+    if (mounted.current) setLoading(false)
   }, [])
 
   useEffect(() => {
-    let cancelled = false
+    mounted.current = true
     async function load() {
-      const d = await loadJourneyData()
-      if (cancelled) return
-      setData(d)
-      setLoading(false)
+      try {
+        const d = await loadJourneyData()
+        if (!mounted.current) return
+        setData(d)
+        setLoadError(d?.error || '')
+      } catch (e) {
+        if (mounted.current) setLoadError(e?.message || 'Something went wrong')
+      }
+      if (mounted.current) setLoading(false)
     }
     load()
-    return () => { cancelled = true }
+    return () => { mounted.current = false }
   }, [])
 
   const rows = useMemo(() => {
-    if (!data) return { ready: [], road: [] }
+    if (!data) return { ready: [], road: [], carting: [] }
     const q = search.trim().toLowerCase()
     const match = (j) => !q || [j.truck_no, j.job_no, j.client].some((v) => String(v || '').toLowerCase().includes(q))
     const ready = []
     const road = []
+    const carting = []
     for (const job of data.jobs) {
-      if (isDelivered(job) || isExportJob(job) || !match(job)) continue
+      if (isDelivered(job) || !match(job)) continue
       const jf = journeyFor(job, data)
-      if (job.truck_no) road.push({ job, jf })
-      else if (jf.oocDate) ready.push({ job, jf })
+      if (isExportJob(job)) carting.push({ job, jf })
+      else if (job.truck_no) road.push({ job, jf })
+      else if (jf.readyForTruck) ready.push({ job, jf })
     }
-    return { ready, road }
+    return { ready, road, carting }
   }, [data, search])
 
   const refreshJobResults = async (jobId) => {
@@ -96,7 +113,10 @@ export default function TrucksPage({ currentUserName, onOpenJob, showToast }) {
   const assign = (job) => guarded(job.id, 'Saving…', async () => {
     const f = forms[job.id] || {}
     const res = await assignTruck(job, { truckNo: f.truckNo, dlNo: f.dlNo }, currentUserName)
-    if (!res.ok) { setForm(job.id, { error: res.error }); return }
+    if (!res.ok) {
+      if (!f.dlNo && /licence/i.test(res.error || '')) { showToast?.(`Truck assigned to ${job.job_no}`, 'success'); setForms((p) => ({ ...p, [job.id]: undefined })); await reload(); return }
+      setForm(job.id, { error: res.error }); return
+    }
     showToast?.(`Truck assigned to ${job.job_no}`, 'success')
     setForms((p) => ({ ...p, [job.id]: undefined }))
     await reload()
@@ -122,11 +142,13 @@ export default function TrucksPage({ currentUserName, onOpenJob, showToast }) {
     setOutcome((p) => ({ ...p, [job.id]: { lines: [] } }))
     for (let i = 0; i < steps.length; i++) {
       if (i > 0) await sleep(PAUSE_MS)
+      if (!mounted.current) return
       setBusy({ jobId: job.id, text: `Checking truck papers… ${i + 1} of ${steps.length}` })
       const s = steps[i]
       const res = await runUlipCheck({ api: s.api, params: s.params, jobId: job.id })
+      if (!mounted.current) return
       const parsed = res.data?.parsed
-      if (res.ok && parsed) lines.push({ tone: parsed.tone, text: `${s.name}: ${parsed.summary}` })
+      if (res.ok && parsed) lines.push({ tone: parsed.found === false ? 'warn' : parsed.tone, text: `${s.name}: ${parsed.summary}` })
       else lines.push({ tone: 'bad', text: `${s.name}: ${res.error || 'The check failed.'}` })
       setOutcome((p) => ({ ...p, [job.id]: { lines: [...lines] } }))
       const err = String(res.error || '').toLowerCase()
@@ -136,7 +158,7 @@ export default function TrucksPage({ currentUserName, onOpenJob, showToast }) {
         break
       }
     }
-    await refreshJobResults(job.id)
+    if (mounted.current) await refreshJobResults(job.id)
   })
 
   const deliver = (job) => {
@@ -151,23 +173,7 @@ export default function TrucksPage({ currentUserName, onOpenJob, showToast }) {
 
   const anyBusy = !!busy
 
-  return (
-    <div style={{ maxWidth: '900px', margin: '0 auto', padding: '16px', fontSize: '14px', color: '#1a2233' }}>
-      <h1 style={{ fontSize: '20px', fontWeight: 700, margin: '0 0 12px' }}>Trucks</h1>
-      <input
-        type="search" value={search} onChange={(e) => setSearch(e.target.value)}
-        placeholder="Search by truck number, job number or client"
-        style={{ ...input, fontFamily: 'inherit', marginBottom: '18px' }}
-      />
-
-      {loading && <div style={{ color: '#5b6678' }}>Loading trucks…</div>}
-
-      {!loading && (
-        <>
-          <h2 style={{ fontSize: '16px', fontWeight: 700, margin: '0 0 10px' }}>Ready for a truck ({rows.ready.length})</h2>
-          {rows.ready.length === 0 && <div style={{ ...card, color: '#5b6678' }}>No jobs waiting for a truck 🎉</div>}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-            {rows.ready.map(({ job, jf }) => {
+  const renderReady = ({ job, jf }) => {
               const f = forms[job.id] || {}
               const mine = busy?.jobId === job.id
               return (
@@ -195,13 +201,9 @@ export default function TrucksPage({ currentUserName, onOpenJob, showToast }) {
                   {f.error && <div style={{ color: '#991b1b', marginTop: '8px', fontSize: '13px' }}>⚠ {f.error}</div>}
                 </div>
               )
-            })}
-          </div>
+  }
 
-          <h2 style={{ fontSize: '16px', fontWeight: 700, margin: '26px 0 10px' }}>Trucks on the road ({rows.road.length})</h2>
-          {rows.road.length === 0 && <div style={{ ...card, color: '#5b6678' }}>No trucks on the road right now.</div>}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-            {rows.road.map(({ job, jf }) => {
+  const renderRoad = ({ job, jf }) => {
               const mine = busy?.jobId === job.id
               const loc = jf.truckLocation
               const pap = jf.truckPapers
@@ -218,7 +220,7 @@ export default function TrucksPage({ currentUserName, onOpenJob, showToast }) {
                     </div>
                     <div>
                       {pap
-                        ? <>{pap.tone === 'bad' ? '❌' : '✅'} Papers: {pap.summary} <span style={{ color: '#8a96a8', fontSize: '12px' }}>(checked {ago(pap.checkedAt)})</span></>
+                        ? <>{pap.found === false ? '⚠️' : pap.tone === 'bad' ? '❌' : '✅'} Papers: {pap.found === false ? 'Could not check' : pap.summary} <span style={{ color: '#8a96a8', fontSize: '12px' }}>(checked {ago(pap.checkedAt)})</span></>
                         : <span style={{ color: '#5b6678' }}>Papers not checked yet</span>}
                     </div>
                   </div>
@@ -235,13 +237,52 @@ export default function TrucksPage({ currentUserName, onOpenJob, showToast }) {
                     <button type="button" style={btn(anyBusy)} disabled={anyBusy} onClick={() => checkPapers(job)}>
                       {mine && busy.text.startsWith('Checking truck') ? busy.text : 'Check papers'}
                     </button>
-                    <button type="button" style={btn(anyBusy)} disabled={anyBusy} onClick={() => deliver(job)}>
-                      Mark delivered
-                    </button>
+                    {canUpdateStage && (
+                      <button type="button" style={btn(anyBusy)} disabled={anyBusy} onClick={() => deliver(job)}>
+                        Mark delivered
+                      </button>
+                    )}
                   </div>
                 </div>
               )
-            })}
+  }
+
+  return (
+    <div style={{ maxWidth: '900px', margin: '0 auto', padding: '16px', fontSize: '14px', color: '#1a2233' }}>
+      <h1 style={{ fontSize: '20px', fontWeight: 700, margin: '0 0 12px' }}>Trucks</h1>
+      <input
+        type="search" value={search} onChange={(e) => setSearch(e.target.value)}
+        placeholder="Search by truck number, job number or client"
+        style={{ ...input, fontFamily: 'inherit', marginBottom: '18px' }}
+      />
+
+      {loadError && (
+        <div style={{ background: '#fef2f2', border: '1.5px solid #fecaca', color: '#991b1b', borderRadius: '12px', padding: '12px 14px', marginBottom: '14px' }}>
+          Could not load the latest data — {loadError}. Press Refresh.
+          <div style={{ marginTop: '8px' }}><button type="button" style={btn(anyBusy)} disabled={anyBusy} onClick={reload}>Refresh</button></div>
+        </div>
+      )}
+
+      {loading && <div style={{ color: '#5b6678' }}>Loading trucks…</div>}
+
+      {!loading && !loadError && (
+        <>
+          <h2 style={{ fontSize: '16px', fontWeight: 700, margin: '0 0 10px' }}>Ready for a truck ({rows.ready.length})</h2>
+          {rows.ready.length === 0 && <div style={{ ...card, color: '#5b6678' }}>No jobs waiting for a truck 🎉</div>}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            {rows.ready.map(renderReady)}
+          </div>
+
+          <h2 style={{ fontSize: '16px', fontWeight: 700, margin: '26px 0 10px' }}>Trucks on the road ({rows.road.length})</h2>
+          {rows.road.length === 0 && <div style={{ ...card, color: '#5b6678' }}>No trucks on the road right now.</div>}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            {rows.road.map(renderRoad)}
+          </div>
+
+          <h2 style={{ fontSize: '16px', fontWeight: 700, margin: '26px 0 10px' }}>Export carting ({rows.carting.length})</h2>
+          {rows.carting.length === 0 && <div style={{ ...card, color: '#5b6678' }}>No export jobs waiting for cargo to reach the port.</div>}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            {rows.carting.map((r) => (r.job.truck_no ? renderRoad(r) : renderReady(r)))}
           </div>
         </>
       )}
@@ -251,7 +292,7 @@ export default function TrucksPage({ currentUserName, onOpenJob, showToast }) {
 
 function JobHead({ job, onOpenJob }) {
   return (
-    <button type="button" onClick={() => onOpenJob?.(job.id, 'truck')}
+    <button type="button" onClick={() => onOpenJob?.(job.id, isExportJob(job) ? 'export' : 'details')}
       style={{ all: 'unset', cursor: 'pointer', display: 'block', marginTop: '4px', color: '#1a2233', maxWidth: '100%' }}>
       <span style={{ ...mono, fontWeight: 700, color: NAVY }}>{job.job_no}</span>
       <span style={{ color: '#5b6678' }}> · {job.client || 'No client'}</span>

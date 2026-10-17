@@ -3,7 +3,7 @@ import { loadJourneyData, journeyFor } from '../../services/journey'
 import JourneyStrip from '../../components/journey/JourneyStrip'
 import UlipCheck from '../../components/ulip/UlipCheck'
 import { LOOKUP_CATEGORIES } from '../../components/ulip/ulipChecks'
-import { detectNumberType, jobMatches, cleanNumber } from './search.helpers'
+import { detectNumberType, jobMatches, jobExactlyMatches, cleanNumber } from './search.helpers'
 
 const card = { background: '#fff', border: '1.5px solid #e2e6ed', borderRadius: '14px', padding: '14px', marginBottom: '12px' }
 
@@ -36,12 +36,14 @@ export default function SearchPage({ onOpenJob }) {
 
   const jobs = data && searched ? data.jobs.filter((j) => jobMatches(j, searched)).slice(0, 20) : []
   const detected = searched ? detectNumberType(searched) : null
-  const firstJob = jobs.length === 1 ? jobs[0] : null
+  const exact = detected && data ? data.jobs.filter((j) => jobExactlyMatches(j, detected.kind, searched)) : []
+  const firstJob = exact.length === 1 ? exact[0] : null
+  const failed = !!(loadError || data?.error)
   const keyBase = cleanNumber(searched)
 
   return (
     <div style={{ fontFamily: 'Inter, system-ui, sans-serif', color: '#1a2233', fontSize: '14px', maxWidth: '900px', margin: '0 auto', padding: '16px' }}>
-      <h2 style={{ margin: '0 0 12px', fontSize: '20px' }}>Search</h2>
+      <h2 style={{ margin: '0 0 12px', fontSize: '20px' }}>Search anything</h2>
       <form onSubmit={go} style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
         <input
           value={text}
@@ -57,13 +59,13 @@ export default function SearchPage({ onOpenJob }) {
         For example: MSKU1234567 (container), MH04AB1234 (truck), 2237841 (BE), 61835488224 (airway bill), or part of a job number or client name.
       </div>
 
-      {loadError && <div style={{ ...card, color: '#b91c1c' }}>Could not load your jobs: {loadError}</div>}
+      {failed && <div style={{ ...card, color: '#b91c1c' }}>Could not load the latest data — {loadError || data.error}. Reload the page to try again.</div>}
 
       {searched && (
         <>
           <div style={{ fontWeight: 700, fontSize: '15px', margin: '4px 0 8px' }}>In our jobs</div>
-          {!data && !loadError && <div style={{ ...card, color: '#5b6678' }}>Looking through our jobs…</div>}
-          {data && jobs.length === 0 && (
+          {!data && !failed && <div style={{ ...card, color: '#5b6678' }}>Looking through our jobs…</div>}
+          {data && !failed && jobs.length === 0 && (
             <div style={{ ...card, color: '#5b6678' }}>No job of ours has “{searched}”.</div>
           )}
           {jobs.map((job) => {
