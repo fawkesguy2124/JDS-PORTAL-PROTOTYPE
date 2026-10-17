@@ -1,12 +1,21 @@
 // Customs status for one job, from its BE number and BE date.
-// Asks ICEGATE/03 (OOC from Customs) and JNPT/02 (port BE record: IGM, DO,
-// OOC, trucks), saves the combined answer in customs_status, and raises an
-// "OOC granted" alert the first time OOC is seen.
-import { adminClient, callUlip, corsHeaders, getCaller, json, toIsoDate } from '../_shared/ulip.ts'
+// Asks ICEGATE/03 (OOC from Customs) and, for JNPT jobs, JNPT/02 (port BE
+// record: IGM, DO, OOC, trucks). Saves the combined answer in customs_status
+// and raises an "OOC granted" alert the first time OOC is seen.
+//
+// Traffic rules (same spirit as the "ulip" function):
+// - same job checked again within 5 minutes → saved answer, no ULIP call
+// - after a failure → wait 2 minutes before asking ULIP again
+// - two presses at once → the second is refused
+// - JNPT is asked only for JNPT jobs (no pointless calls for other ports)
+import { adminClient, callUlip, claimKey, corsHeaders, getCaller, json, releaseKey, toIsoDate } from '../_shared/ulip.ts'
 
-// Same job checked again within this window gets the saved answer, so
-// repeated clicks never turn into repeated ULIP traffic.
 const MIN_MINUTES_BETWEEN_CHECKS = 5
+const MIN_MINUTES_AFTER_FAILURE = 2
+const SKIP_SECOND_CALL_AFTER_MS = 50_000
+
+const minutesSince = (iso: string | null | undefined) => (iso ? (Date.now() - new Date(iso).getTime()) / 60_000 : Infinity)
+const short = (e?: string) => (e || '').split(' | ')[0] || null
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
@@ -20,7 +29,7 @@ Deno.serve(async (req) => {
   if (!jobId) return json({ success: false, error: 'No job given.' }, 400)
 
   const { data: job, error: jobErr } = await admin
-    .from('jobs').select('id, job_no, be_no, be_date, truck_no').eq('id', jobId).maybeSingle()
+    .from('jobs').select('id, job_no, be_no, be_date, truck_no, port_code, mode').eq('id', jobId).maybeSingle()
   if (jobErr || !job) return json({ success: false, error: 'Job not found.' }, 404)
 
   const beNo = (job.be_no || '').trim()
@@ -28,100 +37,143 @@ Deno.serve(async (req) => {
     return json({ success: false, error: 'This job needs a 7-digit BE number first.' }, 400)
   }
   if (!job.be_date) return json({ success: false, error: 'This job needs a BE date first.' }, 400)
+  const beDate = String(job.be_date).slice(0, 10)
 
   const { data: existing } = await admin.from('customs_status').select('*').eq('job_id', job.id).maybeSingle()
-  if (
-    existing && existing.be_no === beNo &&
-    Date.now() - new Date(existing.checked_at).getTime() < MIN_MINUTES_BETWEEN_CHECKS * 60_000
-  ) {
+  const sameBe = !!existing && existing.be_no === beNo && String(existing.be_date || '').slice(0, 10) === beDate
+
+  if (sameBe && existing.checked_at && minutesSince(existing.checked_at) < MIN_MINUTES_BETWEEN_CHECKS) {
     return json({ success: true, cached: true, data: existing })
   }
-
-  const [y, m, d] = String(job.be_date).split('-')
-  const beDt = `${d}${m}${y}` // ICEGATE wants DDMMYYYY
-  const ctx = { jobId: job.id, userId: caller.id, userName: caller.name }
-
-  // One after the other (not in parallel) to keep traffic gentle
-  const ice = await callUlip(admin, 'ICEGATE/03', { beNo, beDt }, ctx)
-  const port = await callUlip(admin, 'JNPT/02', { beNo }, ctx)
-
-  if (!ice.ok && !port.ok) {
-    return json({ success: false, error: `ULIP problem. Customs: ${(ice.error || "ok").split(" | ")[0]}. Port: ${(port.error || "ok").split(" | ")[0]}.` }, 502)
+  if (sameBe && minutesSince(existing.last_error_at) < MIN_MINUTES_AFTER_FAILURE) {
+    return json({
+      success: false,
+      error: `${existing.last_error} (This check failed a moment ago. Please try again in a couple of minutes.)`,
+    }, 502)
   }
 
-  // ICEGATE/03 answer: response[0].response = { oocNo, oocDt }
-  const iceRec = ice.ok ? ice.body?.response?.[0]?.response : null
-  const iceFound = !!(iceRec && (iceRec.oocNo || iceRec.oocDt))
-
-  // JNPT/02 answer: response[0].response = [ { "Be No": ..., "Out of Charge Date": ..., ... } ]
-  const portList = port.ok ? port.body?.response?.[0]?.response : null
-  const portRec = Array.isArray(portList) && portList.length > 0 ? portList[0] : null
-
-  const vehicles = (Array.isArray(portRec?.['Vehicle Info']) ? portRec['Vehicle Info'] : [])
-    .map((v: any) => ({
-      number: v?.['Vehicle Number'] || v?.vehicleNum || null,
-      entryPermitNo: v?.['Truck Entry Permit No'] ?? null,
-      entryTime: v?.['Truck Entry Time'] ?? null,
-      exitTime: v?.['Truck Exit Time'] ?? null,
-    }))
-    .filter((v: any) => v.number)
-
-  const str = (v: unknown) => (v === null || v === undefined || v === '' ? null : String(v))
-
-  const row = {
-    job_id: job.id,
-    job_no: job.job_no,
-    be_no: beNo,
-    be_date: job.be_date,
-    ooc_no: str(iceRec?.oocNo) ?? str(portRec?.['Out of Charge No']),
-    ooc_date: toIsoDate(iceRec?.oocDt) ?? toIsoDate(portRec?.['Out of Charge Date']),
-    igm_no: str(portRec?.['IGM NO']),
-    igm_date: toIsoDate(portRec?.['IGM Date']),
-    do_no: str(portRec?.['Delivery Oder No']),
-    do_date: toIsoDate(portRec?.['DO Date']),
-    vehicles,
-    icegate_status: !ice.ok ? 'error' : iceFound ? 'found' : 'not_found',
-    jnpt_status: !port.ok ? 'error' : portRec ? 'found' : 'not_found',
-    icegate_error: ice.ok ? null : ice.error,
-    jnpt_error: port.ok ? null : port.error,
-    raw: { icegate: ice.body, jnpt: port.body },
-    checked_at: new Date().toISOString(),
-    checked_by: caller.id,
-    checked_by_name: caller.name,
+  const lockKey = `customs:${job.id}`
+  if (!(await claimKey(admin, lockKey, 90))) {
+    return json({ success: false, error: 'This check is already running. Please wait a moment.' }, 409)
   }
 
-  // Keep earlier good values when one source failed this time
-  if (existing && existing.be_no === beNo) {
-    for (const k of ['ooc_no', 'ooc_date', 'igm_no', 'igm_date', 'do_no', 'do_date'] as const) {
-      if (row[k] === null && existing[k]) (row as any)[k] = existing[k]
+  try {
+    const [y, m, d] = beDate.split('-')
+    const beDt = `${d}${m}${y}` // ICEGATE wants DDMMYYYY
+    const ctx = { jobId: job.id, userId: caller.id, userName: caller.name }
+    const askJnpt = job.mode !== 'Air' && (!job.port_code || job.port_code === 'INNSA1')
+
+    // One after the other (not in parallel) to keep traffic gentle
+    const started = Date.now()
+    const ice = await callUlip(admin, 'ICEGATE/03', { beNo, beDt }, ctx)
+    const port = askJnpt && !ice.refused && Date.now() - started < SKIP_SECOND_CALL_AFTER_MS
+      ? await callUlip(admin, 'JNPT/02', { beNo }, ctx)
+      : null
+
+    // ICEGATE/03 answer: response[0].response = { oocNo, oocDt }. A text answer means a problem.
+    const iceInner = ice.ok ? ice.body?.response?.[0]?.response : null
+    const iceText = typeof iceInner === 'string' ? iceInner : null
+    const iceRec = iceInner && typeof iceInner === 'object' && !Array.isArray(iceInner) ? iceInner : null
+    const iceOk = ice.ok && !iceText
+    const iceFound = !!(iceRec && (iceRec.oocNo || iceRec.oocDt))
+
+    // JNPT/02 answer: response[0].response = [ { "Be No": ..., "Out of Charge Date": ..., ... } ]
+    const portInner = port?.ok ? port.body?.response?.[0]?.response : null
+    const portText = typeof portInner === 'string' ? portInner : null
+    const portRec = Array.isArray(portInner) && portInner.length > 0 ? portInner[0] : null
+    const portOk = !!port?.ok && !portText
+
+    const iceError = iceOk ? null : (iceText || short(ice.error) || 'ICEGATE problem')
+    const portError = !port ? null : portOk ? null : (portText || short(port.error) || 'JNPT problem')
+
+    if (!iceOk && (!port || !portOk)) {
+      const message = port ? `Customs: ${iceError}. Port: ${portError}.` : `Customs: ${iceError}.`
+      if (!ice.refused) {
+        // Remember the failure so repeated presses wait (earlier good values are kept)
+        const { error: errSave } = await admin.from('customs_status').upsert({
+          job_id: job.id, job_no: job.job_no,
+          be_no: existing?.be_no ?? beNo, be_date: existing?.be_date ?? beDate,
+          last_error: message, last_error_at: new Date().toISOString(),
+        })
+        if (errSave) console.warn('[customs-status] could not record failure:', errSave.message)
+      }
+      return json({ success: false, error: `ULIP problem. ${message}` }, ice.refused ? 429 : 502)
     }
-    if (vehicles.length === 0 && Array.isArray(existing.vehicles)) row.vehicles = existing.vehicles
-  }
 
-  const { data: saved, error: saveErr } = await admin.from('customs_status').upsert(row).select().single()
-  if (saveErr) return json({ success: false, error: `Could not save result: ${saveErr.message}` }, 500)
+    const vehicles = (Array.isArray(portRec?.['Vehicle Info']) ? portRec['Vehicle Info'] : [])
+      .map((v: any) => ({
+        number: v?.['Vehicle Number'] || v?.vehicleNum || null,
+        entryPermitNo: v?.['Truck Entry Permit No'] ?? null,
+        entryTime: v?.['Truck Entry Time'] ?? null,
+        exitTime: v?.['Truck Exit Time'] ?? null,
+      }))
+      .filter((v: any) => v.number)
 
-  // First time OOC is seen for this job: alert everyone
-  if (row.ooc_date && !existing?.ooc_date) {
-    const { error: logErr } = await admin.from('activity_log').upsert({
-      type: 'ooc_granted',
-      action: 'ooc_granted',
-      title: `OOC granted — ${job.job_no}`,
-      note: `OOC ${row.ooc_no || ''} dated ${row.ooc_date} (checked by ${caller.name})`.trim(),
+    const str = (v: unknown) => (v === null || v === undefined || v === '' ? null : String(v))
+    // Only a real 7-digit ICEGATE IGM number is kept (ports sometimes send their own numbers)
+    const igmRaw = str(portRec?.['IGM NO'])
+    const igmNo = igmRaw && /^\d{7}$/.test(igmRaw) ? igmRaw : null
+
+    const row: Record<string, any> = {
       job_id: job.id,
       job_no: job.job_no,
-      done_by: caller.id,
-      done_by_name: caller.name,
-      meta: { be_no: beNo, ooc_no: row.ooc_no, ooc_date: row.ooc_date },
-    }, { onConflict: 'title,job_no', ignoreDuplicates: true })
-    if (logErr) console.warn('[customs-status] OOC alert insert failed:', logErr.message)
-  }
+      be_no: beNo,
+      be_date: beDate,
+      ooc_no: str(iceRec?.oocNo) ?? str(portRec?.['Out of Charge No']),
+      ooc_date: toIsoDate(iceRec?.oocDt) ?? toIsoDate(portRec?.['Out of Charge Date']),
+      igm_no: igmNo,
+      igm_date: igmNo ? toIsoDate(portRec?.['IGM Date']) : null,
+      do_no: str(portRec?.['Delivery Oder No'] ?? portRec?.['Delivery Order No']),
+      do_date: toIsoDate(portRec?.['DO Date']),
+      vehicles,
+      icegate_status: !iceOk ? 'error' : iceFound ? 'found' : 'not_found',
+      jnpt_status: !port ? 'skipped' : !portOk ? 'error' : portRec ? 'found' : 'not_found',
+      icegate_error: iceError,
+      jnpt_error: portError,
+      raw: { icegate: ice.body, jnpt: port?.body ?? null },
+      checked_at: new Date().toISOString(),
+      checked_by: caller.id,
+      checked_by_name: caller.name,
+      last_error: null,
+      last_error_at: null,
+    }
 
-  // Save the first truck number on the job for truck tracking later
-  if (!job.truck_no && row.vehicles[0]?.number) {
-    const { error: truckErr } = await admin.from('jobs').update({ truck_no: row.vehicles[0].number }).eq('id', job.id)
-    if (truckErr) console.warn('[customs-status] truck_no update failed:', truckErr.message)
-  }
+    // Keep earlier good values when one source failed this time
+    if (sameBe) {
+      for (const k of ['ooc_no', 'ooc_date', 'igm_no', 'igm_date', 'do_no', 'do_date'] as const) {
+        if (row[k] === null && existing[k]) row[k] = existing[k]
+      }
+      if (vehicles.length === 0 && Array.isArray(existing.vehicles)) row.vehicles = existing.vehicles
+    }
 
-  return json({ success: true, cached: false, data: saved })
+    const { data: saved, error: saveErr } = await admin.from('customs_status').upsert(row).select().single()
+    if (saveErr) return json({ success: false, error: `Could not save result: ${saveErr.message}` }, 500)
+
+    // First time OOC is seen for this job: alert everyone (unique on title+job_no)
+    if (row.ooc_date && !(sameBe && existing.ooc_date)) {
+      const { error: logErr } = await admin.from('activity_log').upsert({
+        type: 'ooc_granted',
+        action: 'ooc_granted',
+        title: `OOC granted — ${job.job_no}`,
+        note: `OOC ${row.ooc_no || ''} dated ${row.ooc_date} (checked by ${caller.name})`.trim(),
+        job_id: job.id,
+        job_no: job.job_no,
+        done_by: caller.id,
+        done_by_name: caller.name,
+        meta: { be_no: beNo, ooc_no: row.ooc_no, ooc_date: row.ooc_date },
+      }, { onConflict: 'title,job_no', ignoreDuplicates: true })
+      if (logErr) console.warn('[customs-status] OOC alert insert failed:', logErr.message)
+    }
+
+    // Save the first truck number on the job for truck tracking later (only if still empty)
+    if (!job.truck_no && row.vehicles[0]?.number) {
+      const { error: truckErr } = await admin.from('jobs').update({ truck_no: row.vehicles[0].number })
+        .eq('id', job.id).is('truck_no', null)
+      if (truckErr) console.warn('[customs-status] truck_no update failed:', truckErr.message)
+    }
+
+    return json({ success: true, cached: false, data: saved })
+  } finally {
+    await releaseKey(admin, lockKey)
+  }
 })

@@ -50,8 +50,14 @@ function pretty(v: unknown): string | null {
   return `${Number(p.d)} ${m} ${p.y}${time}`
 }
 
-// ISO yyyy-mm-dd (or yyyy-mm-ddTHH:MM when a real time is present)
+// plain ISO date yyyy-mm-dd
 function iso(v: unknown): string | null {
+  const p = parseDt(v)
+  return p ? `${p.y}-${p.m}-${p.d}` : null
+}
+
+// ISO with time (yyyy-mm-ddTHH:MM) when a real time is present, else the plain date
+function isoAt(v: unknown): string | null {
   const p = parseDt(v)
   if (!p) return null
   return `${p.y}-${p.m}-${p.d}${p.time && p.time !== '00:00' ? `T${p.time}` : ''}`
@@ -121,8 +127,8 @@ const uniq = (a: string[]) => [...new Set(a)]
 
 // ---------- vessel (01) ----------
 
-const VCN: InputDef = { key: 'vcnNo', label: 'Vessel call number (VCN)', pattern: /^[a-zA-Z0-9]{2,14}$/, hint: '2 to 14 letters or digits, like M7264' }
-const PORT_CODE: InputDef = { key: 'portCode', label: 'Port code', pattern: /^[A-Z0-9]+$/, hint: 'Capital letters and digits, like INMAA1', upper: true }
+const VCN: InputDef = { key: 'vcnNo', label: 'Vessel call number (VCN)', pattern: /^[a-zA-Z0-9]{2,14}$/, hint: '2 to 14 letters or digits, like M7264', upper: true }
+const PORT_CODE: InputDef = { key: 'portCode', label: 'Port code', pattern: /^[A-Z0-9]{5,6}$/, hint: 'Port code like INMUN1', upper: true }
 
 function appType(v: unknown): string | null {
   const s = text(v)
@@ -145,7 +151,10 @@ function vesselFrom(rec: any, portName: string, usePortFromAnswer: boolean): Par
   const who = name ? `Vessel ${name}` : `Vessel ${vcn ?? ''}`.trim()
   let summary: string
   let tone: Parsed['tone']
-  if (ata) {
+  if (atd) {
+    summary = `${who} sailed from ${port} on ${pretty(atd)}.`
+    tone = 'info'
+  } else if (ata) {
     summary = `${who} arrived at ${port} on ${pretty(ata)}.`
     tone = 'good'
   } else if (eta) {
@@ -174,7 +183,11 @@ function vesselFrom(rec: any, portName: string, usePortFromAnswer: boolean): Par
       F('Vessel type', g(rec, 'Vessel Type')),
       F('Import or export', appType(g(rec, 'Application Type'))),
     ]),
-    extra: { vcnNo: vcn, ata: iso(ata), eta: iso(eta), atd: iso(atd), etd: iso(etd) },
+    extra: {
+      vcnNo: vcn,
+      ata: iso(ata), eta: iso(eta), atd: iso(atd), etd: iso(etd),
+      ataAt: isoAt(ata), etaAt: isoAt(eta), atdAt: isoAt(atd), etdAt: isoAt(etd),
+    },
   }
 }
 
@@ -211,8 +224,8 @@ function beFrom(rec: any, portName: string): Parsed {
       F('Out of Charge number', oocNo),
       F('BE number', beNo),
       D('BE date', g(rec, 'Be Date', 'beDate')),
-      F('IGM number', igmNo),
-      D('IGM date', igmDate),
+      F('Port IGM number', igmNo),
+      D('Port IGM date', igmDate),
       F('Delivery order number', doNo),
       D('Delivery order date', doDate),
       F('BL number', g(rec, 'BL No')),
@@ -222,7 +235,14 @@ function beFrom(rec: any, portName: string): Parsed {
       F('CHA code', g(rec, 'CHA Code')),
     ]),
     tables: truckTable(trucks),
-    extra: { truckNumbers, oocDate: iso(oocDate), igmNo, igmDate: iso(igmDate) },
+    extra: {
+      truckNumbers,
+      oocDate: iso(oocDate),
+      oocAt: isoAt(oocDate),
+      // only a real 7-digit ICEGATE IGM number may be reused elsewhere
+      igmNo: igmNo && /^\d{7}$/.test(igmNo) ? igmNo : null,
+      igmDate: igmNo && /^\d{7}$/.test(igmNo) ? iso(igmDate) : null,
+    },
   }
 }
 
@@ -268,7 +288,17 @@ function sbFrom(rec: any, portName: string): Parsed {
       F('Cargo type', g(rec, 'Cargo Type')),
     ]),
     tables: truckTable(trucks),
-    extra: { truckNumbers: uniq(trucks.map((t) => t.no)), leoDate: iso(leo), allowForShipmentDate: iso(allow) },
+    extra: {
+      truckNumbers: uniq(trucks.map((t) => t.no)),
+      sbNo,
+      vcnNo: text(g(rec, 'Vcn No')),
+      egmNo: text(g(rec, 'EGM No')),
+      egmDate: iso(g(rec, 'EGM Date')),
+      rotationNo: text(g(rec, 'Rotation No')),
+      rotationDate: iso(g(rec, 'Rotation Date')),
+      leoDate: iso(leo),
+      allowForShipmentDate: iso(allow),
+    },
   }
 }
 

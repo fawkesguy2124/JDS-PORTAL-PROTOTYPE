@@ -528,7 +528,7 @@ function JobDetailView({ job, profiles, currentUserName, isAdmin, canUpdateStage
     try {
       const updates = {}
       const newMeta = { ...(meta || {}) }
-      const candidates = ['job_no','client','mode','bl_no','containers','shipping_line','vessel','eta','cfs_name','be_no','be_date','hs_code','rms_status','bg_required','cfs_amount','destination','priority','goods','free_days','detention_risk','delay_reason','notes']
+      const candidates = ['job_no','client','mode','job_type','port_code','bl_no','containers','shipping_line','vessel','eta','cfs_name','be_no','be_date','hs_code','rms_status','bg_required','cfs_amount','destination','priority','goods','free_days','detention_risk','delay_reason','notes']
       candidates.forEach((k) => {
         if (!canEditField(k)) return
         const prev = job[k]
@@ -909,10 +909,10 @@ Write the summary:`
             className={classNames('px-4 py-1.5 text-xs font-bold rounded-lg transition-colors', detailTab === 'fields' ? 'bg-white text-[#1a4fa0] shadow-sm border border-[#e2e6ed]' : 'text-[#8a96a8] hover:text-[#1a4fa0]')}>
             ✦ Extracted Fields
           </button>
-          <button type="button" onClick={() => { setDetailTab('customs'); window.history.replaceState(null, '', window.location.pathname + window.location.search + '#customs') }}
+          {job.job_type !== 'export' && <button type="button" onClick={() => { setDetailTab('customs'); window.history.replaceState(null, '', window.location.pathname + window.location.search + '#customs') }}
             className={classNames('px-4 py-1.5 text-xs font-bold rounded-lg transition-colors', detailTab === 'customs' ? 'bg-white text-[#1a4fa0] shadow-sm border border-[#e2e6ed]' : 'text-[#8a96a8] hover:text-[#1a4fa0]')}>
             Customs & BE
-          </button>
+          </button>}
           {JOB_TABS.filter(t => t.showIf(job)).map(t => (
             <button key={t.id} type="button" onClick={() => { setDetailTab(t.id); window.history.replaceState(null, '', window.location.pathname + window.location.search + '#' + t.id) }}
               className={classNames('px-4 py-1.5 text-xs font-bold rounded-lg transition-colors whitespace-nowrap', detailTab === t.id ? 'bg-white text-[#1a4fa0] shadow-sm border border-[#e2e6ed]' : 'text-[#8a96a8] hover:text-[#1a4fa0]')}>
@@ -1466,7 +1466,7 @@ Write the summary:`
         </div>
       )}
 
-      {detailTab === 'customs' && (
+      {detailTab === 'customs' && job.job_type !== 'export' && (
         <div className="px-4 sm:px-6 py-6">
           <div className="max-w-2xl mx-auto">
             <CustomsStatusCard
@@ -1479,7 +1479,7 @@ Write the summary:`
               toast={toast}
             />
             <div className="mt-6">
-              <UlipSection key={job.id} job={job} groups={CUSTOMS_TAB_GROUPS} />
+              <UlipSection key={job.id} job={job} groups={CUSTOMS_TAB_GROUPS} onJobChange={() => onSaved()} />
             </div>
           </div>
         </div>
@@ -1488,7 +1488,7 @@ Write the summary:`
       {JOB_TABS.filter(t => t.id === detailTab && t.showIf(job)).map(t => (
         <div key={t.id} className="px-4 sm:px-6 py-6">
           <div className="max-w-3xl mx-auto">
-            <UlipSection key={job.id + t.id} job={job} groups={t.groups} />
+            <UlipSection key={job.id + t.id} job={job} groups={t.groups} onJobChange={() => onSaved()} />
           </div>
         </div>
       ))}

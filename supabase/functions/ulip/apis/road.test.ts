@@ -123,11 +123,19 @@ test('FASTAG/02 found (document sample 6: three tags, one active)', () => {
 test('FASTAG/02 flags blacklisted, low balance and no active tag', () => {
   const bl = api('FASTAG/02').parse(fastag2(tag({ EXCCODE: '01' })))
   assert.equal(bl.tone, 'bad')
-  assert.match(bl.summary, /BLACKLISTED/)
+  assert.match(bl.summary, /hotlisted/)
   assert.equal(bl.extra!.blacklisted, true)
+  const b5 = api('FASTAG/02').parse(fastag2(tag({ EXCCODE: '05' })))
+  assert.match(b5.summary, /BLACKLISTED/)
+  assert.equal(b5.extra!.blacklisted, true)
+  const ex = api('FASTAG/02').parse(fastag2(tag({ EXCCODE: '02' })))
+  assert.equal(ex.tone, 'good')
+  const multi = api('FASTAG/02').parse(fastag2(tag({ EXCCODE: '03,04' })))
+  assert.match(multi.summary, /low balance; FASTag is invalid carriage/)
+  assert.match(multi.summary, /NPCI NETC/)
   const low = api('FASTAG/02').parse(fastag2(tag({ EXCCODE: '03' })))
   assert.equal(low.tone, 'bad')
-  assert.match(low.summary, /LOW/)
+  assert.match(low.summary, /low balance/)
   const none = api('FASTAG/02').parse(fastag2(tag({ TAGSTATUS: 'I', EXCCODE: '06' })))
   assert.equal(none.tone, 'bad')
   assert.match(none.summary, /No active FASTag/)
@@ -175,7 +183,7 @@ for (const id of ['VAHAN/01', 'VAHAN/02', 'VAHAN/03']) {
   test(`${id} good when all papers are in date`, () => {
     const r = api(id).parse(xmlBody(XML_ALL_GOOD))
     assert.equal(r.tone, 'good')
-    assert.match(r.summary, /^Vehicle UP91L0001 is active; fitness, insurance in date/)
+    assert.match(r.summary, /^Vehicle UP91L0001 is active; fitness, insurance, road tax in date/)
   })
 
   test(`${id} not found`, () => {
@@ -252,7 +260,7 @@ test('VAHAN JSON: expired fitness, PUC and permit are flagged, good case is good
   const good = { ...VAHAN_JSON, rcInsuranceUpto: '15-Sep-2099', rcPuccUpto: '01-01-2099' }
   const g = api('VAHAN/04').parse(wrap(good))
   assert.equal(g.tone, 'good')
-  assert.match(g.summary, /fitness, insurance, PUC in date/)
+  assert.match(g.summary, /fitness, insurance, PUC, road tax in date/)
   const bad = api('VAHAN/04').parse(wrap({ ...good, rcFitUpto: '01-Jan-2020', rcPuccUpto: '02-Jan-2021', rcPermitValidUpto: '03-Feb-2022' }))
   assert.equal(bad.tone, 'bad')
   assert.match(bad.summary, /fitness expired on 1 Jan 2020; PUC expired on 2 Jan 2021; permit expired on 3 Feb 2022/)
@@ -434,8 +442,8 @@ test('EWAYBILL/01 found (document sample: validUpto has time only)', () => {
     VehiclListDetails: [{ vehicleNo: 'RJ14CG4508', enteredDate: '29/11/2017 04:30:00 PM', transMode: '1' }], status: 'ACT',
   }))
   assert.equal(r.found, true)
-  assert.equal(r.tone, 'good')   // no date to compare, status ACT
-  assert.match(r.summary, /E-way bill 101000609218 is active/)
+  assert.equal(r.tone, 'warn')   // no date to compare, status ACT
+  assert.match(r.summary, /is active, but the valid-until date was not given/)
   assert.deepEqual(r.tables![0].rows[0], ['RJ14CG4508', '29 Nov 2017, 16:30', 'Road'])
   assert.deepEqual(r.extra!.truckNumbers, ['RJ14CG4508'])
 })
@@ -492,9 +500,10 @@ test('TOLL/01 found: one plaza, 7+ axle and multi-axle first (document sample)',
   const r = api('TOLL/01').parse(wrap([TUNDLA]))
   assert.equal(r.found, true)
   assert.equal(r.tone, 'info')
-  assert.equal(r.summary, 'Tundla (UTTAR PRADESH): ₹695 one way for a 7+ axle truck, ₹400 for a multi-axle truck.')
+  assert.equal(r.summary, 'Tundla (UTTAR PRADESH), one way: ₹365 for a 2-axle truck, ₹400 for a 3-axle truck, ₹575 for a 4–6 axle truck.')
   assert.equal(r.fields[0].value, 'Tundla')
-  assert.equal(r.fields.find((f) => f.label === '7+ axle truck, one way')!.value, '₹695')
+  assert.equal(r.fields.find((f) => f.label === '7+ axle (oversized), one way')!.value, '₹695')
+  assert.equal(r.fields.find((f) => f.label === 'Rates valid until')!.value, '31 Mar 2026')
   assert.equal(r.fields.find((f) => f.label === 'Rates from')!.value, '1 Oct 2025')
   assert.equal(r.tables![0].rows.length, 1)
 })
@@ -502,7 +511,8 @@ test('TOLL/01 found: one plaza, 7+ axle and multi-axle first (document sample)',
 test('TOLL/01 staging shape (2026 rates, ro and piu null)', () => {
   const r = api('TOLL/01').parse(wrap([{ ...TUNDLA, ro: null, piu: null, dtEffectiveRates: '01-04-2026', dtRateRevision: '31-03-2027', sevenOrMoreExelSingle: 735, multiAxlerateSingle: 420 }]))
   assert.equal(r.found, true)
-  assert.match(r.summary, /₹735 one way for a 7\+ axle truck, ₹420 for a multi-axle truck/)
+  assert.match(r.summary, /₹420 for a 3-axle truck/)
+  assert.equal(r.fields.find((f) => f.label === '7+ axle (oversized), one way')!.value, '₹735')
 })
 
 test('TOLL/01 many plazas make a table', () => {
@@ -528,4 +538,71 @@ test('TOLL/01 inputs and request body', () => {
   clean('TOLL/01', { stateName: 'UTTAR PRADESH' })
   assert.deepEqual(api('TOLL/01').buildBody!({ tollCode: '180001' }), { tollCode: '180001', tollName: '', stateName: '' })
   assert.ok(!api('TOLL/01').inputs[0].pattern.test('12345678'))
+})
+
+// ------------------------------------------------------------ review fixes
+
+test('ECHALLAN/01 outage or empty answer is a warning, never green', () => {
+  for (const payload of [{ status: '500', message: 'Service unavailable' }, {}, { message: 'Backend timeout' }]) {
+    const r = api('ECHALLAN/01').parse(wrap(payload))
+    assert.equal(r.found, false)
+    assert.equal(r.tone, 'warn')
+    assert.match(r.summary, /^Could not get e-challan details: /)
+  }
+  assert.match(api('ECHALLAN/01').parse(wrap({ status: '500', message: 'Service unavailable' })).summary, /Service unavailable/)
+})
+
+test('expiry uses Indian time (IST), with an injected clock', () => {
+  const { isPast, istNow, ewbExpired } = _internal
+  // 2026-06-10 19:00 UTC is already 2026-06-11 00:30 IST
+  const t = Date.UTC(2026, 5, 10, 19, 0)
+  assert.equal(istNow(t).iso, '2026-06-11')
+  assert.equal(isPast('10-06-2026', t), true)    // valid-till 10 Jun has ended in India
+  assert.equal(isPast('11-06-2026', t), false)
+  // 2026-06-10 17:00 UTC is 22:30 IST on the 10th
+  const t2 = Date.UTC(2026, 5, 10, 17, 0)
+  assert.equal(isPast('10-06-2026', t2), false)
+  // e-way bill: valid until 10 Jun 23:59 IST
+  const until = { iso: '2026-06-10', hhmm: '23:59' }
+  assert.equal(ewbExpired(until, t2), false)
+  assert.equal(ewbExpired(until, t), true)
+  assert.equal(ewbExpired({ iso: null, hhmm: '23:59' }, t), false)
+})
+
+test('FASTAG/02 does not crash when a pair (COMVEHICLE) is missing', () => {
+  const t = pairs({ TAGID: 'ABC', REGNUMBER: 'MP09HF4987', TAGSTATUS: 'A', EXCCODE: '00' })
+  const r = api('FASTAG/02').parse(fastag2(t))
+  assert.equal(r.found, true)
+  assert.equal(r.tone, 'good')
+  assert.equal(api('FASTAG/02').oneOf, true)
+  assert.equal(api('TOLL/01').oneOf, true)
+})
+
+test('VAHAN: permit fallback ignores issue/from dates; national permit and road tax are checked', () => {
+  const base = { ...VAHAN_JSON, rcInsuranceUpto: '15-Sep-2099', rcFitUpto: '01-Jan-2099', rcRegnUpto: '01-Jan-2099', rcTaxUpto: '01-Jan-2099' }
+  const ok = api('VAHAN/04').parse(wrap({ ...base, rcPermitIssueDt: '01-01-2001', rcPermitValidFrom: '01-01-2001' }))
+  assert.equal(ok.tone, 'good')
+  const np = api('VAHAN/04').parse(wrap({ ...base, rcNpUpto: '05-05-2021', rcTaxUpto: '06-06-2022' }))
+  assert.equal(np.tone, 'bad')
+  assert.match(np.summary, /national permit expired on 5 May 2021; road tax expired on 6 Jun 2022/)
+  const xml = api('VAHAN/01').parse(xmlBody(XML_ALL_GOOD.replace('<rc_tax_upto>25-01-2032</rc_tax_upto>', '<rc_tax_upto>25-01-2020</rc_tax_upto><rc_np_upto>01-02-2021</rc_np_upto>')))
+  assert.match(xml.summary, /national permit expired on 1 Feb 2021/)
+  assert.match(xml.summary, /road tax expired on 25 Jan 2020/)
+})
+
+test('FASTAG/01 direction is decided per row', () => {
+  const r = api('FASTAG/01').parse(wrap({ result: 'SUCCESS', vehicle: { errCode: '000', vehltxnList: { txn: [
+    { readerReadTime: '2021-10-30 12:41:23.0', tollPlazaName: 'A', vehicleRegNo: 'MH04AB1234' },
+    { readerReadTime: '2021-10-30 10:00:00.0', tollPlazaName: 'B', laneDirection: 'S', vehicleRegNo: 'MH04AB1234' },
+  ] } } }))
+  assert.equal(r.tables![0].rows[0][2], null)
+  assert.equal(r.tables![0].rows[1][2], 'South')
+})
+
+test('SARATHI/01 rebuilds the licence number, and dob is a date picker sent as YYYY-MM-DD', () => {
+  const b = api('SARATHI/01').buildBody!
+  assert.deepEqual(b({ dlnumber: 'GJ-04 2012-0005008', dob: '1985-04-23' }), { dlnumber: 'GJ04 20120005008', dob: '1985-04-23' })
+  assert.deepEqual(b({ dlnumber: 'gj04  20120005008', dob: '1985-04-23' }), { dlnumber: 'GJ04 20120005008', dob: '1985-04-23' })
+  assert.equal(api('SARATHI/01').inputs[1].kind, 'isoDate')   // date picker, sent as YYYY-MM-DD
+  assert.ok(api('SARATHI/01').inputs[1].pattern.test('1985-04-23'))
 })

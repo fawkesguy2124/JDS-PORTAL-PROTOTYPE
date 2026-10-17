@@ -267,6 +267,8 @@ export default function CreateJob({ isModal = false, onCancel, onCreated }) {
       if (field === 'mode') {
         if (value === 'Air' && (prev.port_code === 'INNSA1' || prev.port_code === 'INBOM1')) next.port_code = 'INBOM4'
         if (value !== 'Air' && prev.port_code === 'INBOM4') next.port_code = 'INNSA1'
+        if (value === 'BPT/MBPT' && (prev.port_code === 'INNSA1' || prev.port_code === 'INBOM4')) next.port_code = 'INBOM1'
+        if (value !== 'BPT/MBPT' && value !== 'Air' && prev.mode === 'BPT/MBPT' && prev.port_code === 'INBOM1') next.port_code = 'INNSA1'
         if (value === 'Sea FCL') {
           next.containers = prev.containers.length === 0 ? [{ no: '', size: '' }] : prev.containers
         } else {

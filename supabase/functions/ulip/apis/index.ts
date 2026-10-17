@@ -53,5 +53,8 @@ export function cleanParams(api: ApiDef, params: Record<string, unknown>):
   if (api.inputs.length > 0 && api.inputs.every((i) => i.optional) && Object.keys(values).length === 0) {
     return { ok: false, error: `Please fill in one of: ${api.inputs.map((i) => i.label).join(', ')}.` }
   }
+  if (api.oneOf && Object.keys(values).length > 1) {
+    return { ok: false, error: `Please fill in only one of: ${api.inputs.map((i) => i.label).join(', ')}.` }
+  }
   return { ok: true, values }
 }

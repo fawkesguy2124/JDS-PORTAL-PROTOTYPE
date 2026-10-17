@@ -30,7 +30,8 @@ test('JNPT/01 found (only expected, not arrived)', () => {
   assert.equal(r.summary, 'Vessel MT FURANO GALAXY is expected at HaziraPort/Surat on 20 Jul 2021, 20:20.')
   assert.equal(val(r, 'IMO number'), '9804928')
   assert.equal(r.extra?.vcnNo, 'M7264')
-  assert.equal(r.extra?.eta, '2021-07-20T20:20')
+  assert.equal(r.extra?.eta, '2021-07-20')
+  assert.equal(r.extra?.etaAt, '2021-07-20T20:20')
   assert.equal(r.extra?.ata, null)
 })
 
@@ -38,7 +39,15 @@ test('JNPT/01 arrived', () => {
   const r = api('JNPT/01').parse(wrap([{ 'Vessel Name': 'MSC ANNA', ATA: '12/10/2026 14:30', 'VCN No': 'M1234' }]))
   assert.equal(r.tone, 'good')
   assert.equal(r.summary, 'Vessel MSC ANNA arrived at JNPT on 12 Oct 2026, 14:30.')
-  assert.equal(r.extra?.ata, '2026-10-12T14:30')
+  assert.equal(r.extra?.ata, '2026-10-12')
+  assert.equal(r.extra?.ataAt, '2026-10-12T14:30')
+})
+
+test('JNPT/01 already sailed', () => {
+  const r = api('JNPT/01').parse(wrap([{ 'Vessel Name': 'MSC ANNA', ATA: '12/10/2026 14:30', ATD: '14/10/2026 08:00' }]))
+  assert.equal(r.tone, 'info')
+  assert.equal(r.summary, 'Vessel MSC ANNA sailed from JNPT on 14 Oct 2026, 08:00.')
+  assert.equal(r.extra?.atd, '2026-10-14')
 })
 
 test('JNPT/01 not found', () => {
@@ -71,11 +80,11 @@ test('JNPT/02 found (no OOC yet, one truck)', () => {
   assert.equal(r.tone, 'warn')
   assert.equal(r.summary, 'BE BE5787 found at JNPT, but Out of Charge is not given yet.')
   assert.equal(val(r, 'Delivery order number'), '109')
-  assert.equal(val(r, 'IGM number'), '312')
-  assert.equal(val(r, 'IGM date'), '26 Jul 2021')
+  assert.equal(val(r, 'Port IGM number'), '312')
+  assert.equal(val(r, 'Port IGM date'), '26 Jul 2021')
   assert.deepEqual(r.extra?.truckNumbers, ['TRK145570'])
-  assert.equal(r.extra?.igmNo, '312')
-  assert.equal(r.extra?.igmDate, '2021-07-26')
+  assert.equal(r.extra?.igmNo, null)
+  assert.equal(r.extra?.igmDate, null)
   assert.equal(r.extra?.oocDate, null)
   assert.equal(r.tables?.[0].rows[0][0], 'TRK145570')
 })
@@ -85,7 +94,8 @@ test('JNPT/02 with OOC given puts OOC date first', () => {
   assert.equal(r.tone, 'good')
   assert.equal(r.summary, 'BE BE5787: Out of Charge given on 29 Jul 2021, 10:15 at JNPT.')
   assert.equal(r.fields[0].label, 'Out of Charge date')
-  assert.equal(r.extra?.oocDate, '2021-07-29T10:15')
+  assert.equal(r.extra?.oocDate, '2021-07-29')
+  assert.equal(r.extra?.oocAt, '2021-07-29T10:15')
 })
 
 test('JNPT/02 not found', () => {
@@ -153,8 +163,8 @@ test('MBPT/01 found (arrived, dot date style)', () => {
   assert.equal(r.tone, 'good')
   assert.equal(r.summary, 'Vessel AQUA arrived at Mumbai Port on 4 Mar 2021, 15:45.')
   assert.equal(r.extra?.vcnNo, '2101485')
-  assert.equal(r.extra?.ata, '2021-03-04T15:45')
-  assert.equal(r.extra?.eta, '2021-01-20T17:40')
+  assert.equal(r.extra?.ata, '2021-03-04')
+  assert.equal(r.extra?.eta, '2021-01-20')
 })
 
 test('MBPT/01 not found', () => {
@@ -228,6 +238,10 @@ test('MBPT/03 found (trailing-space vehicle_info key)', () => {
   assert.equal(r.summary, 'Shipping bill 2132144 found at Mumbai Port. LEO given on 12 Jun 2021.')
   assert.equal(val(r, 'Allowed for shipment'), '12 Jun 2021')
   assert.deepEqual(r.extra?.truckNumbers, ['NC123', 'NL01AD8109'])
+  assert.equal(r.extra?.sbNo, '2132144')
+  assert.equal(r.extra?.vcnNo, '2106140')
+  assert.equal(r.extra?.rotationNo, '224366')
+  assert.equal(r.extra?.rotationDate, '2021-06-07')
   assert.equal(r.tables?.[0].rows.length, 3)
 })
 
@@ -255,7 +269,8 @@ test('IPORTMAN/01 found', () => {
   assert.equal(r.tone, 'info')
   assert.equal(r.summary, 'Vessel MV RANOP is expected at the port on 16 Aug 2021, 23:00.')
   assert.equal(r.extra?.vcnNo, 'INMAA120210958')
-  assert.equal(r.extra?.eta, '2021-08-16T23:00')
+  assert.equal(r.extra?.eta, '2021-08-16')
+  assert.equal(r.extra?.etaAt, '2021-08-16T23:00')
 })
 
 test('IPORTMAN/01 not found', () => {
@@ -291,8 +306,9 @@ test('IPORTMAN/02 found', () => {
   assert.equal(r.summary, 'BE BL71: Out of Charge given on 5 Aug 2021, 11:35 at the port.')
   assert.equal(r.fields[0].value, '5 Aug 2021, 11:35')
   assert.equal(val(r, 'Out of Charge number'), '6497453')
-  assert.equal(r.extra?.oocDate, '2021-08-05T11:35')
-  assert.equal(r.extra?.igmDate, '2021-08-01')
+  assert.equal(r.extra?.oocDate, '2021-08-05')
+  assert.equal(r.extra?.igmNo, null)
+  assert.equal(r.extra?.igmDate, null)
   assert.deepEqual(r.extra?.truckNumbers, [])
 })
 

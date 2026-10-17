@@ -5,15 +5,17 @@ import { supabase } from '../../supabase'
 //
 // Each ref reads from a real job column when there is one; otherwise from
 // jobs.ulip_refs (which ULIP checks fill in as staff use them).
+const digitsOnly = (v) => (v ? String(v).replace(/\D/g, '') || null : null)
+
 const FROM_COLUMNS = {
   be_no: (job) => job.be_no,
   be_date: (job) => job.be_date,
-  hs_code: (job) => job.hs_code,
+  hs_code: (job) => digitsOnly(job.hs_code),                     // "8471.30.10" -> "84713010"
   vehicle_no: (job) => job.truck_no,
   container_no: (job) => firstContainer(job.containers),
   port_code: (job) => job.port_code,
   eta: (job) => job.eta,
-  mawb_no: (job) => (job.mode === 'Air' ? job.bl_no : null),   // for air jobs the AWB is kept in the BL field
+  mawb_no: (job) => (job.mode === 'Air' ? digitsOnly(job.bl_no) : null),   // air jobs keep the AWB in the BL field
 }
 
 export function firstContainer(containers) {
@@ -27,39 +29,37 @@ export function refValue(job, ref) {
   return job.ulip_refs?.[ref] ?? null
 }
 
-// After a successful check: remember what was typed, plus useful numbers ULIP
-// returned (extra.igmNo, extra.vcnNo, extra.truckNumbers ...). Never overwrites
-// a real job column such as be_no; only fills truck_no when it is empty.
+// ULIP answer "extra" values that are worth remembering, by ref name
 const EXTRA_TO_REF = {
   igmNo: 'igm_no', igmDate: 'igm_date', vcnNo: 'vcn_no', sbNo: 'sb_no', sbDate: 'sb_date',
-  egmNo: 'egm_no', egmDate: 'egm_date', mawbNo: 'mawb_no', hawbNo: 'hawb_no', rotationNo: 'rotation_no',
+  egmNo: 'egm_no', egmDate: 'egm_date', rotationNo: 'rotation_no',
   vesselCode: 'vessel_code', imoCode: 'imo_code',
 }
 
+// After a check that FOUND a record: remember what was typed, plus useful
+// numbers ULIP returned. Never touches real job columns such as be_no; fills
+// truck_no only when it is empty. The merge happens in one database step
+// (merge_job_refs), so two checks cannot wipe each other's numbers.
+// Returns { job } with the updated job, or { error } with a plain message.
 export async function rememberRefs(job, typed, extra) {
-  if (!job?.id) return null
-  const refs = { ...(job.ulip_refs || {}) }
-  let changed = false
-  const put = (ref, value) => {
-    if (!ref || value === null || value === undefined || value === '') return
-    if (FROM_COLUMNS[ref]?.(job)) return              // real column already has it
-    if (refs[ref] === value) return
-    refs[ref] = value
-    changed = true
-  }
-  for (const [ref, value] of Object.entries(typed || {})) put(ref, value)
-  for (const [k, ref] of Object.entries(EXTRA_TO_REF)) put(ref, extra?.[k])
+  if (!job?.id) return {}
+  const keep = (ref, value) => ref && value !== null && value !== undefined && value !== '' && !FROM_COLUMNS[ref]?.(job)
 
-  const update = {}
-  if (changed) update.ulip_refs = refs
-  const truck = extra?.truckNumbers?.[0] || typed?.vehicle_no
-  if (!job.truck_no && truck) update.truck_no = truck
-  if (Object.keys(update).length === 0) return null
+  const pTyped = {}
+  for (const [ref, value] of Object.entries(typed || {})) if (keep(ref, value)) pTyped[ref] = String(value)
+  const pFound = {}
+  for (const [k, ref] of Object.entries(EXTRA_TO_REF)) if (keep(ref, extra?.[k])) pFound[ref] = String(extra[k])
+  const truck = job.truck_no ? null : (extra?.truckNumbers?.[0] || typed?.vehicle_no || null)
 
-  const { error } = await supabase.from('jobs').update(update).eq('id', job.id)
+  if (!Object.keys(pTyped).length && !Object.keys(pFound).length && !truck) return {}
+
+  const { data, error } = await supabase.rpc('merge_job_refs', {
+    p_job: job.id, p_found: pFound, p_typed: pTyped, p_truck: truck,
+  })
   if (error) {
     console.warn('[ulip] could not remember reference numbers:', error.message)
-    return null
+    return { error: 'The numbers could not be saved for next time.' }
   }
-  return { ...job, ...update }
+  const row = Array.isArray(data) ? data[0] : data
+  return { job: row ? { ...job, ...row } : job }
 }

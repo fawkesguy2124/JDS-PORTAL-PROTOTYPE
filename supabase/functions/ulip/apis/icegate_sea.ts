@@ -89,6 +89,28 @@ const plural = (n: number, one: string, many: string) => n + ' ' + (n === 1 ? on
 
 export const ICEGATE_SEA_APIS: ApiDef[] = [
   {
+    id: 'ICEGATE/03',
+    name: 'OOC from Customs',
+    inputs: [
+      { key: 'beNo', label: 'BE number', pattern: /^\d{7}$/, hint: '7 digits, like 2237841' },
+      { key: 'beDt', label: 'BE date', pattern: /^\d{8}$/, hint: 'BE date', kind: 'date8' },
+    ],
+    parse(body) {
+      const NOT_GRANTED: Parsed = { found: false, tone: 'warn', summary: 'OOC not granted yet (or BE not found in ICEGATE).', fields: [] }
+      const { p, early } = open(body, 'BE number')
+      if (early) return early.tone === 'bad' ? early : NOT_GRANTED
+      if (allEmpty([p.oocNo, p.oocDt])) return NOT_GRANTED
+      return {
+        found: true,
+        tone: 'good',
+        summary: 'OOC granted on ' + (niceDate(p.oocDt) ?? 'unknown date') + '.',
+        fields: filled([field('OOC number', p.oocNo), dateField('OOC date', p.oocDt)]),
+        extra: { oocNo: text(p.oocNo), oocDate: isoDate(p.oocDt) },
+      }
+    },
+  },
+
+  {
     id: 'ICEGATE/01',
     name: 'Ship arrival details from IGM number',
     inputs: [IGM_NO, IGM_DT],
@@ -130,7 +152,7 @@ export const ICEGATE_SEA_APIS: ApiDef[] = [
         tables,
         extra: {
           igmNo: no, igmDate: isoDate(p.igmDt), vesselCode: clean(p.vesselCode), voyageNo: clean(p.voyageNo),
-          containerNumbers: containers, expectedArrival: isoDate(p.expDtOfArrival), portOfArrival: port,
+          imoCode: clean(p.imoCodeOfVessel), containerNumbers: containers, expectedArrival: isoDate(p.expDtOfArrival), portOfArrival: port,
         },
       }
     },
@@ -150,32 +172,36 @@ export const ICEGATE_SEA_APIS: ApiDef[] = [
       if (list.length === 0) return NOT_FOUND('BE number')
       const d = list[0]
       const containers: string[] = []
-      const rows: (string | null)[][] = []
-      for (const e of list) {
-        const weight = withUnit(e.grossWt, e.unitOfQt)
-        for (const c of strList(e.containerNo)) {
-          containers.push(c)
-          rows.push([c, text(e.totNoPkg), weight])
-        }
-      }
-      const pkgs = text(d.totNoPkg)
+      const cargoRows: (string | null)[][] = []
+      const contRows: (string | null)[][] = []
+      let pkgTotal = 0
+      let pkgSeen = false
+      list.forEach((e, i) => {
+        const n = Number(text(e.totNoPkg))
+        if (text(e.totNoPkg) !== null && Number.isFinite(n)) { pkgTotal += n; pkgSeen = true }
+        cargoRows.push([String(i + 1), text(e.totNoPkg), withUnit(e.grossWt, e.unitOfQt), clean(e.countryOrig), clean(e.natureOfCargo)])
+        for (const c of strList(e.containerNo)) { containers.push(c); contRows.push([c, String(i + 1)]) }
+      })
       const tail: string[] = []
       if (containers.length) tail.push(plural(containers.length, 'container', 'containers'))
-      if (pkgs) tail.push(pkgs + ' packages')
+      if (pkgSeen) tail.push(pkgTotal + ' packages')
+      const tables: Table[] = []
+      if (contRows.length) tables.push({ title: 'Containers', columns: ['Container number', 'Cargo line'], rows: contRows })
+      tables.push({ title: 'Cargo lines', columns: ['Line', 'Packages', 'Gross weight', 'Country of origin', 'Cargo type code'], rows: cargoRows })
       return {
         found: true,
         tone: 'info',
         summary: 'BE cargo details found' + (tail.length ? ': ' + tail.join(', ') : '') + '.',
         fields: filled([
-          field('Total packages', d.totNoPkg),
-          field('Gross weight', withUnit(d.grossWt, d.unitOfQt)),
+          field('Total packages', pkgSeen ? pkgTotal : null),
+          field('Gross weight', list.length === 1 ? withUnit(d.grossWt, d.unitOfQt) : null),
           field('Country of origin', clean(d.countryOrig)),
           field('Cargo type code', clean(d.natureOfCargo)),
           dateField('IGM date', d.igmDt),
-          field('IMO number', clean(d.imoCode)),
+          field('IMO (hazard) code', clean(d.imoCode)),
         ]),
-        tables: rows.length ? [{ title: 'Containers', columns: ['Container number', 'Packages', 'Gross weight'], rows }] : [],
-        extra: { igmDate: isoDate(d.igmDt), containerNumbers: containers, imoCode: clean(d.imoCode) },
+        tables,
+        extra: { igmDate: isoDate(d.igmDt), containerNumbers: containers },
       }
     },
   },
@@ -296,6 +322,7 @@ export const ICEGATE_SEA_APIS: ApiDef[] = [
         ]),
         tables: rows.length ? [{ title: 'Containers', columns: ['Container number', 'Packages'], rows }] : [],
         extra: {
+          igmNo: text(p.igmNo), igmDate: isoDate(p.igmDt), imoCode: clean(p.imoCodeOfVessel),
           vesselCode: clean(p.vesselCode), voyageNo: clean(p.voyageNo), importerName: importer,
           containerNumbers: list.map((c) => text(c.containerNo)).filter((x) => x !== null),
         },
@@ -372,8 +399,8 @@ export const ICEGATE_SEA_APIS: ApiDef[] = [
     id: 'ICEGATE/13',
     name: 'E-seal details of an export container',
     inputs: [
-      { key: 'esealNumber', label: 'E-seal number', pattern: /^.{1,20}$/, hint: 'Up to 20 characters, like 000000000045' },
-      upperInput('containerNumber', 'Container number', /^[A-Za-z0-9]{1,15}$/, 'Letters and digits only, like TU679'),
+      { key: 'esealNumber', label: 'E-seal number', pattern: /^[0-9]{1,20}$/, hint: 'Digits only, up to 20, like 000000000045' },
+      upperInput('containerNumber', 'Container number', /^[A-Za-z0-9]{1,15}$/, 'Container number, like MSCU1234567'),
     ],
     parse(body) {
       const { p, early } = open(body, 'e-seal')
@@ -397,7 +424,7 @@ export const ICEGATE_SEA_APIS: ApiDef[] = [
           field('E-seal status', p.esealStatus),
           dateField('Verified on', p.verificationTime),
         ]),
-        extra: { sbNo: text(p.sbNumber), sbDate: isoDate(p.sbDate), truckNumber: text(p.truckNumber) },
+        extra: { sbNo: text(p.sbNumber), sbDate: isoDate(p.sbDate), truckNumber: text(p.truckNumber), truckNumbers: text(p.truckNumber) ? [text(p.truckNumber)] : [] },
       }
     },
   },

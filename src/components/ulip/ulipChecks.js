@@ -25,12 +25,12 @@ const CUSTOMS_GROUPS = [
         button: 'Check BE cargo', refs: { beNo: 'be_no', beDt: 'be_date' },
       },
       {
-        api: 'ICEGATE/07', title: 'Import manifest (IGM) details',
+        api: 'ICEGATE/07', title: 'Import manifest (IGM) details', showIf: (job) => !isAir(job),
         description: 'Vessel, voyage, importer and containers on the IGM.',
         button: 'Check IGM', refs: { igmNo: 'igm_no', igmDt: 'igm_date' },
       },
       {
-        api: 'ICEGATE/01', title: 'Ship arrival from the IGM',
+        api: 'ICEGATE/01', title: 'Ship arrival from the IGM', showIf: (job) => !isAir(job),
         description: 'Which ship, when it is expected and at which port, from the IGM number.',
         button: 'Check ship arrival', refs: { igmNo: 'igm_no', igmDt: 'igm_date' },
       },
@@ -38,7 +38,6 @@ const CUSTOMS_GROUPS = [
   },
   {
     title: 'At the port',
-    description: 'For JNPT jobs this is already part of "Customs status" above.',
     checks: [
       {
         api: 'MBPT/02', title: 'Cargo at Mumbai Port', showIf: at('MBPT'),
@@ -60,7 +59,7 @@ const CUSTOMS_GROUPS = [
     checks: [
       { api: 'PCS/05', title: 'Out of charge (PCS)', button: 'Check OOC in PCS', refs: { boeNumber: 'be_no' } },
       { api: 'PCS/04', title: 'Bill of Entry details (PCS)', button: 'Check BE in PCS', refs: { boeNumber: 'be_no' } },
-      { api: 'PCS/01', title: 'Containers on the IGM (PCS)', button: 'Check IGM in PCS', refs: { igmNumber: 'igm_no' } },
+      { api: 'PCS/01', title: 'Containers on the IGM (PCS)', showIf: (job) => !isAir(job), button: 'Check IGM in PCS', refs: { igmNumber: 'igm_no' } },
     ],
   },
   {
@@ -146,8 +145,8 @@ const AIR_GROUPS = [
       {
         api: 'ICEGATE/11', title: 'Flight manifest filing status', button: 'Check flight',
         refs: { location: 'port_code', flightDt: 'flight_date', flightNo: 'flight_no' },
-        defaults: { flag: (job) => (isExport(job) ? 'EGM' : 'IGM') },
-        labels: { location: 'Airport code', flag: 'Manifest type (IGM = import, EGM = export)' },
+        fixed: { flag: (job) => (isExport(job) ? 'EGM' : 'IGM') },
+        labels: { location: 'Airport code' },
       },
     ],
   },

@@ -74,7 +74,7 @@ export default function CustomsStatusCard({ job, canEditBE, canUpdateStage, onMo
         <div>
           <div style={{ fontSize: '14px', fontWeight: 700, color: '#1a2233' }}>Customs status</div>
           <div style={{ fontSize: '11px', color: '#8a96a8', marginTop: '2px' }}>
-            OOC, IGM, delivery order and trucks, from ICEGATE and JNPT
+            OOC from Customs (ICEGATE); for Nhava Sheva jobs also IGM, delivery order and trucks from JNPT
           </div>
         </div>
         {hasBE && (

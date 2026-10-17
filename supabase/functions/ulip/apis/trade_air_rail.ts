@@ -107,33 +107,45 @@ function safe(fn: (body: any) => Parsed): (body: any) => Parsed {
 
 const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec']
 
-// "Jan 27, 2016 6:30:00 PM" -> "27 Jan 2016"
+// "Jan 27, 2016 6:30:00 PM" is a UTC time (midnight IST shows as 6:30 PM the day before).
+// Convert to IST (+5:30) before showing the date, so it reads "28 Jan 2016".
 function usDate(v: unknown): string | null {
   const s = clean(v)
   if (!s) return null
-  const m = s.match(/^([A-Za-z]{3})[a-z]*\.? (\d{1,2}), (\d{4})/)
+  const m = s.match(/^([A-Za-z]{3})[a-z]*\.? (\d{1,2}), (\d{4})(?: (\d{1,2}):(\d{2})(?::(\d{2}))? ?([AP]M)?)?/i)
   if (m) {
     const i = MONTHS.indexOf(m[1].toLowerCase())
-    if (i >= 0) return `${Number(m[2])} ${m[1].charAt(0).toUpperCase()}${m[1].slice(1).toLowerCase()} ${m[3]}`
+    if (i >= 0) {
+      let h = m[4] ? Number(m[4]) % 12 : 0
+      if (m[7] && /^P/i.test(m[7])) h += 12
+      const ist = new Date(Date.UTC(Number(m[3]), i, Number(m[2]), h, Number(m[5] ?? 0)) + 330 * 60000)
+      return `${ist.getUTCDate()} ${MONTHS[ist.getUTCMonth()].charAt(0).toUpperCase()}${MONTHS[ist.getUTCMonth()].slice(1)} ${ist.getUTCFullYear()}`
+    }
   }
   return prettyDate(s)
 }
 
-function iecState(v: unknown): { label: string; tone: 'good' | 'bad' | 'warn' } {
+// Number codes follow the DGFT convention (not listed in the ULIP document or the old dgft-iec function):
+// 0 active, 1 blacklisted, 2 suspended, 3 cancelled, 4/5/6 = cleared from blacklist / suspension revoked /
+// cancellation revoked (active again). The document's only sample (0) is an active entity.
+function iecState(v: unknown): { label: string; tone: 'good' | 'bad' | 'warn'; note?: string } {
   const s = (clean(v) ?? '').toUpperCase()
   if (s === '0' || s === 'ACTIVE' || s === 'A') return { label: 'ACTIVE', tone: 'good' }
-  if (/CANCEL|SUSPEND|BLACKLIST|SURRENDER|REVOK|INACTIVE|DEACTIV/.test(s)) {
-    const word = /CANCEL/.test(s) ? 'CANCELLED' : /SUSPEND/.test(s) ? 'SUSPENDED' : s
-    return { label: word, tone: 'bad' }
-  }
+  const bads: Record<string, string> = { '1': 'BLACKLISTED', '2': 'SUSPENDED', '3': 'CANCELLED' }
+  if (bads[s]) return { label: bads[s], tone: 'bad' }
+  const back: Record<string, string> = { '4': 'cleared from the blacklist', '5': 'suspension revoked', '6': 'cancellation revoked' }
+  if (back[s]) return { label: 'ACTIVE', tone: 'good', note: back[s] }
+  if (/BLACKLIST/.test(s)) return { label: 'BLACKLISTED', tone: 'bad' }
+  if (/SUSPEND/.test(s)) return { label: 'SUSPENDED', tone: 'bad' }
+  if (/CANCEL|SURRENDER|REVOK|INACTIVE|DEACTIV/.test(s)) return { label: /CANCEL/.test(s) ? 'CANCELLED' : s, tone: 'bad' }
   if (s === '') return { label: 'UNKNOWN', tone: 'warn' }
-  return { label: `NOT ACTIVE (status code ${s})`, tone: 'warn' }
+  return { label: `status code ${s} (unknown)`, tone: 'warn' }
 }
 
 const dgft01: ApiDef = {
   id: 'DGFT/01',
   name: 'Check an importer-exporter code (IEC)',
-  inputs: [{ key: 'iecnumber', label: 'IEC number', pattern: /^[0-9]{10}$/, hint: '10 digits, like 0388197021' }],
+  inputs: [{ key: 'iecnumber', label: 'IEC number', pattern: /^[0-9]{10}$/, hint: '10 digits (letter-style IECs cannot be checked through ULIP)' }],
   parse: safe((body) => {
     const e = early(body)
     if (e) return e
@@ -151,10 +163,10 @@ const dgft01: ApiDef = {
     return {
       found: true,
       tone: st.tone,
-      summary: `IEC ${iecNo ?? ''} is ${st.label}${name ? ` for ${name}` : ''}.`.replace('IEC  ', 'IEC '),
+      summary: `IEC ${iecNo ?? ''} is ${st.label}${name ? ` for ${name}` : ''}${st.note ? ` (${st.note})` : ''}.`.replace('IEC  ', 'IEC '),
       fields: filled([
         f('Entity name', name),
-        { label: 'IEC status', value: st.label },
+        { label: 'IEC status', value: st.note ? `${st.label} (${st.note})` : st.label },
         field('IEC issue date', usDate(p.iecIssueDate)),
         f('PAN', p.pan),
         field('Address', address),
@@ -208,10 +220,10 @@ const dgft02: ApiDef = {
     let tone: 'good' | 'warn' | 'bad' | 'info'
     if (word === 'FREE') { summary = `${hs}: import policy FREE.`; tone = 'good' }
     else if (word) { summary = `${hs}: import policy ${word}.`; tone = 'bad' }
-    else if (conds.length) {
-      summary = `${hs}: import policy has ${conds.length} condition${conds.length > 1 ? 's' : ''}; read them before importing.`
-      tone = 'warn'
-    } else { summary = `${hs}: no import conditions listed (policy appears FREE).`; tone = 'good' }
+    else {
+      summary = `DGFT did not state the policy for ${hs}; check the ITC-HS schedule.`
+      tone = 'info'
+    }
     const short = (s: unknown) => { const t = clean(s); return t ? t.replace(/\s+/g, ' ') : null }
     return {
       found: true,
@@ -237,7 +249,8 @@ const dgft02: ApiDef = {
 
 // ---------- Air cargo terminals (AAICLAS, ACMES) ----------
 
-const AWB_INPUT = (key: string) => ({ key, label: 'Air waybill (AWB) number', pattern: /^[0-9]{11}$/, hint: '11 digits, like 61835488224' })
+const AWB_INPUT = (key: string) => ({ key, label: 'Air waybill (AWB) number', pattern: /^(?:[ -]*[0-9]){11}[ -]*$/, hint: '11 digits, like 61835488224 (or 618-35488224)' })
+const awbDigits = (v: unknown) => String(v ?? '').replace(/[\s-]/g, '')
 const LOCATION_INPUT = { key: 'location', label: 'Airport code', pattern: /^[A-Z]{1,3}$/, hint: '1 to 3 capital letters, like CCU', upper: true }
 const HAWB_INPUT = { key: 'hawb', label: 'House air waybill (HAWB) number', pattern: /^[a-zA-Z0-9]{0,20}$/, hint: 'letters and digits only, up to 20; leave empty if none', optional: true }
 
@@ -389,6 +402,7 @@ const aaiclas01: ApiDef = {
   id: 'AAICLAS/01',
   name: 'Air export cargo at the terminal (AAICLAS)',
   inputs: [AWB_INPUT('awbNumber'), LOCATION_INPUT],
+  buildBody: (q) => ({ awbNumber: awbDigits(q.awbNumber), location: q.location }),
   parse: safe(parseAirExport),
 }
 
@@ -396,7 +410,7 @@ const aaiclas02: ApiDef = {
   id: 'AAICLAS/02',
   name: 'Air import cargo at the terminal (AAICLAS)',
   inputs: [AWB_INPUT('awbNumber'), HAWB_INPUT, LOCATION_INPUT],
-  buildBody: (q) => ({ awbNumber: q.awbNumber, hawb: q.hawb ?? '', location: q.location }),
+  buildBody: (q) => ({ awbNumber: awbDigits(q.awbNumber), hawb: q.hawb ?? '', location: q.location }),
   parse: safe(parseAirImport),
 }
 
@@ -404,6 +418,7 @@ const acmes01: ApiDef = {
   id: 'ACMES/01',
   name: 'Air export cargo at the terminal (ACMES)',
   inputs: [AWB_INPUT('awbnumber')],
+  buildBody: (q) => ({ awbnumber: awbDigits(q.awbnumber) }),
   parse: safe(parseAirExport),
 }
 
@@ -411,7 +426,7 @@ const acmes02: ApiDef = {
   id: 'ACMES/02',
   name: 'Air import cargo at the terminal (ACMES)',
   inputs: [AWB_INPUT('awbnumber'), HAWB_INPUT],
-  buildBody: (q) => ({ awbnumber: q.awbnumber, hawb: q.hawb ?? '' }),
+  buildBody: (q) => ({ awbnumber: awbDigits(q.awbnumber), hawb: q.hawb ?? '' }),
   parse: safe(parseAirImport),
 }
 
@@ -578,7 +593,6 @@ const fois04: ApiDef = {
         f('Type', rr.SCALE),
         f('Consignor', rr.CNOR),
         f('Consignee', rr.CNEE),
-        f('Consignee address', rr.CNEEADD),
         f('Train number (loaded / unloaded)', [clean(it?.LOADTRAIN), clean(it?.UNLOADTRAIN)].filter(Boolean).join(' / ') || null),
       ]),
       tables: tbl('Parcel movement', ['Item', 'Loaded on', 'Unloaded on', 'Status', 'Status date'],

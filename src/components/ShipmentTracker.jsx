@@ -50,7 +50,7 @@ export default function ShipmentTracker({ jobs, profiles, currentUserName, showT
         if (truck) await runUlipCheck({ api: 'FASTAG/01', params: { vehiclenumber: truck }, jobId: job.id })
       }
 
-      const firstContainer = (job.containers || '').split(/[s,;/]+/).map(x => x.trim().toUpperCase()).find(Boolean)
+      const firstContainer = (job.containers || '').split(/[\s,;/]+/).map(x => x.trim().toUpperCase()).find(Boolean)
       const [csRes, fastagRes, ctRes] = await Promise.all([
         supabase.from('customs_status').select('*').eq('job_id', job.id).maybeSingle(),
         supabase.from('ulip_results').select('parsed, checked_at').eq('job_id', job.id).eq('api', 'FASTAG/01')

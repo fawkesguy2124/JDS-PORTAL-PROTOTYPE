@@ -130,3 +130,20 @@ test('ICEGATE/11 inputs', () => {
   assert.ok(flag.pattern.test('EGM'))
   assert.ok(!flag.pattern.test(''))
 })
+
+test('ICEGATE/10 corrected spelling and unwrapped record', () => {
+  const inner = hawb.icdBlStatusResponceDto
+  const a = api('ICEGATE/10').parse(wrap({ icdBlStatusResponseDto: inner }))
+  assert.equal(a.found, true)
+  const b = api('ICEGATE/10').parse(wrap(inner))
+  assert.equal(b.found, true)
+  assert.equal(b.summary, a.summary)
+})
+
+test('ICEGATE/11 summary has a separator after the status', () => {
+  const rej = api('ICEGATE/11').parse(wrap([{ ...f11('20/01/2025 12:06', '20032025 12:03'), status: 'Rejected: invalid flight', ackReceivedTime: '21/01/2025 10:00' }]))
+  assert.equal(rej.summary, 'Flight KU332: Rejected: invalid flight. Acknowledgement received from customs.')
+  const ok = api('ICEGATE/11').parse(wrap([f11('20/01/2025 12:06', '20032025 12:03')]))
+  assert.match(ok.summary, /validation\. No acknowledgement/)
+  assert.ok(!ok.summary.includes('..'))
+})

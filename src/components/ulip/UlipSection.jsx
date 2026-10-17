@@ -7,15 +7,23 @@ import { loadJobResults } from '../../services/ulip/ulipClient'
 // without calling ULIP again.
 //
 // groups = [{ title, description, checks: [check, ...] }]
-export default function UlipSection({ job: jobProp, groups, intro }) {
-  const [job, setJob] = useState(jobProp)
+export default function UlipSection({ job: jobProp, groups, intro, onJobChange }) {
+  // Numbers just remembered by a check, laid over the job from the parent
+  // until the parent's own copy catches up (the database already has them).
+  const [patch, setPatch] = useState({})
+  const job = { ...jobProp, ...patch, ulip_refs: { ...(jobProp.ulip_refs || {}), ...(patch.ulip_refs || {}) } }
   const [saved, setSaved] = useState(null)
 
   useEffect(() => {
     let cancelled = false
-    loadJobResults(job.id).then((rows) => { if (!cancelled) setSaved(rows) })
+    loadJobResults(jobProp.id).then((rows) => { if (!cancelled) setSaved(rows) })
     return () => { cancelled = true }
-  }, [job.id])
+  }, [jobProp.id])
+
+  const handleJobChange = (updated) => {
+    setPatch({ ...(updated.truck_no ? { truck_no: updated.truck_no } : {}), ulip_refs: updated.ulip_refs || {} })
+    onJobChange?.(updated)
+  }
 
   const visibleGroups = groups
     .map((g) => ({ ...g, checks: g.checks.filter((c) => !c.showIf || c.showIf(job)) }))
@@ -35,7 +43,7 @@ export default function UlipSection({ job: jobProp, groups, intro }) {
             {g.description && <div style={{ fontSize: '13px', color: '#5b6678', marginBottom: '10px' }}>{g.description}</div>}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               {g.checks.map((c) => (
-                <UlipCheck key={`${c.api}-${c.title}`} check={c} job={job} saved={saved[c.api]} onJobChange={setJob} />
+                <UlipCheck key={`${c.api}-${c.title}`} check={c} job={job} saved={saved[c.api]} onJobChange={handleJobChange} />
               ))}
             </div>
           </section>

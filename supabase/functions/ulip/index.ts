@@ -4,17 +4,26 @@
 // - Only the 50 approved APIs in the registry can be called
 // - Inputs are checked against ULIP's documented formats before any call
 // - The same check repeated within 5 minutes returns the saved answer (no ULIP call)
+// - After a failed check, the same check waits 2 minutes before asking ULIP again
+// - The same check running twice at once (double click, two people) is refused
 // - Every answer is saved in ulip_results (with who checked and when)
-// - Every ULIP call is recorded in ulip_calls (by the shared helper)
-import { adminClient, callUlip, corsHeaders, getCaller, json } from '../_shared/ulip.ts'
+// - Every ULIP call is recorded in ulip_calls; per-person and office caps apply
+import { adminClient, callUlip, claimKey, corsHeaders, getCaller, json, releaseKey } from '../_shared/ulip.ts'
 import { cleanParams, findApi } from './apis/index.ts'
 
 const MIN_MINUTES_BETWEEN_SAME_CHECK = 5
+const MIN_MINUTES_AFTER_FAILURE = 2
+
+// Answers that carry personal data (owner/driver names, addresses, dates of
+// birth) are not kept in raw form; the plain summary staff see is still saved.
+const NO_RAW = /^(SARATHI|VAHAN|ECHALLAN)\//
 
 function queryKey(api: string, values: Record<string, string>) {
   const sorted = Object.keys(values).sort().map((k) => `${k}=${values[k]}`).join('&')
   return `${api}?${sorted}`
 }
+
+const minutesSince = (iso: string | null | undefined) => (iso ? (Date.now() - new Date(iso).getTime()) / 60_000 : Infinity)
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
@@ -42,65 +51,86 @@ Deno.serve(async (req) => {
 
   const key = queryKey(api.id, values)
   const { data: existing } = await admin.from('ulip_results').select('*').eq('query_key', key).maybeSingle()
-  if (
-    existing?.checked_at &&
-    Date.now() - new Date(existing.checked_at).getTime() < MIN_MINUTES_BETWEEN_SAME_CHECK * 60_000
-  ) {
+
+  // Recent good answer: return it (and link it to this job if it had none)
+  if (existing?.checked_at && minutesSince(existing.checked_at) < MIN_MINUTES_BETWEEN_SAME_CHECK) {
+    if (jobId && !existing.job_id) {
+      await admin.from('ulip_results').update({ job_id: jobId }).eq('query_key', key)
+      existing.job_id = jobId
+    }
     return json({ success: true, cached: true, data: existing })
   }
+  // Recent failure: do not ask ULIP again yet
+  if (existing?.last_error_at && minutesSince(existing.last_error_at) < MIN_MINUTES_AFTER_FAILURE) {
+    return json({
+      success: false,
+      error: `${existing.last_error} (This check failed a moment ago. Please try again in a couple of minutes.)`,
+      data: existing.parsed ? existing : null,
+    }, 502)
+  }
 
-  const body = api.buildBody ? api.buildBody(values) : values
-  const res = await callUlip(admin, api.id, body, { jobId, userId: caller.id, userName: caller.name })
-  const now = new Date().toISOString()
+  if (!(await claimKey(admin, `ulip:${key}`, 60))) {
+    return json({ success: false, error: 'This check is already running. Please wait a moment.' }, 409)
+  }
 
-  if (!res.ok) {
-    const shortError = (res.error || 'ULIP problem').split(' | ')[0]
-    // Keep any earlier good answer; just record the failure
-    await admin.from('ulip_results').upsert({
+  try {
+    const body = api.buildBody ? api.buildBody(values) : values
+    const res = await callUlip(admin, api.id, body, { jobId, userId: caller.id, userName: caller.name })
+    const now = new Date().toISOString()
+
+    if (!res.ok) {
+      const shortError = (res.error || 'ULIP problem').split(' | ')[0]
+      // Refused before calling (office/person cap, login problem): nothing to record
+      if (res.refused) return json({ success: false, error: shortError, data: existing?.parsed ? existing : null }, 429)
+      // Keep any earlier good answer; just record the failure
+      await admin.from('ulip_results').upsert({
+        query_key: key,
+        api: api.id,
+        job_id: jobId ?? existing?.job_id ?? null,
+        params: values,
+        found: existing?.found ?? null,
+        summary: existing?.summary ?? null,
+        parsed: existing?.parsed ?? null,
+        raw: existing?.raw ?? null,
+        ok: existing?.ok ?? false,
+        last_error: shortError,
+        last_error_at: now,
+        checked_at: existing?.checked_at ?? null,
+        checked_by: existing?.checked_by ?? null,
+        checked_by_name: existing?.checked_by_name ?? null,
+      })
+      return json({ success: false, error: shortError, data: existing?.parsed ? existing : null }, 502)
+    }
+
+    let parsed
+    try {
+      parsed = api.parse(res.body)
+    } catch (err: any) {
+      console.error(`[ulip] parse failed for ${api.id}:`, err?.message)
+      parsed = { found: false, tone: 'bad', summary: 'ULIP answered, but the portal could not read the answer.', fields: [] }
+    }
+
+    const row = {
       query_key: key,
       api: api.id,
       job_id: jobId ?? existing?.job_id ?? null,
       params: values,
-      found: existing?.found ?? null,
-      summary: existing?.summary ?? null,
-      parsed: existing?.parsed ?? null,
-      raw: existing?.raw ?? null,
-      ok: existing?.ok ?? false,
-      last_error: shortError,
-      last_error_at: now,
-      checked_at: existing?.checked_at ?? null,
-      checked_by: existing?.checked_by ?? null,
-      checked_by_name: existing?.checked_by_name ?? null,
-    })
-    return json({ success: false, error: shortError, data: existing ?? null }, 502)
-  }
+      found: parsed.found,
+      summary: parsed.summary,
+      parsed,
+      raw: NO_RAW.test(api.id) ? null : res.body,
+      ok: true,
+      last_error: null,
+      last_error_at: null,
+      checked_at: now,
+      checked_by: caller.id,
+      checked_by_name: caller.name,
+    }
+    const { data: saved, error: saveErr } = await admin.from('ulip_results').upsert(row).select().single()
+    if (saveErr) console.warn('[ulip] could not save result:', saveErr.message)
 
-  let parsed
-  try {
-    parsed = api.parse(res.body)
-  } catch (err: any) {
-    console.error(`[ulip] parse failed for ${api.id}:`, err?.message)
-    parsed = { found: false, tone: 'bad', summary: 'ULIP answered, but the portal could not read the answer.', fields: [] }
+    return json({ success: true, cached: false, data: saved ?? row })
+  } finally {
+    await releaseKey(admin, `ulip:${key}`)
   }
-
-  const row = {
-    query_key: key,
-    api: api.id,
-    job_id: jobId,
-    params: values,
-    found: parsed.found,
-    summary: parsed.summary,
-    parsed,
-    raw: res.body,
-    ok: true,
-    last_error: null,
-    last_error_at: null,
-    checked_at: now,
-    checked_by: caller.id,
-    checked_by_name: caller.name,
-  }
-  const { data: saved, error: saveErr } = await admin.from('ulip_results').upsert(row).select().single()
-  if (saveErr) console.warn('[ulip] could not save result:', saveErr.message)
-
-  return json({ success: true, cached: false, data: saved ?? row })
 })

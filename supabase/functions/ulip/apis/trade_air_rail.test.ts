@@ -45,7 +45,7 @@ test('DGFT/01 found (active)', () => {
   assert.equal(r.found, true)
   assert.equal(r.tone, 'good')
   assert.equal(r.summary, 'IEC 0515920797 is ACTIVE for HAMLET E COMMERCE PRIVATE LIMITED.')
-  assert.equal(val(r, 'IEC issue date'), '27 Jan 2016')
+  assert.equal(val(r, 'IEC issue date'), '28 Jan 2016') // UTC 27 Jan 18:30 = 28 Jan IST
   assert.equal(val(r, 'City'), 'Gurugram')
   assert.equal(val(r, 'State'), 'HARYANA')
 })
@@ -55,6 +55,14 @@ test('DGFT/01 cancelled is bad', () => {
   assert.equal(r.found, true)
   assert.equal(r.tone, 'bad')
   assert.match(r.summary, /CANCELLED/)
+  const code = (n: number) => api('DGFT/01').parse(wrap({ iecNumber: '0515920797', entityName: 'ABC LTD', iecStatus: n }))
+  assert.match(code(1).summary, /BLACKLISTED/)
+  assert.match(code(2).summary, /SUSPENDED/)
+  assert.match(code(3).summary, /CANCELLED/)
+  for (const n of [1, 2, 3]) assert.equal(code(n).tone, 'bad')
+  for (const n of [4, 5, 6]) { assert.equal(code(n).tone, 'good'); assert.match(code(n).summary, /ACTIVE.*\(/) }
+  assert.equal(code(9).tone, 'warn')
+  assert.match(code(9).summary, /status code 9 \(unknown\)/)
 })
 
 test('DGFT/01 not found', () => {
@@ -91,8 +99,8 @@ const policyFound = wrap({
 test('DGFT/02 found with the misspelled key', () => {
   const r = api('DGFT/02').parse(policyFound)
   assert.equal(r.found, true)
-  assert.equal(r.tone, 'warn')
-  assert.match(r.summary, /^HS 29035100: import policy has 2 conditions/)
+  assert.equal(r.tone, 'info')
+  assert.equal(r.summary, 'DGFT did not state the policy for HS 29035100; check the ITC-HS schedule.')
   assert.equal(r.tables![0].rows.length, 2)
   assert.equal(r.tables![0].rows[0][1], 'Import is permitted by actual users against a licence. More text.')
 })
@@ -390,6 +398,8 @@ test('FOIS/04 found', () => {
   assert.equal(r.summary, 'Parcel 4002411032: Delivered on 6 Sep 2025, 08:26.')
   assert.equal(val(r, 'Booked on'), '2 Sep 2025')
   assert.equal(val(r, 'To station'), 'JYG-JAYNAGAR')
+  assert.ok(!r.fields.some((x) => /address/i.test(x.label)))
+  assert.ok(!JSON.stringify(r).includes('MIRZAPUR'))
   assert.equal(r.tables![0].rows[0][1], '4 Sep 2025, 03:37')
 })
 
@@ -458,4 +468,16 @@ test('LDB/01 inputs', () => {
   assert.ok(i.pattern.test('TCLU8538800'))
   assert.ok(!i.pattern.test('ACMP10000'))
   assert.ok(!i.pattern.test('acmp1000010'))
+})
+
+test('AWB with hyphen or spaces is accepted and sent as 11 digits', () => {
+  for (const id of ['AAICLAS/01', 'AAICLAS/02', 'ACMES/01', 'ACMES/02']) {
+    const a = api(id)
+    const k = a.inputs[0].key
+    for (const v of ['618-35488224', '618 35488224', '61835488224']) assert.ok(a.inputs[0].pattern.test(v), v)
+    assert.ok(!a.inputs[0].pattern.test('6183548822'))
+    assert.ok(!a.inputs[0].pattern.test('618-3548A224'))
+    const body: any = a.buildBody!({ [k]: '618-35488224', location: 'CCU' })
+    assert.equal(body[k], '61835488224')
+  }
 })

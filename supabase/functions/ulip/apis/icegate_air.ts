@@ -121,7 +121,7 @@ export const ICEGATE_AIR_APIS: ApiDef[] = [
       const bad = notARecord(body, 'house air waybill')
       if (bad) return bad
       const p = payloadOf(body)
-      const r = p && typeof p === 'object' ? (p.icdBlStatusResponceDto ?? (Array.isArray(p) ? p[0] : null)) : null
+      const r = p && typeof p === 'object' ? (p.icdBlStatusResponceDto ?? p.icdBlStatusResponseDto ?? (Array.isArray(p) ? p[0] : p)) : null
       if (!r || typeof r !== 'object') return { found: false, tone: 'warn', summary: 'No house air waybill found for these details.', fields: [] }
       const igmRtn = text(r.igmRTN ?? r.igmRtn)
       const desc = text(r.descOfGoods)
@@ -177,7 +177,8 @@ export const ICEGATE_AIR_APIS: ApiDef[] = [
       const tone: Parsed['tone'] = failed ? 'bad' : acked ? 'good' : 'warn'
       const flight = text(r.flightNumber)
       const ackNote = acked ? 'Acknowledgement received from customs.' : 'No acknowledgement from customs yet.'
-      const summary = `${flight ? `Flight ${flight}` : 'Flight'}: ${status ?? 'status not given'} ${ackNote}`
+      const statusText = status ?? 'status not given'
+      const summary = `${flight ? `Flight ${flight}` : 'Flight'}: ${statusText}${/[.!?]$/.test(statusText) ? '' : '.'} ${ackNote}`
       return {
         found: true,
         tone,

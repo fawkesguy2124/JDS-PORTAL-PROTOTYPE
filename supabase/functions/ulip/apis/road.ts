@@ -25,15 +25,23 @@ function isoDate(v: unknown): string | null {
   return `${y}-${p2(m)}-${p2(d)}`
 }
 
-function todayISO(): string {
-  const n = new Date()
-  return `${n.getFullYear()}-${p2(n.getMonth() + 1)}-${p2(n.getDate())}`
+// ULIP dates are Indian time but the function runs on UTC, so "now" is always built in IST (UTC+5:30).
+function istNow(nowMs: number = Date.now()): { iso: string; hm: string } {
+  const d = new Date(nowMs + 5.5 * 3600 * 1000)
+  return {
+    iso: `${d.getUTCFullYear()}-${p2(d.getUTCMonth() + 1)}-${p2(d.getUTCDate())}`,
+    hm: `${p2(d.getUTCHours())}:${p2(d.getUTCMinutes())}`,
+  }
+}
+
+function todayISO(nowMs?: number): string {
+  return istNow(nowMs).iso
 }
 
 // A paper is valid through its "upto" date. true = ended before today.
-function isPast(v: unknown): boolean {
+function isPast(v: unknown, nowMs?: number): boolean {
   const i = isoDate(v)
-  return !!i && i < todayISO()
+  return !!i && i < todayISO(nowMs)
 }
 
 // "15 Sep 2020 (expired)" style value for a valid-upto date
@@ -165,14 +173,13 @@ const FASTAG_01: ApiDef = {
     const truck = text(last.t.vehicleRegNo) ?? 'This truck'
     const plaza = text(last.t.tollPlazaName) ?? 'a toll plaza'
     const when = prettyDate(last.iso ?? last.t.readerReadTime)
-    const dir = text(last.t.laneDirection)
     const table: Table = {
       title: 'Toll crossings (newest first)',
       columns: ['Toll plaza', 'Time', 'Direction'],
       rows: rows.map(({ t, iso }) => [
         text(t.tollPlazaName),
         prettyDate(iso ?? t.readerReadTime),
-        dir === null ? null : (DIRECTIONS[(text(t.laneDirection) ?? '').toUpperCase()] ?? text(t.laneDirection)),
+        (() => { const d = text(t.laneDirection); return d === null ? null : (DIRECTIONS[d.toUpperCase()] ?? d) })(),
       ]),
     }
     return {
@@ -201,8 +208,19 @@ function pairsToRecord(detail: unknown): Record<string, string | null> {
   return rec
 }
 
+// NPCI NETC exception codes
+const EXC_CODES: Record<string, { text: string; bad: boolean }> = {
+  '01': { text: 'hotlisted', bad: true },
+  '02': { text: 'exempted vehicle', bad: false },
+  '03': { text: 'low balance', bad: true },
+  '04': { text: 'invalid carriage', bad: true },
+  '05': { text: 'BLACKLISTED', bad: true },
+  '06': { text: 'tag closed/replaced', bad: true },
+}
+
 const FASTAG_02: ApiDef = {
   id: 'FASTAG/02',
+  oneOf: true,
   name: 'FASTag status of a truck or tag',
   inputs: [
     { key: 'vehiclenumber', label: 'Truck number', pattern: TRUCK_NO, hint: 'Truck number, like MH04AB1234 (give this OR the FASTag ID)', upper: true, optional: true },
@@ -223,11 +241,18 @@ const FASTAG_02: ApiDef = {
     const shown = active[0] ?? tags[0]
     const truck = shown.REGNUMBER ?? 'this vehicle'
     const exc = (r: Record<string, string | null>) => (r.EXCCODE ?? '').trim()
+    const codesOf = (r: Record<string, string | null>) => exc(r).split(',').map((c) => c.trim()).filter((c) => c !== '' && !/^0+$/.test(c)).map((c) => c.padStart(2, '0'))
     const problems: string[] = []
+    let blacklisted = false
+    let lowBalance = false
     for (const r of active) {
-      if (exc(r) === '01') problems.push('FASTag is BLACKLISTED')
-      else if (exc(r) === '03') problems.push('FASTag balance is LOW')
-      else if (exc(r) !== '' && exc(r) !== '00' && exc(r) !== '0') problems.push(`FASTag has a bank flag (code ${exc(r)})`)
+      for (const c of codesOf(r)) {
+        const meaning = EXC_CODES[c]
+        if (!meaning) problems.push(`FASTag has a bank flag (code ${c})`)
+        else if (meaning.bad) problems.push(`FASTag is ${meaning.text}`)
+        if (c === '01' || c === '05') blacklisted = true
+        if (c === '03') lowBalance = true
+      }
     }
     let tone: Parsed['tone']
     let summary: string
@@ -236,14 +261,14 @@ const FASTAG_02: ApiDef = {
       summary = `No active FASTag for ${truck}: all ${tags.length} tag${tags.length === 1 ? '' : 's'} on record are inactive.`
     } else if (problems.length) {
       tone = 'bad'
-      summary = `${truck}: ${[...new Set(problems)].join('; ')}.`
+      summary = `${truck}: ${[...new Set(problems)].join('; ')}. (Flag meanings are from the NPCI NETC code list.)`
     } else {
       tone = 'good'
       summary = `FASTag for ${truck} is active${tags.length > 1 ? ` (${active.length} of ${tags.length} tags on record are active)` : ''}.`
     }
     const statusWord = (r: Record<string, string | null>) =>
       isActive(r) ? 'Active' : (r.TAGSTATUS ?? '').toUpperCase() === 'I' ? 'Inactive' : (r.TAGSTATUS ?? null)
-    const yesNo = (v: string | null) => (v === null ? null : v.toUpperCase() === 'T' ? 'Yes' : v.toUpperCase() === 'F' ? 'No' : v)
+    const yesNo = (v: string | null | undefined) => (v == null ? null : v.toUpperCase() === 'T' ? 'Yes' : v.toUpperCase() === 'F' ? 'No' : v)
     return {
       found: true,
       tone,
@@ -255,19 +280,19 @@ const FASTAG_02: ApiDef = {
         field('Vehicle class code', shown.VEHICLECLASS),
         field('Commercial vehicle', yesNo(shown.COMVEHICLE)),
         field('Tag issued on', shown.ISSUEDATE, 'date'),
-        field('Bank flag code', exc(shown) === '' || exc(shown) === '00' ? null : exc(shown)),
+        field('Bank flag', codesOf(shown).map((c) => EXC_CODES[c]?.text ?? `code ${c}`).join(', ') || null),
         field('Tags on record', tags.length),
       ]),
       tables: [{
         title: 'FASTags on record',
-        columns: ['FASTag ID', 'Truck number', 'Status', 'Issued on', 'Bank flag code'],
-        rows: tags.map((r) => [r.TAGID, r.REGNUMBER, statusWord(r), prettyDate(r.ISSUEDATE), r.EXCCODE]),
+        columns: ['FASTag ID', 'Truck number', 'Status', 'Issued on', 'Bank flag'],
+        rows: tags.map((r) => [r.TAGID, r.REGNUMBER, statusWord(r), prettyDate(r.ISSUEDATE), codesOf(r).map((c) => EXC_CODES[c]?.text ?? `code ${c}`).join(', ') || null]),
       }],
       extra: {
         vehicleNumber: shown.REGNUMBER,
         activeTagIds: active.map((r) => r.TAGID).filter(Boolean),
-        blacklisted: active.some((r) => exc(r) === '01'),
-        lowBalance: active.some((r) => exc(r) === '03'),
+        blacklisted,
+        lowBalance,
       },
     }
   }),
@@ -328,7 +353,9 @@ function parseVahan(what: string) {
     const insUpto = pick(d, 'rc_insurance_upto', 'rcInsuranceUpto')
     const pucUpto = pick(d, 'rc_pucc_upto', 'rcPuccUpto', 'rc_puc_upto')
     const permitUpto = pick(d, 'rc_permit_valid_upto', 'rcPermitValidUpto', 'rc_permit_upto', 'rcPermitUpto')
-      ?? pickLike(d, /permit.*(upto|valid|todt|enddt)/)
+      ?? pickLike(d, /^(?!.*(from|issue|frm|start)).*permit.*(upto|valid|todt|enddt)/)
+    const npUpto = pick(d, 'rc_np_upto', 'rcNpUpto')
+    const taxUpto = pick(d, 'rc_tax_upto', 'rcTaxUpto')
     const maker = pick(d, 'rc_maker_desc', 'rcMakerDesc')
     const model = pick(d, 'rc_maker_model', 'rcMakerModel')
 
@@ -340,6 +367,7 @@ function parseVahan(what: string) {
     }
     const checks: [string, string | null][] = [
       ['registration', regUpto], ['fitness', fitUpto], ['insurance', insUpto], ['PUC', pucUpto], ['permit', permitUpto],
+      ['national permit', npUpto], ['road tax', taxUpto],
     ]
     for (const [label, v] of checks) {
       if (!v) continue
@@ -374,6 +402,8 @@ function parseVahan(what: string) {
         expField('Insurance valid until', insUpto),
         expField('PUC valid until', pucUpto),
         expField('Permit valid until', permitUpto),
+        expField('National permit valid until', npUpto),
+        expField('Road tax paid until', taxUpto),
         expField('RC valid until', regUpto),
         field('Chassis number', pick(d, 'rc_chasi_no', 'rcChasiNo')),
         field('Engine number', pick(d, 'rc_eng_no', 'rcEngNo')),
@@ -386,6 +416,8 @@ function parseVahan(what: string) {
         insuranceUpto: iso(insUpto),
         pucUpto: iso(pucUpto),
         permitUpto: iso(permitUpto),
+        nationalPermitUpto: iso(npUpto),
+        taxUpto: iso(taxUpto),
         problems,
       },
     }
@@ -406,8 +438,8 @@ const VEH_NO_INPUT: InputDef = {
 function dlForSarathi01(raw: string): string {
   const s = String(raw ?? '').trim().toUpperCase()
   const compact = s.replace(/[\s-]+/g, '')
-  if (/^[A-Z]{2}\d{2}(19|20)\d{9}$/.test(compact) && !/[\s-]/.test(s)) return `${compact.slice(0, 4)} ${compact.slice(4)}`
-  return s
+  const m = compact.match(/^([A-Z]{2}\d{2})((?:19|20)\d{9})$/)
+  return m ? `${m[1]} ${m[2]}` : s
 }
 
 const DL_INPUT: InputDef = {
@@ -490,7 +522,7 @@ const SARATHI_01: ApiDef = {
   name: 'Driving licence check (with date of birth)',
   inputs: [
     DL_INPUT,
-    { key: 'dob', label: 'Date of birth', pattern: /^\d{4}-(0[1-9]|1[012])-(0[1-9]|[12][0-9]|3[01])$/, hint: 'Date of birth as yyyy-mm-dd, like 1987-05-26' },
+    { key: 'dob', label: 'Date of birth', pattern: /^\d{4}-(0[1-9]|1[012])-(0[1-9]|[12][0-9]|3[01])$/, hint: 'Date of birth', kind: 'isoDate' },
   ],
   buildBody: (params) => ({ dlnumber: dlForSarathi01(params.dlnumber), dob: params.dob }),
   // The document does not contain the found answer (it is in a Word file we do not have), so this is a defensive reader.
@@ -576,8 +608,12 @@ const ECHALLAN_01: ApiDef = {
   parse: safe((body) => {
     const p = payloadOf(body) || {}
     const data = p.data
-    if (String(p.code ?? '') === '305' || !data || typeof data !== 'object') {
+    if (String(p.code ?? '') === '305') {
       return { found: false, tone: 'good', summary: 'No pending challans (no challan records for this truck).', fields: [] }
+    }
+    if (!data || typeof data !== 'object') {
+      const why = text(p.message) ?? text(p.status) ?? 'no answer from the e-challan service'
+      return { found: false, tone: 'warn', summary: `Could not get e-challan details: ${why}`, fields: [] }
     }
     const pending = asList(data.Pending_data)
     const disposed = asList(data.Disposed_data)
@@ -636,6 +672,12 @@ function ewbWhen(v: unknown): { iso: string | null; hhmm: string | null } {
   return { iso, hhmm }
 }
 
+function ewbExpired(until: { iso: string | null; hhmm: string | null }, nowMs?: number): boolean {
+  if (!until.iso) return false
+  const n = istNow(nowMs)
+  return until.iso < n.iso || (until.iso === n.iso && !!until.hhmm && until.hhmm < n.hm)
+}
+
 const EWAYBILL_01: ApiDef = {
   id: 'EWAYBILL/01',
   name: 'E-way bill validity',
@@ -658,10 +700,7 @@ const EWAYBILL_01: ApiDef = {
     const cancelled = statusCode === 'CNL' || statusCode === 'REJ'
     let expired = false
     if (until.iso) {
-      const now = new Date()
-      const nowIso = `${now.getFullYear()}-${p2(now.getMonth() + 1)}-${p2(now.getDate())}`
-      const nowHm = `${p2(now.getHours())}:${p2(now.getMinutes())}`
-      expired = until.iso < nowIso || (until.iso === nowIso && !!until.hhmm && until.hhmm < nowHm)
+      expired = ewbExpired(until)
     }
     let tone: Parsed['tone']
     let summary: string
@@ -675,8 +714,8 @@ const EWAYBILL_01: ApiDef = {
       tone = 'good'
       summary = `E-way bill ${ewb} is valid until ${untilText}.`
     } else if (statusCode === 'ACT') {
-      tone = 'good'
-      summary = `E-way bill ${ewb} is active (valid-until date not given).`
+      tone = 'warn'
+      summary = `E-way bill ${ewb} is active, but the valid-until date was not given.`
     } else {
       tone = 'info'
       summary = `E-way bill ${ewb} found${status ? `, status ${status}` : ''}.`
@@ -721,6 +760,7 @@ function rate(v: unknown): string | null {
 
 const TOLL_01: ApiDef = {
   id: 'TOLL/01',
+  oneOf: true,
   name: 'Toll plaza rates',
   inputs: [
     { key: 'tollCode', label: 'Toll plaza code', pattern: /^\d{1,7}$/, hint: 'Up to 7 digits (give only one of code, name or state)', optional: true },
@@ -736,28 +776,30 @@ const TOLL_01: ApiDef = {
     }
     const rows = recs.map((r) => [
       text(r.tollName), text(r.stateName),
-      rate(r.sevenOrMoreExelSingle), rate(r.sevenOrMoreExelReturn),
-      rate(r.multiAxlerateSingle), rate(r.multiAxlerateMulti),
-      rate(r.fourToSixExelSingle), prettyDate(r.dtEffectiveRates),
+      rate(r.busRateSingle), rate(r.multiAxlerateSingle), rate(r.fourToSixExelSingle), rate(r.sevenOrMoreExelSingle),
+      prettyDate(r.dtEffectiveRates), prettyDate(r.dtRateRevision),
     ])
     const table: Table = {
-      title: 'Toll rates for trucks (7+ axle and multi-axle first)',
-      columns: ['Toll plaza', 'State', '7+ axle one way', '7+ axle return', 'Multi-axle one way', 'Multi-axle return', '4 to 6 axle one way', 'Rates from'],
+      title: 'One-way toll rates for trucks',
+      columns: ['Toll plaza', 'State', '2-axle truck (Bus/Truck)', '3-axle truck', '4–6 axle truck', '7+ axle (oversized)', 'Rates from', 'Rates valid until'],
       rows,
     }
     const plazas = recs.map((r) => ({
       tollCode: num(r.tollCode),
       tollName: text(r.tollName),
       stateName: text(r.stateName),
+      twoAxleOneWay: num(r.busRateSingle),
+      threeAxleOneWay: num(r.multiAxlerateSingle),
+      fourToSixAxleOneWay: num(r.fourToSixExelSingle),
       sevenPlusAxleOneWay: num(r.sevenOrMoreExelSingle),
-      multiAxleOneWay: num(r.multiAxlerateSingle),
       ratesFrom: isoDate(r.dtEffectiveRates),
+      ratesValidUntil: isoDate(r.dtRateRevision),
     }))
     if (recs.length > 1) {
       return {
         found: true,
         tone: 'info',
-        summary: `${recs.length} toll plazas found. Table shows 7+ axle and multi-axle truck rates.`,
+        summary: `${recs.length} toll plazas found. Table shows one-way truck rates by axle count.`,
         fields: [],
         tables: [table],
         extra: { plazas },
@@ -765,26 +807,32 @@ const TOLL_01: ApiDef = {
     }
     const r = recs[0]
     const name = text(r.tollName) ?? `Toll plaza ${text(r.tollCode)}`
-    const seven = rate(r.sevenOrMoreExelSingle)
-    const multi = rate(r.multiAxlerateSingle)
-    const bits = [seven ? `${seven} one way for a 7+ axle truck` : null, multi ? `${multi} for a multi-axle truck` : null].filter(Boolean)
+    const bits = [
+      rate(r.busRateSingle) ? `${rate(r.busRateSingle)} for a 2-axle truck` : null,
+      rate(r.multiAxlerateSingle) ? `${rate(r.multiAxlerateSingle)} for a 3-axle truck` : null,
+      rate(r.fourToSixExelSingle) ? `${rate(r.fourToSixExelSingle)} for a 4–6 axle truck` : null,
+    ].filter(Boolean)
     return {
       found: true,
       tone: 'info',
-      summary: `${name}${text(r.stateName) ? ` (${text(r.stateName)})` : ''}: ${bits.length ? bits.join(', ') : 'truck rates not given'}.`,
+      summary: `${name}${text(r.stateName) ? ` (${text(r.stateName)})` : ''}, one way: ${bits.length ? bits.join(', ') : 'truck rates not given'}.`,
       fields: filled([
         field('Toll plaza', r.tollName),
         field('State', r.stateName),
         field('Toll code', r.tollCode),
-        field('7+ axle truck, one way', seven),
-        field('7+ axle truck, return', rate(r.sevenOrMoreExelReturn)),
-        field('7+ axle truck, monthly pass', rate(r.sevenOrMoreExelMonthly)),
-        field('7+ axle truck, local commercial', rate(r.sevenOrMoreExelCommReg)),
-        field('Multi-axle truck, one way', multi),
-        field('Multi-axle truck, return', rate(r.multiAxlerateMulti)),
-        field('Multi-axle truck, monthly pass', rate(r.multiAxlerateMth)),
-        field('4 to 6 axle truck, one way', rate(r.fourToSixExelSingle)),
+        field('2-axle truck (Bus/Truck), one way', rate(r.busRateSingle)),
+        field('2-axle truck (Bus/Truck), return', rate(r.busRateMulti)),
+        field('3-axle truck, one way', rate(r.multiAxlerateSingle)),
+        field('3-axle truck, return', rate(r.multiAxlerateMulti)),
+        field('3-axle truck, monthly pass', rate(r.multiAxlerateMth)),
+        field('4–6 axle truck, one way', rate(r.fourToSixExelSingle)),
+        field('4–6 axle truck, return', rate(r.fourToSixExelReturn)),
+        field('Heavy construction machinery, one way', rate(r.hcmEmeSingle)),
+        field('7+ axle (oversized), one way', rate(r.sevenOrMoreExelSingle)),
+        field('7+ axle (oversized), return', rate(r.sevenOrMoreExelReturn)),
+        field('7+ axle (oversized), monthly pass', rate(r.sevenOrMoreExelMonthly)),
         field('Rates from', r.dtEffectiveRates, 'date'),
+        field('Rates valid until', r.dtRateRevision, 'date'),
       ]),
       tables: [table],
       extra: { plazas },
@@ -819,4 +867,4 @@ export const ROAD_APIS: ApiDef[] = [
 ]
 
 // exported for tests
-export const _internal = { xmlTag, isoDate, inr, dlForSarathi01 }
+export const _internal = { xmlTag, isoDate, inr, dlForSarathi01, isPast, istNow, ewbExpired, ewbWhen }

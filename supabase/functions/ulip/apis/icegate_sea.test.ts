@@ -12,11 +12,11 @@ const wrap = (response: unknown) => ({
 const NOT_FOUND_ERR = wrap({ errCode: 'ERROR0004', errMsg: 'No Records Available' })
 const DOWN = { response: [{ response: 'X - 3rd party service is down!', responseStatus: 'ERROR' }], error: 'true' }
 
-const IDS = ['01', '02', '04', '05', '06', '07', '08', '12', '13'].map((n) => `ICEGATE/${n}`)
+const IDS = ['03', '01', '02', '04', '05', '06', '07', '08', '12', '13'].map((n) => `ICEGATE/${n}`)
 
 test('all assigned ids exist', () => {
   for (const id of IDS) assert.ok(api(id), id)
-  assert.equal(ICEGATE_SEA_APIS.length, 9)
+  assert.equal(ICEGATE_SEA_APIS.length, 10)
 })
 
 test('odd shapes never throw', () => {
@@ -73,9 +73,13 @@ test('ICEGATE/02 found', () => {
     }],
   }))
   assert.equal(r.found, true)
-  assert.deepEqual(r.tables![0].rows, [['MSCU7786602', '56', '25.99 MTS']])
+  assert.deepEqual(r.tables![0].rows, [['MSCU7786602', '1']])
+  assert.deepEqual(r.tables![1].rows, [['1', '56', '25.99 MTS', 'BR', 'C']])
+  assert.equal(r.summary, 'BE cargo details found: 1 container, 56 packages.')
+  assert.equal((r.extra as any).imoCode, undefined)
   assert.equal((r.extra as any).igmDate, '2011-07-04')
   assert.ok(r.fields.some((f) => f.label === 'Gross weight' && f.value === '25.99 MTS'))
+  assert.ok(r.fields.some((f) => f.label === 'IMO (hazard) code'))
 })
 
 test('ICEGATE/02 not found', () => {
@@ -225,6 +229,7 @@ test('ICEGATE/13 found', () => {
   assert.equal(r.found, true)
   assert.equal(r.summary, 'E-seal 000000000045 on container TU679 was sealed on 12 Apr 2021, 12:34.')
   assert.ok(!r.fields.some((f) => f.label === 'E-seal status'))
+  assert.deepEqual((r.extra as any).truckNumbers, ['UP16380'])
 })
 
 test('ICEGATE/13 not found', () => {
@@ -233,7 +238,50 @@ test('ICEGATE/13 not found', () => {
 
 test('ICEGATE/13 inputs', () => {
   const [seal, cont] = api('ICEGATE/13').inputs
-  assert.ok(seal.pattern.test('000000000045') && !seal.pattern.test(''))
+  assert.ok(seal.pattern.test('000000000045') && !seal.pattern.test('') && !seal.pattern.test('AB12'))
   assert.ok(cont.pattern.test('TU679') && cont.pattern.test('MSCU7786602'))
   assert.ok(!cont.pattern.test(''))
+})
+
+test('ICEGATE/02 adds packages over all lines', () => {
+  const r = api('ICEGATE/02').parse(wrap({ boeDetails: [
+    { containerNo: ['A1'], totNoPkg: 10, grossWt: 1, unitOfQt: 'MTS' },
+    { containerNo: ['B2', 'C3'], totNoPkg: 5, grossWt: 2, unitOfQt: 'MTS' },
+  ] }))
+  assert.equal(r.summary, 'BE cargo details found: 3 containers, 15 packages.')
+  assert.equal(r.tables![1].rows.length, 2)
+})
+
+test('ICEGATE/01 and 07 expose vessel IMO', () => {
+  assert.equal((api('ICEGATE/01').parse(wrap({ igmNo: 1, imoCodeOfVessel: '9241205' })).extra as any).imoCode, '9241205')
+  const r = api('ICEGATE/07').parse(wrap({ igmNo: 2000690, igmDt: '31012014', imoCodeOfVessel: '12345', vesselCode: 'X1' }))
+  assert.equal((r.extra as any).imoCode, '12345')
+  assert.equal((r.extra as any).igmDate, '2014-01-31')
+})
+
+test('ICEGATE/03 found', () => {
+  const r = api('ICEGATE/03').parse(wrap({ oocNo: 2004296615, oocDt: '26032012' }))
+  assert.equal(r.found, true)
+  assert.equal(r.summary, 'OOC granted on 26 Mar 2012.')
+  assert.deepEqual(r.fields, [
+    { label: 'OOC number', value: '2004296615' },
+    { label: 'OOC date', value: '26 Mar 2012' },
+  ])
+  assert.deepEqual(r.extra, { oocNo: '2004296615', oocDate: '2012-03-26' })
+})
+
+test('ICEGATE/03 not found vs ICEGATE failure', () => {
+  const nf = api('ICEGATE/03').parse(wrap({ oocNo: null, oocDt: null }))
+  assert.equal(nf.found, false)
+  assert.equal(nf.tone, 'warn')
+  assert.equal(api('ICEGATE/03').parse(wrap('Service temporarily unavailable')).tone, 'bad')
+  assert.equal(api('ICEGATE/03').parse(wrap({ errCode: 'ERROR0001', errMsg: 'Internal error' })).tone, 'bad')
+  assert.equal(api('ICEGATE/03').parse(NOT_FOUND_ERR).tone, 'warn')
+})
+
+test('ICEGATE/03 inputs match the document format', () => {
+  const [beNo, beDt] = api('ICEGATE/03').inputs
+  assert.ok(beNo.pattern.test('6330973'))
+  assert.ok(!beNo.pattern.test('BE5787'))
+  assert.ok(beDt.pattern.test('22032012'))
 })

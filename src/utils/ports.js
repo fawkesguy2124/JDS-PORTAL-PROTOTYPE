@@ -27,7 +27,7 @@ export function portByCode(code) {
 
 // Which port system a job's port uses (defaults to JNPT, JDS's main port)
 export function portSystem(job) {
-  if (!job?.port_code) return job?.mode === 'Air' ? 'AIR' : 'JNPT'
+  if (!job?.port_code) return job?.mode === 'Air' ? 'AIR' : job?.mode === 'BPT/MBPT' ? 'MBPT' : 'JNPT'
   return portByCode(job.port_code)?.system || 'IPORTMAN'
 }
 
