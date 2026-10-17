@@ -46,7 +46,7 @@ Deno.serve(async (req) => {
   const port = await callUlip(admin, 'JNPT/02', { beNo }, ctx)
 
   if (!ice.ok && !port.ok) {
-    return json({ success: false, error: `Could not reach ULIP: ${ice.error || port.error}` }, 502)
+    return json({ success: false, error: `ULIP problem. Customs: ${(ice.error || "ok").split(" | ")[0]}. Port: ${(port.error || "ok").split(" | ")[0]}.` }, 502)
   }
 
   // ICEGATE/03 answer: response[0].response = { oocNo, oocDt }
