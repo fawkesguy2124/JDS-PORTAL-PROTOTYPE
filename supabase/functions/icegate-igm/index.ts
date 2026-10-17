@@ -1,6 +1,7 @@
 const ULIP_LOGIN_URL = 'http://13.200.155.29:3000/ulip/v1.0.0/user/login'
 const ULIP_API_URL   = 'http://13.200.155.29:3000/ulip/v1.0.0/ICEGATE/01'
 const ULIP_TIMEOUT_MS = 12000
+const ULIP_PROXY_KEY = Deno.env.get('ULIP_PROXY_KEY') ?? ''
 
 const corsHeaders = { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type' }
 
@@ -8,7 +9,7 @@ async function getUlipToken(): Promise<string> {
   const u = Deno.env.get('ULIP_USERNAME'), p = Deno.env.get('ULIP_PASSWORD')
   if (!u || !p) throw new Error('ULIP credentials not configured')
   const c = new AbortController(), t = setTimeout(() => c.abort(), ULIP_TIMEOUT_MS)
-  const r = await fetch(ULIP_LOGIN_URL, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' }, body: JSON.stringify({ username: u, password: p }), signal: c.signal })
+  const r = await fetch(ULIP_LOGIN_URL, { method: 'POST', headers: {'x-proxy-key': ULIP_PROXY_KEY,  'Content-Type': 'application/json', 'Accept': 'application/json' }, body: JSON.stringify({ username: u, password: p }), signal: c.signal })
   clearTimeout(t)
   if (!r.ok) { let b=''; try{b=await r.text()}catch{} throw new Error(`ULIP login failed HTTP ${r.status}: ${b}`) }
   const d = await r.json()
@@ -31,7 +32,7 @@ Deno.serve(async (req) => {
 
   try {
     const c = new AbortController(), t = setTimeout(() => c.abort(), ULIP_TIMEOUT_MS)
-    const res = await fetch(ULIP_API_URL, { method:'POST', headers:{ 'Authorization':`Bearer ${token}`, 'Content-Type':'application/json', 'Accept':'application/json' }, body: JSON.stringify({ igmNo, igmDt }), signal:c.signal })
+    const res = await fetch(ULIP_API_URL, { method:'POST', headers:{'x-proxy-key': ULIP_PROXY_KEY,  'Authorization':`Bearer ${token}`, 'Content-Type':'application/json', 'Accept':'application/json' }, body: JSON.stringify({ igmNo, igmDt }), signal:c.signal })
     clearTimeout(t)
     const txt = await res.text()
     let data:any

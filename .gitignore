@@ -27,3 +27,5 @@ dist-ssr
 .env.local
 
 backend/
+ulip-proxy/.env
+ulip-proxy/node_modules

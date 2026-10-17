@@ -1,5 +1,6 @@
 const ULIP_LOGIN_URL = 'http://13.200.155.29:3000/ulip/v1.0.0/user/login'
 const ULIP_TIMEOUT_MS = 12000
+const ULIP_PROXY_KEY = Deno.env.get('ULIP_PROXY_KEY') ?? ''
 
 const corsHeaders = {
   'Content-Type': 'application/json',
@@ -28,7 +29,7 @@ Deno.serve(async (req) => {
 
     const res = await fetch(ULIP_LOGIN_URL, {
       method: 'POST',
-      headers: {
+      headers: {'x-proxy-key': ULIP_PROXY_KEY,
         'Content-Type': 'application/json',
         'Accept': 'application/json',
       },

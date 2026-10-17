@@ -1,6 +1,7 @@
 const ULIP_LOGIN_URL = 'http://13.200.155.29:3000/ulip/v1.0.0/user/login'
 const ULIP_API_URL   = 'http://13.200.155.29:3000/ulip/v1.0.0/KALE/01'
 const ULIP_TIMEOUT_MS = 12000
+const ULIP_PROXY_KEY = Deno.env.get('ULIP_PROXY_KEY') ?? ''
 
 const corsHeaders = {
   'Content-Type': 'application/json',
@@ -16,7 +17,7 @@ async function getUlipToken(): Promise<string> {
   const timeout = setTimeout(() => controller.abort(), ULIP_TIMEOUT_MS)
   const res = await fetch(ULIP_LOGIN_URL, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+    headers: {'x-proxy-key': ULIP_PROXY_KEY,  'Content-Type': 'application/json', 'Accept': 'application/json' },
     body: JSON.stringify({ username, password }),
     signal: controller.signal,
   })
@@ -46,7 +47,7 @@ Deno.serve(async (req) => {
     const timeout = setTimeout(() => controller.abort(), ULIP_TIMEOUT_MS)
     const res = await fetch(ULIP_API_URL, {
       method: 'POST',
-      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json', 'Accept': 'application/json' },
+      headers: {'x-proxy-key': ULIP_PROXY_KEY,  'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json', 'Accept': 'application/json' },
       body: JSON.stringify({ mawb }),
       signal: controller.signal,
     })
