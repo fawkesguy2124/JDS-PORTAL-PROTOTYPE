@@ -95,10 +95,25 @@ export const EXPORT_PHASES = [
   { id: 'delivered', label: 'Shipped', hint: 'Job complete' },
 ]
 
+// A container with no tracking event for this long is treated as "status unclear"
+// (most likely finished but never marked), not as detention running.
+export const STALE_AFTER_DAYS = 30
+
+// Days since the container's last tracking event (port in/out, CFS in, any milestone)
+export function daysSinceLastMove(row) {
+  if (!row) return null
+  const dates = [row.port_in, row.port_out, row.cfs_gate_in, ...(Array.isArray(row.milestones) ? row.milestones.map((m) => m?.date) : [])]
+    .filter(Boolean).map((d) => new Date(d).getTime()).filter((t) => !isNaN(t))
+  if (!dates.length) return null
+  return Math.floor((Date.now() - Math.max(...dates)) / DAY)
+}
+
 // Free days left for one container, worked out TODAY (negative = detention running,
-// null = not known). The saved number is only a snapshot from the last refresh.
+// null = not known or status unclear). The saved number is only a snapshot.
 export function freeDaysLeftFor(job, row) {
   if (!row || DONE_CONTAINER.includes(row.status)) return null
+  const moved = daysSinceLastMove(row)
+  if (moved !== null && moved > STALE_AFTER_DAYS) return null
   const contract = Number(job?.free_days)
   const portInDays = daysSince(row.port_in)
   if (Number.isFinite(contract) && contract > 0 && portInDays !== null) return contract - portInDays
@@ -113,13 +128,35 @@ function containerFacts(job, data) {
   const all = nos.map((n) => data.containersByNo[n]).filter(Boolean)
   const tracked = all
     .filter((t) => !DONE_CONTAINER.includes(t.status))
-    .map((t) => ({ ...t, freeLeft: freeDaysLeftFor(job, t) }))
+    .map((t) => {
+      const lastMove = daysSinceLastMove(t)
+      return { ...t, freeLeft: freeDaysLeftFor(job, t), lastMoveDays: lastMove, stale: lastMove !== null && lastMove > STALE_AFTER_DAYS }
+    })
+  const allStale = tracked.length > 0 && tracked.every((t) => t.stale)
+  const staleDays = allStale ? Math.min(...tracked.map((t) => t.lastMoveDays)) : null
   const lefts = tracked.map((t) => t.freeLeft).filter((v) => v !== null)
   const minFree = lefts.length ? Math.min(...lefts) : null
   const anyOut = all.some((t) => t.port_out || DONE_CONTAINER.includes(t.status))
   const allDelivered = all.length > 0 && all.every((t) => DONE_CONTAINER.includes(t.status))
   const portIn = all.map((t) => t.port_in).filter(Boolean).sort()[0] || null
-  return { nos, tracked, minFree, anyOut, allDelivered, portIn }
+  return { nos, tracked, minFree, anyOut, allDelivered, portIn, allStale, staleDays }
+}
+
+// What staff see as the next thing to happen, for the step that is "current"
+const NEXT_TEXT = {
+  arrival: 'Waiting for arrival',
+  be: 'Next: file the BE in LiveImpex',
+  ooc: 'Waiting for OOC',
+  out: 'Next: get the container out',
+  truck: 'Next: assign a truck',
+  delivered: 'Next: deliver and close the job',
+  sb: 'Next: file the shipping bill in LiveImpex',
+  leo: 'Waiting for LEO',
+  egm: 'Waiting for the vessel to sail',
+}
+const markCurrent = (steps) => {
+  const current = steps.find((st) => !st.done)
+  if (current) { current.current = true; current.nextText = NEXT_TEXT[current.id] || current.label }
 }
 
 // Saved results for one API, newest first (pages may also store a single row)
@@ -168,12 +205,11 @@ export function journeyFor(job, data) {
     { id: 'truck', label: 'Truck', done: !!truck && oocDone, when: null, sub: truck || (oocDone ? 'Not assigned' : null) },
     { id: 'delivered', label: 'Delivered', done: delivered, when: null, sub: null },
   ]
-  const current = steps.find((s) => !s.done)
-  if (current) current.current = true
+  markCurrent(steps)
 
   let phase = 'arrival'
   if (delivered) phase = 'delivered'
-  else if ((truck && oocDone) || c.anyOut || stage >= 9) phase = 'truck'
+  else if ((truck && oocDone) || stage >= 9) phase = 'truck'
   else if (oocDone) phase = 'release'
   else if (beFiled) phase = 'ooc'
   else if (arrived || stage >= 1) phase = 'docs'
@@ -195,6 +231,7 @@ export function journeyFor(job, data) {
     }
     if (truckPapers?.parsed?.found && truckPapers.parsed.tone === 'bad') add('red', `Truck ${truck} papers problem: ${truckPapers.summary}`, 'truck')
     if (job.detention_risk === 'high') add('red', 'Marked as high detention risk', 'containers')
+    if (c.allStale) add('info', `No container movement for ${c.staleDays} days — is this job finished? If so, mark it delivered.`, 'details')
   }
 
   const lastPlaza = fastag?.parsed?.extra?.lastPlaza || null
@@ -230,8 +267,7 @@ function exportJourney(job, results) {
     { id: 'egm', label: 'EGM / sailed', done: !!egmNo, when: dayLabel(refs.egm_date), sub: egmNo ? `EGM ${egmNo}` : null },
     { id: 'delivered', label: 'Done', done: delivered, when: null, sub: null },
   ]
-  const current = steps.find((s) => !s.done)
-  if (current) current.current = true
+  markCurrent(steps)
 
   let phase = 'sb'
   if (delivered) phase = 'delivered'

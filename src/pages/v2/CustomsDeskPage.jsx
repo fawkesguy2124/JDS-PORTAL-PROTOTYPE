@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../../supabase'
 import { loadJourneyData, journeyFor, isExportJob, isDelivered } from '../../services/journey'
 import { markBeFiled, markSbFiled, setStage } from '../../services/jobActions'
+import { getStageName } from '../../utils/jobHelpers'
 import { runUlipCheck, isoToDate8 } from '../../services/ulip/ulipClient'
 
 const NAVY = '#1a4fa0'
@@ -69,7 +70,7 @@ export default function CustomsDeskPage({ currentUserName, onOpenJob, showToast,
   if (view === 'imports') {
     lists = [
       { id: 'be', title: 'Waiting for BE filing (in LiveImpex)', empty: 'No jobs waiting for BE filing 🎉', items: rows.filter((r) => !r.jr.beFiled) },
-      { id: 'ooc', title: 'BE filed — waiting for OOC', empty: 'No jobs waiting for OOC 🎉', items: rows.filter((r) => r.jr.beFiled && !r.jr.oocDate) },
+      { id: 'ooc', title: 'BE filed — waiting for OOC', empty: 'No jobs waiting for OOC 🎉', items: rows.filter((r) => r.jr.beFiled && !r.jr.oocDone) },
       { id: 'granted', title: 'OOC granted — next steps', empty: 'No jobs with OOC granted right now.', items: rows.filter((r) => r.jr.oocDate) },
     ]
   } else {
@@ -199,7 +200,7 @@ export default function CustomsDeskPage({ currentUserName, onOpenJob, showToast,
             {shown.map(({ job, jr }) => (
               <Row key={job.id} job={job} onOpen={() => onOpenJob?.(job.id)} error={rowErrors[job.id]} note={rowNotes[job.id]} busy={busyId === job.id}>
                 {list.id === 'be' && (!canEditBE ? <Info>Ask Akshyani or an admin to record the BE.</Info> : (
-                  <FiledAction initialNo={job.be_no} locked={anyBusy} label="BE filed" numLabel="BE number (7 digits)" dateLabel="BE date" open={formFor === job.id} busy={busyId === job.id}
+                  <FiledAction initialNo={job.be_no} locked={anyBusy} label="Record BE number" numLabel="BE number (7 digits)" dateLabel="BE date" open={formFor === job.id} busy={busyId === job.id}
                     onOpen={() => { setFormFor(job.id); setErr(job.id, '') }} onCancel={() => setFormFor(null)}
                     onSave={(no, date) => saveFiled(job, 'be', { beNo: no, beDate: date })} />
                 ))}
@@ -213,13 +214,13 @@ export default function CustomsDeskPage({ currentUserName, onOpenJob, showToast,
                 {list.id === 'granted' && (
                   <>
                     <Info>OOC <b>{fmtDate(jr.oocDate)}</b>{jr.customs?.ooc_no ? <> · No. <b style={mono}>{jr.customs.ooc_no}</b></> : null}</Info>
-                    <Info>Stage {Number(job.stage) || 0}{job.truck_no ? ` · Truck ${job.truck_no}` : ' · No truck yet'}</Info>
+                    <Info>Stage: {getStageName(Number(job.stage) || 0)}{job.truck_no ? ` · Truck ${job.truck_no}` : ' · No truck yet'}</Info>
                     {canUpdateStage && (Number(job.stage) || 0) < 7 && <Btn disabled={anyBusy} onClick={() => moveStage7(job)}>{busyId === job.id ? 'Saving…' : 'Move to OOC stage'}</Btn>}
                     <Btn secondary disabled={anyBusy} onClick={() => onOpenJob?.(job.id, 'truck')}>Assign truck</Btn>
                   </>
                 )}
                 {list.id === 'sb' && (!canEditBE ? <Info>Ask Akshyani or an admin to record the shipping bill.</Info> : (
-                  <FiledAction locked={anyBusy} label="SB filed" numLabel="Shipping bill number (7 digits)" dateLabel="Shipping bill date" open={formFor === job.id} busy={busyId === job.id}
+                  <FiledAction locked={anyBusy} label="Record shipping bill" numLabel="Shipping bill number (7 digits)" dateLabel="Shipping bill date" open={formFor === job.id} busy={busyId === job.id}
                     onOpen={() => { setFormFor(job.id); setErr(job.id, '') }} onCancel={() => setFormFor(null)}
                     onSave={(no, date) => saveFiled(job, 'sb', { sbNo: no, sbDate: date })} />
                 ))}

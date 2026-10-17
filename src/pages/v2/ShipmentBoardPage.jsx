@@ -38,7 +38,7 @@ function Card({ item, onOpen }) {
       type="button"
       onClick={() => onOpen(job.id, 'details')}
       title={attnText || undefined}
-      style={{ display: 'block', width: '100%', textAlign: 'left', background: '#fff', border: `1.5px solid ${C.border}`, borderRadius: 12, padding: '10px 12px', cursor: 'pointer', fontFamily: 'inherit', color: C.text, minHeight: 40 }}
+      style={{ display: 'block', width: '100%', textAlign: 'left', background: '#fff', border: `1.5px solid ${C.border}`, borderRadius: 12, padding: '10px 12px', cursor: 'pointer', fontFamily: 'inherit', color: C.text, minHeight: 40, flexShrink: 0 }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
         <span style={{ fontFamily: MONO, fontWeight: 700, fontSize: 14 }}>{job.job_no}</span>
@@ -50,8 +50,8 @@ function Card({ item, onOpen }) {
       <div style={{ fontSize: 14, marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{job.client || '—'}</div>
       {current && (
         <div style={{ fontSize: 13, color: C.navy, marginTop: 6, fontWeight: 600 }}>
-          {current.label}
-          {current.sub && <span style={{ color: C.muted, fontWeight: 400 }}> · {current.sub}</span>}
+          {current.nextText || current.label}
+          {current.sub && current.sub !== 'In LiveImpex' && current.sub !== 'Waiting' && <span style={{ color: C.muted, fontWeight: 400 }}> · {current.sub}</span>}
         </div>
       )}
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6, alignItems: 'center' }}>

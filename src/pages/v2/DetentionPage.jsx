@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { loadJourneyData, isDelivered, freeDaysLeftFor } from '../../services/journey'
+import { loadJourneyData, isDelivered, freeDaysLeftFor, daysSinceLastMove, STALE_AFTER_DAYS } from '../../services/journey'
 import { parseContainerNos, getStageName } from '../../utils/jobHelpers'
 
 // Free days and detention risk, per container. Reads saved data only - no ULIP calls.
@@ -10,7 +10,8 @@ const TONES = {
   grey: { bg: '#f1f3f6', border: '#e2e6ed', text: '#5b6678' },
 }
 
-function riskOf(days) {
+function riskOf(days, staleDays) {
+  if (staleDays !== null && staleDays !== undefined) return { tone: 'grey', label: `No movement for ${staleDays} days — finished?` }
   if (days === null) return { tone: 'grey', label: 'Free days not set' }
   if (days < 0) return { tone: 'red', label: `Detention running (${Math.abs(days)} day${Math.abs(days) === 1 ? '' : 's'} over)` }
   if (days <= 2) return { tone: 'red', label: days === 0 ? 'Last free day today' : `${days} free day${days === 1 ? '' : 's'} left` }
@@ -55,11 +56,15 @@ export default function DetentionPage({ onOpenJob }) {
         if (ct && ['delivered', 'empty_returned'].includes(ct.status)) continue
         const raw = ct ? freeDaysLeftFor(job, ct) : null
         const days = raw === null || raw === undefined || isNaN(Number(raw)) ? null : Number(raw)
-        out.push({ key: `${job.id}-${no}`, job, no, days, portIn: ct?.port_in || null, status: ct?.status_text || ct?.status || null })
+        const moved = daysSinceLastMove(ct)
+        const staleDays = moved !== null && moved > STALE_AFTER_DAYS ? moved : null
+        out.push({ key: `${job.id}-${no}`, job, no, days, staleDays, portIn: ct?.port_in || null, status: ct?.status_text || ct?.status || null })
       }
     }
     // fewest free days first; "not set" last
-    return out.sort((a, b) => (a.days === null) - (b.days === null) || (a.days ?? 0) - (b.days ?? 0))
+    // real risks first (fewest days), then free days not set, then no recent movement
+    const rank = (r) => (r.staleDays !== null ? 2 : r.days === null ? 1 : 0)
+    return out.sort((a, b) => rank(a) - rank(b) || (a.days ?? 0) - (b.days ?? 0))
   }, [data])
 
   const count = (fn) => rows.filter(fn).length
@@ -67,12 +72,13 @@ export default function DetentionPage({ onOpenJob }) {
     { label: 'In detention', n: count((r) => r.days !== null && r.days < 0), tone: 'red' },
     { label: '2 days or less', n: count((r) => r.days !== null && r.days >= 0 && r.days <= 2), tone: 'red' },
     { label: '5 days or less', n: count((r) => r.days !== null && r.days > 2 && r.days <= 5), tone: 'amber' },
-    { label: 'Free days not set', n: count((r) => r.days === null), tone: 'grey' },
+    { label: 'Free days not set', n: count((r) => r.days === null && r.staleDays === null), tone: 'grey' },
+    { label: `No movement ${STALE_AFTER_DAYS}+ days`, n: count((r) => r.staleDays !== null), tone: 'grey' },
   ]
 
   return (
     <div style={{ fontFamily: 'Inter, system-ui, sans-serif', color: '#1a2233', fontSize: '14px', background: '#f4f6f9', padding: '16px', minHeight: '100%', boxSizing: 'border-box' }}>
-      <h1 style={{ fontSize: '20px', fontWeight: 700, margin: 0 }}>Free days and detention</h1>
+      <h1 style={{ fontSize: '20px', fontWeight: 700, margin: 0 }}>Detention</h1>
       <p style={{ color: '#5b6678', margin: '4px 0 16px' }}>Containers on jobs that are not delivered yet, fewest free days first.</p>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '10px', marginBottom: '16px' }}>
@@ -98,7 +104,7 @@ export default function DetentionPage({ onOpenJob }) {
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
         {rows.map((r) => {
-          const risk = riskOf(r.days)
+          const risk = riskOf(r.days, r.staleDays)
           const c = TONES[risk.tone]
           return (
             <button key={r.key} type="button" onClick={() => onOpenJob?.(r.job.id, 'details')}

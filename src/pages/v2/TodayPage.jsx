@@ -33,6 +33,7 @@ function sentence(row) {
 }
 
 export default function TodayPage({ onOpenJob }) {
+  const [showAllInfo, setShowAllInfo] = useState(false)
   const [data, setData] = useState(null)
   const [log, setLog] = useState([])
   const [loading, setLoading] = useState(true)
@@ -143,11 +144,14 @@ export default function TodayPage({ onOpenJob }) {
         </div>
       ) : (
         LEVELS.map((lv) => {
-          const rows = items.filter((i) => i.level === lv.id)
-          if (!rows.length) return null
+          const allRows = items.filter((i) => i.level === lv.id)
+          if (!allRows.length) return null
+          // long "worth a look" lists start folded so the urgent items stay visible
+          const folded = lv.id === 'info' && !showAllInfo && allRows.length > 5
+          const rows = folded ? allRows.slice(0, 5) : allRows
           return (
             <div key={lv.id} style={{ marginBottom: 14 }}>
-              <div style={{ fontSize: 13, fontWeight: 700, color: lv.color, margin: '0 0 6px' }}>{lv.title} ({rows.length})</div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: lv.color, margin: '0 0 6px' }}>{lv.title} ({allRows.length})</div>
               <div style={{ ...card, overflow: 'hidden' }}>
                 {rows.map((it, idx) => (
                   <div key={`${it.jobId}-${idx}`} onClick={() => open(it)}
@@ -166,6 +170,12 @@ export default function TodayPage({ onOpenJob }) {
                     </button>
                   </div>
                 ))}
+                {folded && (
+                  <button type="button" onClick={() => setShowAllInfo(true)}
+                    style={{ width: '100%', minHeight: 44, border: 'none', borderTop: '1px solid #eef0f4', background: '#f8fafc', color: '#1a4fa0', fontWeight: 600, fontSize: 14, cursor: 'pointer', fontFamily: FONT }}>
+                    Show all {allRows.length}
+                  </button>
+                )}
               </div>
             </div>
           )
