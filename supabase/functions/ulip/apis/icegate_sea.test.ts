@@ -160,7 +160,10 @@ test('ICEGATE/07 found', () => {
     containerDetails: [{ containerNo: 'MMAU1162485', totNoPkg: 1 }],
   }))
   assert.equal(r.found, true)
-  assert.match(r.summary, /HINDUSTAN CARGO/)
+  // one importer name for a whole ship is not the job's client: keep it out
+  assert.doesNotMatch(r.summary, /HINDUSTAN CARGO/)
+  assert.match(r.summary, /vessel TETS1, voyage 03/)
+  assert.ok(!r.fields.some((f) => f.label === 'Importer'))
   assert.deepEqual(r.tables![0].rows, [['MMAU1162485', '1']])
 })
 

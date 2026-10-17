@@ -3,6 +3,7 @@ import { findApi } from '../../../supabase/functions/ulip/apis/index.ts'
 import { runUlipCheck, isoToDate8, date8ToIso } from '../../services/ulip/ulipClient'
 import { refValue, rememberRefs } from './jobRefs'
 import ResultTable from './ResultTable'
+import { presentResult } from './presentResult'
 import { parseContainerNos } from '../../utils/jobHelpers'
 
 // One ULIP check: the boxes it needs, one big button, and the answer in
@@ -104,7 +105,7 @@ export default function UlipCheck({ check, job, saved, onResult, onJobChange, co
     }
   }
 
-  const parsed = result?.parsed
+  const parsed = presentResult(check.api, result?.parsed, job)
   // Does the saved answer belong to the numbers now in the boxes?
   const current = buildParams().params
   const stale = parsed && current && result?.params &&
@@ -159,6 +160,7 @@ export default function UlipCheck({ check, job, saved, onResult, onJobChange, co
           <div style={{ ...box(...toneColors(parsed.tone, parsed.found)), fontSize: '14px', fontWeight: 700, color: toneText(parsed.tone, parsed.found) }}>
             {parsed.summary}
           </div>
+          {parsed.note && <div style={{ fontSize: '12px', color: '#5b6678', marginTop: '6px' }}>{parsed.note}</div>}
 
           {parsed.fields?.length > 0 && (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(170px, 1fr))', gap: '12px 20px', marginTop: '12px' }}>
