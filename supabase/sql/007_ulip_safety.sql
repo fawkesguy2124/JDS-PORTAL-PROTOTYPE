@@ -24,3 +24,7 @@ create index if not exists ulip_calls_job_api_idx on ulip_calls (job_id, api, cr
 -- customs_status: remember the last failure so repeat clicks wait
 alter table customs_status add column if not exists last_error text;
 alter table customs_status add column if not exists last_error_at timestamptz;
+
+-- A job whose customs check has only ever failed has no "checked at" time
+alter table customs_status alter column checked_at drop not null;
+alter table customs_status alter column checked_at drop default;

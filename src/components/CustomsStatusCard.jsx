@@ -22,7 +22,7 @@ export default function CustomsStatusCard({ job, canEditBE, canUpdateStage, onMo
       .then(({ data, error: loadErr }) => {
         if (cancelled) return
         if (loadErr) console.warn('[CustomsStatus] load failed:', loadErr.message)
-        setStatus(data || null)
+        setStatus(data?.checked_at ? data : null)   // a row that only holds a failure is not an answer
         setLoadingSaved(false)
       })
     return () => { cancelled = true }

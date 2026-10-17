@@ -26,6 +26,7 @@ function queryKey(api: string, values: Record<string, string>) {
 const minutesSince = (iso: string | null | undefined) => (iso ? (Date.now() - new Date(iso).getTime()) / 60_000 : Infinity)
 
 Deno.serve(async (req) => {
+  const requestStart = Date.now()
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
   if (req.method !== 'POST') return json({ success: false, error: 'Use POST.' }, 405)
 
@@ -69,13 +70,14 @@ Deno.serve(async (req) => {
     }, 502)
   }
 
-  if (!(await claimKey(admin, `ulip:${key}`, 60))) {
+  const claim = await claimKey(admin, `ulip:${key}`, 150)
+  if (!claim) {
     return json({ success: false, error: 'This check is already running. Please wait a moment.' }, 409)
   }
 
   try {
     const body = api.buildBody ? api.buildBody(values) : values
-    const res = await callUlip(admin, api.id, body, { jobId, userId: caller.id, userName: caller.name })
+    const res = await callUlip(admin, api.id, body, { jobId, userId: caller.id, userName: caller.name, requestStart })
     const now = new Date().toISOString()
 
     if (!res.ok) {
@@ -83,7 +85,7 @@ Deno.serve(async (req) => {
       // Refused before calling (office/person cap, login problem): nothing to record
       if (res.refused) return json({ success: false, error: shortError, data: existing?.parsed ? existing : null }, 429)
       // Keep any earlier good answer; just record the failure
-      await admin.from('ulip_results').upsert({
+      const { error: failErr } = await admin.from('ulip_results').upsert({
         query_key: key,
         api: api.id,
         job_id: jobId ?? existing?.job_id ?? null,
@@ -99,6 +101,7 @@ Deno.serve(async (req) => {
         checked_by: existing?.checked_by ?? null,
         checked_by_name: existing?.checked_by_name ?? null,
       })
+      if (failErr) console.warn('[ulip] could not record failure:', failErr.message)
       return json({ success: false, error: shortError, data: existing?.parsed ? existing : null }, 502)
     }
 
@@ -131,6 +134,6 @@ Deno.serve(async (req) => {
 
     return json({ success: true, cached: false, data: saved ?? row })
   } finally {
-    await releaseKey(admin, `ulip:${key}`)
+    await releaseKey(admin, `ulip:${key}`, claim)
   }
 })

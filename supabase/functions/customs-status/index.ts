@@ -18,6 +18,7 @@ const minutesSince = (iso: string | null | undefined) => (iso ? (Date.now() - ne
 const short = (e?: string) => (e || '').split(' | ')[0] || null
 
 Deno.serve(async (req) => {
+  const requestStart = Date.now()
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
   const admin = adminClient()
@@ -53,14 +54,15 @@ Deno.serve(async (req) => {
   }
 
   const lockKey = `customs:${job.id}`
-  if (!(await claimKey(admin, lockKey, 90))) {
+  const claim = await claimKey(admin, lockKey, 200)
+  if (!claim) {
     return json({ success: false, error: 'This check is already running. Please wait a moment.' }, 409)
   }
 
   try {
     const [y, m, d] = beDate.split('-')
     const beDt = `${d}${m}${y}` // ICEGATE wants DDMMYYYY
-    const ctx = { jobId: job.id, userId: caller.id, userName: caller.name }
+    const ctx = { jobId: job.id, userId: caller.id, userName: caller.name, requestStart }
     const askJnpt = job.mode !== 'Air' && (!job.port_code || job.port_code === 'INNSA1')
 
     // One after the other (not in parallel) to keep traffic gentle
@@ -90,9 +92,12 @@ Deno.serve(async (req) => {
       const message = port ? `Customs: ${iceError}. Port: ${portError}.` : `Customs: ${iceError}.`
       if (!ice.refused) {
         // Remember the failure so repeated presses wait (earlier good values are kept)
+        const keepOld = sameBe ? {} : {
+          ooc_no: null, ooc_date: null, igm_no: null, igm_date: null, do_no: null, do_date: null,
+          vehicles: [], icegate_status: null, jnpt_status: null, raw: null, checked_at: null, checked_by: null, checked_by_name: null,
+        }
         const { error: errSave } = await admin.from('customs_status').upsert({
-          job_id: job.id, job_no: job.job_no,
-          be_no: existing?.be_no ?? beNo, be_date: existing?.be_date ?? beDate,
+          job_id: job.id, job_no: job.job_no, be_no: beNo, be_date: beDate, ...keepOld,
           last_error: message, last_error_at: new Date().toISOString(),
         })
         if (errSave) console.warn('[customs-status] could not record failure:', errSave.message)
@@ -174,6 +179,6 @@ Deno.serve(async (req) => {
 
     return json({ success: true, cached: false, data: saved })
   } finally {
-    await releaseKey(admin, lockKey)
+    await releaseKey(admin, lockKey, claim)
   }
 })

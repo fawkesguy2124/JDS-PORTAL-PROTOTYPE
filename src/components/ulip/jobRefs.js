@@ -61,5 +61,6 @@ export async function rememberRefs(job, typed, extra) {
     return { error: 'The numbers could not be saved for next time.' }
   }
   const row = Array.isArray(data) ? data[0] : data
-  return { job: row ? { ...job, ...row } : job }
+  if (!row?.id) return { error: 'The numbers could not be saved for next time.' }
+  return { job: { ...job, ...row } }
 }
