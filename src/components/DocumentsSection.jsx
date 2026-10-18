@@ -4,7 +4,7 @@ import { useAuth } from '../contexts/AuthContext'
 import DocumentsMobile from './mobile/DocumentsMobile'
 import DocumentsDesktop from './desktop/DocumentsDesktop'
 
-const DOC_TYPES = ['BL', 'Invoice', 'Packing List', 'COO', 'Insurance', 'BE', 'Examination Order', 'OOC', 'E-Way Bill', 'POD', 'Other']
+import { availableTypes } from '../utils/docTypes'
 
 function DocumentsSection({ jobs, profiles, currentUserName, showToast, initialExpandJobId, onExpandConsumed }) {
   const { user, profile } = useAuth()
@@ -101,8 +101,13 @@ function DocumentsSection({ jobs, profiles, currentUserName, showToast, initialE
 
   const sanitizeFilename = (name) => name.replace(/[^a-zA-Z0-9._-]/g, '_')
 
+  // Types this job already has are not offered again (except Other)
+  const jobTypes = uploadModal.job ? documents.filter((d) => d.job_id === uploadModal.job.id).map((d) => d.doc_type) : []
+  const typeOptions = availableTypes(jobTypes)
+  const docType = typeOptions.includes(uploadDocType) ? uploadDocType : typeOptions[0]
+
   const handleUpload = async () => {
-    if (!uploadFile || !uploadDocType || !uploadModal.job) return
+    if (!uploadFile || !docType || !uploadModal.job) return
     setUploading(true)
     setUploadProgress(0)
       const sim = setInterval(() => setUploadProgress((p) => Math.min(p + 8, 85)), 250)
@@ -119,7 +124,7 @@ function DocumentsSection({ jobs, profiles, currentUserName, showToast, initialE
         job_no: job.job_no || '',
         file_name: uploadFile.name,
         file_type: uploadFile.name.split('.').pop(),
-        doc_type: uploadDocType,
+        doc_type: docType,
         file_url: publicUrl,
         file_path: filePath,
         uploaded_by: user?.id || null,
@@ -140,14 +145,14 @@ function DocumentsSection({ jobs, profiles, currentUserName, showToast, initialE
         await supabase.from('activity_log').insert({
           type: 'document_upload',
           action: 'document_upload',
-          title: `${job.job_no} — ${uploadDocType} uploaded`,
+          title: `${job.job_no} — ${docType} uploaded`,
           note: `${uploadFile.name} uploaded by ${profile?.name || currentUserName}`,
           job_no: job.job_no,
           job_id: job.id,
           done_by: user?.id || null,
           done_by_name: profile?.name || currentUserName,
           user_name: profile?.name || currentUserName,
-          meta: { job_id: job.id, job_no: job.job_no, file_name: uploadFile.name, doc_type: uploadDocType },
+          meta: { job_id: job.id, job_no: job.job_no, file_name: uploadFile.name, doc_type: docType },
           created_at: new Date().toISOString(),
         })
       } catch (logErr) {
@@ -280,8 +285,8 @@ function DocumentsSection({ jobs, profiles, currentUserName, showToast, initialE
             <div className="px-5 py-4 space-y-4">
               <div>
                 <label className="block text-xs font-semibold text-[#8a96a8] uppercase tracking-wide mb-1">Document Type</label>
-                <select value={uploadDocType} onChange={(e) => setUploadDocType(e.target.value)} className={selectBase}>
-                  {DOC_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+                <select value={docType} onChange={(e) => setUploadDocType(e.target.value)} className={selectBase}>
+                  {typeOptions.map((t) => <option key={t} value={t}>{t}</option>)}
                 </select>
               </div>
               <div>
@@ -320,7 +325,7 @@ function DocumentsSection({ jobs, profiles, currentUserName, showToast, initialE
                 className={`${btnBase} bg-white border-[1.5px] border-[#d0d6e0] text-[#4a5568] hover:border-[#1a4fa0] hover:text-[#1a4fa0] hover:bg-[#e8eef8]`}>
                 Cancel
               </button>
-              <button type="button" onClick={handleUpload} disabled={uploading || !uploadFile || !uploadDocType}
+              <button type="button" onClick={handleUpload} disabled={uploading || !uploadFile || !docType}
                 className={`${btnBase} bg-[#1a4fa0] text-white hover:bg-[#153d82] inline-flex items-center gap-2`}>
                 {uploading && <span className="h-3.5 w-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />}
                 {uploading ? `${uploadProgress}%` : 'Upload'}
