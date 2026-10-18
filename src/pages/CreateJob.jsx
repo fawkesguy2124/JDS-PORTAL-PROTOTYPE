@@ -7,6 +7,7 @@ import { linkContainer } from '../api/trackingApi'
 import { PORTS } from '../utils/ports'
 import { CLIENT_NAMES, matchClient } from '../utils/clients'
 import { readPdf, describeDocuments } from '../utils/docReader'
+import { boxOwnerHint } from '../../supabase/functions/_shared/portal/shippingLines.js'
 import { availableTypes, typesFoundInside } from '../utils/docTypes'
 
 const MODES = ['Sea FCL', 'Sea LCL', 'Air', 'BPT/MBPT']
@@ -883,6 +884,11 @@ if (parsed.client && shouldFill('client')) {
                     ))}
                     <option value="__other__">Other...</option>
                   </select>
+                )}
+                {form.mode === 'Sea FCL' && boxOwnerHint(form.containers) && (
+                  <p className="mt-1 text-xs text-gray-500">
+                    Hint: the boxes belong to {boxOwnerHint(form.containers)}. That is who owns them, not always the line on the BL, so check the BL.
+                  </p>
                 )}
               </Field>
 

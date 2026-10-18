@@ -1,4 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { lineName } from '../_shared/portal/shippingLines.js'
 
 const SUPABASE_URL     = Deno.env.get('SUPABASE_URL')!
 const SUPABASE_SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
@@ -118,6 +119,7 @@ async function fetchLDB(cn: string): Promise<{ ok: boolean; data?: any; error?: 
         cfsGateIn:       portEvents.cfsGateIn           || null,
         milestones,
         dpdFlag,
+        shippingLine:    lineName(vesselInfo.shippingline) || null,
         lastUpdate:      new Date().toISOString(),
       },
     }
@@ -185,8 +187,14 @@ async function persistAndNotify(cn: string, job: any, ldbData: any) {
     port_out:          ldbData.portOut   || null,
     cfs_gate_in:       ldbData.cfsGateIn || null,
     dpd_flag:          ldbData.dpdFlag   || false,
+    ...(ldbData.shippingLine ? { shipping_line_ldb: ldbData.shippingLine } : {}),
     last_refreshed_at: new Date().toISOString(),
   }, { onConflict: 'container_no' })
+
+  // The job has no shipping line yet: use the line LDB says carries the box
+  if (job.id && !job.shipping_line && ldbData.shippingLine) {
+    await supabase.from('jobs').update({ shipping_line: ldbData.shippingLine }).eq('id', job.id).is('shipping_line', null)
+  }
 
   const entryBase = { job_no: job.job_no || null, job_id: job.id || null }
 

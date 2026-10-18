@@ -7,6 +7,7 @@
 
 import { pdfToLines, parseBeLines } from './beParser'
 import { matchClient } from './clients'
+import { lineFromBl } from '../../supabase/functions/_shared/portal/shippingLines.js'
 
 // ── small helpers ───────────────────────────────────────────────────────────
 const MONTHS = { JAN: 1, FEB: 2, MAR: 3, APR: 4, MAY: 5, JUN: 6, JUL: 7, AUG: 8, SEP: 9, SEPT: 9, OCT: 10, NOV: 11, DEC: 12 }
@@ -70,20 +71,9 @@ const CARRIERS = [
 ]
 // The shipping line from its own codes: the BL number prefix, else the
 // prefix of its own containers (leasing companies' boxes are ignored)
-const BL_PREFIX = { MEDU: 'MSC', MSCU: 'MSC', MAEU: 'Maersk', ONEY: 'ONE', HLCU: 'Hapag-Lloyd', CMDU: 'CMA CGM', COSU: 'COSCO', EGLV: 'Evergreen', OOLU: 'OOCL', HDMU: 'HMM', ZIMU: 'ZIM', YMLU: 'Yang Ming', WHLC: 'Wan Hai' }
-const BOX_PREFIX = {
-  MSCU: 'MSC', MSDU: 'MSC', MSMU: 'MSC', MSNU: 'MSC', MEDU: 'MSC', MSKU: 'Maersk', MRKU: 'Maersk', MAEU: 'Maersk', MRSU: 'Maersk',
-  ONEU: 'ONE', HLXU: 'Hapag-Lloyd', HLBU: 'Hapag-Lloyd', HAMU: 'Hapag-Lloyd', CMAU: 'CMA CGM', EGSU: 'Evergreen', EGHU: 'Evergreen',
-  EMCU: 'Evergreen', EISU: 'Evergreen', OOLU: 'OOCL', OOCU: 'OOCL', CSNU: 'COSCO', CBHU: 'COSCO', CCLU: 'COSCO', HDMU: 'HMM',
-  ZIMU: 'ZIM', ZCSU: 'ZIM', YMLU: 'Yang Ming', YMMU: 'Yang Ming', WHLU: 'Wan Hai', WHSU: 'Wan Hai',
-}
-export function lineFromCodes(bl, containers = []) {
-  const p = String(bl || '').toUpperCase().slice(0, 4)
-  if (BL_PREFIX[p]) return BL_PREFIX[p]
-  const votes = {}
-  for (const c of containers || []) { const l = BOX_PREFIX[String(c).slice(0, 4)]; if (l) votes[l] = (votes[l] || 0) + 1 }
-  return Object.entries(votes).sort((a, b) => b[1] - a[1])[0]?.[0] || null
-}
+// Shipping line: only from a carrier BL's first 4 letters. Container letters only say
+// who OWNS the box (see shippingLines.js), so they are never used to fill the line.
+export const lineFromCodes = (bl) => lineFromBl(bl)
 
 function carrierOf(text) {
   const t = String(text).toUpperCase()
@@ -367,7 +357,7 @@ function fromBe(be) {
     // arrival: the inward date (the day the ship / flight was let in)
     eta: be.inward_date || null,
     inward_date: be.inward_date || null,
-    shipping_line: be.mode === 'Air' ? null : lineFromCodes(be.bl_no, be.containers),
+    shipping_line: be.mode === 'Air' ? null : lineFromCodes(be.bl_no),
     goods_description: be.goods || null,
     invoice_line_items: be.items || [],
     invoice_numbers: (be.invoices || []).map((i) => i.no),

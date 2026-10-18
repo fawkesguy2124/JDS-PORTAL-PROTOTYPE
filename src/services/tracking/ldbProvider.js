@@ -1,4 +1,5 @@
 import { supabase } from '../../supabase'
+import { lineName } from '../../../supabase/functions/_shared/portal/shippingLines.js'
 
 // In-memory dedup set — cleared on each forceRefreshAllContainers/refreshAllContainers run
 const _loggedThisRun = new Set()
@@ -216,7 +217,7 @@ export async function persistLDBTracking(containerNo, jobContext, ldbData) {
     current_location: ldbData.currentLocation,
     vessel:           ldbData.vessel     || jobContext.vessel || null,
     vessel_imo:        ldbData.vesselImo       || null,
-    shipping_line_ldb: ldbData.shippingLine    || null,
+    shipping_line_ldb: lineName(ldbData.shippingLine) || null,
     container_size:    ldbData.containerSize   || null,
     expected_port_out: ldbData.expectedPortOut || null,
     eta:              ldbData.eta        || jobContext.eta    || null,
@@ -251,6 +252,11 @@ export async function persistLDBTracking(containerNo, jobContext, ldbData) {
   if (error) {
     console.error(`[LDB] Failed to persist tracking for ${containerNo}:`, error.message)
     throw error
+  }
+
+  // The job has no shipping line yet: use the line LDB says carries the box
+  if (jobContext.id && !jobContext.shipping_line && row.shipping_line_ldb) {
+    await supabase.from('jobs').update({ shipping_line: row.shipping_line_ldb }).eq('id', jobContext.id).is('shipping_line', null)
   }
 
   // Log notifications — with in-memory dedup per refresh run
