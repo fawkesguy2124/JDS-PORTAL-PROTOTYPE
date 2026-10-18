@@ -79,14 +79,92 @@ export function daysSinceLastMove(row) {
   return Math.floor((Date.now() - Math.max(...dates)) / DAY)
 }
 
+// ── This job's trip of a container ──
+// A container's tracking history can hold several trips: our import, then the
+// same box going empty to a yard and out again on someone's export. The saved
+// "status" only reflects the LAST event, so a reused box looked active again.
+// This reads the history and finds, for THIS job:
+//   portIn    – the port arrival of this job's trip
+//   exitAt    – when it left the CFS / ICD / port with cargo (towards the client)
+//   returnedAt– the first sign of its next life (empty back at a yard, CFS or
+//               port, loaded for export, ...). From then on the job's container
+//               work is over and nothing more can be owed for it.
+const NAME = (m) => String(m?.description || m?.event || '').toUpperCase().trim()
+const WHEN = (m) => (m?.date ? new Date(m.date).getTime() : NaN)
+const ARRIVE = /^(PORT IN|PORTIN|VESSEL ARRIVED|DISCHARGE|DPD)/
+const AT_CFS = /^(CFS IN|CFS GATE IN|ICD IN|ICD GATE IN)$/
+const LEFT_CFS = /^(CFS OUT|CFS GATE OUT|ICD OUT|ICD GATE OUT)$/
+const NEXT_LIFE = /EMPTY|^(PORT IN|PORTIN|TERMINAL IN|GATE IN|CFS IN|CFS GATE IN|ICD IN|ICD GATE IN|DPE|LOADING|LOADED|GATE CUT OFF|EXPECTED VESSEL DEPARTURE|VESSEL DEPARTED|SAILED)/
+const DAYS_BEFORE_ETA = 20
+// A job is opened around arrival. If a box's whole tracking history starts this
+// long after that, the history is a LATER trip and ours ended before it.
+const LATER_TRIP_AFTER_DAYS = 60
+// CFS OUT then CFS/ICD IN this soon (or before OOC) = moved between CFSs, not delivered
+const TRANSFER_WITHIN_DAYS = 3
+
+export function containerTrip(row, job) {
+  const ms = (Array.isArray(row?.milestones) ? row.milestones : [])
+    .filter((m) => !isNaN(WHEN(m))).sort((x, y) => WHEN(x) - WHEN(y))
+  const iso = (m) => (m ? new Date(WHEN(m)).toISOString() : null)
+  const none = { portIn: row?.port_in || null, exitAt: null, returnedAt: null, how: null }
+  if (!ms.length) return none
+  // when this job's trip started: the ETA, or else the day the job was opened
+  const anchorIso = job?.eta ? `${String(job.eta).slice(0, 10)}T00:00:00+05:30` : job?.created_at || null
+  const anchor = anchorIso ? new Date(anchorIso).getTime() : NaN
+  const arrivals = ms.filter((m) => ARRIVE.test(NAME(m)))
+  const from = isNaN(anchor) ? -Infinity : anchor - DAYS_BEFORE_ETA * DAY
+  const arrive = arrivals.find((m) => WHEN(m) >= from) || (isNaN(anchor) ? arrivals[0] : null)
+  // everything on record is from a much later trip → ours finished before it
+  if (!isNaN(anchor) && WHEN(ms[0]) - anchor > LATER_TRIP_AFTER_DAYS * DAY && (!arrive || WHEN(arrive) - anchor > LATER_TRIP_AFTER_DAYS * DAY)) {
+    return { portIn: null, exitAt: null, returnedAt: iso(ms[0]), how: `history only shows a later trip (from ${dayLabel(iso(ms[0]))})`, laterTrip: true }
+  }
+  if (!arrive) return none
+  const after = ms.filter((m) => WHEN(m) > WHEN(arrive))
+  const pastOoc = Number(job?.stage) >= 7
+  // left with cargo: CFS/ICD out (skipping moves between CFSs); or straight out of
+  // the port when it never went to a CFS
+  let exit = null
+  for (let k = 0; k < after.length; k++) {
+    if (!LEFT_CFS.test(NAME(after[k]))) continue
+    const nxt = after.slice(k + 1).find((m) => !/TOLL|STATION|GATE CROSSED/.test(NAME(m)))
+    const isTransfer = nxt && AT_CFS.test(NAME(nxt)) && !/EMPTY/.test(NAME(nxt)) && (!pastOoc || WHEN(nxt) - WHEN(after[k]) <= TRANSFER_WITHIN_DAYS * DAY)
+    if (isTransfer) continue
+    exit = after[k]
+    break
+  }
+  if (!exit) {
+    const portOut = after.find((m) => /^(PORT OUT|PORTOUT)$/.test(NAME(m)))
+    const cfsAfter = portOut && after.some((m) => (AT_CFS.test(NAME(m)) || LEFT_CFS.test(NAME(m))) && WHEN(m) > WHEN(portOut))
+    if (portOut && !cfsAfter) exit = portOut
+  }
+  // anything after leaving with cargo that starts its next life
+  const next = exit ? after.find((m) => WHEN(m) > WHEN(exit) && NEXT_LIFE.test(NAME(m))) : null
+  return { portIn: iso(arrive), exitAt: iso(exit), returnedAt: iso(next), how: next ? `${next.description}${next.location ? ` · ${next.location}` : ''}` : null }
+}
+
+// Who takes the cargo to the client's warehouse. Mostly JDS; "client" when the
+// client's own transporter collects it (then JDS's part ends when it leaves the CFS).
+export const deliveryBy = (job) => (job?.field_meta?.delivery_by === 'client' ? 'client' : 'jds')
+
+// Is this container finished for this job? Returns the date it finished, or null.
+export function containerFinishedOn(row, job) {
+  if (!row) return null
+  if (row.status === 'empty_returned') return row.last_refreshed_at || 'yes'
+  const trip = containerTrip(row, job)
+  if (trip.returnedAt) return trip.returnedAt
+  if (trip.exitAt && deliveryBy(job) === 'client') return trip.exitAt
+  return null
+}
+
 // Free days left for one container, worked out TODAY (negative = detention running,
-// null = not known or status unclear). The saved number is only a snapshot.
+// null = not known, status unclear, or the container's work for this job is over).
+// Detention runs from this job's port arrival until the empty is back.
 export function freeDaysLeftFor(job, row) {
-  if (!row || DONE_CONTAINER.includes(row.status)) return null
+  if (!row || containerFinishedOn(row, job)) return null
   const moved = daysSinceLastMove(row)
   if (moved !== null && moved > STALE_AFTER_DAYS) return null
   const contract = Number(job?.free_days)
-  const portInDays = daysSince(row.port_in)
+  const portInDays = daysSince(containerTrip(row, job).portIn || row.port_in)
   if (Number.isFinite(contract) && contract > 0 && portInDays !== null) return contract - portInDays
   if (row.free_days === null || row.free_days === undefined) return null
   const snapshotAge = daysSince(row.last_refreshed_at) ?? 0
@@ -97,20 +175,25 @@ export function freeDaysLeftFor(job, row) {
 function containerFacts(job, data) {
   const nos = parseContainerNos(job.containers)
   const all = nos.map((n) => data.containersByNo[n]).filter(Boolean)
+  const finished = all.map((t) => ({ no: t.container_no, on: containerFinishedOn(t, job) })).filter((f) => f.on)
+  const isFinished = (t) => finished.some((f) => f.no === t.container_no)
   const tracked = all
-    .filter((t) => !DONE_CONTAINER.includes(t.status))
+    .filter((t) => !isFinished(t))
     .map((t) => {
       const lastMove = daysSinceLastMove(t)
-      return { ...t, freeLeft: freeDaysLeftFor(job, t), lastMoveDays: lastMove, stale: lastMove !== null && lastMove > STALE_AFTER_DAYS }
+      const trip = containerTrip(t, job)
+      return { ...t, trip, outWithCargo: !!trip.exitAt, freeLeft: freeDaysLeftFor(job, t), lastMoveDays: lastMove, stale: lastMove !== null && lastMove > STALE_AFTER_DAYS }
     })
   const allStale = tracked.length > 0 && tracked.every((t) => t.stale)
   const staleDays = allStale ? Math.min(...tracked.map((t) => t.lastMoveDays)) : null
   const lefts = tracked.map((t) => t.freeLeft).filter((v) => v !== null)
   const minFree = lefts.length ? Math.min(...lefts) : null
-  const anyOut = all.some((t) => t.port_out || DONE_CONTAINER.includes(t.status))
-  const allDelivered = all.length > 0 && all.every((t) => DONE_CONTAINER.includes(t.status))
-  const portIn = all.map((t) => t.port_in).filter(Boolean).sort()[0] || null
-  return { nos, tracked, minFree, anyOut, allDelivered, portIn, allStale, staleDays }
+  const anyOut = all.some((t) => t.port_out || DONE_CONTAINER.includes(t.status) || isFinished(t) || containerTrip(t, job).exitAt)
+  // every container of the job is back (or, for client-collected jobs, has left the CFS)
+  const allDelivered = all.length > 0 && all.every((t) => isFinished(t) || t.status === 'empty_returned')
+  const finishedOn = allDelivered ? finished.map((f) => f.on).filter((d) => d !== 'yes').sort().at(-1) || null : null
+  const portIn = all.map((t) => containerTrip(t, job).portIn || t.port_in).filter(Boolean).sort()[0] || null
+  return { nos, tracked, minFree, anyOut, allDelivered, finishedOn, portIn, allStale, staleDays }
 }
 
 // What staff see as the next thing to happen, for the step that is "current"
@@ -174,7 +257,7 @@ export function journeyFor(job, data) {
     { id: 'ooc', label: 'OOC', done: oocDone, when: dayLabel(oocDate), sub: oocDate ? (cs.ooc_no ? `OOC ${cs.ooc_no}` : null) : oocDone ? 'Recorded by staff' : beFiled ? 'Waiting' : null },
     { id: 'out', label: isAirJob(job) ? 'Cargo out' : 'Container out', done: c.anyOut || stage >= 9, when: null, sub: c.tracked[0]?.status_text || null },
     { id: 'truck', label: 'Truck', done: !!truck && oocDone, when: null, sub: truck || (oocDone ? 'Not assigned' : null) },
-    { id: 'delivered', label: 'Delivered', done: delivered, when: null, sub: null },
+    { id: 'delivered', label: 'Delivered', done: delivered, when: !isDelivered(job) && c.finishedOn ? dayLabel(c.finishedOn) : null, sub: !isDelivered(job) && c.allDelivered ? (deliveryBy(job) === 'client' ? 'Collected by client' : 'Empty container back') : null },
   ]
   markCurrent(steps)
 
@@ -191,7 +274,9 @@ export function journeyFor(job, data) {
   const attention = []
   const add = (level, text, action) => attention.push({ level, text, action, jobId: job.id, jobNo: job.job_no, client: job.client })
   if (!delivered) {
-    if (c.minFree !== null && c.minFree < 0) add('red', `Detention running — ${-c.minFree} day${c.minFree === -1 ? '' : 's'} over free time`, 'containers')
+    const late = c.tracked.filter((t) => t.freeLeft !== null && t.freeLeft === c.minFree)
+    const outLate = late.length > 0 && late.every((t) => t.outWithCargo)
+    if (c.minFree !== null && c.minFree < 0) add('red', `Detention running — ${-c.minFree} day${c.minFree === -1 ? '' : 's'} over free time${outLate ? ' (delivered, empty not back yet)' : ''}`, 'containers')
     else if (c.minFree !== null && c.minFree <= 2) add('red', c.minFree === 0 ? 'Last free day today' : `Only ${c.minFree} free day${c.minFree === 1 ? '' : 's'} left`, 'containers')
     else if (c.minFree !== null && c.minFree <= 5) add('amber', `${c.minFree} free days left`, 'containers')
     if (oocDate && stage < 7) add('amber', 'OOC granted — move the job to the OOC stage', 'customs')

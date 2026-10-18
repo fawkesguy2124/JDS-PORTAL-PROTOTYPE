@@ -3,13 +3,14 @@ import { supabase } from '../supabase'
 import { getStageName, parseContainerNos, getContainerSize } from '../utils/jobHelpers'
 import { portLabel } from '../utils/ports'
 import { useJourney } from './JourneyContext'
+import { containerFinishedOn, deliveryBy } from '../services/journey'
 import { Chip, FreeDays, Icon, PhaseChip, fmtDate, initials, jobOwnerName, timeAgo } from './ui'
 
 // The side panel that opens when a job is clicked: what it is, where it is,
 // what is next, its containers, timeline, documents and team notes. Editing
 // and government checks stay on the full job page ("Open full job").
 export default function JobDrawer({ jobId, initialTab = 'overview', onClose, onOpenFull, onOpenTruck, currentUserName, showToast }) {
-  const { byId, data, profiles } = useJourney()
+  const { byId, data, profiles, patchJob } = useJourney()
   const row = byId[jobId]
   const job = row?.job
   const j = row?.j
@@ -47,13 +48,15 @@ export default function JobDrawer({ jobId, initialTab = 'overview', onClose, onO
     return parseContainerNos(job.containers).map((no) => {
       const t = data?.containersByNo?.[no] || null
       const live = tracked[no]
+      const finishedOn = t ? containerFinishedOn(t, job) : null
       const status = !t ? 'Not tracked yet'
+        : finishedOn ? (deliveryBy(job) === 'client' ? 'Collected by client' : 'Empty back')
         : ['delivered', 'empty_returned'].includes(t.status) ? 'Delivered'
         : t.port_out ? 'Out of port'
         : t.cfs_gate_in ? 'At CFS'
         : t.port_in ? 'At port'
         : (t.status_text || 'On the way')
-      return { no, size: getContainerSize(job, no) || '—', status, where: t?.current_location || null, freeLeft: live?.freeLeft ?? null, stale: live?.stale, raw: t }
+      return { no, size: getContainerSize(job, no) || '—', status, where: t?.current_location || null, freeLeft: live?.freeLeft ?? null, stale: live?.stale, raw: t, finishedOn }
     })
   }, [job, j, data])
 
@@ -64,6 +67,15 @@ export default function JobDrawer({ jobId, initialTab = 'overview', onClose, onO
   const topAttention = j.attention[0]
   const isExport = job.job_type === 'export'
   const ownerName = jobOwnerName(job, profiles)
+
+  // Who takes the cargo to the client's warehouse (decides when JDS's part ends)
+  const setDelivery = async (by) => {
+    const field_meta = { ...(job.field_meta && typeof job.field_meta === 'object' ? job.field_meta : {}), delivery_by: by }
+    const { data: saved, error } = await supabase.from('jobs').update({ field_meta, updated_at: new Date().toISOString() }).eq('id', job.id).select().single()
+    if (error) { showToast?.(`Could not save: ${error.message}`, 'error'); return }
+    patchJob(saved)
+    showToast?.(by === 'client' ? 'Saved: the client collects the cargo' : 'Saved: JDS delivers the cargo', 'success')
+  }
 
   const addNote = async () => {
     const text = note.trim()
@@ -125,12 +137,12 @@ export default function JobDrawer({ jobId, initialTab = 'overview', onClose, onO
   const groups = [
     ['all', 'All', () => true],
     ['port', 'At port / CFS', (c) => c.status === 'At port' || c.status === 'At CFS'],
-    ['out', 'Out / delivered', (c) => c.status === 'Out of port' || c.status === 'Delivered'],
+    ['out', 'Out / delivered', (c) => ['Out of port', 'Delivered', 'Empty back', 'Collected by client'].includes(c.status)],
     ['risk', 'Free days ≤ 2', (c) => c.freeLeft !== null && c.freeLeft <= 2],
   ]
   const cf = groups.find((g) => g[0] === ctrFilter) || groups[0]
   const ctrRows = containers.filter(cf[2]).filter((c) => !ctrQ || c.no.includes(ctrQ.trim().toUpperCase()))
-  const statusTone = (s) => (s === 'Delivered' ? ['grey', 'flag'] : s === 'Out of port' ? ['blue', 'truck'] : s === 'At CFS' ? ['grey', 'building-warehouse'] : s === 'At port' ? ['amber', 'anchor'] : ['grey', 'ship'])
+  const statusTone = (s) => (s === 'Delivered' || s === 'Empty back' || s === 'Collected by client' ? ['grey', 'flag'] : s === 'Out of port' ? ['blue', 'truck'] : s === 'At CFS' ? ['grey', 'building-warehouse'] : s === 'At port' ? ['amber', 'anchor'] : ['grey', 'ship'])
 
   const kv = [
     [isExport ? 'Shipping bill' : 'BE number', isExport ? (j.sbNo || '—') : (job.be_no || '—'), true],
@@ -219,6 +231,16 @@ export default function JobDrawer({ jobId, initialTab = 'overview', onClose, onO
                   </div>
                 </div>
                 <div><div className="k">Goods</div><div className="v">{job.goods || '—'}</div></div>
+                {!isExport && (
+                  <div>
+                    <div className="k">Delivery to warehouse</div>
+                    <div className="v" style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                      {[['jds', 'JDS delivers'], ['client', 'Client collects']].map(([id, l]) => (
+                        <button key={id} type="button" className={`ix-btn sm ${deliveryBy(job) === id ? 'primary' : ''}`} onClick={() => deliveryBy(job) !== id && setDelivery(id)}>{l}</button>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
               <div className="ix-section-t">Latest events</div>
               {shownEvents.length ? (

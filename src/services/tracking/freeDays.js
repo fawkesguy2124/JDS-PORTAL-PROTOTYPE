@@ -1,30 +1,33 @@
-import { freeDaysLeftFor, daysSinceLastMove, STALE_AFTER_DAYS } from '../journey'
+import { freeDaysLeftFor, daysSinceLastMove, containerTrip, containerFinishedOn, STALE_AFTER_DAYS } from '../journey'
 
 // What the Containers screen shows about free days / detention for one container.
 // Uses the same rules as Today and the job journey:
-//   done     – container delivered / empty returned, or the job is delivered: show nothing
+//   done     – empty container back (or the box started its next trip), collected by
+//              the client, or the job is delivered: show nothing
 //   unclear  – no movement for 30+ days: probably finished but never marked
 //   running  – free days are over: detention is adding up (shows how many days)
 //   risk     – 0 to 2 free days left
 //   ok       – more than 2 free days left
 //   unknown  – free days not known
 const DAY = 24 * 60 * 60 * 1000
-const DONE = ['delivered', 'empty_returned']
 
 export function freeDayState(td, job) {
   if (!td) return { kind: 'unknown' }
-  if (DONE.includes(td.status) || Number(job?.stage) >= 10) return { kind: 'done' }
   const row = {
     status: td.status, port_in: td.portIn, port_out: td.portOut, cfs_gate_in: td.cfsGateIn,
     milestones: td.milestones, free_days: td.freeDays, last_refreshed_at: td.lastUpdate,
   }
+  if (Number(job?.stage) >= 10) return { kind: 'done' }
+  const finishedOn = containerFinishedOn(row, job)
+  if (finishedOn) return { kind: 'done', finishedOn }
+  const portIn = containerTrip(row, job).portIn || td.portIn
   const moved = daysSinceLastMove(row)
   const left = freeDaysLeftFor(job, row) // null when unknown or no movement for 30+ days
 
   // the day free time ended (from the contract when known, else from the last saved snapshot)
   const contract = Number(job?.free_days)
   let endsOn = null
-  if (td.portIn && Number.isFinite(contract) && contract > 0) endsOn = new Date(new Date(td.portIn).getTime() + contract * DAY)
+  if (portIn && Number.isFinite(contract) && contract > 0) endsOn = new Date(new Date(portIn).getTime() + contract * DAY)
   else if (left !== null) endsOn = new Date(Date.now() + left * DAY)
   const endsText = endsOn ? endsOn.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' }) : null
 
