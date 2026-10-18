@@ -144,7 +144,12 @@ export function parseBeLines(lines) {
         const pos = lines.positions
         const xOf = (row, word) => pos?.[row]?.find(([, str]) => str.split(/\s+/).includes(word))?.[0]
         const blX = bl && xOf(m + 1, bl), hblX = hbl && xOf(m + 1, hbl)
-        if (tail.length === 1 && blX != null && hblX != null) {
+        // An air waybill (MAWB) is always 11 digits: never add a wrapped tail to it
+        const airAwb = out.mode === 'Air' && /^\d{11}$/.test(bl || '')
+        if (airAwb) {
+          const tx = xOf(m + 2, tail[0])
+          if (hbl && tx != null && hblX != null && blX != null && Math.abs(tx - hblX) < Math.abs(tx - blX)) hbl += tail[0]
+        } else if (tail.length === 1 && blX != null && hblX != null) {
           const tx = xOf(m + 2, tail[0])
           if (tx != null && Math.abs(tx - hblX) < Math.abs(tx - blX)) hbl += tail[0]
           else bl += tail[0]
