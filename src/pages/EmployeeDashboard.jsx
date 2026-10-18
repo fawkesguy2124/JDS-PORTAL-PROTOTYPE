@@ -20,6 +20,7 @@ import ClientsPage from './v2/ClientsPage'
 import DetentionPage from './v2/DetentionPage'
 import JobDetailView from '../components/JobDetailView'
 import { forceRefreshAllContainers } from '../services/tracking/ldbProvider'
+import { availableTypes } from '../utils/docTypes'
 
 function getGreeting() {
   const now = new Date()
@@ -1147,9 +1148,14 @@ export default function EmployeeDashboard() {
     return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
   }
 
+  // Types this job already has are not offered again (except Other)
+  const jobDocTypes = uploadModal.job ? documents.filter((d) => d.job_id === uploadModal.job.id).map((d) => d.doc_type) : []
+  const docTypeOptions = availableTypes(jobDocTypes)
+  const docType = docTypeOptions.includes(uploadDocType) ? uploadDocType : docTypeOptions[0]
+
   const uploadDocument = async () => {
     const job = uploadModal.job
-    if (!job || !uploadFile || !uploadDocType) return
+    if (!job || !uploadFile || !docType) return
     setUploading(true)
     setUploadProgress(0)
     try {
@@ -1180,7 +1186,7 @@ export default function EmployeeDashboard() {
           job_no: job.job_no,
           file_name: uploadFile.name,
           file_type: ext,
-          doc_type: uploadDocType,
+          doc_type: docType,
           file_url: fileUrl,
           file_path: filePath,
           uploaded_by: user.id,
@@ -1196,7 +1202,7 @@ export default function EmployeeDashboard() {
       await supabase.from('activity_log').insert({
         type: 'document_upload',
         action: 'document_upload',
-        title: `${job.job_no} — ${uploadDocType} uploaded`,
+        title: `${job.job_no} — ${docType} uploaded`,
         note: `${uploadFile.name} uploaded by ${profile?.name || 'Unknown'}`,
         job_no: job.job_no,
         job_id: job.id,
@@ -1206,7 +1212,7 @@ export default function EmployeeDashboard() {
           job_id: job.id,
           job_no: job.job_no,
           file_name: uploadFile.name,
-          doc_type: uploadDocType,
+          doc_type: docType,
         },
         created_at: new Date().toISOString(),
       })
@@ -2005,19 +2011,9 @@ export default function EmployeeDashboard() {
             <div className="p-5 space-y-4">
               <div>
                 <p className="text-xs font-semibold text-[#8a96a8] uppercase tracking-wide mb-1">Document Type</p>
-                <select value={uploadDocType} onChange={(e) => setUploadDocType(e.target.value)}
+                <select value={docType} onChange={(e) => setUploadDocType(e.target.value)}
                   className="w-full h-9 px-3 text-sm rounded-lg border border-[#e2e6ed] bg-[#f8f9fb] text-[#1a2233] outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-300">
-                  <option value="BL">BL</option>
-                  <option value="Invoice">Invoice</option>
-                  <option value="Packing List">Packing List</option>
-                  <option value="COO">COO</option>
-                  <option value="Insurance">Insurance</option>
-                  <option value="BE">BE</option>
-                  <option value="Examination Order">Examination Order</option>
-                  <option value="OOC">OOC</option>
-                  <option value="E-Way Bill">E-Way Bill</option>
-                  <option value="POD">POD</option>
-                  <option value="Other">Other</option>
+                  {docTypeOptions.map((t) => <option key={t} value={t}>{t}</option>)}
                 </select>
               </div>
               <div>
@@ -2054,7 +2050,7 @@ export default function EmployeeDashboard() {
                 className="h-9 px-4 text-sm rounded-lg bg-white border-[1.5px] border-[#d0d6e0] text-[#4a5568] hover:border-[#1a4fa0] hover:text-[#1a4fa0] hover:bg-[#e8eef8] font-semibold">
                 Cancel
               </button>
-              <button type="button" disabled={!uploadFile || !uploadDocType || uploading} onClick={uploadDocument}
+              <button type="button" disabled={!uploadFile || !docType || uploading} onClick={uploadDocument}
                 className="h-9 px-4 text-sm rounded-lg bg-[#1a4fa0] text-white hover:bg-[#153d82] font-semibold disabled:opacity-50 disabled:cursor-not-allowed">
                 {uploading ? 'Uploading...' : 'Upload'}
               </button>

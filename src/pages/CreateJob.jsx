@@ -7,6 +7,7 @@ import { linkContainer } from '../api/trackingApi'
 import { PORTS } from '../utils/ports'
 import { CLIENT_NAMES, matchClient } from '../utils/clients'
 import { readPdf, describeDocuments } from '../utils/docReader'
+import { availableTypes, typesFoundInside } from '../utils/docTypes'
 
 const MODES = ['Sea FCL', 'Sea LCL', 'Air', 'BPT/MBPT']
 const CONTAINER_SIZES = ['20GP','40GP','40HC','45HC','20RF','40RF','40RFHC','20OT','40OT','20FR','40FR','20TK']
@@ -162,7 +163,8 @@ export default function CreateJob({ isModal = false, onCancel, onCreated }) {
       autoFillApplied[fieldKey] ? 'border-green-400 bg-green-50' : 'border-gray-300'
     }`
 
-  const DOC_TYPES = ['BL', 'Invoice', 'Packing List', 'COO', 'Insurance', 'BE', 'Examination Order', 'OOC', 'E-Way Bill', 'POD', 'Other']
+  // A type already on this job (chosen, or found inside an uploaded bundle) is not offered again
+  const usedTypes = (exceptId) => stagedDocs.filter((d) => d.id !== exceptId).flatMap((d) => [d.docType, ...(d.foundInside || [])])
 
   const DOC_TYPE_COLORS = {
     BL: 'bg-blue-100 text-blue-800',
@@ -273,6 +275,8 @@ export default function CreateJob({ isModal = false, onCancel, onCreated }) {
       setExtractProgress(40)
       setExtractStatus('Reading pages...')
       const result = await readPdf(pdfjs, new Uint8Array(await file.arrayBuffer()))
+      const inside = typesFoundInside(result.documents)
+      setStagedDocs(prev => prev.map(d => d.id === docId ? { ...d, foundInside: inside } : d))
       const f = result.fields
       setExtractProgress(80)
       setExtractStatus('Applying fields...')
@@ -615,8 +619,11 @@ if (parsed.client && shouldFill('client')) {
                         onChange={e => setStagedDocs(prev => prev.map(d => d.id === item.id ? { ...d, docType: e.target.value } : d))}
                         className="text-xs border border-gray-300 rounded-md px-2 py-1 bg-white"
                       >
-                        {DOC_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                        {availableTypes(usedTypes(item.id), item.docType).map(t => <option key={t} value={t}>{t}</option>)}
                       </select>
+                      {item.foundInside?.length > 1 && (
+                        <span className="text-xs text-gray-500 hidden sm:inline" title="Documents found inside this file">has {item.foundInside.join(', ')}</span>
+                      )}
                       {item.extracted && (
                         <span className="text-xs text-green-600 font-medium flex items-center gap-1">
                           <span className="w-1.5 h-1.5 rounded-full bg-green-500 inline-block" />
@@ -646,7 +653,7 @@ if (parsed.client && shouldFill('client')) {
                     className={inputClass}
                   >
                     <option value="">Select type...</option>
-                    {DOC_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                    {availableTypes(usedTypes()).map(t => <option key={t} value={t}>{t}</option>)}
                   </select>
                 </div>
                 <div>
