@@ -148,7 +148,7 @@ export function toOcrFields(readerFields, documents = [], sources = {}) {
     net_weight: f.net_weight,
     goods_description: f.goods_description,
     hs_code: f.hs_code,
-    invoice_line_items: null,
+    invoice_line_items: f.invoice_line_items?.length ? JSON.stringify(f.invoice_line_items) : null,
     supporting_documents: docs.length ? JSON.stringify(docs) : null,
   }
   const srcKey = { bl_number: f.bl_number ? 'bl_number' : 'awb_number' }
