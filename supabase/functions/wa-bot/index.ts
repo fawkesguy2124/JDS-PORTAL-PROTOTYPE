@@ -21,7 +21,7 @@ import { morningSummary, instantAlerts, answer, teamFromProfiles } from '../_sha
 const GRAPH = 'https://graph.facebook.com/v21.0'
 const DAY = 24 * 60 * 60 * 1000
 const PAGE = 1000
-const env = (k: string) => Deno.env.get(k) || ''
+const env = (k: string) => (Deno.env.get(k) || '').trim() // pasted values often carry spaces or a line break
 const sendingOn = () => env('BOT_SENDING') === 'on'
 
 type Admin = ReturnType<typeof adminClient>
@@ -188,7 +188,13 @@ Deno.serve(async (req) => {
   }
 
   // 2. a message from WhatsApp
-  if (!(await validSignature(req, raw))) return new Response('Bad signature', { status: 401 })
+  if (!(await validSignature(req, raw))) {
+    // says WHY, never the secret itself
+    const sig = req.headers.get('x-hub-signature-256')
+    const secret = env('WHATSAPP_APP_SECRET')
+    console.warn(`[wa-bot] bad signature: header ${sig ? 'present' : 'missing'}; app secret ${secret ? `set, ${secret.length} chars (Meta's are 32)${/^[0-9a-f]+$/.test(secret) ? '' : ', has characters other than 0-9 a-f'}` : 'not set'}; token ${env('WHATSAPP_TOKEN').length} chars`)
+    return new Response('Bad signature', { status: 401 })
+  }
   try {
     await handleInbound(admin, JSON.parse(raw))
   } catch (e) {
