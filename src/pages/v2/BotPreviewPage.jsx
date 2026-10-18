@@ -97,7 +97,7 @@ export default function BotPreviewPage() {
               ))}
             </div>
             <div style={{ ...muted, fontSize: '12px', marginTop: '8px' }}>
-              For now the bot sends only to Jose (+91 9920276224). Other staff get nothing and their messages are ignored.
+              Only these numbers get messages, and the bot ignores messages from anyone else.
             </div>
           </div>
 

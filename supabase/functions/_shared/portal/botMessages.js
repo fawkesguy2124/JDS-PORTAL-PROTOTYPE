@@ -245,18 +245,27 @@ export function answer(data, message, person, now = new Date()) {
   return `Sorry, I did not understand "${oneLine(message).slice(0, 40)}".\n\n${HELP}`
 }
 
-// The ONLY numbers the bot sends to or answers (Jose's decision, 18 Oct 2026:
-// "only Jose for now"). To add someone later, add their 91XXXXXXXXXX here.
-export const BOT_NUMBERS = ['919920276224']
+// The ONLY numbers the bot sends to or answers (Jose's decisions, 18 Oct 2026:
+// "only Jose for now", then also +91 99202 51089). To add someone, add a line.
+// `name` is used when the number has no portal login.
+export const BOT_PEOPLE = [
+  { phone: '919920276224', name: 'Jose' },
+  { phone: '919920251089', name: 'JDS' },
+]
+export const BOT_NUMBERS = BOT_PEOPLE.map((p) => p.phone)
 
-// Team members the bot talks to: staff logins are "<10-digit mobile>@jds.local",
-// and only numbers in BOT_NUMBERS. Returns [{ id, name, role, phone }].
+// Team members the bot talks to, in BOT_PEOPLE order. A number with a staff
+// login ("<10-digit mobile>@jds.local") uses that login's name and role;
+// one without a login is still included, with the name above.
+// Returns [{ id, name, role, phone }].
 export function teamFromProfiles(profiles = []) {
-  const seen = new Set()
-  return profiles
-    .map((p) => {
-      const digits = String(p.phone || p.email || '').match(/^(?:\+?91)?([6-9]\d{9})(?:@jds\.local)?$/)
-      return digits ? { id: p.id, name: p.name, role: p.role, phone: `91${digits[1]}` } : null
-    })
-    .filter((t) => t && BOT_NUMBERS.includes(t.phone) && !seen.has(t.phone) && seen.add(t.phone))
+  const logins = {}
+  for (const p of profiles) {
+    const digits = String(p.phone || p.email || '').match(/^(?:\+?91)?([6-9]\d{9})(?:@jds\.local)?$/)
+    if (digits && !logins[`91${digits[1]}`]) logins[`91${digits[1]}`] = p
+  }
+  return BOT_PEOPLE.map(({ phone, name }) => {
+    const p = logins[phone]
+    return p ? { id: p.id, name: p.name || name, role: p.role, phone } : { id: `wa:${phone}`, name, role: 'admin', phone }
+  })
 }
