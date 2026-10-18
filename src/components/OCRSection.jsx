@@ -2,183 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '../supabase'
 import * as XLSX from 'xlsx'
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
-
-const EXTRACTION_PROMPT = `You are an expert Indian customs document parser with deep knowledge of BE (Bill of Entry) filing under Indian Customs law and ICEGATE.
-
-Extract ALL fields required for filing a Bill of Entry from the provided documents. Documents may include any combination of: Commercial Invoice, Packing List, Bill of Lading, Airway Bill, Certificate of Origin, Test Certificates.
-
-Return ONLY a valid JSON object with the structure below. If a field is not found in the documents set it to null. Do not guess, assume or hallucinate any value. Do not add markdown, backticks or explanation.
-
-{
-  "bl_number": "Bill of Lading or Airway Bill number",
-  "vessel_name": "name of vessel or flight number",
-  "container_numbers": ["array of container numbers e.g. ABCD1234567"],
-  "seal_numbers": ["array of seal numbers"],
-  "container_size": "e.g. 20FCL or 40FCL or LCL",
-  "shipping_line": "carrier/shipping line name",
-
-  "consignee_name": "full legal name of importer/buyer exactly as on document",
-  "consignee_address": "full address of importer",
-  "importer_gstin": "15-character GSTIN if present on document",
-  "importer_iec": "10-digit IEC if present on document",
-  "ad_code": "AD code if present on document",
-
-  "supplier_name": "full legal name of supplier/seller",
-  "supplier_address": "full address of supplier",
-  "supplier_country": "country of supplier",
-
-  "country_of_origin": "country where goods were manufactured",
-  "country_of_consignment": "country from which goods were shipped — may differ from country of origin",
-  "port_of_loading": "port where goods were loaded onto vessel",
-  "port_of_shipment": "port of shipment",
-  "port_of_discharge": "port of discharge in India e.g. Nhava Sheva or JNPT or Chennai",
-  "place_of_delivery": "final destination in India",
-
-  "igm_number": "IGM number if available on document",
-  "igm_date": "IGM date in DD-MMM-YYYY format",
-  "hawb_number": "House AWB or House BL number",
-  "hawb_date": "date of HAWB or HBL in DD-MMM-YYYY format",
-  "bl_date": "date of BL or AWB in DD-MMM-YYYY format",
-
-  "invoice_numbers": ["array of all invoice numbers"],
-  "invoice_dates": ["array of invoice dates in DD-MMM-YYYY format"],
-  "invoice_amounts": ["array of invoice amounts as numbers only no currency symbol"],
-  "invoice_currencies": ["array of currency codes e.g. USD CNY EUR GBP"],
-  "payment_terms": "CIF or FOB or CNF or CFR or EXW — exactly as stated on invoice",
-  "freight_amount": "freight amount as number or null",
-  "insurance_amount": "insurance amount as number or null",
-  "exchange_rates": {"USD": 95.15, "CNY": 14.05},
-
-  "package_count": "total number of packages or cartons as number",
-  "gross_weight": "total gross weight in KGS as number",
-  "net_weight": "total net weight in KGS as number or null",
-  "goods_description": "general description of all goods in shipment",
-  "hs_code": "primary HS or CTH code — 8 digits — first item or most prominent",
-
-  "invoice_line_items": [
-    {
-      "sno": 1,
-      "invoice_no": "which invoice this item belongs to",
-      "cth": "8-digit CTH or HS code for this item — from document if present",
-      "description": "item description exactly as on invoice",
-      "unit_price": 13.52,
-      "quantity": 8.0,
-      "uqc": "unit quantity code — KGS or NOS or MTR or PCS etc",
-      "amount": 108.16,
-      "currency": "USD or CNY etc",
-      "country_of_origin": "2-letter country code e.g. CN IN US"
-    }
-  ],
-
-  "supporting_documents": [
-    {
-      "type": "document type e.g. Bill of Lading or Commercial Invoice or Packing List or Certificate of Origin or Test Certificate or Import License",
-      "reference_no": "document reference number if present",
-      "date": "document date in DD-MMM-YYYY if present"
-    }
-  ]
-}`
-
-export const BE_EXTRACTION_PROMPT = `You are an expert Indian Customs document parser. Extract ALL fields from this Bill of Entry (BE) issued by Indian Customs / ICEGATE.
-
-A Bill of Entry has multiple parts — extract from all visible parts. Return ONLY valid JSON, no markdown, no explanation.
-
-{
-  "be_number": "BE number from top right e.g. 9301277",
-  "be_date": "BE date in DD-MMM-YYYY format e.g. 16-May-2026",
-  "be_type": "H for Home Consumption, W for Warehouse, E for Ex-Bond",
-  "port_code": "Port code e.g. INNSA1",
-  "cb_code": "Customs Broker code e.g. AADCJ9119RCH001",
-  "iec": "IEC number e.g. 1705001432",
-  "gstin": "15-digit GSTIN e.g. 30AACCD2090G1Z8/G",
-
-  "importer_name": "Full importer name",
-  "importer_address": "Full importer address",
-  "cb_name": "Customs Broker name e.g. JDS LOGISTICS PVT LTD",
-
-  "igm_number": "IGM number e.g. 1187267",
-  "igm_date": "IGM date in DD-MMM-YYYY",
-  "inw_date": "Into Warehouse date",
-  "mawb_number": "MAWB/BL number",
-  "mawb_date": "MAWB/BL date",
-
-  "country_of_origin": "Country of origin",
-  "country_of_consignment": "Country of consignment",
-  "port_of_loading": "Port of loading",
-  "port_of_shipment": "Port of shipment",
-
-  "package_count": "Total number of packages as number",
-  "gross_weight": "Total gross weight in KGS as number",
-
-  "invoice_number": "Invoice number",
-  "invoice_date": "Invoice date in DD-MMM-YYYY",
-  "invoice_amount": "Invoice amount as number",
-  "invoice_currency": "Invoice currency code e.g. EUR USD",
-  "freight_amount": "Freight amount as number",
-  "freight_currency": "Freight currency code",
-  "payment_terms": "FOB CIF CNF etc",
-  "valuation_method": "e.g. Rule 3",
-  "ad_code": "AD Code number",
-  "svb_flag": "true if SVB case else false",
-  "svb_reference": "SVB reference number if present",
-
-  "supplier_name": "Seller/supplier name",
-  "supplier_address": "Seller/supplier full address",
-  "supplier_country": "Seller country",
-
-  "exchange_rates": {"EUR": 111.95, "USD": 95.15},
-
-  "assessable_value": "Total assessable value in INR as number",
-  "bcd_amount": "Basic Customs Duty amount in INR as number",
-  "bcd_rate": "BCD rate as number e.g. 7.5",
-  "sws_amount": "Social Welfare Surcharge amount in INR as number",
-  "igst_amount": "IGST amount in INR as number",
-  "igst_rate": "IGST rate as number e.g. 18",
-  "total_duty": "Total duty payable in INR as number",
-  "total_amount": "Total amount paid in INR as number",
-
-  "ooc_number": "Out of Charge number",
-  "ooc_date": "OOC date in DD-MMM-YYYY",
-
-  "processing_events": {
-    "submission_date": "DD-MMM-YYYY",
-    "assessment_date": "DD-MMM-YYYY",
-    "examination_date": "DD-MMM-YYYY",
-    "ooc_date": "DD-MMM-YYYY"
-  },
-
-  "line_items": [
-    {
-      "sno": 1,
-      "cth": "8-digit CTH code e.g. 84571010",
-      "description": "Item description",
-      "quantity": 1.0,
-      "uqc": "NOS KGS MTR etc",
-      "unit_price": 254000.0,
-      "amount": 254000.0,
-      "currency": "EUR",
-      "country_of_origin": "DE"
-    }
-  ],
-
-  "containers": [
-    {
-      "container_number": "e.g. BMOU4978572",
-      "seal_number": "e.g. 0675120",
-      "fcl_lcl": "F for FCL L for LCL"
-    }
-  ],
-
-  "supporting_documents": [
-    {
-      "type": "document type",
-      "reference_no": "document reference",
-      "date": "DD-MMM-YYYY"
-    }
-  ]
-}
-
-Extract every field visible in the document. For arrays extract ALL items — do not truncate container lists or line items. If a field is not found set it to null.`
+import { readJobDocuments, toOcrFields, unreadableMessage } from '../utils/docReaderMap'
 
 export const FIELD_LABELS_OCR = {
   // Shipment identifiers
@@ -312,278 +136,16 @@ export const MULTI_VALUE_FIELDS = [
   'supporting_documents',
 ]
 
-async function urlToBase64(url) {
-  const response = await fetch(url)
-  if (!response.ok) throw new Error(`Failed to fetch document: HTTP ${response.status}`)
-  const blob = await response.blob()
-  return new Promise((resolve) => {
-    const reader = new FileReader()
-    reader.onloadend = () => {
-      const base64 = reader.result.split(',')[1]
-      resolve({ base64, mimeType: blob.type })
-    }
-    reader.readAsDataURL(blob)
-  })
-}
-
-async function compressImage(base64, mimeType, maxWidth = 1000, quality = 0.6) {
-  return new Promise((resolve, reject) => {
-    const img = new Image()
-    img.onload = () => {
-      let w = img.width; let h = img.height
-      if (w > maxWidth) { h = Math.round(h * (maxWidth / w)); w = maxWidth }
-      const canvas = document.createElement('canvas')
-      canvas.width = w; canvas.height = h
-      const ctx = canvas.getContext('2d')
-      ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high'
-      ctx.drawImage(img, 0, 0, w, h)
-      const compressed = canvas.toDataURL(mimeType || 'image/jpeg', quality).split(',')[1]
-      resolve({ base64: compressed, mimeType: mimeType || 'image/jpeg' })
-    }
-    img.onerror = () => reject(new Error('Failed to load image for compression'))
-    img.src = `data:${mimeType || 'image/jpeg'};base64,${base64}`
-  })
-}
-
-async function pdfToImages(base64, maxPageCount = 8) {
-  const pdfjsLib = await import('pdfjs-dist')
-  pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl
-  const data = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0))
-  const pdf = await pdfjsLib.getDocument({ data }).promise
-  const maxPages = Math.min(pdf.numPages, maxPageCount)
-  const images = []
-  for (let i = 1; i <= maxPages; i++) {
-    const page = await pdf.getPage(i)
-    const viewport = page.getViewport({ scale: 1.2 })
-    const canvas = document.createElement('canvas')
-    canvas.width = Math.min(viewport.width, 900)
-    canvas.height = Math.round(viewport.height * (Math.min(viewport.width, 900) / viewport.width))
-    const ctx = canvas.getContext('2d')
-    ctx.imageSmoothingEnabled = true
-    ctx.imageSmoothingQuality = 'medium'
-    await page.render({ canvasContext: ctx, viewport }).promise
-    const imgBase64 = canvas.toDataURL('image/jpeg', 0.6).split(',')[1]
-    images.push({ base64: imgBase64, mimeType: 'image/jpeg' })
-  }
-  return images
-}
-
-async function withRetry(fn, maxRetries = 3, baseDelay = 2000) {
-  const rateLimitDelays = [3000, 6000, 12000]
-  let lastError
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    try {
-      return await fn()
-    } catch (err) {
-      lastError = err
-      if (err.name === 'AbortError') throw new Error('Request timed out. Please try again.')
-      const isRateLimit = err.message?.includes('rate_limit') || err.message?.includes('Rate limit') || err.message?.includes('429')
-      if (isRateLimit) {
-        const delay = rateLimitDelays[attempt] || 12000
-        if (attempt < maxRetries) await new Promise((r) => setTimeout(r, delay))
-      } else if (attempt < maxRetries) {
-        await new Promise((r) => setTimeout(r, baseDelay * (attempt + 1)))
-      }
-    }
-  }
-  throw lastError
-}
-
-function mergeResults(results, rankMap = { high: 3, medium: 2, low: 1 }) {
-  // Collect union of all keys across all results
-  const allKeys = [...new Set(results.flatMap(r => Object.keys(r || {})))]
-  const merged = {}
-  for (const key of allKeys) merged[key] = { value: null, confidence: null, source: null }
-  for (const partial of results) {
-    for (const key of allKeys) {
-      const field = partial[key]
-      if (!field || field.value === null || field.value === undefined || field.value === '') continue
-      const current = merged[key]
-      if (!current.value) {
-        merged[key] = { value: field.value, confidence: field.confidence, source: field.source || current.source }
-      } else if (key === 'container_numbers') {
-        const existing = String(current.value).split(',').map((s) => s.trim()).filter(Boolean)
-        const incoming = String(field.value).split(',').map((s) => s.trim()).filter(Boolean)
-        const combined = [...new Set([...existing, ...incoming])]
-        merged[key] = { value: combined.join(', '), confidence: 'medium', source: field.source || current.source }
-      } else {
-        const currRank = rankMap[current.confidence] || 0
-        const newRank = rankMap[field.confidence] || 0
-        if (newRank > currRank) {
-          merged[key] = { value: field.value, confidence: field.confidence, source: field.source || current.source }
-        }
-      }
-    }
-  }
-  return merged
-}
-
-async function groqExtract(imageChunks, prompt) {
-  const key = import.meta.env.VITE_GROQ_API_KEY
-  if (!key) throw new Error('Groq API key not configured.')
-  const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-    method: 'POST',
-    headers: { 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model: 'meta-llama/llama-4-scout-17b-16e-instruct',
-      messages: [{ role: 'user', content: [
-        { type: 'text', text: prompt },
-        ...imageChunks.map((f) => ({
-          type: 'image_url',
-          image_url: { url: `data:${f.mimeType};base64,${f.base64}` },
-        })),
-      ]}],
-      max_tokens: 4096,
-      temperature: 0.1,
-    }),
-  })
-  if (!res.ok) {
-    const errBody = await res.json().catch(() => ({}))
-    const errMsg = errBody?.error?.message || `Groq API error ${res.status}`
-    if (res.status === 429 || errMsg.includes('rate_limit') || errMsg.includes('Rate limit')) throw new Error('Groq rate limit reached.')
-    if (res.status === 503 || errMsg.includes('unavailable')) throw new Error('Groq service temporarily unavailable.')
-    throw new Error(errMsg)
-  }
-  const data = await res.json()
-  const choice = data?.choices?.[0]
-  if (!choice) throw new Error('Groq returned no choices.')
-  const msg = choice.message || {}
-  if (msg.refusal) throw new Error(`Model refused: ${msg.refusal}`)
-  let raw = msg.content
-  if (Array.isArray(raw)) raw = raw.map((p) => (p.type === 'text' ? p.text : '')).filter(Boolean).join('\n')
-  if (!raw) throw new Error('Groq returned empty response.')
-  const cleaned = raw.replace(/```(?:json)?\s*/gi, '').replace(/```/g, '').trim()
-  return JSON.parse(cleaned)
-}
-
-async function geminiExtract(imageChunks, prompt) {
-  const key = import.meta.env.VITE_GEMINI_API_KEY
-  if (!key) throw new Error('Gemini API key not configured.')
-  const parts = [{ text: prompt }]
-  for (const img of imageChunks) {
-    parts.push({ inline_data: { mime_type: img.mimeType || 'image/jpeg', data: img.base64 } })
-  }
-  const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${key}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ contents: [{ parts }] }),
-  })
-  if (!res.ok) {
-    const errBody = await res.json().catch(() => ({}))
-    throw new Error(errBody?.error?.message || `Gemini API error ${res.status}`)
-  }
-  const data = await res.json()
-  const text = data?.candidates?.[0]?.content?.parts?.map((p) => p.text).filter(Boolean).join('\n')
-  if (!text) throw new Error('Gemini returned empty response.')
-  const cleaned = text.replace(/```(?:json)?\s*/gi, '').replace(/```/g, '').trim()
-  return JSON.parse(cleaned)
-}
-
-async function vertexExtract(imageChunks, prompt) {
-  const res = await fetch('/api/vertex-ocr', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ images: imageChunks, prompt }),
-  })
-
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}))
-    throw new Error(err?.error || `Vertex AI proxy error ${res.status}`)
-  }
-
-  const { text } = await res.json()
-  if (!text) throw new Error('Vertex AI returned empty response')
-
-  const cleaned = text.replace(/```(?:json)?\s*/gi, '').replace(/```/g, '').trim()
-  return JSON.parse(cleaned)
-}
-
-function normalizeResult(flat) {
-  const wrapped = {}
-  for (const [k, v] of Object.entries(flat)) {
-    if (v === null || v === undefined) {
-      wrapped[k] = { value: null, confidence: 'low', source: null }
-    } else if (Array.isArray(v)) {
-      const str = v.map(item => typeof item === 'object' ? JSON.stringify(item) : String(item)).join(', ')
-      wrapped[k] = { value: str, confidence: 'medium', source: null }
-    } else if (typeof v === 'object') {
-      wrapped[k] = { value: JSON.stringify(v), confidence: 'medium', source: null }
-    } else {
-      wrapped[k] = { value: String(v), confidence: 'medium', source: null }
-    }
-  }
-  return wrapped
-}
-
-async function extractWithFallback(docs, prompt, onProgress = () => {}) {
-  // Auto-detect BE documents from doc_type or file_name
-  const isBE = docs.some(d =>
-    (d.doc_type || '').toLowerCase().includes('bill of entry') ||
-    (d.doc_type || '').toLowerCase().includes('be') ||
-    (d.doc_type || '').toLowerCase().includes('ooc') ||
-    (d.file_name || '').toLowerCase().includes('ooc') ||
-    (d.file_name || '').toLowerCase().includes('bill_of_entry') ||
-    (d.file_name || '').toLowerCase().includes('be_')
-  )
-  const activePrompt = isBE ? BE_EXTRACTION_PROMPT : prompt
-  const allImages = []
-  for (const doc of docs) {
-    const { base64, mimeType } = await urlToBase64(doc.file_url)
-    if (mimeType === 'application/pdf' || doc.file_name?.toLowerCase().endsWith('.pdf')) {
-      const pages = await pdfToImages(base64, isBE ? 15 : 8)
-      allImages.push(...pages)
-    } else {
-      const compressed = await compressImage(base64, mimeType)
-      allImages.push({ base64: compressed.base64, mimeType: compressed.mimeType })
-    }
-  }
-  const MAX_IMAGES_PER_REQUEST = 5
-  const chunks = []
-  for (let i = 0; i < allImages.length; i += MAX_IMAGES_PER_REQUEST) {
-    chunks.push(allImages.slice(i, i + MAX_IMAGES_PER_REQUEST))
-  }
-
-  // Vertex AI (India region) is now PRIMARY
-  try {
-    const allResults = []
-    for (let ci = 0; ci < chunks.length; ci++) {
-      onProgress(`Processing batch ${ci + 1} of ${chunks.length}...`)
-      if (ci > 0) await new Promise((r) => setTimeout(r, 800 + Math.random() * 400))
-      const parsed = await withRetry(() => vertexExtract(chunks[ci], activePrompt), 2, 1500)
-      allResults.push(normalizeResult(parsed))
-    }
-    return { result: mergeResults(allResults), provider: 'vertex-gemini' }
-  } catch (vertexError) {
-    console.warn('Vertex AI failed, trying Gemini:', vertexError.message)
-  }
-
-  // Fallback: Gemini 2.5 Flash
-  onProgress('Trying Gemini 2.5 Flash...')
-  try {
-    const allResults = []
-    for (let ci = 0; ci < chunks.length; ci++) {
-      onProgress(`Processing batch ${ci + 1} of ${chunks.length}...`)
-      if (ci > 0) await new Promise((r) => setTimeout(r, 1000 + Math.random() * 1000))
-      const parsed = await withRetry(() => geminiExtract(chunks[ci], activePrompt), 2, 1500)
-      allResults.push(normalizeResult(parsed))
-    }
-    return { result: mergeResults(allResults), provider: 'gemini' }
-  } catch (geminiError) {
-    // Groq Llama 4 Scout as final fallback
-    console.warn('Gemini failed, trying Groq fallback:', geminiError.message)
-    onProgress('Trying Groq fallback...')
-    try {
-      const allResults = []
-      for (let ci = 0; ci < chunks.length; ci++) {
-        onProgress(`Processing batch ${ci + 1} of ${chunks.length}...`)
-        if (ci > 0) await new Promise((r) => setTimeout(r, 2000 + Math.random() * 2000))
-        const parsed = await withRetry(() => groqExtract(chunks[ci], activePrompt), 2, 2000)
-        allResults.push(normalizeResult(parsed))
-      }
-      return { result: mergeResults(allResults), provider: 'groq' }
-    } catch (groqError) {
-      throw new Error(`All providers failed. Vertex: ${vertexError.message} | Gemini: ${geminiError.message} | Groq: ${groqError.message}`)
-    }
+// Reads the selected documents straight from the text inside each PDF, in the
+// browser. Nothing is sent to any outside service.
+async function readSelectedDocuments(docs, onProgress = () => {}) {
+  const pdfjs = await import('pdfjs-dist')
+  pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerUrl
+  const read = await readJobDocuments(pdfjs, docs, onProgress)
+  return {
+    result: toOcrFields(read.fields, read.documents, read.sources),
+    provider: 'pdf-text',
+    files: read.files,
   }
 }
 
@@ -795,18 +357,25 @@ export default function OCRSection({ job: preselectedJob, jobs, currentUserName,
     if (selectedDocs.length === 0) { showToast('Select at least one document.', 'error'); return }
     setStep(3)
     setExtracting(true)
-    setExtractProgress('Preparing documents...')
+    setExtractProgress('Opening documents...')
     setExtractError(null)
     try {
-      setExtractProgress('Preparing documents...')
-      const { result, provider } = await extractWithFallback(selectedDocs, EXTRACTION_PROMPT, (msg) => setExtractProgress(msg))
-      setExtractedData({ result, provider })
+      const { result, provider, files } = await readSelectedDocuments(selectedDocs, (msg) => setExtractProgress(msg))
+      const readOk = files.filter((f) => !f.notPdf && !f.error)
+      if (readOk.length === 0) {
+        const allPictures = files.every((f) => f.notPdf)
+        throw new Error(allPictures
+          ? 'Only PDF soft copies can be read. Photos and scanned images (JPG, PNG) cannot be read — please upload the original PDF, or type the details by hand.'
+          : `The documents could not be opened: ${files.map((f) => `${f.name} (${f.notPdf ? 'not a PDF' : f.error})`).join('; ')}. Please check the files and try again.`)
+      }
+      setExtractedData({ result, provider, files })
       setExtractEdits(JSON.parse(JSON.stringify(result)))
-      showToast('Extraction complete!', 'success')
+      const found = Object.values(result).filter((f) => f?.value).length
+      showToast(found ? `Read ${found} fields from the documents.` : 'Nothing could be read from these documents — please type the details by hand.', found ? 'success' : 'error')
       setStep(4)
     } catch (e) {
-      setExtractError(e?.message || 'Extraction failed.')
-      showToast(e?.message || 'Extraction failed.', 'error')
+      setExtractError(e?.message || 'The documents could not be read.')
+      showToast(e?.message || 'The documents could not be read.', 'error')
     } finally {
       setExtracting(false)
       setExtractProgress('')
@@ -846,7 +415,7 @@ export default function OCRSection({ job: preselectedJob, jobs, currentUserName,
     })
     const data = [
       ['JDS Logistics'],
-      [`AI Document Extraction — ${selectedJob?.job_no || ''}`],
+      [`Document Extraction — ${selectedJob?.job_no || ''}`],
       [],
       headers,
       values,
@@ -912,7 +481,8 @@ export default function OCRSection({ job: preselectedJob, jobs, currentUserName,
 
       if (insErr) throw insErr
 
-      showToast(`${file.name} uploaded successfully.`, 'success')
+      const isPdf = file.type === 'application/pdf'
+      showToast(isPdf ? `${file.name} uploaded successfully.` : `${file.name} uploaded. Note: only PDF soft copies can be read automatically — details from photos must be typed by hand.`, 'success')
 
       const { data: freshDocs } = await supabase
         .from('documents')
@@ -1004,10 +574,10 @@ export default function OCRSection({ job: preselectedJob, jobs, currentUserName,
           <div className="bg-white border-[1.5px] border-[#e2e6ed] rounded-xl shadow-sm overflow-hidden">
             <div className="px-5 py-4 border-b border-[#e2e6ed] flex items-center justify-between">
               <div>
-                <div className="text-sm font-bold text-[#1a2233]">AI Document Extraction</div>
-                <div className="text-xs text-[#8a96a8] mt-0.5">Select a job · Groq + Llama 4 Scout reads and extracts all fields</div>
+                <div className="text-sm font-bold text-[#1a2233]">Read from the Documents</div>
+                <div className="text-xs text-[#8a96a8] mt-0.5">Select a job · the portal reads the fields straight from the PDF soft copies</div>
               </div>
-              <span className="inline-flex items-center rounded-full px-2.5 py-1 text-xs font-bold bg-[#f0fdf4] text-[#15803d] border border-[#bbf7d0]">✦ AI Ready</span>
+              <span className="inline-flex items-center rounded-full px-2.5 py-1 text-xs font-bold bg-[#f0fdf4] text-[#15803d] border border-[#bbf7d0]">✓ PDF soft copies</span>
             </div>
             <div className="p-5">
               {/* Search */}
@@ -1208,9 +778,9 @@ export default function OCRSection({ job: preselectedJob, jobs, currentUserName,
                 <div className="px-5 py-4 border-t border-[#e2e6ed] bg-[#f8f9fb]">
                   <button type="button" onClick={handleExtract} disabled={selectedDocIds.size === 0}
                     className="h-9 px-5 text-sm font-semibold rounded-lg bg-[#1a4fa0] text-white hover:bg-[#153d82] disabled:opacity-50 disabled:cursor-not-allowed transition-colors inline-flex items-center gap-2">
-                    <span>✦</span>
-                    Extract with AI ({selectedDocIds.size} document{selectedDocIds.size !== 1 ? 's' : ''})
+                    Read {selectedDocIds.size} document{selectedDocIds.size !== 1 ? 's' : ''}
                   </button>
+                  <p className="text-xs text-[#8a96a8] mt-2">Only PDF soft copies can be read. Photos and scanned pages must be typed by hand.</p>
                 </div>
               </>
             )}
@@ -1220,18 +790,24 @@ export default function OCRSection({ job: preselectedJob, jobs, currentUserName,
         {/* ── STEP 3: EXTRACTING ── */}
         {step === 3 && (
           <div className="bg-white border-[1.5px] border-[#e2e6ed] rounded-xl shadow-sm p-12 text-center">
-            <div className="text-4xl mb-5">✦</div>
-            <div className="h-12 w-12 border-4 border-[#1a4fa0] border-t-transparent rounded-full animate-spin mx-auto mb-5" />
-            <p className="text-base font-bold text-[#1a2233] mb-1">Extracting Document Data</p>
-            <p className="text-sm text-[#4a5568] mb-1">{extractProgress || 'Processing documents with AI...'}</p>
-            <p className="text-xs text-[#8a96a8]">Gemini 2.5 Flash · Groq Llama 4 Scout fallback · This may take 15–30 seconds</p>
+            <div className="text-4xl mb-5">📄</div>
+            {!extractError && <div className="h-12 w-12 border-4 border-[#1a4fa0] border-t-transparent rounded-full animate-spin mx-auto mb-5" />}
+            <p className="text-base font-bold text-[#1a2233] mb-1">Reading the Documents</p>
+            <p className="text-sm text-[#4a5568] mb-1">{extractProgress || (extractError ? '' : 'Reading the text inside the PDFs...')}</p>
+            <p className="text-xs text-[#8a96a8]">Read on this computer from the PDF text · usually takes a few seconds</p>
             {extractError && (
               <div className="mt-5 p-4 bg-[#fef2f2] border border-[#fecaca] rounded-xl text-left">
                 <p className="text-sm font-semibold text-[#991b1b] mb-2">{extractError}</p>
-                <button type="button" onClick={handleExtract}
-                  className="h-9 px-4 text-sm font-semibold rounded-lg bg-[#dc2626] text-white hover:bg-[#b91c1c] transition-colors">
-                  Retry
-                </button>
+                <div className="flex items-center gap-2">
+                  <button type="button" onClick={handleExtract}
+                    className="h-9 px-4 text-sm font-semibold rounded-lg bg-[#dc2626] text-white hover:bg-[#b91c1c] transition-colors">
+                    Try Again
+                  </button>
+                  <button type="button" onClick={() => { setExtractError(null); setStep(2) }}
+                    className="h-9 px-4 text-sm font-semibold rounded-lg bg-white border-[1.5px] border-[#d0d6e0] text-[#4a5568] hover:border-[#1a4fa0] hover:text-[#1a4fa0] hover:bg-[#e8eef8] transition-colors">
+                    ← Back to Documents
+                  </button>
+                </div>
               </div>
             )}
           </div>
@@ -1245,15 +821,10 @@ export default function OCRSection({ job: preselectedJob, jobs, currentUserName,
               <div className="flex items-center gap-3">
                 <span className={[
                   'inline-flex items-center rounded-full px-2.5 py-1 text-xs font-bold',
-                  extractedData.provider === 'vertex-gemini' ? 'bg-[#ecfdf5] text-[#065f46] border border-[#a7f3d0]'
-                  : extractedData.provider === 'gemini' ? 'bg-[#eff6ff] text-[#1e40af] border border-[#bfdbfe]'
-                  : extractedData.provider === 'groq'  ? 'bg-[#f5f3ff] text-[#5b21b6] border border-[#ddd6fe]'
+                  extractedData.provider === 'pdf-text' ? 'bg-[#eff6ff] text-[#1e40af] border border-[#bfdbfe]'
                                                         : 'bg-[#f0fdf4] text-[#15803d] border border-[#bbf7d0]'
                 ].join(' ')}>
-                  {extractedData.provider === 'vertex-gemini' ? '✦ Gemini 2.0 Flash · Vertex AI (India)'
-                  : extractedData.provider === 'gemini' ? '✦ Gemini 2.5 Flash'
-                  : extractedData.provider === 'groq' ? '⚡ Groq Fallback'
-                  : '✓ Saved'}
+                  {extractedData.provider === 'pdf-text' ? '📄 Read from the documents' : '✓ Saved'}
                 </span>
                 <div>
                   <span className="text-sm font-bold text-[#1a2233]">{selectedJob?.job_no}</span>
@@ -1274,6 +845,34 @@ export default function OCRSection({ job: preselectedJob, jobs, currentUserName,
                 )
               })()}
             </div>
+
+            {/* What was found in each document */}
+            {extractedData.files?.length > 0 && (
+              <div className="bg-white border-[1.5px] border-[#e2e6ed] rounded-xl shadow-sm overflow-hidden mb-4">
+                <div className="px-5 py-3 border-b border-[#e2e6ed] bg-[#f8f9fb]">
+                  <span className="text-sm font-bold text-[#1a2233]">What was found in the documents</span>
+                </div>
+                <div className="divide-y divide-[#e2e6ed]">
+                  {extractedData.files.map((f, i) => (
+                    <div key={`${f.name}-${i}`} className="px-5 py-3">
+                      <div className="text-sm font-medium text-[#1a2233] truncate">📄 {f.name}</div>
+                      {f.notPdf ? (
+                        <p className="text-xs text-[#b45309] mt-1">This is not a PDF soft copy, so it could not be read. Only PDF soft copies can be read — please type these details by hand.</p>
+                      ) : f.error ? (
+                        <p className="text-xs text-[#dc2626] mt-1">This file could not be opened ({f.error}).</p>
+                      ) : (
+                        <>
+                          <p className="text-xs text-[#4a5568] mt-1">{f.found ? `Found: ${f.found}` : 'No shipping documents were recognised in this file.'}</p>
+                          {f.unreadable?.length > 0 && (
+                            <p className="text-xs text-[#b45309] mt-1">{unreadableMessage(f.unreadable)}</p>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* Section cards with fields */}
             <div className="space-y-4 mb-5">
@@ -1324,9 +923,16 @@ export default function OCRSection({ job: preselectedJob, jobs, currentUserName,
                               )}
                             </div>
                           </div>
-                          {isEmpty ? (
-                            <p className="text-xs text-[#dc2626] italic">Not found — enter manually</p>
-                          ) : isLong ? (
+                          {key === 'invoice_line_items' && (
+                            <p className="text-xs text-[#1e40af] mb-1.5">Line items are not read automatically — please add them by hand if needed.</p>
+                          )}
+                          {key === 'exchange_rates' && isEmpty && (
+                            <p className="text-xs text-[#1e40af] mb-1.5">Exchange rates are not read automatically — please add them by hand if needed.</p>
+                          )}
+                          {isEmpty && (
+                            <p className="text-xs text-[#dc2626] italic mb-1">Not found — enter manually</p>
+                          )}
+                          {isLong ? (
                             <textarea
                               value={field.value || ''}
                               onChange={(e) => setExtractEdits(prev => ({ ...prev, [key]: { ...prev[key], value: e.target.value } }))}
