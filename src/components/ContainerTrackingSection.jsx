@@ -5,6 +5,7 @@ import { refreshAllContainers, forceRefreshAllContainers, fetchLDBTracking, pers
 import ContainerTrackingMobile  from './mobile/ContainerTrackingMobile'
 import ContainerTrackingDesktop from './desktop/ContainerTrackingDesktop'
 import { parseContainerNos } from '../utils/jobHelpers'
+import { correctTracking } from '../services/tracking/eventOrder'
 
 function formatContainerDate(ts) {
   if (!ts) return '\u2014'
@@ -490,6 +491,11 @@ function JobDetailPanel({ job, trackingData, onClose, onUpdate, onAddEvent, onRe
 
           {/* Port events */}
           <div style={{ padding:'14px 18px', borderBottom:'0.5px solid var(--color-border-tertiary)', background:'var(--color-background-secondary)', borderLeft:'3px solid #EF9F27' }}>
+            {td.cfsOrderCorrected && (
+              <div style={{ fontSize:'12px', color:'#92400e', background:'#fffbeb', border:'1px solid #fde68a', borderRadius:'8px', padding:'6px 10px', marginBottom:'10px' }}>
+                Corrected: the CFS reported CFS IN and CFS OUT in the wrong order (OUT came first). The portal has swapped them.
+              </div>
+            )}
             <div style={{ fontSize:'11px', fontWeight:500, textTransform:'uppercase', letterSpacing:'0.07em', color:'var(--color-text-secondary)', marginBottom:'8px', display:'flex', alignItems:'center', gap:'5px' }}>
               Port events
               <span style={{ flex:1, height:'0.5px', background:'var(--color-border-tertiary)', display:'block' }} />
@@ -541,7 +547,7 @@ function JobDetailPanel({ job, trackingData, onClose, onUpdate, onAddEvent, onRe
                 <div style={{ display:'flex', flexDirection:'column', gap:'6px' }}>
                   {td.milestones.map((m, i) => (
                     <div key={i} style={{ fontSize:'12px', color:'var(--color-text-primary)', lineHeight:1.4, paddingBottom:'6px', borderBottom: i < td.milestones.length - 1 ? '0.5px solid var(--color-border-tertiary)' : 'none' }}>
-                      <span style={{ fontWeight:500 }}>{m.description}</span>
+                      <span style={{ fontWeight:500 }}>{m.description}</span>{m.corrected && <span style={{ color:'#92400e' }}> (corrected)</span>}
                       {m.location && <span style={{ color:'var(--color-text-secondary)' }}> · {m.location.split('/').pop()?.trim() || m.location}</span>}
                       {m.date && <span style={{ color:'var(--color-text-secondary)' }}> · {new Date(m.date).toLocaleString('en-IN', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit', timeZone:'Asia/Kolkata' })}</span>}
                     </div>
@@ -564,7 +570,10 @@ function JobDetailPanel({ job, trackingData, onClose, onUpdate, onAddEvent, onRe
                         </div>
                         <div style={{ flex:1, minWidth:0, paddingBottom:'2px' }}>
                           <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:'4px', marginBottom:'2px' }}>
-                            <span style={{ fontSize:'11px', fontWeight:500, color: i === 0 ? es.color : 'var(--color-text-primary)' }}>{m.description}</span>
+                            <span style={{ fontSize:'11px', fontWeight:500, color: i === 0 ? es.color : 'var(--color-text-primary)' }}>
+                              {m.description}
+                              {m.corrected && <span style={{ fontSize:'9px', fontWeight:600, marginLeft:'6px', padding:'1px 5px', borderRadius:'9999px', background:'#fffbeb', color:'#92400e', border:'0.5px solid #fde68a' }}>corrected</span>}
+                            </span>
                             <div style={{ display:'flex', gap:'3px', alignItems:'center', flexShrink:0 }}>
                               {m.transportMode && (
                                 <span style={{ fontSize:'8px', fontWeight:500, padding:'1px 4px', borderRadius:'9999px', background: m.transportMode === 'VESSEL' ? '#E6F1FB' : '#FAEEDA', color: m.transportMode === 'VESSEL' ? '#0C447C' : '#633806', border:`0.5px solid ${m.transportMode === 'VESSEL' ? '#B5D4F4' : '#FAC775'}` }}>
@@ -1055,7 +1064,12 @@ function fallbackCopy(text, showToast, carrierName) {
 }
 
 function ContainerTrackingSection({ showToast, jobs, pendingNavAction, onNavActionConsumed }) {
-  const [trackingData, setTrackingData]         = useState({})
+  const [trackingData, setTrackingDataRaw]      = useState({})
+  // CFS IN / CFS OUT reported in reverse order are put right (clear-cut cases only)
+  const setTrackingData = (next) => setTrackingDataRaw((prev) => {
+    const value = typeof next === 'function' ? next(prev) : next
+    return Object.fromEntries(Object.entries(value || {}).map(([k, v]) => [k, correctTracking(v)]))
+  })
   const [loadingTracking, setLoadingTracking]   = useState(true)
   const [searchQuery, setSearchQuery]           = useState('')
   const [expandedContainers, setExpandedContainers] = useState({})

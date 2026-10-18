@@ -1,5 +1,6 @@
 import { supabase } from '../supabase'
 import { parseContainerNos } from '../utils/jobHelpers'
+import { correctTrackingRow } from './tracking/eventOrder'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Where is each job in its journey, and what needs attention?
@@ -54,7 +55,7 @@ export async function loadJourneyData() {
   }
 
   const containersByNo = {}
-  for (const row of ctRes.data) if (row.container_no) containersByNo[row.container_no.toUpperCase()] = row
+  for (const row of ctRes.data) if (row.container_no) containersByNo[row.container_no.toUpperCase()] = correctTrackingRow(row)
 
   return {
     jobs: jobsRes.data,
