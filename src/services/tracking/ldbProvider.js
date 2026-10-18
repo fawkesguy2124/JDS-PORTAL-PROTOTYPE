@@ -177,7 +177,7 @@ export async function fetchLDBTracking(containerNo) {
   if (!result.ok) {
     const messages = {
       OUTDATED_TRACKING:          `Tracking data for ${cn} is more than 30 days old and has been skipped.`,
-      NO_TRACKING_FOUND:          `No LDB record found for ${cn}.`,
+      NO_TRACKING_FOUND:          `LDB has no tracking for ${cn} yet. The port or shipping line may not have reported it; try again later.`,
       INVALID_TRACKING_RESPONSE:  `LDB returned an unexpected format for ${cn}.`,
       TRACKING_PROVIDER_ERROR:    `LDB is currently unavailable for ${cn}.`,
     }

@@ -68,6 +68,12 @@ Deno.serve(async (req) => {
       )
     }
 
+    // "No Record Found" is an answer (LDB has no events for this box yet), not an outage
+    const notFound = ldbRes.status === 404 || /no record found/i.test(JSON.stringify(data?.message ?? data?.result ?? ''))
+    if (notFound) {
+      return new Response(JSON.stringify({ result: 'No Record Found' }), { status: 200, headers: corsHeaders })
+    }
+
     return new Response(JSON.stringify(data), {
       status: ldbRes.ok ? 200 : ldbRes.status,
       headers: corsHeaders,
