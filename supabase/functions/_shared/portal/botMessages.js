@@ -250,7 +250,7 @@ export function answer(data, message, person, now = new Date()) {
 // `name` is used when the number has no portal login.
 export const BOT_PEOPLE = [
   { phone: '919920276224', name: 'Jose' },
-  { phone: '919920251089', name: 'JDS' },
+  { phone: '919920251089', name: 'Jose' }, // Jose's second number
 ]
 export const BOT_NUMBERS = BOT_PEOPLE.map((p) => p.phone)
 
