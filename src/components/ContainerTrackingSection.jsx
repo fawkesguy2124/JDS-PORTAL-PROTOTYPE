@@ -6,6 +6,7 @@ import ContainerTrackingMobile  from './mobile/ContainerTrackingMobile'
 import ContainerTrackingDesktop from './desktop/ContainerTrackingDesktop'
 import { parseContainerNos } from '../utils/jobHelpers'
 import { correctTracking } from '../services/tracking/eventOrder'
+import { freeDayState, isDetentionState } from '../services/tracking/freeDays'
 
 function formatContainerDate(ts) {
   if (!ts) return '\u2014'
@@ -98,19 +99,17 @@ function JobDetailPanel({ job, trackingData, onClose, onUpdate, onAddEvent, onRe
   const cn = cnList[safeIdx] || cnList[0]
   const td = trackingData[cn] || {}
   const status = td.status || 'in_transit'
-  const isDetention = !['delivered', 'empty_returned'].includes(status) && td.freeDays != null && td.freeDays <= 2
+  const fd = freeDayState(td, job)
+  const isDetention = isDetentionState(fd)
   const effectiveStatus = isDetention ? 'delayed' : status
   const st = STATUS_STYLES_MAP[effectiveStatus] || STATUS_STYLES_MAP['in_transit']
   const headerBg = st.header
 
   const contractualFreeDays = job.free_days ? Math.min(30, Math.max(1, Number(job.free_days) || 1)) : null
-  const freePct = contractualFreeDays != null && td.freeDays != null
-    ? Math.max(0, Math.min(100, ((contractualFreeDays - td.freeDays) / contractualFreeDays) * 100))
-    : 0
-  const detentionDate = td.portIn
-    ? new Date(new Date(td.portIn).getTime() + contractualFreeDays * 86400000)
-        .toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric', timeZone:'Asia/Kolkata' })
-    : null
+  const freePct = contractualFreeDays != null && fd.left != null
+    ? Math.max(0, Math.min(100, ((contractualFreeDays - fd.left) / contractualFreeDays) * 100))
+    : fd.kind === 'running' ? 100 : 0
+  const detentionDate = fd.endsText
 
   const getEventStyle = (desc) => {
     const d = (desc || '').toUpperCase()
@@ -239,7 +238,7 @@ function JobDetailPanel({ job, trackingData, onClose, onUpdate, onAddEvent, onRe
                 </span>
               )}
               <span style={{ display:'inline-flex', alignItems:'center', padding:'2px 7px', borderRadius:'9999px', fontSize:'10px', fontWeight:500, background:'rgba(255,255,255,0.18)', color:'white', border:'0.5px solid rgba(255,255,255,0.25)' }}>
-                {isDetention ? '⚠ Detention Risk' : (td.statusText || 'Not Updated')}
+                {fd.kind === 'running' ? '⚠ Detention running' : isDetention ? '⚠ Detention Risk' : fd.kind === 'unclear' ? 'Status unclear' : (td.statusText || 'Not Updated')}
               </span>
               {td.dpdFlag && (
                 <span style={{ display:'inline-flex', alignItems:'center', padding:'2px 7px', borderRadius:'9999px', fontSize:'10px', fontWeight:500, background:'rgba(255,255,255,0.18)', color:'white', border:'0.5px solid rgba(255,255,255,0.25)' }}>
@@ -257,7 +256,7 @@ function JobDetailPanel({ job, trackingData, onClose, onUpdate, onAddEvent, onRe
             <div style={{ display:'grid', gridTemplateColumns:'repeat(3, 1fr)', gap:'4px' }}>
               {cnList.map((c, i) => {
                 const ctd = trackingData[c] || {}
-                const cDet = (ctd.freeDays ?? 99) <= 2
+                const cDet = isDetentionState(freeDayState(ctd, job))
                 const cStatus = ctd.status || 'in_transit'
                 const cEffective = cDet ? 'delayed' : cStatus
                 const cSt = STATUS_STYLES_MAP[cEffective] || STATUS_STYLES_MAP['in_transit']
@@ -294,7 +293,7 @@ function JobDetailPanel({ job, trackingData, onClose, onUpdate, onAddEvent, onRe
               {cnList.map((c, i) => {
                 const ctd = trackingData[c] || {}
                 const cStatus = ctd.status || 'in_transit'
-                const cDet = (ctd.freeDays ?? 99) <= 2
+                const cDet = isDetentionState(freeDayState(ctd, job))
                 const cEffective = cDet ? 'delayed' : cStatus
                 const cSt = STATUS_STYLES_MAP[cEffective] || STATUS_STYLES_MAP['in_transit']
                 const isActive = i === activeCnIdx
@@ -391,7 +390,7 @@ function JobDetailPanel({ job, trackingData, onClose, onUpdate, onAddEvent, onRe
               </div>
             )}
 
-            {!isMobile && td.freeDays == null && td.portIn && (
+            {!isMobile && fd.kind === 'unknown' && td.portIn && (
               <div style={{ background: '#fffbeb', border: '0.5px solid #FAC775', borderRadius: '8px', padding: '10px 12px', marginTop: '10px' }}>
                 <div style={{ fontSize: '11px', fontWeight: 500, color: '#854F0B' }}>
                   ⚠ Free days not set
@@ -399,11 +398,38 @@ function JobDetailPanel({ job, trackingData, onClose, onUpdate, onAddEvent, onRe
               </div>
             )}
 
-            {!isMobile && td.freeDays != null && (
+            {!isMobile && fd.kind === 'unclear' && (
+              <div style={{ background:'#f1f3f6', border:'0.5px solid #d0d6e0', borderRadius:'8px', padding:'10px 12px', marginTop:'10px' }}>
+                <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'4px' }}>
+                  <span style={{ fontSize:'10px', fontWeight:500, textTransform:'uppercase', letterSpacing:'0.06em', color:'#4a5568' }}>Status unclear</span>
+                  <span style={{ fontSize:'13px', fontWeight:500, color:'#4a5568' }}>No movement for {fd.stillDays} days</span>
+                </div>
+                <div style={{ fontSize:'11px', color:'#4a5568', lineHeight:1.4 }}>
+                  {fd.endsText ? `Free days ended on ${fd.endsText}. ` : ''}The tracking has had no update for over 30 days, so this is probably finished. If the empty has been returned, mark the job delivered.
+                </div>
+              </div>
+            )}
+
+            {!isMobile && fd.kind === 'running' && (
+              <div style={{ background:'#FCEBEB', border:'0.5px solid #F7C1C1', borderRadius:'8px', padding:'10px 12px', marginTop:'10px' }}>
+                <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'6px' }}>
+                  <span style={{ fontSize:'10px', fontWeight:500, textTransform:'uppercase', letterSpacing:'0.06em', color:'#791F1F' }}>Detention running</span>
+                  <span style={{ fontSize:'20px', fontWeight:500, color:'#A32D2D', lineHeight:1 }}>{fd.over} day{fd.over === 1 ? '' : 's'}</span>
+                </div>
+                <div style={{ height:'4px', background:'rgba(162,45,45,0.2)', borderRadius:'4px', overflow:'hidden' }}>
+                  <div style={{ height:'100%', borderRadius:'4px', width:'100%', background:'#E24B4A' }} />
+                </div>
+                <div style={{ fontSize:'10px', color:'#A32D2D', marginTop:'4px', fontWeight:500 }}>
+                  ⚠ Free days ended{fd.endsText ? ` on ${fd.endsText}` : ''} — charges add up every day until the empty is returned
+                </div>
+              </div>
+            )}
+
+            {!isMobile && (fd.kind === 'ok' || fd.kind === 'risk') && (
               <div style={{ background: isDetention ? '#FCEBEB' : '#EAF3DE', border:`0.5px solid ${isDetention ? '#F7C1C1' : '#C0DD97'}`, borderRadius:'8px', padding:'10px 12px', marginTop:'10px' }}>
                 <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'6px' }}>
                   <span style={{ fontSize:'10px', fontWeight:500, textTransform:'uppercase', letterSpacing:'0.06em', color: isDetention ? '#791F1F' : '#27500A' }}>Free days remaining</span>
-                  <span style={{ fontSize:'20px', fontWeight:500, color: isDetention ? '#A32D2D' : '#0F6E56', lineHeight:1 }}>{td.freeDays} days</span>
+                  <span style={{ fontSize:'20px', fontWeight:500, color: isDetention ? '#A32D2D' : '#0F6E56', lineHeight:1 }}>{fd.left} day{fd.left === 1 ? '' : 's'}</span>
                 </div>
                 <div style={{ height:'4px', background: isDetention ? 'rgba(162,45,45,0.2)' : 'rgba(15,110,86,0.2)', borderRadius:'4px', overflow:'hidden' }}>
                   <div style={{ height:'100%', borderRadius:'4px', width:`${freePct}%`, background: isDetention ? '#E24B4A' : '#1D9E75' }} />
@@ -419,7 +445,12 @@ function JobDetailPanel({ job, trackingData, onClose, onUpdate, onAddEvent, onRe
             {!isMobile && isDetention && (
               <div style={{ display:'flex', alignItems:'flex-start', gap:'7px', padding:'8px 10px', borderRadius:'7px', marginTop:'8px', background:'#FCEBEB', border:'0.5px solid #F7C1C1' }}>
                 <span style={{ fontSize:'13px', flexShrink:0, marginTop:'1px' }}>🚨</span>
-                <span style={{ fontSize:'11px', fontWeight:500, color:'#791F1F', lineHeight:1.4 }}>Only {td.freeDays} free day{td.freeDays !== 1 ? 's' : ''} left — contact client and arrange transport today</span>
+                <span style={{ fontSize:'11px', fontWeight:500, color:'#791F1F', lineHeight:1.4 }}>
+                  {fd.kind === 'running'
+                    ? `Detention running for ${fd.over} day${fd.over === 1 ? '' : 's'} — get the container delivered and the empty returned`
+                    : fd.left === 0 ? 'Last free day today — contact client and arrange transport today'
+                    : `Only ${fd.left} free day${fd.left !== 1 ? 's' : ''} left — contact client and arrange transport today`}
+                </span>
               </div>
             )}
             {!isMobile && !isDetention && td.dpdFlag && (
@@ -451,8 +482,9 @@ function JobDetailPanel({ job, trackingData, onClose, onUpdate, onAddEvent, onRe
                 { label:'Shipping line',    value: td.shippingLineLdb || job.shipping_line },
                 { label:'Vessel IMO',       value: td.vesselImo,       mono: true, muted: true },
                 ...(isMobile ? [
-                  { label:'Free Days', value: td.freeDays != null ? `${td.freeDays} days${isDetention ? ' ⚠' : ''}` : null },
-                  { label:'Detention from', value: detentionDate || null, color: isDetention ? '#dc2626' : td.freeDays != null && td.freeDays <= 5 ? '#b45309' : null },
+                  { label: fd.kind === 'running' ? 'Detention' : 'Free Days',
+                    value: fd.kind === 'running' ? `${fd.over} days running ⚠` : fd.kind === 'unclear' ? `Unclear — no movement ${fd.stillDays} days` : fd.left != null ? `${fd.left} days${isDetention ? ' ⚠' : ''}` : null },
+                  ...(fd.kind === 'done' || fd.kind === 'unclear' ? [] : [{ label:'Detention from', value: detentionDate || null, color: isDetention ? '#dc2626' : fd.left != null && fd.left <= 5 ? '#b45309' : null }]),
                   { label:'DPD', value: td.dpdFlag ? '✓ Yes' : td.dpdFlag === false ? 'No' : null, ok: td.dpdFlag },
                 ] : []),
               ].map(f => (
@@ -1327,7 +1359,7 @@ function ContainerTrackingSection({ showToast, jobs, pendingNavAction, onNavActi
       if (filterLine && job.shipping_line !== filterLine) return false
       if (filterMilestone) {
         if (filterMilestone === 'detained') {
-          const anyDetained = cnList.some(cn => (trackingData[cn]?.freeDays ?? 99) <= 2)
+          const anyDetained = cnList.some(cn => isDetentionState(freeDayState(trackingData[cn], job)))
           if (!anyDetained) return false
         } else if (filterMilestone === 'dpd') {
           const anyDPD = cnList.some(cn => trackingData[cn]?.dpdFlag === true)
@@ -1477,11 +1509,11 @@ function ContainerTrackingSection({ showToast, jobs, pendingNavAction, onNavActi
     let inTransit = 0, atCFS = 0, detained = 0, arrivingThisWeek = 0
     const today = new Date()
     const weekOut = new Date(); weekOut.setDate(today.getDate() + 7)
-    for (const { cnList } of allJobCards) {
+    for (const { job, cnList } of allJobCards) {
       for (const cn of cnList) {
         const td = trackingData[cn] || {}
         const status = td.status || 'in_transit'
-        if (!['delivered', 'empty_returned'].includes(td.status) && td.freeDays != null && td.freeDays <= 2) detained++
+        if (isDetentionState(freeDayState(td, job))) detained++
         else if (status === 'in_transit')  inTransit++
         else if (status === 'at_cfs' || status === 'arrived') atCFS++
         const eta = td.eta || null
