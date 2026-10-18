@@ -21,6 +21,7 @@ import CustomsDeskPage from './v2/CustomsDeskPage'
 import SearchPage from './v2/SearchPage'
 import ClientsPage from './v2/ClientsPage'
 import DetentionPage from './v2/DetentionPage'
+import BotPreviewPage from './v2/BotPreviewPage'
 import CreateJob from './CreateJob'
 import { forceRefreshAllContainers } from '../services/tracking/ldbProvider'
 
@@ -66,6 +67,7 @@ const NAV_SECTIONS = [
       { id: 'clients', label: 'Clients', icon: '👥' },
       { id: 'overview', label: 'Team & stages', icon: '⊞' },
       { id: 'compliance', label: 'BIS & Licences', icon: '✓' },
+      { id: 'bot', label: 'WhatsApp bot', icon: '💬' },
     ]
   },
 ]
@@ -930,6 +932,7 @@ export default function AdminDashboard() {
           {activeNav === 'search' && <SearchPage {...pageProps} />}
           {activeNav === 'clients' && <ClientsPage {...pageProps} />}
           {activeNav === 'detention' && <DetentionPage {...pageProps} />}
+          {activeNav === 'bot' && <BotPreviewPage {...pageProps} />}
 
           {activeNav === 'payments' && (
             <PaymentsSection jobs={jobs} profiles={profiles} showToast={showToast} getStageName={getStageName} />
