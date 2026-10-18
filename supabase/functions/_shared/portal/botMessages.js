@@ -243,13 +243,18 @@ export function answer(data, message, person, now = new Date()) {
   return `Sorry, I did not understand "${oneLine(message).slice(0, 40)}".\n\n${HELP}`
 }
 
-// Team members the bot talks to: staff logins are "<10-digit mobile>@jds.local".
-// Returns [{ id, name, role, phone }] with phone as 91XXXXXXXXXX.
+// The ONLY numbers the bot sends to or answers (Jose's decision, 18 Oct 2026:
+// "only Jose for now"). To add someone later, add their 91XXXXXXXXXX here.
+export const BOT_NUMBERS = ['919920276224']
+
+// Team members the bot talks to: staff logins are "<10-digit mobile>@jds.local",
+// and only numbers in BOT_NUMBERS. Returns [{ id, name, role, phone }].
 export function teamFromProfiles(profiles = []) {
+  const seen = new Set()
   return profiles
     .map((p) => {
       const digits = String(p.phone || p.email || '').match(/^(?:\+?91)?([6-9]\d{9})(?:@jds\.local)?$/)
       return digits ? { id: p.id, name: p.name, role: p.role, phone: `91${digits[1]}` } : null
     })
-    .filter(Boolean)
+    .filter((t) => t && BOT_NUMBERS.includes(t.phone) && !seen.has(t.phone) && seen.add(t.phone))
 }

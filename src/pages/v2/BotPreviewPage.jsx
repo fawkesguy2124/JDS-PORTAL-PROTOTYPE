@@ -97,11 +97,11 @@ export default function BotPreviewPage() {
               ))}
             </div>
             <div style={{ ...muted, fontSize: '12px', marginTop: '8px' }}>
-              From the staff logins (mobile number logins). Staff without a mobile login are not included. The free test number can send to 5 people at most.
+              For now the bot sends only to Jose (+91 9920276224). Other staff get nothing and their messages are ignored.
             </div>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '12px', alignItems: 'start' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(300px, 100%), 1fr))', gap: '12px', alignItems: 'start' }}>
             <div style={{ ...card, background: '#efeae2' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', marginBottom: '8px', flexWrap: 'wrap' }}>
                 <div style={{ fontWeight: 600 }}>Morning summary · 9:00</div>

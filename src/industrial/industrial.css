@@ -25,7 +25,7 @@
 /* shell */
 .ix-app { display: grid; grid-template-columns: 232px minmax(0, 1fr); grid-template-rows: 56px minmax(0, 1fr); height: 100vh; background: var(--bg) }
 .ix.nav-collapsed .ix-app { grid-template-columns: 64px minmax(0, 1fr) }
-.ix-top { grid-column: 1 / -1; display: flex; align-items: center; gap: 14px; padding: 0 16px; background: var(--surface); border-bottom: 1px solid var(--line); z-index: 5 }
+.ix-top { grid-column: 1 / -1; min-width: 0; display: flex; align-items: center; gap: 14px; padding: 0 16px; background: var(--surface); border-bottom: 1px solid var(--line); z-index: 5 }
 .ix-brand { display: flex; align-items: center; gap: 10px; width: 200px; flex-shrink: 0 }
 .ix-logo { width: 32px; height: 32px; border-radius: 8px; background: var(--navy); color: #fff; display: grid; place-items: center; font-weight: 700; font-size: 12px }
 .ix-brand b { font-size: 14px; display: block; line-height: 1.2 } .ix-brand small { display: block; color: var(--muted); font-size: 11px }
@@ -267,7 +267,7 @@
 
 @media (max-width: 1180px) { .ix-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)) } .ix-grid-2, .ix-queues { grid-template-columns: 1fr } .ix-q-list { max-height: none } }
 @media (max-width: 760px) {
-  .ix-app { grid-template-columns: 1fr !important; grid-template-rows: 56px minmax(0, 1fr) 62px; height: 100dvh }
+  .ix-app { grid-template-columns: minmax(0, 1fr) !important; grid-template-rows: 56px minmax(0, 1fr) 62px; height: 100dvh }
   .ix-nav { display: none }
   .ix-brand { width: auto } .ix-brand-text, .ix-search kbd { display: none }
   .ix-top { gap: 8px; padding: 0 10px }
