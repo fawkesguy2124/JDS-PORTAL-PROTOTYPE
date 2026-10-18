@@ -9,3 +9,6 @@ verify_jwt = true
 
 [functions.ulip]
 verify_jwt = true
+
+[functions.wa-bot]
+verify_jwt = false   # Meta and the scheduler call it; it checks its own secrets

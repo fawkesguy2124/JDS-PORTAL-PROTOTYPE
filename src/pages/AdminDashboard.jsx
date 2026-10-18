@@ -12,6 +12,7 @@ import ComplianceSection from '../components/ComplianceSection'
 import SearchPage from './v2/SearchPage'
 import ClientsPage from './v2/ClientsPage'
 import DetentionPage from './v2/DetentionPage'
+import BotPreviewPage from './v2/BotPreviewPage'
 import CreateJob from './CreateJob'
 import '../industrial/industrial.css'
 import { JourneyProvider, useJourney } from '../industrial/JourneyContext'
@@ -43,6 +44,7 @@ const NAV_SECTIONS = [
     { id: 'clients', label: 'Clients', icon: 'users' },
     { id: 'overview', label: 'Team & stages', icon: 'chart-bar' },
     { id: 'compliance', label: 'BIS & Licences', icon: 'certificate' },
+    { id: 'bot', label: 'WhatsApp bot', icon: 'brand-whatsapp' },
   ] },
 ]
 
@@ -763,6 +765,7 @@ function AdminDashboardInner() {
       {activeNav === 'detention' && legacy(<DetentionPage {...pageProps} />)}
       {activeNav === 'payments' && legacy(<PaymentsSection jobs={jobs} profiles={profiles} showToast={showToast} getStageName={getStageName} />)}
       {activeNav === 'compliance' && legacy(<ComplianceSection showToast={showToast} />)}
+      {activeNav === 'bot' && legacy(<BotPreviewPage {...pageProps} />)}
 
       {!NAV_ITEMS.some(n => n.id === activeNav) && (
         <div className="ix-page"><div className="ix-card ix-empty">This page does not exist. Pick one from the menu.</div></div>
