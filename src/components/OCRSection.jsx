@@ -923,8 +923,8 @@ export default function OCRSection({ job: preselectedJob, jobs, currentUserName,
                               )}
                             </div>
                           </div>
-                          {key === 'invoice_line_items' && (
-                            <p className="text-xs text-[#1e40af] mb-1.5">Line items are not read automatically — please add them by hand if needed.</p>
+                          {key === 'invoice_line_items' && isEmpty && (
+                            <p className="text-xs text-[#1e40af] mb-1.5">Line items are read from a Bill of Entry. For other documents, please add them by hand if needed.</p>
                           )}
                           {key === 'exchange_rates' && isEmpty && (
                             <p className="text-xs text-[#1e40af] mb-1.5">Exchange rates are not read automatically — please add them by hand if needed.</p>

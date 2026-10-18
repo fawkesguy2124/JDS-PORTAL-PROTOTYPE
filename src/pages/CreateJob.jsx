@@ -290,6 +290,7 @@ export default function CreateJob({ isModal = false, onCancel, onCreated }) {
         shipping_line: f.shipping_line || null,
         vessel: f.vessel_name ? `${f.vessel_name}${f.voyage_no ? ` / ${f.voyage_no}` : ''}` : null,
         goods: f.goods_description || null,
+        eta: f.eta || null,
         hs_code: f.hs_code || null,
         be_no: f.be_number || null,
         be_date: f.be_date || null,

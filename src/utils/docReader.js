@@ -68,6 +68,23 @@ const CARRIERS = [
   ['RCL', /REGIONAL CONTAINER LINES|\bRCL\b/],
   ['Emirates', /EMIRATES SHIPPING/],
 ]
+// The shipping line from its own codes: the BL number prefix, else the
+// prefix of its own containers (leasing companies' boxes are ignored)
+const BL_PREFIX = { MEDU: 'MSC', MSCU: 'MSC', MAEU: 'Maersk', ONEY: 'ONE', HLCU: 'Hapag-Lloyd', CMDU: 'CMA CGM', COSU: 'COSCO', EGLV: 'Evergreen', OOLU: 'OOCL', HDMU: 'HMM', ZIMU: 'ZIM', YMLU: 'Yang Ming', WHLC: 'Wan Hai' }
+const BOX_PREFIX = {
+  MSCU: 'MSC', MSDU: 'MSC', MSMU: 'MSC', MSNU: 'MSC', MEDU: 'MSC', MSKU: 'Maersk', MRKU: 'Maersk', MAEU: 'Maersk', MRSU: 'Maersk',
+  ONEU: 'ONE', HLXU: 'Hapag-Lloyd', HLBU: 'Hapag-Lloyd', HAMU: 'Hapag-Lloyd', CMAU: 'CMA CGM', EGSU: 'Evergreen', EGHU: 'Evergreen',
+  EMCU: 'Evergreen', EISU: 'Evergreen', OOLU: 'OOCL', OOCU: 'OOCL', CSNU: 'COSCO', CBHU: 'COSCO', CCLU: 'COSCO', HDMU: 'HMM',
+  ZIMU: 'ZIM', ZCSU: 'ZIM', YMLU: 'Yang Ming', YMMU: 'Yang Ming', WHLU: 'Wan Hai', WHSU: 'Wan Hai',
+}
+export function lineFromCodes(bl, containers = []) {
+  const p = String(bl || '').toUpperCase().slice(0, 4)
+  if (BL_PREFIX[p]) return BL_PREFIX[p]
+  const votes = {}
+  for (const c of containers || []) { const l = BOX_PREFIX[String(c).slice(0, 4)]; if (l) votes[l] = (votes[l] || 0) + 1 }
+  return Object.entries(votes).sort((a, b) => b[1] - a[1])[0]?.[0] || null
+}
+
 function carrierOf(text) {
   const t = String(text).toUpperCase()
   return CARRIERS.find(([, re]) => re.test(t))?.[0] || null
@@ -347,6 +364,15 @@ function fromBe(be) {
     country_of_origin: be.country_of_origin, port_of_loading: be.port_of_loading,
     hs_code: be.hs_code, rms_status: be.rms_status, rms_label: be.rms_label,
     ooc_number: be.ooc_no, ooc_date: be.ooc_date, copy_type: be.copy_type,
+    // arrival: the inward date (the day the ship / flight was let in)
+    eta: be.inward_date || null,
+    inward_date: be.inward_date || null,
+    shipping_line: be.mode === 'Air' ? null : lineFromCodes(be.bl_no, be.containers),
+    goods_description: be.goods || null,
+    invoice_line_items: be.items || [],
+    invoice_numbers: (be.invoices || []).map((i) => i.no),
+    invoice_amounts: (be.invoices || []).map((i) => i.amount),
+    invoice_currencies: (be.invoices || []).map((i) => i.currency),
   }
 }
 

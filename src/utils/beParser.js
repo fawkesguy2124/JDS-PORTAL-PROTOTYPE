@@ -213,6 +213,71 @@ export function parseBeLines(lines) {
   const g = text.match(/\n\s*1\s+1\s+(\d{8})\s+([^\n]+)/)
   out.hs_code = g?.[1] || null
 
+  // Invoices (Part IV "INVOICE DETAILS": S NO, INVOICE NO, INVOICE AMOUNT, CUR)
+  const invoices = []
+  lines.forEach((ln, i) => {
+    if (!/S NO\s+2\. INVOICE NO\s+3\. INVOICE AMOUNT\s+4\. CUR/.test(ln)) return
+    for (let j = i + 1; j < Math.min(i + 40, lines.length); j++) {
+      if (/^(ASSESSED|COPY|FIRST COPY|OOC COPY|)$/.test(lines[j].trim())) continue
+      const r = lines[j].trim().match(/^(\d{1,3})\s+(\S+)\s+([\d.]+)\s+([A-Z]{3})$/)
+      if (!r) break
+      if (!invoices.some((x) => x.no === r[2])) invoices.push({ sno: Number(r[1]), no: r[2], amount: Number(r[3]), currency: r[4] })
+    }
+  })
+  out.invoices = invoices
+
+  // Items (Part II item table: S NO, CTH, DESCRIPTION, UNIT PRICE, QUANTITY, UQC, AMOUNT).
+  // A long description runs onto the next lines; item numbers start again at 1 for each invoice.
+  const items = []
+  let inv = -1
+  let lastSno = 0
+  // margin labels and stamps printed in the middle of the table are skipped
+  const STOP = /^(=== PAGE|GLOSSARY|Page\s+\d|PART\s|\d\.\s?S\s?NO|BILL OF ENTRY|Port Code|[F-Z]\.\s|[F-Z]\.$)/
+  const NOISE = /^(COPY|FIRST COPY|ORIGINAL|DUPLICATE|OOC COPY|OUT OF CHARGE COPY|E\.|ITEM DETAILS|ASSESSED|DETAILS)$/
+  // numbers may have commas or no digit before the point (".923648")
+  const ITEM = /^(\d{1,4})\s+(\d{8})\s+(.+?)\s+([\d,]*\.?\d+)\s+([\d,]*\.?\d+)\s+([A-Z]{2,4})\s+([\d,]*\.?\d+)$/
+  const n2 = (x) => Number(String(x).replace(/,/g, ''))
+  lines.forEach((ln, i) => {
+    if (!/^1\.S NO\.\s+2\.CTH\s+3\.DESCRIPTION/.test(ln)) return
+    for (let j = i + 1; j < lines.length; j++) {
+      const row = lines[j].trim()
+      const m = row.match(ITEM)
+      if (m) {
+        const sno = Number(m[1])
+        if (inv < 0) inv = 0
+        else if (sno <= lastSno) inv++
+        lastSno = sno
+        items.push({ inv, sno, cth: m[2], description: m[3], unit_price: n2(m[4]), quantity: n2(m[5]), uqc: m[6], amount: n2(m[7]) })
+        continue
+      }
+      if (!row || NOISE.test(row)) continue
+      if (STOP.test(row)) break
+      if (items.length) items[items.length - 1].description += ` ${row}`
+    }
+  })
+  out.items = items.map((it) => ({
+    sno: it.sno,
+    invoice_no: invoices[it.inv]?.no || null,
+    currency: invoices[it.inv]?.currency || null,
+    cth: it.cth,
+    description: it.description.replace(/\s+/g, ' ').trim(),
+    unit_price: it.unit_price,
+    quantity: it.quantity,
+    uqc: it.uqc,
+    amount: it.amount,
+    country_of_origin: null,
+  }))
+  if (!out.hs_code && out.items[0]) out.hs_code = out.items[0].cth
+
+  // One line for the job: the first item, "+ N more items" when there are more
+  if (out.items.length) {
+    const first = out.items[0].description
+    const short = (first.split(/\s+-\s+|\s*\(/)[0] || first).trim()
+    const name = short.length >= 4 ? short : first.slice(0, 80)
+    const others = new Set(out.items.slice(1).map((x) => (x.description.split(/\s+-\s+|\s*\(/)[0] || x.description).trim()).filter((x) => x !== name))
+    out.goods = others.size ? `${name} + ${others.size} more item${others.size === 1 ? '' : 's'}` : name
+  } else out.goods = null
+
   return out
 }
 
