@@ -17,14 +17,16 @@ const MAX_LINES = 8 // per section; the rest is "+N more"
 
 // Templates to submit in Meta (WhatsApp Manager → Message templates).
 // Category: Utility. Language: English. {{n}} = values filled by the bot.
+// Submitted in WhatsApp Manager on 18 Oct 2026 with exactly this wording
+// (Meta flagged a "Good morning" version as marketing, so they read as status updates).
 export const TEMPLATES = {
   jds_morning_summary: {
-    body: 'Good morning {{1}}. JDS jobs for {{2}}: {{3}} urgent, {{4}} to do today, {{5}} arriving soon. Reply SUMMARY for the full list.',
+    body: 'Hello {{1}}, here is your daily shipment status update for {{2}}: {{3}} shipments need urgent action, {{4}} tasks are due today and {{5}} shipments are arriving soon. Reply SUMMARY to see the details.',
     sample: ['Jose', 'Sun 18 Oct', '3', '5', '2'],
   },
   jds_alert: {
-    body: 'JDS alert for {{1}}: {{2}}. Reply {{3}} for the job details.',
-    sample: ['J-193 (NNC Pvt Ltd)', 'OOC granted, OOC 2071539740 dated 22 Jun', 'J-193'],
+    body: 'Shipment status update for job {{1}}: {{2}}. Reply {{3}} to see the full job details.',
+    sample: ['J-193 (Deepa Traders)', 'OOC granted, OOC 2071539740 dated 22 Jun. Arrange the truck', 'J-193'],
   },
 }
 
@@ -131,7 +133,7 @@ export function instantAlerts(data, events = [], now = new Date()) {
     out.push({
       key, kind, jobId: job.id, jobNo: job.job_no,
       text: `🔔 *${who}*\n${what}\nReply ${job.job_no} for the job details.`,
-      template: { name: 'jds_alert', values: [who, oneLine(what), job.job_no] },
+      template: { name: 'jds_alert', values: [who, oneLine(what).replace(/[.\s]+$/, ''), job.job_no] },
     })
   }
 
