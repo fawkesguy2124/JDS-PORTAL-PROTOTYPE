@@ -158,8 +158,34 @@ async function handleInbound(admin: Admin, payload: any) {
   }
 }
 
+// Meta only passes incoming messages to the bot if the WhatsApp account is
+// "subscribed" to the app. Make sure of that once each time the bot starts,
+// using the bot's own key, and write the outcome to the log (never the key).
+const WABA_ID = '1646613459995849'
+const APP_ID = '1971564977582223' // JDS portal bot
+let subscribeChecked = false
+async function ensureSubscribed() {
+  if (subscribeChecked || !env('WHATSAPP_TOKEN')) return
+  subscribeChecked = true
+  try {
+    const auth = { Authorization: `Bearer ${env('WHATSAPP_TOKEN')}` }
+    const before = await fetch(`${GRAPH}/${WABA_ID}/subscribed_apps`, { headers: auth }).then((r) => r.json()).catch(() => ({}))
+    if (before?.error) { console.warn(`[wa-bot] subscription check failed: ${before.error.message}`); return }
+    const apps = (before?.data || []).map((d: any) => d?.whatsapp_business_api_data || {})
+    const names = apps.map((d: any) => d.name || d.id).filter(Boolean).join(', ') || 'no app'
+    // other apps on the account (e.g. Container-JDS-Tracking) are left as they are
+    if (apps.some((d: any) => String(d.id) === APP_ID)) { console.log(`[wa-bot] WhatsApp account sends messages to: ${names} (includes this bot)`); return }
+    console.log(`[wa-bot] WhatsApp account sends messages to: ${names}, not to this bot. Adding it.`)
+    const res = await fetch(`${GRAPH}/${WABA_ID}/subscribed_apps`, { method: 'POST', headers: auth }).then((r) => r.json()).catch(() => ({}))
+    console.log(`[wa-bot] subscribed the WhatsApp account to the app: ${res?.success ? 'yes' : `no (${res?.error?.message || 'unknown'})`}`)
+  } catch (e) {
+    console.warn(`[wa-bot] subscription check error: ${(e as Error).message}`)
+  }
+}
+
 Deno.serve(async (req) => {
   const url = new URL(req.url)
+  await ensureSubscribed()
 
   // 1. Meta's one-time webhook check
   if (req.method === 'GET') {
