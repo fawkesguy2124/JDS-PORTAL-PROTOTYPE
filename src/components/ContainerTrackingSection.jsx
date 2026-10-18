@@ -490,49 +490,44 @@ function JobDetailPanel({ job, trackingData, onClose, onUpdate, onAddEvent, onRe
           </div>
 
           {/* Port events */}
-          <div style={{ padding:'14px 18px', borderBottom:'0.5px solid var(--color-border-tertiary)', background:'var(--color-background-secondary)', borderLeft:'3px solid #EF9F27' }}>
-            {td.cfsOrderCorrected && (
-              <div style={{ fontSize:'12px', color:'#92400e', background:'#fffbeb', border:'1px solid #fde68a', borderRadius:'8px', padding:'6px 10px', marginBottom:'10px' }}>
-                Corrected: the CFS reported CFS IN and CFS OUT in the wrong order (OUT came first). The portal has swapped them.
-              </div>
-            )}
-            <div style={{ fontSize:'11px', fontWeight:500, textTransform:'uppercase', letterSpacing:'0.07em', color:'var(--color-text-secondary)', marginBottom:'8px', display:'flex', alignItems:'center', gap:'5px' }}>
-              Port events
-              <span style={{ flex:1, height:'0.5px', background:'var(--color-border-tertiary)', display:'block' }} />
-            </div>
-            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'12px' }}>
-              {[
-                { label:'Port in',      value: formatDT(td.portIn) },
-                { label:'Port out',     value: formatDT(td.portOut) },
-                { 
-                  label: (td.milestones || []).some(m => 
-                    (m.description || '').toUpperCase().trim() === 'ICD IN' || 
-                    (m.description || '').toUpperCase().trim() === 'ICD GATE IN'
-                  ) ? 'ICD gate in' : 'CFS gate in',
-                  value: formatDT(td.cfsGateIn)
-                },
-                (() => {
-                  // Gate out = the CFS OUT / ICD OUT event in the event history.
-                  // GATE CROSSED is the port gate (it comes before CFS OUT), so it is not used.
-                  const events = td.milestones || []
-                  const desc = (m) => (m.description || '').toUpperCase().trim()
-                  const latest = (names) => events
-                    .filter(m => names.includes(desc(m)) && m.date)
-                    .sort((a, b) => new Date(b.date) - new Date(a.date))[0]
-                  const isIcd = events.some(m => ['ICD IN', 'ICD GATE IN', 'ICD OUT', 'ICD GATE OUT'].includes(desc(m)))
-                  const out = latest(['CFS OUT', 'CFS GATE OUT', 'ICD OUT', 'ICD GATE OUT']) || latest(['GATE OUT', 'GATEOUT'])
-                  return { label: isIcd ? 'ICD gate out' : 'CFS gate out', value: out ? formatDT(out.date) : null }
-                })(),
-              ].map(f => (
-                <div key={f.label}>
-                  <div style={{ fontSize:'10px', fontWeight:500, textTransform:'uppercase', letterSpacing:'0.06em', color:'var(--color-text-secondary)', marginBottom:'4px' }}>{f.label}</div>
-                    <div style={{ fontSize:'13px', color: f.muted ? 'var(--color-text-secondary)' : f.value && f.value !== '—' ? 'var(--color-text-primary)' : 'var(--color-text-secondary)' }}>
-                    {f.value || '—'}
+          {(() => {
+            const g = cfsGates(td, formatDT)
+            const boxes = [
+              { label: 'Port in', value: formatDT(td.portIn) },
+              { label: 'Port out', value: formatDT(td.portOut) },
+              { label: g.inLabel, value: g.inValue, place: g.moved ? g.inPlace : null },
+              { label: g.outLabel, value: g.outValue, place: g.moved ? g.outPlace : null },
+            ]
+            return (
+              <div style={{ padding:'14px 18px', borderBottom:'0.5px solid var(--color-border-tertiary)', background:'var(--color-background-secondary)', borderLeft:'3px solid #EF9F27' }}>
+                {td.cfsOrderCorrected && (
+                  <div style={{ fontSize:'12px', color:'#92400e', background:'#fffbeb', border:'1px solid #fde68a', borderRadius:'8px', padding:'6px 10px', marginBottom:'10px' }}>
+                    Corrected: the CFS reported CFS IN and CFS OUT in the wrong order (OUT came first). The portal has swapped them.
                   </div>
+                )}
+                {g.moved && (
+                  <div style={{ fontSize:'12px', color:'#1e40af', background:'#eff6ff', border:'1px solid #bfdbfe', borderRadius:'8px', padding:'6px 10px', marginBottom:'10px' }}>
+                    <b>Moved between CFSs:</b> {g.note}
+                  </div>
+                )}
+                <div style={{ fontSize:'11px', fontWeight:500, textTransform:'uppercase', letterSpacing:'0.07em', color:'var(--color-text-secondary)', marginBottom:'8px', display:'flex', alignItems:'center', gap:'5px' }}>
+                  Port events
+                  <span style={{ flex:1, height:'0.5px', background:'var(--color-border-tertiary)', display:'block' }} />
                 </div>
-              ))}
-            </div>
-          </div>
+                <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'12px' }}>
+                  {boxes.map(f => (
+                    <div key={f.label}>
+                      <div style={{ fontSize:'10px', fontWeight:500, textTransform:'uppercase', letterSpacing:'0.06em', color:'var(--color-text-secondary)', marginBottom:'4px' }}>{f.label}</div>
+                      <div style={{ fontSize:'13px', color: f.value && f.value !== '—' ? 'var(--color-text-primary)' : 'var(--color-text-secondary)' }}>
+                        {f.value || '—'}
+                      </div>
+                      {f.place && <div style={{ fontSize:'11px', color:'var(--color-text-secondary)', marginTop:'2px' }}>at {f.place}</div>}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )
+          })()}
 
           {/* Event history */}
           {td.milestones?.length > 0 && (
@@ -599,6 +594,43 @@ function JobDetailPanel({ job, trackingData, onClose, onUpdate, onAddEvent, onRe
       </div>
     </>
   )
+}
+
+// CFS / ICD gate in and gate out for the Port events boxes. Gate out comes from
+// the CFS OUT / ICD OUT event (GATE CROSSED is the port gate, so it is not used).
+// When the two are at different CFSs, the boxes name each CFS.
+const CFS_IN_NAMES = ['CFS IN', 'CFS GATE IN', 'ICD IN', 'ICD GATE IN']
+const CFS_OUT_NAMES = ['CFS OUT', 'CFS GATE OUT', 'ICD OUT', 'ICD GATE OUT']
+const shortPlace = (loc) => {
+  const s = String(loc || '').trim()
+  if (!s) return ''
+  return (s.includes('/') ? s.split('/').slice(1).join('/') : s).replace(/\s*,\s*/g, ', ').trim()
+}
+function cfsGates(td, formatDT) {
+  const events = td.milestones || []
+  const desc = (m) => (m.description || '').toUpperCase().trim()
+  const latest = (names) => events.filter(m => names.includes(desc(m)) && m.date).sort((a, b) => new Date(b.date) - new Date(a.date))[0]
+  const isIcd = events.some(m => ['ICD IN', 'ICD GATE IN', 'ICD OUT', 'ICD GATE OUT'].includes(desc(m)))
+  const inDate = td.cfsGateIn || null
+  const inEvent = (inDate && events.find(m => CFS_IN_NAMES.includes(desc(m)) && m.date && new Date(m.date).getTime() === new Date(inDate).getTime())) || latest(CFS_IN_NAMES)
+  const outEvent = latest(CFS_OUT_NAMES) || latest(['GATE OUT', 'GATEOUT'])
+  const inPlace = shortPlace(inEvent?.location)
+  const outPlace = shortPlace(outEvent?.location)
+  const moved = !!(inEvent && outEvent && inPlace && outPlace && inPlace.toUpperCase().replace(/\W/g, '') !== outPlace.toUpperCase().replace(/\W/g, ''))
+  const d = (x) => formatDT(x).replace(/,? \d{1,2}:\d{2}.*$/, '')
+  let note = ''
+  if (moved) {
+    note = new Date(outEvent.date) < new Date(inEvent.date)
+      ? `left ${outPlace} on ${d(outEvent.date)}, then entered ${inPlace} on ${d(inEvent.date)}.`
+      : `gate in was reported at ${inPlace} and gate out at ${outPlace}.`
+  }
+  return {
+    inLabel: isIcd ? 'ICD gate in' : 'CFS gate in',
+    inValue: formatDT(inDate || inEvent?.date || null),
+    outLabel: isIcd ? 'ICD gate out' : 'CFS gate out',
+    outValue: outEvent ? formatDT(outEvent.date) : null,
+    inPlace, outPlace, moved, note,
+  }
 }
 
 function UpdateStatusModal({ container, statusOptions, onClose, onSaved, showToast }) {
