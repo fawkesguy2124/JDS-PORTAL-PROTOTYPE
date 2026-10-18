@@ -8,6 +8,8 @@ import { JobPicker, TruckWorkspace, NoJobChosen } from '../JobChecks'
 const TRUCK_GROUPS = JOB_TABS.find((t) => t.id === 'truck')?.groups || []
 import { useJourney } from '../JourneyContext'
 import { Icon, Chip, fmtDate, timeAgo } from '../ui'
+import TruckMap from '../TruckMap'
+import { truckPoints } from '../truckPoints'
 
 // Trucks: where each truck was last seen (saved FASTag answers), and jobs
 // waiting for one. Truck checks run ONLY when staff press the check button.
@@ -27,7 +29,6 @@ const fmtTime = (v) => {
   const d = new Date(v)
   return isNaN(d) ? String(v) : d.toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })
 }
-const short = (s, n = 22) => (String(s || '').length > n ? `${String(s).slice(0, n - 1)}…` : String(s || ''))
 const containersText = (nos) => (!nos?.length ? '—' : nos.length > 2 ? `${nos.length} containers` : nos.join(', '))
 
 // Answers from checks made on this page, laid over the loaded data until the next full load
@@ -48,76 +49,6 @@ function useOverlay(data, rows) {
     return rows.map((r) => (extra.results[String(r.job.id)] ? { job: r.job, j: journeyFor(r.job, d2) } : r))
   }, [data, rows, extra])
   return [view, add, resultsFor]
-}
-
-// Toll crossings saved for this truck, oldest first (at most the last 6)
-function crossingsFor(job, j, results) {
-  const row = [].concat(results?.['FASTAG/01'] || []).filter(Boolean).find((r) => sameNo(r.params?.vehiclenumber, job.truck_no))
-  const table = row?.parsed?.found ? row.parsed.tables?.[0] : null
-  const list = (table?.rows || []).filter((r) => r?.[0]).slice(0, 6).map((r) => ({ plaza: r[0], when: r[1] || '' })).reverse()
-  if (list.length) return list
-  return j.truckLocation ? [{ plaza: j.truckLocation.plaza, when: fmtTime(j.truckLocation.at) }] : []
-}
-
-function RouteStrip({ sel, results }) {
-  if (!sel) {
-    return <div className="ix-map ix-map-msg"><div><Icon name="truck" /> No trucks on the road right now.</div></div>
-  }
-  const { job, j } = sel
-  const points = crossingsFor(job, j, results)
-  if (!points.length) {
-    return (
-      <div className="ix-map ix-map-msg">
-        <div>
-          <Icon name="map-pin" /> No toll crossing on record for <b className="mono">{job.truck_no}</b> ({job.job_no}) yet.
-          <div style={{ fontSize: 12, marginTop: 4 }}>Press “Where is it?” on the truck below to ask FASTag.</div>
-        </div>
-      </div>
-    )
-  }
-  const n = points.length
-  const left = 70, right = n === 1 ? 420 : 740
-  const xy = points.map((p, i) => ({ ...p, x: n === 1 ? left + 200 : left + ((right - left) * i) / (n - 1), y: 125 + (i % 2 ? -28 : 18) }))
-  const last = xy[n - 1]
-  const dest = { x: 850, y: 190 }
-  const line = xy.map((p) => `${p.x},${p.y}`).join(' ')
-  return (
-    <div className="ix-map">
-      <svg viewBox="0 0 900 240" width="100%" height="100%" preserveAspectRatio="xMidYMid meet" role="img" aria-label={`Toll crossings of truck ${job.truck_no}`}>
-        <path d={`M${last.x} ${last.y} L${dest.x} ${dest.y}`} fill="none" stroke="#c9d6ea" strokeWidth="6" strokeLinecap="round" strokeDasharray="2 12" />
-        {n > 1 && <polyline points={line} fill="none" stroke="#1a4fa0" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />}
-        {xy.map((p, i) => {
-          const isLast = i === n - 1
-          const above = i % 2 === 1 || isLast
-          return (
-            <g key={i}>
-              <circle cx={p.x} cy={p.y} r={isLast ? 9 : 6} fill="#1a4fa0" stroke="#1a4fa0" strokeWidth="3" />
-              {!isLast && (
-                <>
-                  <text x={p.x} y={above ? p.y - 30 : p.y + 26} textAnchor="middle" fontSize="12.5" fontFamily="Inter" fill="#4a5568">{short(p.plaza)}</text>
-                  <text x={p.x} y={above ? p.y - 15 : p.y + 41} textAnchor="middle" fontSize="11" fontFamily="Inter" fill="#8a96a8">{short(p.when, 26)}</text>
-                </>
-              )}
-              {isLast && (
-                <>
-                  <text x={p.x} y={p.y - 40} textAnchor="middle" fontSize="13" fontWeight="600" fontFamily="Inter" fill="#1a2233">{short(p.plaza, 28)}</text>
-                  <text x={p.x} y={p.y - 24} textAnchor="middle" fontSize="11" fontFamily="Inter" fill="#8a96a8">{short(p.when, 26)}</text>
-                  <rect x={p.x - 60} y={p.y + 16} width="120" height="26" rx="6" fill="#1a2233" />
-                  <text x={p.x} y={p.y + 34} textAnchor="middle" fontSize="12" fontFamily="JetBrains Mono, monospace" fill="#fff">{job.truck_no}</text>
-                </>
-              )}
-            </g>
-          )
-        })}
-        <circle cx={dest.x} cy={dest.y} r="6" fill="#fff" stroke="#8a96a8" strokeWidth="3" />
-        <text x={dest.x} y={dest.y - 16} textAnchor="end" fontSize="12.5" fontFamily="Inter" fill="#8a96a8">{short(`To ${job.client || 'client'}`, 26)}</text>
-      </svg>
-      <div style={{ position: 'absolute', left: 14, bottom: 10, fontSize: 12, color: 'var(--muted)' }}>
-        Last {n === 1 ? 'toll crossing' : `${n} toll crossings`} from FASTag · {job.job_no}
-        {j.truckLocation?.checkedAt ? ` · checked ${timeAgo(j.truckLocation.checkedAt)}` : ''}
-      </div>
-    </div>
-  )
 }
 
 function PapersChip({ papers, onClick, disabled }) {
@@ -219,7 +150,7 @@ export default function TrucksPage({ currentUserName, onOpenJob, showToast, canU
       <div key={job.id}>
         <div className={cls}>
           <div>
-            <button type="button" className="ix-plate" onClick={() => setSelectedId(job.id)} title="Show this truck on the route strip" style={{ cursor: 'pointer' }}>
+            <button type="button" className="ix-plate" onClick={() => setSelectedId(job.id)} title="Show this truck on the map" style={{ cursor: 'pointer' }}>
               {job.truck_no}
             </button>
           </div>
@@ -319,7 +250,7 @@ export default function TrucksPage({ currentUserName, onOpenJob, showToast, canU
       ) : error ? null : (
         <>
           <div className="ix-card" style={{ marginBottom: 16 }}>
-            <RouteStrip sel={sel} results={sel ? resultsFor(sel.job.id) : null} />
+            <TruckMap trucks={onRoad.map((r) => ({ job: r.job, points: truckPoints(r.job, r.j, resultsFor(r.job.id)) }))} selectedId={sel?.job.id || null} onSelect={setSelectedId} />
             <div className="ix-card-head">
               <Icon name="truck" style={{ color: 'var(--navy)' }} />
               <h2>On the road</h2><span className="ix-chip grey">{lists.road.length}</span>

@@ -146,6 +146,14 @@ const TRUCK_NO = /^[A-Z0-9]{5,11}$|^[A-Z0-9]{17,20}$/
 
 const DIRECTIONS: Record<string, string> = { N: 'North', S: 'South', E: 'East', W: 'West' }
 
+// "18.7963,73.2921" → [lat, lng] when it is a real place in India, else null
+function geocode(v: unknown): [number, number] | null {
+  const m = String(v ?? '').match(/(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)/)
+  if (!m) return null
+  const lat = Number(m[1]), lng = Number(m[2])
+  return lat >= 6 && lat <= 37.5 && lng >= 68 && lng <= 97.5 ? [lat, lng] : null
+}
+
 function txnIso(v: unknown): string | null {
   const m = String(v ?? '').match(/^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}(?::\d{2})?)/)
   if (m) return `${m[1]}T${m[2].length === 5 ? m[2] + ':00' : m[2]}`
@@ -193,7 +201,11 @@ const FASTAG_01: ApiDef = {
         field('Crossings in last 72 hours', rows.length),
       ]),
       tables: [table],
-      extra: { lastPlaza: text(last.t.tollPlazaName), lastSeenAt: last.iso, crossings: rows.length },
+      extra: {
+        lastPlaza: text(last.t.tollPlazaName), lastSeenAt: last.iso, crossings: rows.length,
+        // for the map: newest first, with the plaza's position when FASTag gives one
+        points: rows.map(({ t, iso }) => ({ plaza: text(t.tollPlazaName), at: iso, dir: text(t.laneDirection), pos: geocode(t.tollPlazaGeocode) })),
+      },
     }
   }),
 }

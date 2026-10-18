@@ -77,6 +77,16 @@ test('FASTAG/01 found', () => {
   assert.deepEqual(r.tables![0].rows[0], ['GMR Chillakallu Toll Plaza', '30 Oct 2021, 12:41', 'North'])  // newest first
   assert.equal(r.extra!.lastPlaza, 'GMR Chillakallu Toll Plaza')
   assert.equal(r.extra!.lastSeenAt, '2021-10-30T12:41:23')
+  assert.deepEqual(r.extra!.points[0], { plaza: 'GMR Chillakallu Toll Plaza', at: '2021-10-30T12:41:23', dir: 'N', pos: null }) // 11,11 is not in India
+})
+
+test('FASTAG/01 keeps the toll plaza position for the map', () => {
+  const r = api('FASTAG/01').parse(wrap({ result: 'SUCCESS', vehicle: { errCode: '000', vehltxnList: { txn: [
+    { readerReadTime: '2026-10-18 18:01:00.0', laneDirection: 'E', tollPlazaGeocode: '18.7963,73.2921', tollPlazaName: 'Khalapur Toll Plaza', vehicleRegNo: 'MH04KF8812' },
+    { readerReadTime: '2026-10-18 17:10:00.0', laneDirection: 'E', tollPlazaGeocode: 'not given', tollPlazaName: 'Palaspe Toll Plaza', vehicleRegNo: 'MH04KF8812' },
+  ] } } }))
+  assert.deepEqual(r.extra!.points.map((p: { pos: unknown }) => p.pos), [[18.7963, 73.2921], null])
+  assert.equal(r.extra!.points[0].plaza, 'Khalapur Toll Plaza')
 })
 
 test('FASTAG/01 single crossing as an object, not a list', () => {
