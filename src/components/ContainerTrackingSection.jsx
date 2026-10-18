@@ -506,14 +506,15 @@ function JobDetailPanel({ job, trackingData, onClose, onUpdate, onAddEvent, onRe
                   value: formatDT(td.cfsGateIn)
                 },
                 (() => {
-                  // Gate out = the CFS OUT / ICD OUT event in the event history
+                  // Gate out = the CFS OUT / ICD OUT event in the event history.
+                  // GATE CROSSED is the port gate (it comes before CFS OUT), so it is not used.
                   const events = td.milestones || []
                   const desc = (m) => (m.description || '').toUpperCase().trim()
                   const latest = (names) => events
                     .filter(m => names.includes(desc(m)) && m.date)
                     .sort((a, b) => new Date(b.date) - new Date(a.date))[0]
                   const isIcd = events.some(m => ['ICD IN', 'ICD GATE IN', 'ICD OUT', 'ICD GATE OUT'].includes(desc(m)))
-                  const out = latest(['CFS OUT', 'CFS GATE OUT', 'ICD OUT', 'ICD GATE OUT']) || latest(['GATE OUT', 'GATEOUT', 'GATE CROSSED'])
+                  const out = latest(['CFS OUT', 'CFS GATE OUT', 'ICD OUT', 'ICD GATE OUT']) || latest(['GATE OUT', 'GATEOUT'])
                   return { label: isIcd ? 'ICD gate out' : 'CFS gate out', value: out ? formatDT(out.date) : null }
                 })(),
               ].map(f => (
