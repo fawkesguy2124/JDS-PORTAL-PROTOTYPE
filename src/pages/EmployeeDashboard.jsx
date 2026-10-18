@@ -7,6 +7,7 @@ import { getStageName, parseContainerNos } from '../utils/jobHelpers'
 import CreateJob from './CreateJob'
 import * as XLSX from 'xlsx'
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
+import { readJobDocuments, toExtractFields, unreadableMessage } from '../utils/docReaderMap'
 import NotificationBell from '../components/NotificationBell'
 import ContainerTrackingSection from '../components/ContainerTrackingSection'
 import ShipmentTracker from '../components/ShipmentTracker'
@@ -508,6 +509,7 @@ export default function EmployeeDashboard() {
   const [extractError, setExtractError] = useState(null)
   const [extracting, setExtracting] = useState(false)
   const [extractProgress, setExtractProgress] = useState('')
+  const [extractFiles, setExtractFiles] = useState([])
 
   useEffect(() => {
     if (!pendingNavAction || jobs.length === 0) return
@@ -1131,138 +1133,6 @@ export default function EmployeeDashboard() {
     )
   }
 
-  async function urlToBase64(url) {
-    const response = await fetch(url)
-    const blob = await response.blob()
-    return new Promise((resolve) => {
-      const reader = new FileReader()
-      reader.onloadend = () => {
-        const base64 = reader.result.split(',')[1]
-        resolve({ base64, mimeType: blob.type })
-      }
-      reader.readAsDataURL(blob)
-    })
-  }
-
-  async function compressImage(base64, mimeType, maxWidth = 1000, quality = 0.6) {
-    return new Promise((resolve) => {
-      const img = new Image()
-      img.onload = () => {
-        let w = img.width
-        let h = img.height
-        if (w > maxWidth) {
-          h = Math.round(h * (maxWidth / w))
-          w = maxWidth
-        }
-        const canvas = document.createElement('canvas')
-        canvas.width = w
-        canvas.height = h
-        const ctx = canvas.getContext('2d')
-        ctx.imageSmoothingEnabled = true
-        ctx.imageSmoothingQuality = 'high'
-        ctx.drawImage(img, 0, 0, w, h)
-        const compressed = canvas.toDataURL(mimeType || 'image/jpeg', quality).split(',')[1]
-        resolve({ base64: compressed, mimeType: mimeType || 'image/jpeg' })
-      }
-      img.src = `data:${mimeType || 'image/jpeg'};base64,${base64}`
-    })
-  }
-
-  const groqFetch = async (files, prompt, signal) => {
-    const key = import.meta.env.VITE_GROQ_API_KEY
-    if (!key) throw new Error('Groq API key is not configured. Please contact your administrator.')
-    const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${key}`,
-        'Content-Type': 'application/json',
-      },
-      signal,
-      body: JSON.stringify({
-        model: 'meta-llama/llama-4-scout-17b-16e-instruct',
-        messages: [{
-          role: 'user',
-          content: [
-            { type: 'text', text: prompt },
-            ...files.map((f) => ({
-              type: 'image_url',
-              image_url: { url: `data:${f.mimeType};base64,${f.base64}` },
-            })),
-          ],
-        }],
-        max_tokens: 4096,
-        temperature: 0.1,
-      }),
-    })
-    if (!res.ok) {
-      const errBody = await res.json().catch(() => ({}))
-      const errMsg = errBody?.error?.message || `Groq API error ${res.status}`
-      if (res.status === 429 || errMsg.includes('rate_limit') || errMsg.includes('Rate limit')) {
-        throw new Error('Groq rate limit reached. Please wait a moment and try again.')
-      }
-      if (res.status === 503 || errMsg.includes('unavailable') || errMsg.includes('overloaded')) {
-        throw new Error('Groq service is temporarily unavailable. Please try again later.')
-      }
-      throw new Error(errMsg)
-    }
-    const data = await res.json()
-    const choice = data?.choices?.[0]
-    const model = data?.model || 'unknown'
-    if (!choice) throw new Error('AI model returned no choices. Please try again.')
-    const msg = choice.message || {}
-    if (msg.refusal) throw new Error(`Model refused the request: ${msg.refusal}`)
-    let raw = msg.content
-    if (Array.isArray(raw)) {
-      raw = raw.map((p) => (p.type === 'text' ? p.text : '')).filter(Boolean).join('\n')
-    }
-    if (!raw) throw new Error('AI model returned an empty response. Please try again.')
-    return raw
-  }
-
-  const withRetry = async (fn, maxRetries = 3) => {
-    const rateLimitDelays = [3000, 6000, 12000]
-    let lastError
-    for (let attempt = 0; attempt <= maxRetries; attempt++) {
-      try {
-        return await fn()
-      } catch (err) {
-        lastError = err
-        if (err.name === 'AbortError') throw new Error('Request timed out after 120 seconds. Please try again.')
-        const isRateLimit = err.message?.includes('rate_limit') || err.message?.includes('Rate limit') || err.message?.includes('429')
-        if (isRateLimit) {
-          const delay = rateLimitDelays[attempt] || 12000
-          if (attempt < maxRetries) await new Promise((r) => setTimeout(r, delay))
-        } else if (attempt < maxRetries) {
-          await new Promise((r) => setTimeout(r, 2000 * (attempt + 1)))
-        }
-      }
-    }
-    throw lastError
-  }
-
-  const pdfToImages = async (base64) => {
-    const pdfjsLib = await import('pdfjs-dist')
-    pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl
-    const data = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0))
-    const pdf = await pdfjsLib.getDocument({ data }).promise
-    const maxPages = Math.min(pdf.numPages, 5)
-    const images = []
-    for (let i = 1; i <= maxPages; i++) {
-      const page = await pdf.getPage(i)
-      const viewport = page.getViewport({ scale: 1.2 })
-      const canvas = document.createElement('canvas')
-      canvas.width = Math.min(viewport.width, 1200)
-      canvas.height = Math.round(viewport.height * (Math.min(viewport.width, 1200) / viewport.width))
-      const ctx = canvas.getContext('2d')
-      ctx.imageSmoothingEnabled = true
-      ctx.imageSmoothingQuality = 'high'
-      await page.render({ canvasContext: ctx, viewport }).promise
-      const imgBase64 = canvas.toDataURL('image/jpeg', 0.7).split(',')[1]
-      images.push({ base64: imgBase64, mimeType: 'image/jpeg' })
-    }
-    return images
-  }
-
   const confidenceColor = (value, confidence) => {
     if (!value) return 'border-l-red-500 bg-red-50'
     if (confidence === 'high') return 'border-l-green-500 bg-green-50/40'
@@ -1360,6 +1230,7 @@ export default function EmployeeDashboard() {
     setExtractError(null)
     setExtracting(false)
     setExtractProgress('')
+    setExtractFiles([])
   }
 
   const downloadExcel = () => {
@@ -1379,122 +1250,44 @@ export default function EmployeeDashboard() {
   }
 
   const runExtraction = async () => {
-    const job = extractModal.job
-    const docs = extractModal.docs
-    const key = import.meta.env.VITE_GROQ_API_KEY
-    if (!key) { setExtractError('Groq API key is not configured. Please contact your administrator.'); return }
+    const docs = extractModal.docs || []
+    if (!docs.length) { setExtractError('There are no documents to read for this job.'); return }
 
     setExtracting(true)
     setExtractError(null)
     setExtractedFields(null)
     setExtractEdits(null)
-    setExtractProgress('Preparing document...')
+    setExtractFiles([])
+    setExtractProgress('Opening documents...')
 
     try {
-      const validTypes = ['pdf', 'jpg', 'jpeg', 'png']
-      const badDoc = docs.find((d) => !validTypes.includes((d.file_type || '').toLowerCase()))
-      if (badDoc) {
-        showToast(`Unsupported file type: ${badDoc.file_type}. Only PDF and image files can be processed.`, 'error')
-        setExtracting(false); return
+      // Read straight from the text inside each PDF, in the browser. Nothing is sent to any outside service.
+      const pdfjs = await import('pdfjs-dist')
+      pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerUrl
+      const read = await readJobDocuments(pdfjs, docs, (msg) => setExtractProgress(msg))
+      setExtractFiles(read.files)
+
+      const readOk = read.files.filter((f) => !f.notPdf && !f.error)
+      if (readOk.length === 0) {
+        setExtractError(read.files.every((f) => f.notPdf)
+          ? 'Only PDF soft copies can be read. Photos and scanned images (JPG, PNG) cannot be read — please upload the original PDF, or type the details by hand.'
+          : `The documents could not be opened: ${read.files.map((f) => `${f.name} (${f.notPdf ? 'not a PDF' : f.error})`).join('; ')}. Please check the files and try again.`)
+        return
       }
 
-      const files = []
-      for (const doc of docs) {
-        setExtractProgress('Rendering PDF pages...')
-        const result = await urlToBase64(doc.file_url)
-        const isPdf = (doc.file_type || '').toLowerCase() === 'pdf'
-        if (isPdf) {
-          const pageImages = await pdfToImages(result.base64)
-          files.push(...pageImages)
-        } else {
-          const compressed = await compressImage(result.base64, result.mimeType)
-          files.push(compressed)
-        }
+      const merged = toExtractFields(read.fields, read.sources)
+      const nonNullCount = Object.values(merged).filter((f) => f?.value).length
+      if (nonNullCount === 0) {
+        setExtractError('Nothing could be read from these documents. They may be photos or scanned pages — please type the details by hand.')
+        return
       }
-
-      const MAX_IMAGES_PER_REQUEST = 5
-      const chunks = []
-      for (let i = 0; i < files.length; i += MAX_IMAGES_PER_REQUEST) {
-        chunks.push(files.slice(i, i + MAX_IMAGES_PER_REQUEST))
-      }
-
-      const prompt = `You are a customs documentation assistant for JDS Logistics, a CHA company in Mumbai, India. Extract shipment details from the uploaded logistics documents. Return ONLY valid JSON. Do not return markdown. Do not return explanations. For each field return: { "value": "...", "confidence": "high|medium|low" }. Fields: bl_number, bl_date, vessel_name, voyage_number, container_numbers, port_of_loading, port_of_discharge, shipper_name, consignee_name, notify_party, hs_code, goods_description, invoice_number, invoice_date, invoice_value, currency, shipment_terms, country_of_origin, number_of_packages, gross_weight, net_weight`
-
-      const controller = new AbortController()
-      const timeout = setTimeout(() => controller.abort(), 120000)
-
-      const allResults = []
-      for (let ci = 0; ci < chunks.length; ci++) {
-        setExtractProgress(`Extracting shipment data (batch ${ci + 1}/${chunks.length})...`)
-        if (ci > 0) {
-          const delay = 2000 + Math.random() * 2000
-          await new Promise((r) => setTimeout(r, delay))
-        }
-        const raw = await withRetry(() => groqFetch(chunks[ci], prompt, controller.signal))
-        const cleaned = raw.replace(/```(?:json)?\s*/gi, '').replace(/```/g, '').trim()
-        const parsed = JSON.parse(cleaned)
-        const partial = {}
-        for (const key of EXTRACT_FIELDS) {
-          const field = parsed[key] || {}
-          partial[key] = { value: field.value ?? null, confidence: field.confidence ?? null }
-        }
-        allResults.push(partial)
-      }
-      clearTimeout(timeout)
-
-      setExtractProgress('Formatting extracted fields...')
-
-      const merged = {}
-      for (const key of EXTRACT_FIELDS) {
-        merged[key] = { value: null, confidence: null }
-      }
-      const rankMap = { high: 3, medium: 2, low: 1 }
-      for (const partial of allResults) {
-        for (const key of EXTRACT_FIELDS) {
-          const field = partial[key]
-          if (!field || field.value === null || field.value === undefined || field.value === '') continue
-          const current = merged[key]
-          if (!current.value) {
-            merged[key] = { value: field.value, confidence: field.confidence }
-          } else if (key === 'container_numbers') {
-            const existing = String(current.value).split(',').map((s) => s.trim()).filter(Boolean)
-            const incoming = String(field.value).split(',').map((s) => s.trim()).filter(Boolean)
-            const combined = [...new Set([...existing, ...incoming])]
-            merged[key] = { value: combined.join(', '), confidence: 'medium' }
-          } else {
-            const currRank = rankMap[current.confidence] || 0
-            const newRank = rankMap[field.confidence] || 0
-            if (newRank > currRank) {
-              merged[key] = { value: field.value, confidence: field.confidence }
-            }
-          }
-        }
-      }
-
-      const nonNullCount = Object.values(merged).filter(
-        (f) => f && f.value !== null && f.value !== undefined && f.value !== ''
-      ).length
-      if (nonNullCount < 3) {
-        setExtractError(`This does not appear to be a shipping document. Only ${nonNullCount} field(s) could be extracted. Please upload a Bill of Lading, Commercial Invoice, Packing List, or Certificate of Origin.`)
-        setExtracting(false); return
-      }
-      if (nonNullCount < 8) {
-        showToast(`Low confidence extraction — only ${nonNullCount} of 27 fields found. Please verify this is the correct document and review all fields carefully.`, 'error')
+      if (nonNullCount < 5) {
+        showToast(`Only ${nonNullCount} of ${EXTRACT_FIELDS.length} fields were found. Please check this is the right document and fill in the rest by hand.`, 'error')
       }
       setExtractedFields(merged)
       setExtractEdits(JSON.parse(JSON.stringify(merged)))
     } catch (err) {
-      if (err.message?.includes('Groq API error') || err.message?.includes('API error')) {
-        setExtractError(`Extraction failed: ${err.message}`)
-      } else if (err.message?.includes('Empty response') || err.message?.includes('returned an empty')) {
-        setExtractError(err.message)
-      } else if (err.name === 'AbortError' || err.message?.includes('timed out')) {
-        setExtractError('Request timed out after 120 seconds. Please try again.')
-      } else if (err.message?.includes('JSON') || err.message?.includes('parse') || err.message?.includes('Unexpected token')) {
-        setExtractError('Extraction failed — invalid response from AI. Please try again.')
-      } else {
-        setExtractError(err.message || 'Extraction failed')
-      }
+      setExtractError(`The documents could not be read: ${err?.message || 'unknown problem'}. Please try again.`)
     } finally {
       setExtracting(false)
       setExtractProgress('')
@@ -2061,7 +1854,7 @@ export default function EmployeeDashboard() {
           <div className="w-full max-w-4xl max-h-[90vh] overflow-y-auto bg-white rounded-xl shadow-2xl border border-[#e2e6ed]">
             <div className="px-6 py-4 border-b border-[#e2e6ed] flex items-center justify-between sticky top-0 bg-white z-10">
               <div>
-                <div className="text-sm font-bold text-[#1a2233]">AI Document Extraction &mdash; {extractModal.job.job_no}</div>
+                <div className="text-sm font-bold text-[#1a2233]">Read from the Documents &mdash; {extractModal.job.job_no}</div>
                 <div className="text-xs text-[#8a96a8]">{extractModal.job.client}</div>
               </div>
               <button type="button" onClick={closeExtract}
@@ -2083,16 +1876,17 @@ export default function EmployeeDashboard() {
                   </div>
                   <button type="button" onClick={runExtraction} disabled={extracting}
                     className="mt-4 h-10 px-5 text-sm font-semibold rounded-lg bg-[#1a4fa0] text-white hover:bg-[#153d82] disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2">
-                    {extracting ? 'Extraction in progress...' : '✦ Extract'}
+                    {extracting ? 'Reading...' : 'Read Documents'}
                   </button>
+                  <p className="text-xs text-[#8a96a8] mt-2">Only PDF soft copies can be read. Photos and scanned pages must be typed by hand.</p>
                 </div>
               )}
 
               {extracting && (
                 <div className="flex flex-col items-center justify-center py-16">
                   <div className="h-10 w-10 border-4 border-[#1a4fa0] border-t-transparent rounded-full animate-spin mb-4" />
-                  <p className="text-sm font-semibold text-[#4a5568]">{extractProgress || 'AI is extracting shipment data...'}</p>
-                  <p className="text-sm text-[#8a96a8]">This may take up to 2 minutes for large documents</p>
+                  <p className="text-sm font-semibold text-[#4a5568]">{extractProgress || 'Reading the documents...'}</p>
+                  <p className="text-sm text-[#8a96a8]">This usually takes a few seconds</p>
                 </div>
               )}
 
@@ -2101,8 +1895,28 @@ export default function EmployeeDashboard() {
                   <p className="text-sm text-red-600 font-semibold mb-3">{extractError}</p>
                   <button type="button" onClick={runExtraction}
                     className="h-9 px-4 text-sm rounded-lg bg-white border-[1.5px] border-[#d0d6e0] text-[#4a5568] hover:border-[#1a4fa0] hover:text-[#1a4fa0] hover:bg-[#e8eef8] font-semibold">
-                    Retry
+                    Try Again
                   </button>
+                </div>
+              )}
+
+              {!extracting && extractFiles.length > 0 && (
+                <div className="space-y-1.5">
+                  {extractFiles.map((f, i) => (
+                    <div key={`${f.name}-${i}`} className="text-xs px-3 py-2 bg-[#f8f9fb] rounded-lg border border-[#e2e6ed]">
+                      <span className="font-semibold text-[#1a2233]">📄 {f.name}</span>
+                      {f.notPdf ? (
+                        <span className="text-amber-700"> &mdash; not a PDF soft copy, so it could not be read. Please type these details by hand.</span>
+                      ) : f.error ? (
+                        <span className="text-red-600"> &mdash; could not be opened ({f.error}).</span>
+                      ) : (
+                        <>
+                          <span className="text-[#4a5568]"> &mdash; {f.found ? `found: ${f.found}` : 'no shipping documents recognised'}</span>
+                          {f.unreadable?.length > 0 && <span className="block text-amber-700 mt-0.5">{unreadableMessage(f.unreadable)}</span>}
+                        </>
+                      )}
+                    </div>
+                  ))}
                 </div>
               )}
 
@@ -2166,7 +1980,7 @@ export default function EmployeeDashboard() {
                   className="h-9 px-4 text-sm rounded-lg bg-white border-[1.5px] border-[#d0d6e0] text-[#4a5568] hover:border-[#1a4fa0] hover:text-[#1a4fa0] hover:bg-[#e8eef8] font-semibold">
                   Close
                 </button>
-                <button type="button" onClick={() => { setExtractedFields(null); setExtractEdits(null); setExtractError(null); }}
+                <button type="button" onClick={() => { setExtractedFields(null); setExtractEdits(null); setExtractError(null); setExtractFiles([]); }}
                   className="h-9 px-4 text-sm rounded-lg bg-white border-[1.5px] border-[#d0d6e0] text-[#4a5568] hover:border-[#1a4fa0] hover:text-[#1a4fa0] hover:bg-[#e8eef8] font-semibold">
                   Extract Again
                 </button>

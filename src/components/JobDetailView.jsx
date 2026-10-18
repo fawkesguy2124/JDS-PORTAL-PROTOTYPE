@@ -764,6 +764,8 @@ function JobDetailView({ job, profiles, currentUserName, isAdmin, canUpdateStage
     return <input type="text" value={value||''} onChange={updateForm(key)} disabled={disabled} className={inputBase} />
   }
 
+  // Short summary for the job notes, written from the extracted fields
+  // (no AI: the same facts in a fixed sentence)
   const handleAISummary = async () => {
     if (!job?.id) return
 
@@ -774,84 +776,48 @@ function JobDetailView({ job, profiles, currentUserName, isAdmin, canUpdateStage
 
     setSummarising(true)
     try {
-      const fieldLines = Object.entries(extractedData)
-        .filter(([, v]) => v?.value)
-        .map(([k, v]) => `${k.replace(/_/g, ' ')}: ${v.value}`)
-        .join('\n')
-
-      const prompt = `You are a customs clearance assistant for JDS Logistics, a licensed CHA at JNPT, Navi Mumbai.
-
-Based on the extracted document fields below, write a concise 2-3 sentence operational summary for the job notes.
-Focus on: what goods are being imported, by whom, from where, and any key customs details.
-Be factual, professional, and brief. No greetings or sign-offs.
-
-Job: ${job.job_no} | Client: ${job.client || '\u2014'} | Stage: ${getStageName(Number(job.stage) || 0)}
-
-Extracted Fields:
-${fieldLines}
-
-Write the summary:`
-
-      let summary = null
-      let usedGroq = false
-
-      try {
-        const geminiKey = import.meta.env.VITE_GEMINI_API_KEY
-        if (geminiKey) {
-          const res = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`,
-            {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                contents: [{ parts: [{ text: prompt }] }],
-                generationConfig: { temperature: 0.3, maxOutputTokens: 400, thinkingConfig: { thinkingBudget: 0 } },
-              }),
-            }
-          )
-          if (res.ok) {
-            const data = await res.json()
-            summary = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || null
-          } else {
-            console.warn(`Gemini ${res.status} \u2014 trying Groq`)
-          }
-        }
-      } catch (e) {
-        console.warn('Gemini error:', e.message)
+      const val = (k) => {
+        const v = extractedData[k]?.value
+        if (v == null || v === '') return null
+        return Array.isArray(v) ? v.filter(Boolean).join(', ') : String(v)
       }
-
-      if (!summary) {
-        const groqKey = import.meta.env.VITE_GROQ_API_KEY
-        if (!groqKey) throw new Error('No AI API key configured.')
-        const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${groqKey}`,
-          },
-          body: JSON.stringify({
-            model: 'meta-llama/llama-4-scout-17b-16e-instruct',
-            temperature: 0.3,
-            max_tokens: 200,
-            messages: [{ role: 'user', content: prompt }],
-          }),
-        })
-        if (!res.ok) throw new Error(`Groq returned ${res.status}`)
-        const data = await res.json()
-        summary = data?.choices?.[0]?.message?.content?.trim() || null
-        if (summary) usedGroq = true
+      const count = (k) => {
+        const v = extractedData[k]?.value
+        if (Array.isArray(v)) return v.filter(Boolean).length
+        return v ? String(v).split(/[\s,]+/).filter(Boolean).length : 0
       }
-
-      if (!summary) throw new Error('No summary returned from either provider')
+      const parts = []
+      const goods = val('goods_description')
+      const importer = val('consignee_name') || job.client
+      const supplier = val('supplier_name')
+      const from = [val('port_of_loading'), val('country_of_origin')].filter(Boolean).join(', ')
+      parts.push(`${goods ? `Import of ${goods}` : 'Import'}${importer ? ` for ${importer}` : ''}${supplier ? ` from ${supplier}` : ''}${from ? ` (${from})` : ''}.`)
+      const ctr = count('container_numbers')
+      const cargo = [
+        ctr ? `${ctr} container${ctr === 1 ? '' : 's'}${val('container_size') ? ` (${val('container_size')})` : ''}` : null,
+        val('package_count') ? `${val('package_count')} packages` : null,
+        val('gross_weight') ? `${val('gross_weight')} kg` : null,
+      ].filter(Boolean).join(', ')
+      if (cargo) parts.push(`Cargo: ${cargo}.`)
+      const refs = [
+        val('bl_number') ? `BL ${val('bl_number')}` : null,
+        val('vessel_name') ? `vessel ${val('vessel_name')}` : null,
+        val('igm_number') ? `IGM ${val('igm_number')}` : null,
+        val('hs_code') ? `HS ${val('hs_code')}` : null,
+        val('invoice_numbers') ? `invoice ${val('invoice_numbers')}${val('invoice_amounts') ? ` for ${val('invoice_currencies') || ''} ${val('invoice_amounts')}`.replace(/\s+/g, ' ') : ''}` : null,
+        val('payment_terms') ? `terms ${val('payment_terms')}` : null,
+      ].filter(Boolean).join(', ')
+      if (refs) parts.push(`${refs.charAt(0).toUpperCase()}${refs.slice(1)}.`)
+      const summary = parts.join(' ')
+      const provider = 'from documents'
 
       const existing = form.notes ? form.notes.trim() : ''
       const separator = existing ? '\n\n' : ''
       const dateStamp = new Date().toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' })
-      const provider = usedGroq ? 'Groq \u00b7 Llama 4' : 'Gemini 2.0 Flash'
-      const newNotes = `${existing}${separator}[AI Summary \u2014 ${dateStamp} \u00b7 ${provider}]\n${summary}`
+      const newNotes = `${existing}${separator}[Summary \u2014 ${dateStamp} \u00b7 ${provider}]\n${summary}`
 
       setForm(prev => ({ ...prev, notes: newNotes }))
-      toast('AI summary added to notes. Review and save when ready.', 'success')
+      toast('Summary added to notes. Review and save when ready.', 'success')
     } catch (e) {
       toast(`Summary failed: ${e.message}`, 'error')
     } finally {
@@ -1037,7 +1003,7 @@ Write the summary:`
                         border:'1px solid #bfdbfe', cursor: summarising ? 'default' : 'pointer',
                       }}
                     >
-                      {summarising ? '...' : '✦ AI Summary'}
+                      {summarising ? '...' : '✦ Summary'}
                     </button>
                   )}
                 </div>
@@ -1267,7 +1233,7 @@ Write the summary:`
                         border:'1px solid #bfdbfe', cursor: summarising ? 'default' : 'pointer',
                       }}
                     >
-                      {summarising ? '...' : '✦ AI Summary'}
+                      {summarising ? '...' : '✦ Summary'}
                     </button>
                   )}
                 </div>

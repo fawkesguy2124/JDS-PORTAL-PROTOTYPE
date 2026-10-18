@@ -4,7 +4,7 @@
 // Built from 29 ICEGATE BE / OOC copies (Jun–Oct 2026) plus the earlier list.
 export const CLIENTS = [
   { name: 'PCM', legal: 'PUTZMEISTER CONCRETE MACHINES PRIVATE LIMITED', iec: '1705001432' },
-  { name: 'Adorn (ALS Series)' },
+  { name: 'Adorn (ALS Series)', legal: 'ADORN', iec: '3105000691' },
   { name: 'Deepa Traders', legal: 'DEEPA TRADERS', iec: '3115901062' },
   { name: 'Denso Thermal Systems', legal: 'DENSO THERMAL SYSTEMS PUNE PRIVATE LIMITED', iec: '0598044876' },
   { name: 'Divine / NNC', legal: 'NNC ELECTRIC INDIA PRIVATE LIMITED', iec: 'AAICN3412C' },

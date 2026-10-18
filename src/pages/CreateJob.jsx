@@ -6,7 +6,7 @@ import { STAGE_NAMES } from '../utils/jobHelpers'
 import { linkContainer } from '../api/trackingApi'
 import { PORTS } from '../utils/ports'
 import { CLIENT_NAMES, matchClient } from '../utils/clients'
-import { parseBePdf } from '../utils/beParser'
+import { readPdf, describeDocuments } from '../utils/docReader'
 
 const MODES = ['Sea FCL', 'Sea LCL', 'Air', 'BPT/MBPT']
 const CONTAINER_SIZES = ['20GP','40GP','40HC','45HC','20RF','40RF','40RFHC','20OT','40OT','20FR','40FR','20TK']
@@ -73,75 +73,6 @@ const fuzzyMatchShippingLine = (extracted) => {
     return normExtracted.includes(normSl) || normSl.includes(normExtracted)
   }) || null
 }
-
-const BL_QUICK_EXTRACT_PROMPT = `You are an expert shipping document parser.
-
-IMPORTANT: First check if this is a shipping or customs document such as a Bill of Lading, Commercial Invoice, Packing List, Certificate of Origin, or similar. If it is NOT a shipping document, return exactly this JSON and nothing else: {"_irrelevant": true}
-
-If it IS a shipping document, extract ONLY these fields and return ONLY valid JSON, no markdown, no explanation:
-
-{
-  "client": "importer or consignee full name",
-  "bl_no": "bill of lading number",
-  "containers": "ALL container numbers space separated e.g. MSCU1234567 OOLU7654321",
-  "shipping_line": "shipping line name e.g. Evergreen COSCO MSC",
-  "vessel": "vessel name",
-  "eta": "estimated arrival date in YYYY-MM-DD format if found else null",
-  "goods": "brief goods description",
-  "hs_code": "HS code if found else null",
-  "free_days": "number of free days (also called free time or detention free period) mentioned in the BL — usually 7, 14, or 21 days — null if not found"
- }
-
-If a field is not found set it to null. Extract ALL container numbers visible in the document.`
-
-const BE_QUICK_EXTRACT_PROMPT = `You are an expert Indian Customs document parser.
-
-IMPORTANT: First check if this is an Indian Customs Bill of Entry or OOC document issued by ICEGATE. If it is NOT a customs document, return exactly this JSON and nothing else: {"_irrelevant": true}
-
-If it IS a Bill of Entry or OOC document, extract ONLY these fields and return ONLY valid JSON, no markdown, no explanation:
-
-{
-  "client": "importer full name from DECLARANT section — extract the FULL name exactly as written e.g. PUTZMEISTER CONCRETE MACHINES PRIVATE LIMITED",
-  "be_no": "BE number from top right corner of every page e.g. 9301277",
-  "be_date": "BE date in YYYY-MM-DD format e.g. 2026-05-16",
-  "bl_no": "BL or MAWB number from MANIFEST DETAILS section e.g. COSU6445596690",
-  "containers": "ALL container numbers from CONTAINER DETAILS section across ALL pages space separated e.g. BMOU4978572 BMOU5358154 CCLU7383578",
-  "shipping_line": "shipping line name derived from container prefix or manifest e.g. COSCO Evergreen MSC",
-  "vessel": "vessel name from MANIFEST DETAILS section",
-  "eta": null,
-  "goods": "item description from PART III DUTIES section",
-  "hs_code": "8-digit CTH code from PART III e.g. 84571010"
-}
-
-Important:
-- Extract ALL container numbers — they appear in PART I summary and PART IV additional details across multiple pages
-- BE number is in the top right corner of every page
-- BL number is in the MANIFEST DETAILS section as MAWB NO
-- Importer name is in the DECLARANT section
-- If a field is not found set it to null`
-
-const INVOICE_QUICK_EXTRACT_PROMPT = `You are an expert shipping document parser.
-
-IMPORTANT: If this is not a Commercial Invoice or Proforma Invoice, return exactly: {"_irrelevant": true}
-
-If it IS a Commercial Invoice, extract ONLY these fields and return ONLY valid JSON:
-{
-  "client": "buyer or importer full name",
-  "goods": "brief description of goods",
-  "hs_code": "HS or CTH code if found else null"
-}
-If a field is not found set it to null.`
-
-const PACKING_LIST_PROMPT = `You are an expert shipping document parser.
-
-IMPORTANT: If this is not a Packing List, return exactly: {"_irrelevant": true}
-
-If it IS a Packing List, extract ONLY these fields and return ONLY valid JSON:
-{
-  "client": "buyer or importer full name if found else null",
-  "goods": "brief description of goods if found else null"
-}
-If a field is not found set it to null.`
 
 const INITIAL_FORM = {
   job_no: '',
@@ -324,155 +255,56 @@ export default function CreateJob({ isModal = false, onCancel, onCreated }) {
     extractingRef.current = true
     setExtracting(true)
 
-    const groqKey = import.meta.env.VITE_GROQ_API_KEY
-    const geminiKey = import.meta.env.VITE_GEMINI_API_KEY
-    if (!groqKey && !geminiKey) {
-      setExtractedFields({ _error: true })
-      setExtractStatus('No AI API key configured — contact Jose.')
-      extractingRef.current = false
-      return
-    }
     setExtractedFields(null)
     setAutoFillApplied({})
     setExtractProgress(0)
     setExtractStatus('Reading document...')
 
     try {
-      // Convert file to base64
-      const base64 = await new Promise((resolve, reject) => {
-        const reader = new FileReader()
-        reader.onload = () => resolve(reader.result.split(',')[1])
-        reader.onerror = reject
-        reader.readAsDataURL(file)
-      })
-
-      setExtractProgress(20)
-      setExtractStatus('Converting pages...')
-
-      const isPdf = file.name.toLowerCase().endsWith('.pdf')
-      let images = []
-      let beText = null
-
-      if (isPdf) {
-        const pdfjs = await import('pdfjs-dist')
-        const workerUrl = new URL('pdfjs-dist/build/pdf.worker.mjs', import.meta.url)
-        pdfjs.GlobalWorkerOptions.workerSrc = workerUrl.href
-        const pdfBytes = Uint8Array.from(atob(base64), c => c.charCodeAt(0))
-        try {
-          beText = await parseBePdf(pdfjs, pdfBytes.slice())
-        } catch (e) {
-          console.warn('BE text reader failed, using AI instead:', e.message)
-        }
-        const pdf = await pdfjs.getDocument({ data: pdfBytes }).promise
-        const maxPages = beText ? 0 : Math.min(pdf.numPages, 4)
-        for (let p = 1; p <= maxPages; p++) {
-          const page = await pdf.getPage(p)
-          const viewport = page.getViewport({ scale: 0.9 })
-          const canvas = document.createElement('canvas')
-          const ctx = canvas.getContext('2d')
-          canvas.width = viewport.width
-          canvas.height = viewport.height
-          await page.render({ canvasContext: ctx, viewport }).promise
-          images.push({
-            base64: canvas.toDataURL('image/jpeg', 0.85).split(',')[1],
-            mimeType: 'image/jpeg',
-          })
-        }
-      } else {
-        images = [{ base64, mimeType: file.type || 'image/jpeg' }]
-      }
-
-      setExtractProgress(45)
-      setExtractStatus('Sending to AI...')
-
-      // Use Jose's selected document type to pick the right prompt
-      const promptMap = {
-        'BL':           BL_QUICK_EXTRACT_PROMPT,
-        'BE':           BE_QUICK_EXTRACT_PROMPT,
-        'OOC':          BE_QUICK_EXTRACT_PROMPT,
-        'Invoice':      INVOICE_QUICK_EXTRACT_PROMPT,
-        'Packing List': PACKING_LIST_PROMPT,
-      }
-      const activePrompt = promptMap[docType] || BL_QUICK_EXTRACT_PROMPT
-
-      setExtractProgress(55)
-      setExtractStatus('Extracting fields...')
-
-      let parsed = beText ? {
-        ...beText,
-        containers: (beText.containers || []).join(' '),
-      } : null
-
-      // Try Gemini first (only when the BE text reader did not work)
-      if (!parsed) try {
-        const res = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${import.meta.env.VITE_GEMINI_API_KEY}`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              contents: [{
-                parts: [
-                  { text: activePrompt },
-                  ...images.map(img => ({ inline_data: { mime_type: img.mimeType, data: img.base64 } }))
-                ]
-              }],
-              generationConfig: { temperature: 0.1, maxOutputTokens: 4096, thinkingConfig: { thinkingBudget: 0 } },
-            }),
-          }
-        )
-        const data = await res.json()
-        if (data.error) throw new Error(`Gemini API error: ${data.error.message}`)
-        const text = data?.candidates?.[0]?.content?.parts?.map(p => p.text).filter(Boolean).join('\n') || ''
-        if (!text) throw new Error('Gemini returned empty response')
-        const cleaned = text.replace(/```(?:json)?\s*/gi, '').replace(/```/g, '').trim()
-        console.log('Gemini raw response:', cleaned)
-        parsed = JSON.parse(cleaned)
-      } catch (geminiErr) {
-        console.warn('Gemini failed in CreateJob, trying Groq...', geminiErr.message)
-        setExtractStatus('Trying fallback AI...')
-
-        // Groq fallback — images only (first image, Groq handles one at a time)
-        const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${import.meta.env.VITE_GROQ_API_KEY}`,
-          },
-          body: JSON.stringify({
-            model: 'meta-llama/llama-4-scout-17b-16e-instruct',
-            max_tokens: 1024,
-            temperature: 0.1,
-            messages: [{
-              role: 'user',
-              content: [
-                { type: 'text', text: activePrompt },
-                { type: 'image_url', image_url: { url: `data:${images[0].mimeType};base64,${images[0].base64}` } }
-              ]
-            }]
-          }),
-        })
-        const groqData = await groqRes.json()
-        const groqText = groqData?.choices?.[0]?.message?.content || ''
-        const groqCleaned = groqText.replace(/```(?:json)?\s*/gi, '').replace(/```/g, '').trim()
-        parsed = JSON.parse(groqCleaned)
-      }
-
-      setExtractProgress(85)
-      setExtractStatus('Applying fields...')
-
-      // Check if document was flagged as irrelevant by the AI
-      if (parsed._irrelevant) {
-        setStagedDocs(prev => prev.map(d => d.id === docId ? { ...d, irrelevant: true } : d))
-        setExtractedFields({ _irrelevant: true })
+      // Documents are read from the text inside the PDF, on this computer.
+      // No AI and nothing is sent anywhere.
+      if (!file.name.toLowerCase().endsWith('.pdf')) {
+        setExtractedFields({ _error: true, _message: 'Only PDF soft copies can be read automatically. Please fill the fields by hand.' })
         return
       }
+      const pdfjs = await import('pdfjs-dist')
+      const workerUrl = new URL('pdfjs-dist/build/pdf.worker.mjs', import.meta.url)
+      pdfjs.GlobalWorkerOptions.workerSrc = workerUrl.href
+      setExtractProgress(40)
+      setExtractStatus('Reading pages...')
+      const result = await readPdf(pdfjs, new Uint8Array(await file.arrayBuffer()))
+      const f = result.fields
+      setExtractProgress(80)
+      setExtractStatus('Applying fields...')
 
-      // Validate minimum shipping fields
+      const parsed = {
+        _source: 'pdf-text',
+        _found: describeDocuments(result),
+        _unreadable: result.unreadablePages,
+        copy_type: f.copy_type || null,
+        rms_label: f.rms_label || null,
+        client: f.client || f.consignee_name || null,
+        iec: f.importer_iec || null,
+        bl_no: f.bl_number || null,
+        containers: (f.container_numbers || []).join(' '),
+        shipping_line: f.shipping_line || null,
+        vessel: f.vessel_name ? `${f.vessel_name}${f.voyage_no ? ` / ${f.voyage_no}` : ''}` : null,
+        goods: f.goods_description || null,
+        hs_code: f.hs_code || null,
+        be_no: f.be_number || null,
+        be_date: f.be_date || null,
+        igm_no: f.igm_number || null,
+        igm_date: f.igm_date || null,
+        igm_item_no: f.igm_item_no || null,
+        rms_status: f.rms_status || null,
+        port_code: f.port_code || null,
+        mode: f.mode || null,
+      }
+
       const hasMinimumFields = parsed.bl_no || parsed.be_no || parsed.containers || parsed.client
       if (!hasMinimumFields) {
         setStagedDocs(prev => prev.map(d => d.id === docId ? { ...d, irrelevant: true } : d))
-        setExtractedFields({ _irrelevant: true })
+        setExtractedFields({ _irrelevant: true, _unreadable: result.unreadablePages, _found: parsed._found })
         return
       }
 
@@ -511,10 +343,11 @@ if (parsed.client && shouldFill('client')) {
       if (parsed.be_date && shouldFill('be_date'))       { updates.be_date = parsed.be_date;     applied.be_date = true }
       if (parsed.igm_no && shouldFill('igm_no'))         { updates.igm_no = parsed.igm_no;       applied.igm_no = true }
       if (parsed.igm_date && shouldFill('igm_date'))     { updates.igm_date = parsed.igm_date;   applied.igm_date = true }
+      if (parsed.igm_item_no && shouldFill('igm_item_no')) { updates.igm_item_no = String(parsed.igm_item_no); applied.igm_item_no = true }
       if (parsed.rms_status && parsed.rms_status !== 'pending' && form.rms_status === 'pending') {
         updates.rms_status = parsed.rms_status; applied.rms_status = true
       }
-      if (parsed._source === 'be-text') {
+      if (parsed._source === 'pdf-text') {
         if (parsed.port_code && PORTS.some(pt => pt.code === parsed.port_code)) updates.port_code = parsed.port_code
         if (parsed.mode === 'Air' && form.mode !== 'Air') updates.mode = 'Air'
       }
@@ -833,11 +666,8 @@ if (parsed.client && shouldFill('client')) {
                       const docId = Date.now()
                       setStagedDocs(prev => [...prev, { file, docType: addDocType, id: docId, extracted: false, irrelevant: false }])
 
-                      // Only extract for these types
-                      const extractableTypes = ['BL', 'Invoice', 'BE', 'OOC', 'Packing List']
-                      if (extractableTypes.includes(addDocType)) {
-                        await handleQuickExtract(file, addDocType, docId)
-                      }
+                      // Every PDF is read: the reader works out which documents are inside
+                      await handleQuickExtract(file, addDocType, docId)
 
                       setAddDocType('')
                       e.target.value = ''
@@ -883,12 +713,15 @@ if (parsed.client && shouldFill('client')) {
 
               {extractedFields?._error && (
                 <div className="mt-3 bg-red-50 rounded-lg border border-red-200 p-3">
-                  <p className="text-xs font-semibold text-red-700">⚠ Extraction failed — please fill fields manually or try again.</p>
+                  <p className="text-xs font-semibold text-red-700">⚠ {extractedFields._message || 'Could not read this document — please fill the fields by hand.'}</p>
                 </div>
               )}
               {extractedFields?._irrelevant && (
                 <div className="mt-3 bg-amber-50 rounded-lg border border-amber-200 p-3">
-                  <p className="text-xs font-semibold text-amber-700">⚠ Document doesn't appear to be a shipping document — no fields extracted.</p>
+                  <p className="text-xs font-semibold text-amber-700">
+                    ⚠ Nothing to fill was found in this document.
+                    {extractedFields._unreadable?.length ? ` Page${extractedFields._unreadable.length === 1 ? '' : 's'} ${extractedFields._unreadable.join(', ')} ${extractedFields._unreadable.length === 1 ? 'is a picture' : 'are pictures'} with no text — please type those details by hand.` : ''}
+                  </p>
                 </div>
               )}
 
@@ -897,10 +730,14 @@ if (parsed.client && shouldFill('client')) {
                 <div className="mt-3 bg-white rounded-lg border border-green-200 p-3">
                   <p className="text-xs font-semibold text-green-700 mb-2">
                     ✓ Fields applied to form
-                    {extractedFields?._source === 'be-text' && (
-                      <span className="font-normal text-gray-500"> · read directly from the ICEGATE {extractedFields.copy_type === 'OOC' ? 'OOC copy' : 'BE'}, no AI used</span>
+                    {extractedFields?._source === 'pdf-text' && (
+                      <span className="font-normal text-gray-500"> · read from the PDF on this computer, no AI used</span>
                     )}
                   </p>
+                  {extractedFields?._found && <p className="text-xs text-gray-500 mb-2">Found: {extractedFields._found}</p>}
+                  {extractedFields?._unreadable?.length > 0 && (
+                    <p className="text-xs text-amber-700 mb-2">Page{extractedFields._unreadable.length === 1 ? '' : 's'} {extractedFields._unreadable.join(', ')} {extractedFields._unreadable.length === 1 ? 'is a picture' : 'are pictures'} with no text, so nothing was read from {extractedFields._unreadable.length === 1 ? 'it' : 'them'}.</p>
+                  )}
                   <div className="flex flex-wrap gap-x-4 gap-y-1">
                     {Object.entries(autoFillApplied).filter(([, v]) => v).map(([key]) => (
                       <div key={key} className="flex items-center gap-1.5">
