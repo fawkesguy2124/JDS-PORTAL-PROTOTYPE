@@ -37,6 +37,11 @@ const dayText = (iso) => {
   const d = new Date(String(iso).length <= 10 ? `${iso}T12:00:00+05:30` : iso)
   return isNaN(d) ? String(iso) : d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', timeZone: TZ })
 }
+// by the time in India, so a summary asked for in the evening doesn't say "Good morning"
+const greeting = (now) => {
+  const h = Number(new Date(now).toLocaleString('en-US', { hour: 'numeric', hour12: false, timeZone: TZ }))
+  return h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening'
+}
 const todayText = (now) => new Date(now).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', timeZone: TZ })
 const daysBetween = (fromIso, toIso) => Math.round((new Date(`${toIso}T00:00:00Z`) - new Date(`${fromIso}T00:00:00Z`)) / DAY)
 const oneLine = (s) => String(s || '').replace(/\s+/g, ' ').trim()
@@ -98,7 +103,7 @@ export function morningSummary(allData, person, now = new Date()) {
   const dateText = todayText(now)
 
   const parts = [
-    `Good morning ${name} 👋`,
+    `${greeting(now)} ${name} 👋`,
     `*JDS jobs — ${dateText}*`,
     `${plural(open.length, 'open job')}: ${count('ooc')} waiting for OOC, ${count('release')} OOC done to move, ${count('truck')} on the road`,
     section(`🔴 Urgent (${urgent.length})`, urgent),
