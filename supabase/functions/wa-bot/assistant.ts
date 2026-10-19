@@ -33,17 +33,26 @@ async function callGemini(model: string, body: unknown, key: string, signal: Abo
 
 // Returns the reply text, or null when the assistant is not available
 // (no key, quota used up, Google down) so the bot can fall back.
-// Gemini first; Groq (US, free tier) only when every Gemini model is busy or down
+// Groq first (US, fast, reasoning models; Jose 19 Oct 2026); Gemini only when
+// every Groq model is busy or its free limit is used up
 export async function askAssistant(question: string, history: Turn[], data: unknown, person: Person): Promise<{ text: string | null; note: string }> {
-  const g = await askGemini(question, history, data, person)
-  if (g.text) return g
   const q = await askGroq(question, history, data, person)
-  return q.text ? { text: q.text, note: `${q.note} (Gemini: ${g.note})` } : { text: null, note: `Gemini: ${g.note} | Groq: ${q.note}` }
+  if (q.text) return q
+  const g = await askGemini(question, history, data, person)
+  return g.text ? { text: g.text, note: `${g.note} (Groq: ${q.note})` } : { text: null, note: `Groq: ${q.note} | Gemini: ${g.note}` }
 }
 
 // ── Groq (OpenAI-style API) ──
 const GROQ_API = 'https://api.groq.com/openai/v1/chat/completions'
-const GROQ_MODELS = () => [...new Set([Deno.env.get('GROQ_MODEL'), 'llama-3.3-70b-versatile', 'openai/gpt-oss-120b'].filter(Boolean))] as string[]
+// reasoning models first: they think briefly before answering (fast on Groq)
+const GROQ_MODELS = () => [...new Set([Deno.env.get('GROQ_MODEL'), 'openai/gpt-oss-120b', 'qwen/qwen3-32b', 'llama-3.3-70b-versatile'].filter(Boolean))] as string[]
+// per-model reasoning settings; the thinking itself is kept out of the reply
+const REASONING: Record<string, Record<string, unknown>> = {
+  'openai/gpt-oss-120b': { reasoning_effort: 'medium', include_reasoning: false },
+  'qwen/qwen3-32b': { reasoning_format: 'hidden' },
+}
+const noExtras = new Set<string>() // models that refused those settings
+const stripThinking = (s: string) => s.replace(/<think>[\s\S]*?<\/think>/gi, '').trim()
 // the tool list in plain JSON-schema form (Gemini writes types in capitals)
 const lowerTypes = (s: any): any => (Array.isArray(s) ? s.map(lowerTypes) : s && typeof s === 'object'
   ? Object.fromEntries(Object.entries(s).map(([k, v]) => [k, k === 'type' && typeof v === 'string' ? v.toLowerCase() : lowerTypes(v)])) : s)
@@ -69,10 +78,16 @@ async function askGroq(question: string, history: Turn[], data: unknown, person:
         const res = await fetch(GROQ_API, {
           method: 'POST',
           headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ model, messages: convo, tools: GROQ_TOOLS, tool_choice: 'auto', temperature: 0.2, max_tokens: 900 }),
+          body: JSON.stringify({ model, messages: convo, tools: GROQ_TOOLS, tool_choice: 'auto', temperature: 0.3, max_tokens: 2500, ...(noExtras.has(model) ? {} : REASONING[model] || {}) }),
           signal: controller.signal,
         })
         const out = await res.json().catch(() => ({}))
+        if (res.status === 400 && REASONING[model] && !noExtras.has(model) && !/model/i.test(out?.error?.message || '')) {
+          // the reasoning settings were refused: ask again without them, and remember
+          console.warn(`[wa-bot] ${model} refused the reasoning settings (${String(out?.error?.message || '').slice(0, 140)})`)
+          noExtras.add(model)
+          continue
+        }
         if (res.status === 404 || res.status === 429 || res.status >= 500 || (res.status === 400 && /model/i.test(out?.error?.message || ''))) {
           tried.push(`${model}: ${res.status}`); skip = true; break
         }
@@ -80,10 +95,10 @@ async function askGroq(question: string, history: Turn[], data: unknown, person:
         const msg = out?.choices?.[0]?.message || {}
         const calls: any[] = msg.tool_calls || []
         if (!calls.length) {
-          const text = String(msg.content || '').trim()
+          const text = stripThinking(String(msg.content || ''))
           return text ? { text, note: `groq ${model}, ${rounds} tool round(s)` } : { text: null, note: 'groq empty answer' }
         }
-        convo.push({ role: 'assistant', content: msg.content || '', tool_calls: calls })
+        convo.push({ role: 'assistant', content: stripThinking(String(msg.content || '')), tool_calls: calls })
         for (const c of calls) {
           let result: unknown
           try { result = runTool(c.function?.name, JSON.parse(c.function?.arguments || '{}'), data, person) } catch (e) { result = { error: (e as Error).message } }
