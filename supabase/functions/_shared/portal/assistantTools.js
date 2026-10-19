@@ -4,6 +4,7 @@
 // and on the server (wa-bot).
 import { journeyFor, isDelivered, parseContainerNos, containerTrip, containerFinishedOn, deliveryBy } from './journeyCore.js'
 import { jobsFor } from './botMessages.js'
+import { lineName } from './shippingLines.js'
 
 const TZ = 'Asia/Kolkata'
 const day = (iso) => {
@@ -12,6 +13,28 @@ const day = (iso) => {
   return isNaN(d) ? String(iso) : d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', timeZone: TZ })
 }
 const norm = (s) => String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, '')
+// every word asked for appears somewhere ("Kerry Indev CFS" finds "Raigad/Kerry Indev Logistics CFS,Mumbai")
+const has2 = (v, want) => {
+  if (!want) return true
+  const hay = norm(v)
+  return hay.includes(norm(want)) || String(want).split(/[\s/,.-]+/).map(norm).filter(Boolean).every((w) => hay.includes(w))
+}
+// YYYY-MM-DD in India time, for date-range filters
+const ymd = (iso) => {
+  if (!iso) return null
+  if (/^\d{4}-\d{2}-\d{2}$/.test(String(iso))) return String(iso)
+  const d = new Date(iso)
+  return isNaN(d) ? null : d.toLocaleDateString('en-CA', { timeZone: TZ })
+}
+const inRange = (iso, from, to) => {
+  if (!from && !to) return true
+  const d = ymd(iso)
+  return !!d && (!from || d >= from) && (!to || d <= to)
+}
+// portal document types are short codes (BL, BE, COO…): map spoken names to them
+const DOC_ALIAS = { BILLOFLADING: 'BL', HBL: 'BL', MBL: 'BL', AWB: 'BL', BILLOFENTRY: 'BE', CERTIFICATEOFORIGIN: 'COO', PACKING: 'PACKINGLIST', PL: 'PACKINGLIST', COMMERCIALINVOICE: 'INVOICE', INV: 'INVOICE', EWAY: 'EWAYBILL', PROOFOFDELIVERY: 'POD', EXAMORDER: 'EXAMINATIONORDER', OUTOFCHARGE: 'OOC' }
+const docType = (s) => DOC_ALIAS[norm(s)] || norm(s)
+const PORT_ALIAS = { JNPT: 'INNSA', NHAVASHEVA: 'INNSA', NSA: 'INNSA', JNPA: 'INNSA', MUMBAI: 'INBOM', MUMBAIPORT: 'INBOM', MBPT: 'INBOM', AIR: 'INBOM4', MUMBAIAIR: 'INBOM4', SAHAR: 'INBOM4' }
 const STAGE = ['Job created', 'Docs received', 'Verification', 'BE filing', 'Customs review', 'Assessment', 'Duty paid', 'OOC', 'Out of port', 'In transit', 'Delivered']
 
 // One job as facts
@@ -27,10 +50,17 @@ function jobFacts(job, data, detail = false) {
     leaves_by: j.onwardMode || 'not decided', truck: job.truck_no || null,
   }
   if (!detail) return { ...facts, containers: parseContainerNos(job.containers).length }
+  const docs = (data.documents || []).filter((d) => d.job_id === job.id)
+  const acts = (data.activity || []).filter((a) => a.job_id === job.id || a.job_no === job.job_no).slice(0, 6)
   return {
     ...facts,
+    priority: job.priority || null, created: `${day(job.created_at)}${data.people?.[job.created_by] ? ` by ${data.people[job.created_by]}` : ''}`, last_updated: day(job.updated_at),
+    contract_free_days: job.free_days ?? null, hs_code: job.hs_code || null, notes: job.notes ? String(job.notes).slice(0, 300) : null,
     bl_no: job.bl_no || null, shipping_line: job.shipping_line || null, vessel: job.vessel || null, cfs: job.cfs_name || null,
     goods: job.goods ? String(job.goods).slice(0, 120) : null, rms: job.rms_status || null,
+    container_sizes: job.container_sizes && Object.keys(job.container_sizes).length ? job.container_sizes : job.container_size || null,
+    documents_uploaded: docs.length ? docs.map((d) => `${d.doc_type || 'Other'}: ${d.file_name || ''} (${day(d.created_at)}${d.uploaded_by_name ? `, ${d.uploaded_by_name}` : ''})`) : 'none',
+    recent_activity: acts.map((a) => `${day(a.created_at)}: ${a.title || a.action}${a.note ? ` (${String(a.note).slice(0, 80)})` : ''}`),
     delivery_to_warehouse: deliveryBy(job) === 'client' ? 'client collects' : 'JDS delivers',
     igm: job.ulip_refs?.igm_no ? `${job.ulip_refs.igm_no} (${day(job.ulip_refs.igm_date) || ''})` : null,
     steps: j.steps.map((s) => `${s.done ? 'done' : s.current ? 'CURRENT' : 'later'}: ${s.label}${s.when ? ` ${s.when}` : ''}${s.sub ? ` (${s.sub})` : ''}`),
@@ -64,46 +94,69 @@ const FILTERS = {
 }
 
 // Tool definitions (shape used by Gemini; plain JSON schema types)
+// Kept short on purpose: the whole list goes with every question, and the free
+// AI plan counts every word sent per minute.
+// (list_jobs, clients_overview and today_counts still run if asked, but
+// search_jobs covers them, so they are not offered.)
+const S = { type: 'STRING' }
 export const TOOLS = [
   {
-    name: 'list_jobs',
-    description: 'List JDS import jobs in a situation, optionally for one client. Use for questions like "which jobs have detention", "what is pending for PCM", "jobs waiting for OOC", "how many jobs are open".',
+    name: 'get_job',
+    description: 'Full details of ONE job (steps, BE, OOC, containers, truck/rail, documents, recent activity). ref = job no (J-193 or 193), BE no, container no, BL no or truck no.',
+    parameters: { type: 'OBJECT', properties: { ref: S }, required: ['ref'] },
+  },
+  {
+    name: 'search_jobs',
+    description: 'Find, count or group jobs by any mix of filters and date ranges (dates YYYY-MM-DD). Gives total/open/finished and average days BE→OOC and arrival→OOC.',
     parameters: {
       type: 'OBJECT',
       properties: {
-        situation: { type: 'STRING', enum: Object.keys(FILTERS), description: 'open = not finished; urgent = has an urgent problem; detention = free time over; free_days_low = 0-3 free days left; be_not_filed; waiting_ooc = BE filed, OOC not yet; ooc_done_not_moved = OOC done, not left yet; on_the_move = out by truck or rail; arriving_soon = ship not arrived; delivered = finished; all' },
-        client: { type: 'STRING', description: 'Part of the client name, e.g. "PCM" or "Deepa". Optional.' },
-        limit: { type: 'NUMBER', description: 'How many to return, default 15, max 40.' },
+        situation: { type: 'STRING', enum: Object.keys(FILTERS), description: 'open=not finished; urgent; detention=free time over; free_days_low=0-3 left; be_not_filed; waiting_ooc; ooc_done_not_moved; on_the_move=out by truck/rail; arriving_soon; delivered=finished; all (default)' },
+        text: { type: 'STRING', description: 'words in any field (goods, BL, notes…)' },
+        client: S, shipping_line: S, vessel: S, cfs: S,
+        port: { type: 'STRING', description: 'code or name: JNPT, Mumbai, air' },
+        mode: { type: 'STRING', description: 'Sea FCL, Sea LCL, Air' },
+        rms: { type: 'STRING', description: 'RMS, APR…' }, priority: S,
+        leaves_by: { type: 'STRING', enum: ['truck', 'rail', 'not decided'] },
+        has_truck: { type: 'BOOLEAN' },
+        missing_document: { type: 'STRING', description: 'BL, Invoice, Packing List, COO, Insurance, BE, OOC, E-Way Bill, POD' },
+        has_document: S,
+        created_from: S, created_to: S, be_from: S, be_to: S, ooc_from: S, ooc_to: S, arrived_from: S, arrived_to: S, eta_from: S, eta_to: S,
+        group_by: { type: 'STRING', enum: ['client', 'shipping_line', 'mode', 'status', 'port', 'cfs', 'created_month', 'rms', 'leaves_by'], description: 'count per group instead of a list' },
+        limit: { type: 'NUMBER', description: 'default 12, max 40' },
       },
-      required: ['situation'],
     },
   },
   {
-    name: 'get_job',
-    description: 'Full details of ONE job: steps, BE, OOC, containers (port in, left CFS, empty back, free days), truck or rail, problems. Accepts a job number (J-193 or 193), a BE number, a container number or a BL number.',
-    parameters: { type: 'OBJECT', properties: { ref: { type: 'STRING', description: 'Job no, BE no, container no or BL no' } }, required: ['ref'] },
-  },
-  {
-    name: 'clients_overview',
-    description: 'Clients with how many open jobs each has and how many are urgent. Optionally filter by part of the name.',
-    parameters: { type: 'OBJECT', properties: { name: { type: 'STRING', description: 'Part of a client name. Optional.' } } },
-  },
-  {
-    name: 'today_counts',
-    description: 'Today\'s numbers: open jobs, urgent, detention, waiting OOC, OOC done not moved, on the move, arriving.',
-    parameters: { type: 'OBJECT', properties: {} },
-  },
-  {
     name: 'list_containers',
-    description: 'List containers of open jobs by their LATEST tracking event, e.g. all containers in PORT OUT, CFS IN, CFS OUT, PORT IN, ICD IN; or by stage (at port, at CFS, left CFS, on the road, empty back); optionally for one client or job. Use for any question about "which containers…".',
+    description: 'Containers of current jobs by LATEST tracking event (PORT OUT, CFS IN, CFS OUT…), stage, place, client, job or movement date.',
     parameters: {
       type: 'OBJECT',
       properties: {
-        last_event: { type: 'STRING', description: 'Latest tracking event, e.g. "PORT OUT", "PORT IN", "CFS IN", "CFS OUT", "ICD IN", "ICD OUT", "GATE IN", "GATE OUT", "TOLL PLAZA CROSSED". Optional.' },
-        stage: { type: 'STRING', enum: ['at_port', 'at_cfs_or_icd', 'left_cfs_with_cargo', 'empty_back', 'detention', 'any'], description: 'Optional. at_port = arrived, not out of port; at_cfs_or_icd = inside a CFS/ICD; left_cfs_with_cargo = out to the client; empty_back = finished; detention = free time over.' },
-        client: { type: 'STRING', description: 'Part of a client name. Optional.' },
-        job: { type: 'STRING', description: 'A job number. Optional.' },
-        limit: { type: 'NUMBER', description: 'Default 30, max 60.' },
+        last_event: S,
+        stage: { type: 'STRING', enum: ['at_port', 'at_cfs_or_icd', 'left_cfs_with_cargo', 'empty_back', 'detention', 'any'] },
+        client: S, job: S,
+        place: { type: 'STRING', description: 'part of the place name, e.g. Kerry Indev' },
+        moved_from: { type: 'STRING', description: 'latest event on/after this date' }, moved_to: S,
+        include_old: { type: 'BOOLEAN', description: 'also boxes back empty or idle 30+ days' },
+        limit: { type: 'NUMBER', description: 'default 30' },
+      },
+    },
+  },
+  {
+    name: 'container_history',
+    description: 'Every tracking event of one container, with its job, size, vessel, terminal and line.',
+    parameters: { type: 'OBJECT', properties: { container: S }, required: ['container'] },
+  },
+  {
+    name: 'recent_activity',
+    description: 'What happened in the portal (last 30 days): container events, OOC, stage changes, trucks, uploads, new jobs, by job, person or kind. from defaults to today.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        job: S, from: S, to: S, person: S,
+        kind: { type: 'STRING', enum: ['any', 'container', 'ooc', 'stage', 'truck', 'document', 'job_created', 'note', 'detention'] },
+        limit: { type: 'NUMBER', description: 'default 25' },
       },
     },
   },
@@ -120,8 +173,23 @@ function boxStage(t, job, trip, finished, freeLeft) {
   return 'other'
 }
 
+// Leaves out empty fields so answers stay small
+const compact = (v) => {
+  if (Array.isArray(v)) return v.map(compact)
+  if (!v || typeof v !== 'object') return v
+  const o = {}
+  for (const [k, x] of Object.entries(v)) {
+    if (x === null || x === undefined || x === '' || (Array.isArray(x) && !x.length)) continue
+    o[k] = compact(x)
+  }
+  return o
+}
+
 // Runs one tool call. person decides which jobs they may see.
 export function runTool(name, args, data, person) {
+  return compact(runToolRaw(name, args, data, person))
+}
+function runToolRaw(name, args, data, person) {
   const jobs = jobsFor(person, data.jobs)
   const rows = jobs.map((job) => ({ job, j: isDelivered(job) ? { phase: 'delivered', attention: [], freeDaysLeft: null, beFiled: true } : journeyFor(job, data) }))
   if (name === 'list_jobs') {
@@ -138,6 +206,7 @@ export function runTool(name, args, data, person) {
       || jobs.find((x) => ref.length === 7 && norm(x.be_no) === ref)
       || jobs.find((x) => parseContainerNos(x.containers).includes(ref))
       || jobs.find((x) => ref.length >= 6 && norm(x.bl_no) === ref)
+      || jobs.find((x) => ref.length >= 6 && norm(x.truck_no) === ref)
     return job ? jobFacts(job, data, true) : { not_found: args?.ref }
   }
   if (name === 'clients_overview') {
@@ -156,14 +225,105 @@ export function runTool(name, args, data, person) {
     const n = (k) => rows.filter(FILTERS[k]).length
     return { date: day(new Date().toISOString()), open: n('open'), urgent: n('urgent'), detention: n('detention'), free_days_low: n('free_days_low'), be_not_filed: n('be_not_filed'), waiting_ooc: n('waiting_ooc'), ooc_done_not_moved: n('ooc_done_not_moved'), on_the_move: n('on_the_move'), arriving_soon: n('arriving_soon') }
   }
+  if (name === 'search_jobs') {
+    const a = args || {}
+    const has = has2
+    const test = FILTERS[a.situation] || FILTERS.all
+    const wantMode = norm(a.mode)
+    const port = PORT_ALIAS[norm(a.port)] || norm(a.port)
+    const words = String(a.text || '').split(/\s+/).map(norm).filter(Boolean)
+    const hits = []
+    for (const r of rows) {
+      const job = r.job
+      if (!test(r)) continue
+      if (!has(job.client, a.client) || !has(job.vessel, a.vessel) || !has(job.cfs_name, a.cfs) || !has(job.rms_status, a.rms) || !has(job.priority, a.priority)) continue
+      if (a.shipping_line && !has(`${job.shipping_line || ''} ${lineName(job.shipping_line) || ''}`, a.shipping_line)) continue
+      if (wantMode) {
+        const m = norm(job.mode)
+        const key = /AIR/.test(wantMode) ? 'AIR' : /LCL/.test(wantMode) ? 'LCL' : /FCL/.test(wantMode) ? 'FCL' : wantMode
+        if (!m.includes(key)) continue
+      }
+      if (port && !norm(job.port_code).includes(port) && !norm(job.port_name).includes(port)) continue
+      if (a.has_truck !== undefined && a.has_truck !== null && !!job.truck_no !== !!a.has_truck) continue
+      if (words.length) { const all = norm(Object.values(job).filter((v) => typeof v === 'string').join(' ')); if (!words.every((w) => all.includes(w))) continue }
+      const full = r.j.phase === 'delivered' ? { ...journeyFor(job, data), phase: 'delivered' } : r.j
+      if (a.leaves_by && (full.onwardMode || 'not decided') !== a.leaves_by) continue
+      const docs = (data.documents || []).filter((d) => d.job_id === job.id).map((d) => norm(d.doc_type))
+      if (a.has_document && !docs.includes(docType(a.has_document))) continue
+      if (a.missing_document && docs.includes(docType(a.missing_document))) continue
+      if (!inRange(job.created_at, a.created_from, a.created_to) || !inRange(job.be_date, a.be_from, a.be_to) || !inRange(full.oocDate, a.ooc_from, a.ooc_to)
+        || !inRange(full.arrivedAt, a.arrived_from, a.arrived_to) || !inRange(job.eta, a.eta_from, a.eta_to)) continue
+      hits.push({ job, full })
+    }
+    hits.sort((x, y) => String(y.job.created_at || '').localeCompare(String(x.job.created_at || '')))
+    const avg = (pairs) => { const d = pairs.filter(([s, e]) => s && e).map(([s, e]) => (new Date(e) - new Date(s)) / 864e5).filter((n) => n >= 0 && n < 120); return d.length ? { days: Math.round((d.reduce((p, n) => p + n, 0) / d.length) * 10) / 10, from_jobs: d.length } : null }
+    const stats = {
+      total: hits.length, open: hits.filter((h) => h.full.phase !== 'delivered').length, finished: hits.filter((h) => h.full.phase === 'delivered').length,
+      avg_be_to_ooc: avg(hits.map((h) => [h.job.be_date, h.full.oocDate])), avg_arrival_to_ooc: avg(hits.map((h) => [h.full.arrivedAt, h.full.oocDate])),
+    }
+    const filters = Object.fromEntries(Object.entries(a).filter(([k, v]) => v !== undefined && v !== null && v !== '' && k !== 'limit' && k !== 'group_by'))
+    if (a.group_by) {
+      const keyOf = {
+        client: (h) => h.job.client || 'No client', shipping_line: (h) => lineName(h.job.shipping_line) || h.job.shipping_line || 'Not set', mode: (h) => h.job.mode || 'Not set',
+        status: (h) => h.full.phase, port: (h) => h.job.port_code || 'Not set', cfs: (h) => h.job.cfs_name || 'Not set', rms: (h) => h.job.rms_status || 'Not set',
+        created_month: (h) => (ymd(h.job.created_at) || 'unknown').slice(0, 7), leaves_by: (h) => h.full.onwardMode || 'not decided',
+      }[a.group_by] || ((h) => h.job.client || 'No client')
+      const groups = {}
+      for (const h of hits) groups[keyOf(h)] = (groups[keyOf(h)] || 0) + 1
+      return { filters, group_by: a.group_by, ...stats, groups: Object.entries(groups).sort((x, y) => y[1] - x[1]).slice(0, 40).map(([k, n]) => ({ [a.group_by]: k, jobs: n })) }
+    }
+    const limit = Math.min(Math.max(Number(a.limit) || 12, 1), 40)
+    return {
+      filters, ...stats, shown: Math.min(limit, hits.length),
+      jobs: hits.slice(0, limit).map((h) => ({ ...jobFacts(h.job, data), ...(h.full.phase === 'delivered' ? { next_step: 'Finished', problems: [] } : {}), status: h.full.phase, created: day(h.job.created_at), arrived: day(h.full.arrivedAt), shipping_line: lineName(h.job.shipping_line) || h.job.shipping_line || null, cfs: h.job.cfs_name || null, rms: h.job.rms_status || null })),
+    }
+  }
+  if (name === 'container_history') {
+    const no = norm(args?.container)
+    const t = data.containersByNo[no] || Object.values(data.containersByNo).find((x) => no.length >= 4 && norm(x.container_no).endsWith(no))
+    const job = jobs.find((x) => parseContainerNos(x.containers).includes(t ? norm(t.container_no) : no))
+    if (!job) return { not_found: args?.container }
+    if (!t) return { container: no, job: job.job_no, client: job.client || null, tracking: 'not tracked yet' }
+    const ms = (Array.isArray(t.milestones) ? t.milestones : []).filter((m) => m?.date).sort((x, y) => String(x.date).localeCompare(String(y.date)))
+    const trip = containerTrip(t, job)
+    return {
+      container: t.container_no, job: job.job_no, client: job.client || null, size: t.container_size || null, vessel: t.vessel || null, terminal: t.terminal || null,
+      shipping_line: t.shipping_line_ldb || null, last_event: t.status_text || null, where_now: t.current_location || null,
+      port_in: day(trip.portIn), left_with_cargo: day(trip.exitAt), empty_back: day(trip.returnedAt),
+      events: ms.slice(-40).map((m) => `${day(m.date)} ${new Date(m.date).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: TZ })}: ${m.description || m.event || m.status || ''}${m.location ? ` · ${m.location}` : ''}`),
+    }
+  }
+  if (name === 'recent_activity') {
+    const a = args || {}
+    const from = a.from || ymd(new Date().toISOString())
+    const kinds = { container: ['container_update'], ooc: ['ooc_granted'], stage: ['stage_update'], truck: ['truck_dispatched'], document: ['document_upload'], job_created: ['job_created'], detention: ['detention_alert'], note: ['note', 'comment', 'note_added'] }[a.kind]
+    const jn = norm(a.job).replace(/^J/, '')
+    const mine = new Set(jobs.map((x) => x.job_no))
+    const hits = (data.activity || []).filter((x) => {
+      if (x.job_no && !mine.has(x.job_no)) return false
+      if (jn && norm(x.job_no).replace(/^J/, '') !== jn) return false
+      if (kinds && !kinds.includes(x.action || x.type)) return false
+      if (a.person && !has2(`${x.done_by_name || ''} ${x.user_name || ''}`, a.person)) return false
+      return inRange(x.created_at, jn && !a.from ? null : from, a.to)
+    })
+    const limit = Math.min(Math.max(Number(a.limit) || 25, 1), 60)
+    const counts = {}
+    for (const x of hits) counts[x.action || x.type || 'other'] = (counts[x.action || x.type || 'other'] || 0) + 1
+    return {
+      from: jn && !a.from ? 'last 30 days' : from, to: a.to || 'now', note: 'Only the last 30 days are kept here.', total: hits.length, counts, shown: Math.min(limit, hits.length),
+      items: hits.slice(0, limit).map((x) => `${day(x.created_at)} ${new Date(x.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: TZ })}: ${x.title || x.action}${x.note ? ` (${String(x.note).slice(0, 90)})` : ''}${x.done_by_name || x.user_name ? ` [${x.done_by_name || x.user_name}]` : ''}`),
+    }
+  }
   if (name === 'list_containers') {
     const want = norm(args?.last_event)
     const stage = args?.stage && args.stage !== 'any' ? args.stage : null
     const c = norm(args?.client)
     const jn = norm(args?.job).replace(/^J/, '')
+    const place = norm(args?.place)
+    const old = !!args?.include_old || !!jn
     const out = []
     for (const r of rows) {
-      if (r.j.phase === 'delivered' && stage !== 'empty_back') continue
+      if (r.j.phase === 'delivered' && stage !== 'empty_back' && !old) continue
       if (c && !norm(r.job.client).includes(c)) continue
       if (jn && norm(r.job.job_no).replace(/^J/, '') !== jn) continue
       for (const no of parseContainerNos(r.job.containers)) {
@@ -180,15 +340,17 @@ export function runTool(name, args, data, person) {
         const lastAt = (Array.isArray(t.milestones) ? t.milestones : []).map((m) => m?.date).filter(Boolean).sort().at(-1)
         // current containers only: skip boxes already back empty, and boxes with no
         // movement for 30+ days (most likely finished but never marked), unless asked
-        if (!stage && st === 'empty_back') continue
-        if (!stage && lastAt && Date.now() - new Date(lastAt).getTime() > 30 * 864e5) continue
+        if (!stage && !old && st === 'empty_back') continue
+        if (!stage && !old && lastAt && Date.now() - new Date(lastAt).getTime() > 30 * 864e5) continue
+        if (place && !has2(t.current_location, args.place)) continue
+        if (!inRange(lastAt, args?.moved_from, args?.moved_to)) continue
         out.push({ container: no, job: r.job.job_no, client: r.job.client || null, last_event: ev || null, where: t.current_location || null, when: day(lastAt), stage: st, free_days_left: freeLeft })
       }
     }
     const limit = Math.min(Math.max(Number(args?.limit) || 30, 1), 60)
     const byEvent = {}
     for (const x of out) byEvent[x.last_event || 'none'] = (byEvent[x.last_event || 'none'] || 0) + 1
-    return { filter: { last_event: args?.last_event || null, stage: stage || 'any', client: args?.client || null, job: args?.job || null }, total: out.length, shown: Math.min(limit, out.length), counts_by_last_event: byEvent, containers: out.slice(0, limit) }
+    return { filter: { last_event: args?.last_event || null, stage: stage || 'any', client: args?.client || null, job: args?.job || null, place: args?.place || null, moved_from: args?.moved_from || null, moved_to: args?.moved_to || null, include_old: old }, total: out.length, shown: Math.min(limit, out.length), counts_by_last_event: byEvent, containers: out.slice(0, limit) }
   }
   return { error: `unknown tool ${name}` }
 }
@@ -208,21 +370,36 @@ export function TODAY_BRIEF(data, person) {
   return `Today's basics (from the portal, right now):
 Counts: ${Object.entries(counts).filter(([k]) => k !== 'date').map(([k, v]) => `${k.replace(/_/g, ' ')} ${v}`).join(', ')}.
 Jobs that need attention:
-${lines.slice(0, 20).join('\n') || 'none'}${lines.length > 20 ? `\n(+${lines.length - 20} more: use list_jobs)` : ''}
+${lines.slice(0, 20).join('\n') || 'none'}${lines.length > 20 ? `\n(+${lines.length - 20} more: use search_jobs)` : ''}
 For anything not shown here (a job's details, containers, a client's jobs, other lists), use the tools.`
+}
+
+// Exact date ranges, so the AI never has to work out "this week" itself
+function dateRanges(now) {
+  const t = ymd(now.toISOString())
+  const d = (n) => { const x = new Date(`${t}T12:00:00+05:30`); x.setDate(x.getDate() + n); return x.toLocaleDateString('en-CA', { timeZone: TZ }) }
+  const dow = (new Date(`${t}T12:00:00+05:30`).getUTCDay() + 6) % 7 // Monday = 0
+  const [y, m] = t.split('-').map(Number)
+  const lastMonthEnd = new Date(Date.UTC(y, m - 1, 0)).toISOString().slice(0, 10)
+  return `Date ranges: today ${t}; yesterday ${d(-1)}; this week ${d(-dow)} to ${t}; last week ${d(-dow - 7)} to ${d(-dow - 1)}; last 7 days ${d(-6)} to ${t}; this month ${t.slice(0, 8)}01 to ${t}; last month ${lastMonthEnd.slice(0, 8)}01 to ${lastMonthEnd}.`
 }
 
 export const SYSTEM_PROMPT = (person, now = new Date()) => `You are the WhatsApp assistant of JDS Logistics, a customs broker (CHA) in Navi Mumbai that clears IMPORT cargo at JNPT / Nhava Sheva, Mumbai Port and Mumbai air cargo, and moves it to the client's warehouse by truck or by rail.
 You are talking to ${person?.name || 'a JDS team member'} (JDS staff).
 Today is ${now.toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: TZ })}, ${now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: TZ })} India time.
+${dateRanges(now)}
 
 Rules:
 - JDS job facts (jobs, containers, clients, customs, detention, trucks, rail) come ONLY from "Today's basics" below or the tools. Never invent numbers, dates or statuses; if not found, say so.
 - General customs/logistics questions (what an IGM, BE, OOC or DO is, how detention works, documents, HS codes) may be answered from your own knowledge; say when rules vary, and never present it as a fact about a JDS job.
 - For counting or comparing jobs, check with the tools, then give only the answer.
 - You can only READ. For changes (mark delivered, assign truck, notes), say WhatsApp changes are coming soon; use the portal for now.
-- Reply in the question's language (English, Hindi or Hinglish). WhatsApp style: short, *bold* key facts, "• " bullets, no tables or headers, about 12 lines max unless a full list is asked.
+- Reply in the question's language: an English question gets an English answer; Hindi or Hinglish only when the question itself is in Hindi/Hinglish. WhatsApp style: short, *bold* key facts, "• " bullets, no tables or headers, about 12 lines max unless a full list is asked.
 - free_days_left below 0 = detention running that many days. Never mention tools, JSON or AI.
 - Container tracking events (staff use these words): PORT IN (unloaded at the port), PORT OUT (left the port, usually to a CFS), CFS IN / ICD IN (entered the CFS / ICD), CFS OUT / ICD OUT (left with cargo for the client), GATE IN / GATE OUT, TOLL PLAZA CROSSED (on the road), DPD (direct port delivery). "Containers in port out" or "port out containers" = containers whose latest event is PORT OUT: use list_containers with last_event. Same for any other event name.
+- Which tool: one job / container / BE / BL / truck number → get_job. Jobs by ANY field, date range, count, "how many", "per client", averages → search_jobs (combine filters freely; use group_by for counts per group). A container's full journey → container_history. "What happened", updates, who did what, uploads → recent_activity. Containers by event, place or movement date → list_containers.
+- Use the date ranges above exactly as given (YYYY-MM-DD). "OOC granted / BE filed / arrived in a period" → search_jobs with ooc_/be_/arrived_ dates (the real dates); recent_activity only shows when staff recorded something in the portal.
+- The portal does NOT hold: payments, duty or invoice amounts, freight rates, bank details, phone numbers or emails of clients/CFS/transporters, or the contents of documents. If asked, say plainly the portal doesn't have that. Only for duty suggest ICEGATE / LiveImpex; for DO or line charges the shipping line. Never invent other places to look.
+- If a tool answers with not_found or zero jobs, say so plainly and suggest the closest thing you can check (e.g. a similar client name).
 - Don't ask the user to clarify when the meaning is reasonably clear: pick the most likely meaning, answer it, and mention the other reading in one short line if useful.
 - Bold in WhatsApp is single asterisks: *like this*. Never use **double**.`

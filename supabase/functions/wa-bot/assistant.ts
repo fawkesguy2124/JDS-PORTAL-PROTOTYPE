@@ -48,7 +48,7 @@ const GROQ_API = 'https://api.groq.com/openai/v1/chat/completions'
 // Preferred order (reasoning models first: they think briefly, fast on Groq).
 // Only models Groq really offers today are used: its model list is read once
 // per start and kept, so retired models are never tried.
-const GROQ_PREFERRED = ['openai/gpt-oss-120b', 'openai/gpt-oss-20b', 'moonshotai/kimi-k2-instruct-0905', 'qwen/qwen3-32b', 'meta-llama/llama-4-maverick-17b-128e-instruct', 'llama-3.3-70b-versatile', 'meta-llama/llama-4-scout-17b-16e-instruct']
+const GROQ_PREFERRED = ['openai/gpt-oss-120b', 'openai/gpt-oss-20b', 'qwen/qwen3.8-27b', 'moonshotai/kimi-k2-instruct-0905', 'qwen/qwen3-32b', 'meta-llama/llama-4-maverick-17b-128e-instruct', 'llama-3.3-70b-versatile', 'meta-llama/llama-4-scout-17b-16e-instruct']
 let groqAvailable: Set<string> | null = null
 let groqLastGood: string | null = null
 async function groqModels(key: string): Promise<string[]> {
@@ -65,11 +65,18 @@ async function groqModels(key: string): Promise<string[]> {
   const wanted = [Deno.env.get('GROQ_MODEL'), groqLastGood, ...GROQ_PREFERRED].filter(Boolean) as string[]
   return [...new Set(wanted)].filter((m) => !groqAvailable || groqAvailable.has(m))
 }
+// for the test run: which models this Groq key can use
+export async function groqInfo() {
+  const key = (Deno.env.get('GROQ_API_KEY') || '').trim()
+  await groqModels(key)
+  return { available: groqAvailable ? [...groqAvailable] : null, will_try: await groqModels(key) }
+}
 // per-model reasoning settings; the thinking itself is kept out of the reply
 const REASONING: Record<string, Record<string, unknown>> = {
   'openai/gpt-oss-120b': { reasoning_effort: 'medium', include_reasoning: false },
   'openai/gpt-oss-20b': { reasoning_effort: 'medium', include_reasoning: false },
   'qwen/qwen3-32b': { reasoning_format: 'hidden' },
+  'qwen/qwen3.8-27b': { reasoning_format: 'hidden' },
 }
 const noExtras = new Set<string>() // models that refused those settings
 const stripThinking = (s: string) => s.replace(/<think>[\s\S]*?<\/think>/gi, '').trim()
@@ -89,16 +96,26 @@ async function askGroq(question: string, history: Turn[], data: unknown, person:
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), 30_000)
   const tried: string[] = []
+  // the free plan allows 8,000 tokens a minute PER MODEL: when one model is full,
+  // the next one carries on with the same conversation (tool answers kept); if
+  // all are full and Groq says "try again in a few seconds", wait once and retry
+  const convo = [...messages]
+  let rounds = 0
+  let wait = Infinity
   try {
+   for (let pass = 0; pass < 2; pass++) {
+    if (pass === 1) {
+      if (wait > 9_000) break
+      await new Promise((r) => setTimeout(r, wait + 300))
+    }
+    wait = Infinity
     for (const model of await groqModels(key)) {
-      const convo = [...messages]
-      let rounds = 0
       let skip = false
       while (rounds <= MAX_TOOL_ROUNDS) {
         const res = await fetch(GROQ_API, {
           method: 'POST',
           headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ model, messages: convo, tools: GROQ_TOOLS, tool_choice: 'auto', temperature: 0.3, max_tokens: 2500, ...(noExtras.has(model) ? {} : REASONING[model] || {}) }),
+          body: JSON.stringify({ model, messages: convo, tools: GROQ_TOOLS, tool_choice: 'auto', temperature: 0.3, max_tokens: 1800, ...(noExtras.has(model) ? {} : REASONING[model] || {}) }),
           signal: controller.signal,
         })
         const out = await res.json().catch(() => ({}))
@@ -109,7 +126,12 @@ async function askGroq(question: string, history: Turn[], data: unknown, person:
           continue
         }
         if (res.status === 404 || res.status === 429 || res.status >= 500 || (res.status === 400 && /model/i.test(out?.error?.message || ''))) {
-          tried.push(`${model}: ${res.status}`); skip = true; break
+          const m = String(out?.error?.message || '')
+          if (res.status === 429) {
+            const t = m.match(/try again in (?:(\d+)m)?([\d.]+)(ms|s)/)
+            if (t) wait = Math.min(wait, (Number(t[1] || 0) * 60 + Number(t[2]) / (t[3] === 'ms' ? 1000 : 1)) * 1000)
+          }
+          tried.push(`${model}: ${res.status}${res.status === 429 ? ` ${m.match(/on (\w+ per \w+[^:]*): Limit \d+/)?.[0] || ''}` : ''}`); skip = true; break
         }
         if (!res.ok) return { text: null, note: `groq ${res.status}: ${String(out?.error?.message || '').slice(0, 120)}` }
         const msg = out?.choices?.[0]?.message || {}
@@ -117,18 +139,19 @@ async function askGroq(question: string, history: Turn[], data: unknown, person:
         if (!calls.length) {
           const text = stripThinking(String(msg.content || ''))
           if (text) groqLastGood = model
-          return text ? { text, note: `groq ${model}, ${rounds} tool round(s)${tried.length ? ` (skipped ${tried.join(", ")})` : ""}` } : { text: null, note: 'groq empty answer' }
+          return text ? { text, note: `groq ${model}, ${rounds} tool round(s)${tried.length ? ` (skipped ${tried.join(", ")})` : ""}${pass ? ' after a short wait' : ''}` } : { text: null, note: 'groq empty answer' }
         }
         convo.push({ role: 'assistant', content: stripThinking(String(msg.content || '')), tool_calls: calls })
         for (const c of calls) {
           let result: unknown
           try { result = runTool(c.function?.name, JSON.parse(c.function?.arguments || '{}'), data, person) } catch (e) { result = { error: (e as Error).message } }
-          convo.push({ role: 'tool', tool_call_id: c.id, content: JSON.stringify(result).slice(0, 12000) })
+          convo.push({ role: 'tool', tool_call_id: c.id, content: JSON.stringify(result).slice(0, 9000) })
         }
         rounds++
       }
       if (!skip) return { text: null, note: 'groq too many tool rounds' }
     }
+   }
     return { text: null, note: `all Groq models busy (${tried.join(', ')})` }
   } catch (e) {
     return { text: null, note: (e as Error).name === 'AbortError' ? 'groq timed out' : (e as Error).message }

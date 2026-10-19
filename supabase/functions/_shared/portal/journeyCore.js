@@ -314,6 +314,7 @@ export function journeyFor(job, data) {
   return {
     steps, phase, attention,
     oocDate, oocDone, beFiled, truck, readyForTruck, onwardMode: mode,
+    arrivedAt: ata || c.portIn || null,
     freeDaysLeft: c.minFree,
     containers: c,
     truckLocation: lastPlaza ? { plaza: lastPlaza, at: fastag.parsed.extra.lastSeenAt, checkedAt: fastag.checked_at } : null,

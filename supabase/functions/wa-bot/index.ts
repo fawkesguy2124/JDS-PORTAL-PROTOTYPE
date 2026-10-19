@@ -17,7 +17,7 @@
 import { adminClient, json } from '../_shared/ulip.ts'
 import { buildJourneyData } from '../_shared/portal/journeyCore.js'
 import { morningSummary, instantAlerts, answer, teamFromProfiles, BOT_NUMBERS } from '../_shared/portal/botMessages.js'
-import { askAssistant } from './assistant.ts'
+import { askAssistant, groqInfo } from './assistant.ts'
 
 const GRAPH = 'https://graph.facebook.com/v21.0'
 const DAY = 24 * 60 * 60 * 1000
@@ -56,10 +56,24 @@ async function loadData(admin: Admin) {
       .not('job_id', 'is', null).gte('checked_at', since)
       .order('checked_at', { ascending: false, nullsFirst: false })),
     readAll(() => admin.from('container_tracking')
-      .select('container_no, job_id, job_no, status, status_text, current_location, free_days, port_in, port_out, cfs_gate_in, milestones, last_refreshed_at, shipping_line_ldb')
+      .select('container_no, job_id, job_no, status, status_text, current_location, free_days, port_in, port_out, cfs_gate_in, milestones, last_refreshed_at, shipping_line_ldb, container_size, vessel, terminal')
       .order('container_no')),
   ])
-  return buildJourneyData({ jobs, customs, results, containers })
+  const data: any = buildJourneyData({ jobs, customs, results, containers })
+  // extras for the assistant only (what happened, which papers, who): a failure here
+  // must never stop alerts or the summary
+  const month = new Date(Date.now() - 30 * DAY).toISOString()
+  const [activity, documents, people] = await Promise.all([
+    readAll(() => admin.from('activity_log').select('action, type, title, note, job_no, job_id, done_by_name, user_name, created_at')
+      .gte('created_at', month).order('created_at', { ascending: false })).catch(() => []),
+    // file names and types only: never the files or their links
+    readAll(() => admin.from('documents').select('job_id, job_no, file_name, doc_type, uploaded_by_name, created_at').order('created_at', { ascending: false })).catch(() => []),
+    readAll(() => admin.from('profiles').select('id, name').order('id')).catch(() => []),
+  ])
+  data.activity = activity
+  data.documents = documents
+  data.people = Object.fromEntries(people.map((p: any) => [p.id, p.name]))
+  return data
 }
 
 // For questions: reuse the data loaded in the last minute (the bot stays warm
@@ -285,6 +299,22 @@ Deno.serve(async (req) => {
       if (run === 'alerts') return json({ success: true, sending: sendingOn(), sent: await runAlerts(admin) })
       // keep the bot started, with the team list and portal data already loaded
       if (run === 'warm') { dataCache = null; await Promise.all([loadTeam(admin), loadDataCached(admin)]); return json({ success: true, warm: true }) }
+      // test questions: answered as the first team member, nothing sent on WhatsApp
+      if (run === 'ask') {
+        const questions: string[] = (JSON.parse(raw).questions || []).slice(0, 8)
+        const [team, data] = await Promise.all([loadTeam(admin), loadDataCached(admin)])
+        const person = team[0]
+        const out = []
+        const gap = Math.min(Number(JSON.parse(raw).gap) || 0, 20_000) // pause between questions, like a person typing
+        for (const q of questions) {
+          if (out.length && gap) await new Promise((r) => setTimeout(r, gap))
+          const t0 = Date.now()
+          const fixed = answer(data, q, person, new Date(), { fallback: false })
+          const ai = fixed ? null : await askAssistant(q, [], data, person)
+          out.push({ q, a: fixed || (ai?.text ? toWhatsApp(ai.text) : null), how: fixed ? 'fixed' : ai?.note, ms: Date.now() - t0 })
+        }
+        return json({ success: true, answers: out, groq: questions.length ? undefined : await groqInfo() })
+      }
     } catch (e) {
       return json({ success: false, error: (e as Error).message }, 500)
     }
