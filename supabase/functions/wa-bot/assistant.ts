@@ -53,15 +53,27 @@ export async function askAssistant(question: string, history: Turn[], data: unkn
       let rounds = 0
       let retried = false
       let skip = false
+      let config: any = base.generationConfig
       const convo = [...contents]
       while (rounds <= MAX_TOOL_ROUNDS) {
-        const { status, out } = await callGemini(model, { ...base, contents: convo }, key, controller.signal)
+        const { status, out } = await callGemini(model, { ...base, generationConfig: config, contents: convo }, key, controller.signal)
         if (status === 404) { tried.push(`${model}: not available`); skip = true; break }
         if (status === 429 || status >= 500) {
           if (!retried) { retried = true; await sleep(2000); continue } // busy: one quick retry
           tried.push(`${model}: ${status}`); skip = true; break // still busy: next model
         }
-        if (status >= 400) return { text: null, note: `gemini ${status}: ${String(out?.error?.message || '').slice(0, 120)}` }
+        if (status === 400 && config.thinkingConfig) {
+          // some models don't accept "thinking off": ask again without that setting
+          console.warn(`[wa-bot] ${model} refused the request (${String(out?.error?.message || '').slice(0, 160)}); retrying without the thinking setting`)
+          const { thinkingConfig: _drop, ...rest } = config
+          config = rest
+          continue
+        }
+        if (status >= 400) {
+          tried.push(`${model}: ${status} ${String(out?.error?.message || '').slice(0, 100)}`)
+          console.warn(`[wa-bot] ${model} error detail: ${JSON.stringify(out?.error?.details || out?.error || {}).slice(0, 400)}`)
+          skip = true; break // try the next model
+        }
         const content = out?.candidates?.[0]?.content
         const parts: any[] = content?.parts || []
         const calls = parts.filter((p) => p.functionCall)
