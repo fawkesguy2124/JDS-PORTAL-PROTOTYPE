@@ -152,7 +152,8 @@ async function askGroq(question: string, history: Turn[], data: unknown, person:
         const calls: any[] = msg.tool_calls || []
         if (!calls.length) {
           const text = stripThinking(String(msg.content || ''))
-          if (text) groqLastGood = model
+          if (!text) { tried.push(`${model}: empty answer`); skip = true; break } // try the next model
+          groqLastGood = model
           return text ? { text, note: `groq ${model}, ${rounds} tool round(s)${tried.length ? ` (skipped ${tried.join(", ")})` : ""}${pass ? ' after a short wait' : ''}` } : { text: null, note: 'groq empty answer' }
         }
         convo.push({ role: 'assistant', content: stripThinking(String(msg.content || '')), tool_calls: calls })
