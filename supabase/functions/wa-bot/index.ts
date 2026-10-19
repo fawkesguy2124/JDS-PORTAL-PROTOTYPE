@@ -16,7 +16,7 @@
 //   WHATSAPP_TEMPLATE_LANG optional, default "en"
 import { adminClient, json } from '../_shared/ulip.ts'
 import { buildJourneyData } from '../_shared/portal/journeyCore.js'
-import { morningSummary, instantAlerts, answer, teamFromProfiles } from '../_shared/portal/botMessages.js'
+import { morningSummary, instantAlerts, answer, teamFromProfiles, BOT_NUMBERS } from '../_shared/portal/botMessages.js'
 import { askAssistant } from './assistant.ts'
 
 const GRAPH = 'https://graph.facebook.com/v21.0'
@@ -168,6 +168,9 @@ async function validSignature(req: Request, raw: string) {
 async function handleInbound(admin: Admin, payload: any) {
   const messages = (payload?.entry || []).flatMap((e: any) => (e.changes || []).flatMap((c: any) => c.value?.messages || []))
   if (!messages.length) return // delivery receipts etc.
+  // "typing…" first, before any database step (only for the bot's own numbers)
+  const typingNow = new Map<string, Promise<void>>()
+  for (const m of messages) if (m.id && BOT_NUMBERS.includes(String(m.from))) typingNow.set(m.id, showTyping(m.id))
   const team = await loadTeam(admin)
   let data: any = null
   for (const m of messages) {
@@ -179,7 +182,7 @@ async function handleInbound(admin: Admin, payload: any) {
       if (dup?.code === '23505') continue
     }
     const started = Date.now()
-    const typing = showTyping(m.id) // "typing…" appears straight away
+    const typing = typingNow.get(m.id) || showTyping(m.id) // already started above
     const text = m.type === 'text' ? m.text?.body : m.type === 'button' ? m.button?.text : ''
     // the last few messages (so follow-ups make sense) and the portal data, loaded together
     const [inboxRes, loaded] = await Promise.all([
