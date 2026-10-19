@@ -9,7 +9,7 @@
 //    carry a short version; the full text goes as a normal message once the
 //    person has written to the bot in the last 24 hours.
 //  - Replies to a person's question are normal messages (no template).
-import { journeyFor, isDelivered, isExportJob, parseContainerNos } from './journeyCore.js'
+import { journeyFor, isDelivered, isExportJob, parseContainerNos, containerFinishedOn } from './journeyCore.js'
 
 const DAY = 24 * 60 * 60 * 1000
 const TZ = 'Asia/Kolkata'
@@ -120,7 +120,12 @@ export function morningSummary(allData, person, now = new Date()) {
 // the server sends a key only once (so an alert never repeats).
 // Returns [{ key, jobId, kind, text, template }]
 // ─────────────────────────────────────────────────────────────────────────────
-const LEFT_CFS = /\b(CFS|ICD) OUT\b/i
+// Every container event of an open job is an alert (Jose, 19 Oct 2026: "any
+// container related alert, whether it's port in, port out, CFS in, CFS out").
+// The same event for several boxes of one job in one check is one message.
+const BOX_ICON = [[/PORT IN|DISCHARGE|VESSEL ARRIVED|DPD/, '🚢'], [/PORT OUT|GATE OUT|GATE CROSSED|TERMINAL OUT/, '🚛'], [/CFS IN|ICD IN|GATE IN|TERMINAL IN/, '🏭'], [/CFS OUT|ICD OUT/, '🚚'], [/TOLL|STATION|RAIL|WAGON/, '🛣️'], [/EMPTY/, '📦']]
+const boxIcon = (ev) => BOX_ICON.find(([re]) => re.test(ev))?.[1] || '📦'
+const placeOf = (note) => oneLine(String(note || '').split('·').slice(1).join('·')).replace(/^Latest:.*$/i, '').trim() || null
 
 export function instantAlerts(data, events = [], now = new Date()) {
   const today = istDate(now)
@@ -145,12 +150,34 @@ export function instantAlerts(data, events = [], now = new Date()) {
       const ooc = meta.ooc_no ? `OOC ${meta.ooc_no}${meta.ooc_date ? ` dated ${dayText(meta.ooc_date)}` : ''}` : 'OOC granted'
       add('ooc', `ooc:${job?.id}:${meta.ooc_no || ev.id}`, job, `✅ OOC granted: ${ooc}. Arrange truck or rail.`)
     }
-    if (ev.action === 'container_update' && LEFT_CFS.test(ev.title || '')) {
-      const job = byId[meta.job_id || ev.job_id]
-      const where = oneLine(String(ev.note || '').split('·').slice(1).join('·')) || null
-      const box = meta.container_no || String(ev.title).split(' — ')[0]
-      add('left_cfs', `left:${box}:${String(ev.title).split(' — ')[1]}`, job, `🚚 Container ${box} left the ${/ICD/i.test(ev.title) ? 'ICD' : 'CFS'}${where ? ` (${where})` : ''}.`)
-    }
+  }
+
+  // container events, grouped by job + event
+  const groups = new Map()
+  for (const ev of events) {
+    if (ev.action !== 'container_update') continue
+    const meta = ev.meta || {}
+    const job = byId[meta.job_id || ev.job_id]
+    const box = meta.container_no || String(ev.title || '').split(' — ')[0]
+    const what = oneLine(String(ev.title || '').split(' — ')[1] || '').toUpperCase()
+    if (!job || !box || !what || isDelivered(job)) continue
+    // only this job's trip: skip a box whose work for this job is already over
+    const row = data.containersByNo?.[String(box).toUpperCase()]
+    if (row && containerFinishedOn(row, job)) continue
+    const k = `${job.id}|${what}`
+    const g = groups.get(k) || { job, what, boxes: [], ids: [], place: null, more: 0 }
+    if (!g.boxes.includes(box)) g.boxes.push(box)
+    g.ids.push(ev.id)
+    g.place ||= placeOf(ev.note)
+    const extra = String(ev.note || '').match(/^(\d+) new events/)
+    if (extra) g.more += Number(extra[1]) - 1
+    groups.set(k, g)
+  }
+  for (const g of groups.values()) {
+    const event = (g.what.charAt(0) + g.what.slice(1).toLowerCase()).replace(/\b(cfs|icd|dpd|dpe)\b/gi, (w) => w.toUpperCase())
+    const boxes = g.boxes.length === 1 ? `Container ${g.boxes[0]}` : `${g.boxes.length} containers (${g.boxes.slice(0, 4).join(', ')}${g.boxes.length > 4 ? ', …' : ''})`
+    add('container', `box:${g.ids.sort().join(',')}`, g.job,
+      `${boxIcon(g.what)} ${boxes}: ${event}${g.place ? ` at ${g.place}` : ''}${g.more > 0 ? ` (and ${g.more} earlier update${g.more === 1 ? '' : 's'})` : ''}.`)
   }
 
   // worked out from today's saved data (once per job per day)
