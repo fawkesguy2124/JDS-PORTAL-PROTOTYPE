@@ -93,7 +93,32 @@ export const TOOLS = [
     description: 'Today\'s numbers: open jobs, urgent, detention, waiting OOC, OOC done not moved, on the move, arriving.',
     parameters: { type: 'OBJECT', properties: {} },
   },
+  {
+    name: 'list_containers',
+    description: 'List containers of open jobs by their LATEST tracking event, e.g. all containers in PORT OUT, CFS IN, CFS OUT, PORT IN, ICD IN; or by stage (at port, at CFS, left CFS, on the road, empty back); optionally for one client or job. Use for any question about "which containers…".',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        last_event: { type: 'STRING', description: 'Latest tracking event, e.g. "PORT OUT", "PORT IN", "CFS IN", "CFS OUT", "ICD IN", "ICD OUT", "GATE IN", "GATE OUT", "TOLL PLAZA CROSSED". Optional.' },
+        stage: { type: 'STRING', enum: ['at_port', 'at_cfs_or_icd', 'left_cfs_with_cargo', 'empty_back', 'detention', 'any'], description: 'Optional. at_port = arrived, not out of port; at_cfs_or_icd = inside a CFS/ICD; left_cfs_with_cargo = out to the client; empty_back = finished; detention = free time over.' },
+        client: { type: 'STRING', description: 'Part of a client name. Optional.' },
+        job: { type: 'STRING', description: 'A job number. Optional.' },
+        limit: { type: 'NUMBER', description: 'Default 30, max 60.' },
+      },
+    },
+  },
 ]
+
+// Where a container is, from its latest event (for list_containers)
+function boxStage(t, job, trip, finished, freeLeft) {
+  const ev = String(t.status_text || '').toUpperCase()
+  if (finished) return 'empty_back'
+  if (freeLeft !== null && freeLeft < 0) return 'detention'
+  if (trip.exitAt) return 'left_cfs_with_cargo'
+  if (/CFS IN|ICD IN|CFS GATE IN|ICD GATE IN/.test(ev) || t.status === 'at_cfs') return 'at_cfs_or_icd'
+  if (/PORT IN|DISCHARGE|DPD|ARRIVED/.test(ev) || t.status === 'arrived') return 'at_port'
+  return 'other'
+}
 
 // Runs one tool call. person decides which jobs they may see.
 export function runTool(name, args, data, person) {
@@ -131,6 +156,40 @@ export function runTool(name, args, data, person) {
     const n = (k) => rows.filter(FILTERS[k]).length
     return { date: day(new Date().toISOString()), open: n('open'), urgent: n('urgent'), detention: n('detention'), free_days_low: n('free_days_low'), be_not_filed: n('be_not_filed'), waiting_ooc: n('waiting_ooc'), ooc_done_not_moved: n('ooc_done_not_moved'), on_the_move: n('on_the_move'), arriving_soon: n('arriving_soon') }
   }
+  if (name === 'list_containers') {
+    const want = norm(args?.last_event)
+    const stage = args?.stage && args.stage !== 'any' ? args.stage : null
+    const c = norm(args?.client)
+    const jn = norm(args?.job).replace(/^J/, '')
+    const out = []
+    for (const r of rows) {
+      if (r.j.phase === 'delivered' && stage !== 'empty_back') continue
+      if (c && !norm(r.job.client).includes(c)) continue
+      if (jn && norm(r.job.job_no).replace(/^J/, '') !== jn) continue
+      for (const no of parseContainerNos(r.job.containers)) {
+        const t = data.containersByNo[no]
+        if (!t) continue
+        const trip = containerTrip(t, r.job)
+        const fin = containerFinishedOn(t, r.job)
+        const live = r.j.containers?.tracked?.find((x) => x.container_no?.toUpperCase() === no)
+        const freeLeft = live?.freeLeft ?? null
+        const ev = String(t.status_text || '').toUpperCase().trim()
+        const st = boxStage(t, r.job, trip, fin, freeLeft)
+        if (want && norm(ev) !== want) continue
+        if (stage && st !== stage) continue
+        const lastAt = (Array.isArray(t.milestones) ? t.milestones : []).map((m) => m?.date).filter(Boolean).sort().at(-1)
+        // current containers only: skip boxes already back empty, and boxes with no
+        // movement for 30+ days (most likely finished but never marked), unless asked
+        if (!stage && st === 'empty_back') continue
+        if (!stage && lastAt && Date.now() - new Date(lastAt).getTime() > 30 * 864e5) continue
+        out.push({ container: no, job: r.job.job_no, client: r.job.client || null, last_event: ev || null, where: t.current_location || null, when: day(lastAt), stage: st, free_days_left: freeLeft })
+      }
+    }
+    const limit = Math.min(Math.max(Number(args?.limit) || 30, 1), 60)
+    const byEvent = {}
+    for (const x of out) byEvent[x.last_event || 'none'] = (byEvent[x.last_event || 'none'] || 0) + 1
+    return { filter: { last_event: args?.last_event || null, stage: stage || 'any', client: args?.client || null, job: args?.job || null }, total: out.length, shown: Math.min(limit, out.length), counts_by_last_event: byEvent, containers: out.slice(0, limit) }
+  }
   return { error: `unknown tool ${name}` }
 }
 
@@ -163,4 +222,7 @@ Rules:
 - For counting or comparing jobs, check with the tools, then give only the answer.
 - You can only READ. For changes (mark delivered, assign truck, notes), say WhatsApp changes are coming soon; use the portal for now.
 - Reply in the question's language (English, Hindi or Hinglish). WhatsApp style: short, *bold* key facts, "• " bullets, no tables or headers, about 12 lines max unless a full list is asked.
-- free_days_left below 0 = detention running that many days. Never mention tools, JSON or AI.`
+- free_days_left below 0 = detention running that many days. Never mention tools, JSON or AI.
+- Container tracking events (staff use these words): PORT IN (unloaded at the port), PORT OUT (left the port, usually to a CFS), CFS IN / ICD IN (entered the CFS / ICD), CFS OUT / ICD OUT (left with cargo for the client), GATE IN / GATE OUT, TOLL PLAZA CROSSED (on the road), DPD (direct port delivery). "Containers in port out" or "port out containers" = containers whose latest event is PORT OUT: use list_containers with last_event. Same for any other event name.
+- Don't ask the user to clarify when the meaning is reasonably clear: pick the most likely meaning, answer it, and mention the other reading in one short line if useful.
+- Bold in WhatsApp is single asterisks: *like this*. Never use **double**.`

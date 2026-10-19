@@ -84,6 +84,18 @@ async function showTyping(messageId: string) {
   }).catch(() => {})
 }
 
+// AI replies sometimes use Markdown; turn it into WhatsApp formatting
+// (**bold** → *bold*, headers → bold lines, "- " / "* " bullets → "• ")
+function toWhatsApp(s: string) {
+  return s
+    .replace(/\*\*(.+?)\*\*/g, '*$1*')
+    .replace(/__(.+?)__/g, '_$1_')
+    .replace(/^#{1,6}\s*(.+)$/gm, '*$1*')
+    .replace(/^\s*[-*]\s+/gm, '• ')
+    .replace(/\*{2,}/g, '*')
+    .trim()
+}
+
 // the team list rarely changes: keep it for 5 minutes
 let teamCache: { at: number; team: Person[] } | null = null
 async function loadTeam(admin: Admin): Promise<Person[]> {
@@ -210,7 +222,7 @@ async function handleInbound(admin: Admin, payload: any) {
       const aiStart = Date.now()
       const ai = await askAssistant(text, history, data, person)
       console.log(`[wa-bot] assistant: ${ai.note} | data ${aiStart - started} ms, AI ${Date.now() - aiStart} ms`)
-      reply = ai.text || "⏳ Google's AI is busy right now, so I couldn't answer that question. Please ask again in a minute.\n\nThese always work instantly: a job no (J-193), a container no, a BE no, SUMMARY or URGENT."
+      reply = ai.text ? toWhatsApp(ai.text) : "⏳ The AI is busy right now, so I couldn't answer that question. Please ask again in a minute.\n\nThese always work instantly: a job no (J-193), a container no, a BE no, SUMMARY or URGENT."
     }
     await send(person.phone, { text: reply })
     const next = [...history, { role: 'user', text: String(text).slice(0, 500) }, { role: 'model', text: String(reply).slice(0, 1500) }].slice(-10)
