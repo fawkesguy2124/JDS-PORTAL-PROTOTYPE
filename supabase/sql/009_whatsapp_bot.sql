@@ -57,3 +57,6 @@ insert into bot_state (id) values (1) on conflict (id) do nothing;
 -- select cron.schedule('wa-bot-warm', '*/5 2-15 * * *', $$ select net.http_post(url := '.../functions/v1/wa-bot',
 --   body := '{"run":"warm"}'::jsonb, headers := jsonb_build_object('Content-Type','application/json',
 --   'x-bot-secret', (select cron_token from public.bot_state where id = 1)), timeout_milliseconds := 60000) $$);
+-- 19 Oct 2026 (Jose): alerts and warm run 24 hours
+-- select cron.alter_job(jobid, schedule := '*/15 * * * *') from cron.job where jobname = 'wa-bot-alerts';
+-- select cron.alter_job(jobid, schedule := '*/5 * * * *') from cron.job where jobname = 'wa-bot-warm';
