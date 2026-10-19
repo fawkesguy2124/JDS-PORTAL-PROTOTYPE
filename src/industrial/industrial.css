@@ -321,3 +321,7 @@
 .ix-realmap-backdrop { position: fixed; inset: 0; z-index: 1999; background: rgba(15,23,42,.45) }
 .ix-realmap.big { position: fixed; inset: 24px; height: auto; z-index: 2000; border-radius: 12px; border: 1px solid var(--line); box-shadow: 0 20px 50px rgba(15,23,42,.35); background: #fff }
 @media (max-width: 760px) { .ix-realmap.big { inset: 8px; height: auto } }
+
+/* "updating by itself" line under a page title (AutoStatus.jsx) */
+.ix-autostatus { display: flex; align-items: center; gap: 8px; font-size: 12.5px; margin: -6px 0 14px; padding: 8px 12px; background: #fff; border: 1px solid var(--line); border-radius: 10px }
+@keyframes ixSpin { to { transform: rotate(360deg) } }

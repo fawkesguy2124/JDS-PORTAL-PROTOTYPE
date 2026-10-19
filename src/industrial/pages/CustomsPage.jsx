@@ -4,12 +4,16 @@ import { markBeFiled, markSbFiled } from '../../services/jobActions'
 import UlipCheck from '../../components/ulip/UlipCheck'
 import { CUSTOMS_TAB_GROUPS, SHIP_GROUPS } from '../../components/ulip/ulipChecks'
 import { JobPicker, CustomsWorkspace, NoJobChosen } from '../JobChecks'
-import { useJourney } from '../JourneyContext'
+import { useJourney, useFreshOnOpen } from '../JourneyContext'
+import { useAutoChecks, checkCustoms, isDue, COOLDOWN_MIN } from '../autoChecks'
+import AutoStatus from '../AutoStatus'
 import { Icon, fmtDate, timeAgo } from '../ui'
 
 // BE & OOC desk. Imports: pick a job on the left, see and run all its customs
 // checks on the right (BE, OOC, cargo, IGM …). Exports: SB & LEO queues.
-// Customs is asked ONLY when someone presses a button (one press = one check).
+// Opening the page checks customs by itself for import jobs still waiting for
+// OOC (see autoChecks.js for the limits). Once OOC is granted a job is never
+// checked again.
 
 const SHOW_FIRST = 20
 const LEO_CHECK = { api: 'ICEGATE/06', title: 'Has LEO been given?', button: 'Check LEO', refs: { sbNo: 'sb_no', sbDt: 'sb_date' } }
@@ -86,6 +90,18 @@ export default function CustomsPage({ currentUserName, onOpenJob, showToast, can
   const [view, rowsAdd] = useOverlay(data, active)
   const [kind, setKind] = useState('import')
   const { rows } = useJourney()
+  const fresh = useFreshOnOpen()
+
+  // jobs waiting for OOC whose last customs answer is older than the cool-down
+  const toCheck = active
+    .filter(({ job, j }) => !isExportJob(job) && j.phase === 'ooc' && /^\d{7}$/.test(String(job.be_no || '').trim()) && job.be_date)
+    .filter(({ job }) => { const cs = data?.customsByJob?.[job.id]; return isDue(cs?.checked_at, cs?.last_error_at) })
+    .map(({ job }) => ({
+      key: job.id, label: job.job_no,
+      run: async () => { const r = await checkCustoms(job.id); if (r.oocDate) showToast?.(`OOC granted — ${job.job_no}`, 'success') },
+    }))
+  const auto = useAutoChecks(toCheck, fresh, refresh)
+  const waitingOoc = active.filter(({ job, j }) => !isExportJob(job) && j.phase === 'ooc').length
   const [selId, setSelId] = useState(() => new URLSearchParams(window.location.search).get('job'))
   const select = (id) => {
     setSelId(id)
@@ -203,6 +219,9 @@ export default function CustomsPage({ currentUserName, onOpenJob, showToast, can
           <button type="button" className="ix-btn sm ghost" onClick={refresh} disabled={loading}><Icon name="refresh" />{loading ? 'Loading…' : 'Refresh'}</button>
         </div>
       </div>
+
+      {kind === 'import' && <AutoStatus auto={auto} fresh={fresh} what="customs"
+        idle={waitingOoc ? `Customs is checked by itself when you open this page (each job at most every ${COOLDOWN_MIN} min). Jobs with OOC granted are not checked again.` : 'No job is waiting for OOC, so nothing to check.'} />}
 
       {error && (
         <div className="ix-error">

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../../supabase'
 import { attentionList, PHASES } from '../../services/journey'
-import { useJourney } from '../JourneyContext'
+import { useJourney, useFreshOnOpen } from '../JourneyContext'
 import { Icon, timeAgo } from '../ui'
 
 const GOV_TYPES = ['ooc_granted', 'be_filed', 'sb_filed', 'truck_dispatched', 'stage_update', 'note']
@@ -31,6 +31,7 @@ const greeting = () => {
 
 export default function TodayPage({ onOpenJob, currentUserName, onGo }) {
   const { data, active, loading, error, refresh } = useJourney()
+  useFreshOnOpen() // opening the page shows the latest saved data
   const [log, setLog] = useState([])
   const [filter, setFilter] = useState(null)
   const [showAllInfo, setShowAllInfo] = useState(false)

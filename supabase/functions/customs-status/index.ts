@@ -30,7 +30,7 @@ Deno.serve(async (req) => {
   if (!jobId) return json({ success: false, error: 'No job given.' }, 400)
 
   const { data: job, error: jobErr } = await admin
-    .from('jobs').select('id, job_no, be_no, be_date, truck_no, port_code, mode').eq('id', jobId).maybeSingle()
+    .from('jobs').select('id, job_no, be_no, be_date, truck_no, port_code, mode, stage').eq('id', jobId).maybeSingle()
   if (jobErr || !job) return json({ success: false, error: 'Job not found.' }, 404)
 
   const beNo = (job.be_no || '').trim()
@@ -168,6 +168,22 @@ Deno.serve(async (req) => {
         meta: { be_no: beNo, ooc_no: row.ooc_no, ooc_date: row.ooc_date },
       }, { onConflict: 'title,job_no', ignoreDuplicates: true })
       if (logErr) console.warn('[customs-status] OOC alert insert failed:', logErr.message)
+    }
+
+    // OOC granted: move the job to the OOC stage (7) by itself, so nobody has to
+    // press "Move job to stage 7" (only forwards, never back from a later stage)
+    if (row.ooc_date && (Number(job.stage) || 0) < 7) {
+      const { data: moved, error: stageErr } = await admin.from('jobs').update({ stage: 7, updated_at: new Date().toISOString() })
+        .eq('id', job.id).or('stage.is.null,stage.lt.7').select('id')
+      if (stageErr) console.warn('[customs-status] stage update failed:', stageErr.message)
+      else if (moved?.length) {
+        await admin.from('activity_log').insert({
+          type: 'stage_update', action: 'stage_update', title: `${job.job_no} — Stage 7: OOC`,
+          note: `Moved to OOC by itself after Customs granted OOC (check by ${caller.name})`,
+          job_id: job.id, job_no: job.job_no, done_by: caller.id, done_by_name: caller.name,
+          meta: { job_id: job.id, job_no: job.job_no, old_stage: job.stage, new_stage: 7, auto: true },
+        })
+      }
     }
 
     // Save the first truck number on the job for truck tracking later (only if still empty)

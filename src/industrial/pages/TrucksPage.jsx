@@ -6,14 +6,17 @@ import { JOB_TABS } from '../../components/ulip/ulipChecks'
 import { JobPicker, TruckWorkspace, NoJobChosen } from '../JobChecks'
 
 const TRUCK_GROUPS = JOB_TABS.find((t) => t.id === 'truck')?.groups || []
-import { useJourney } from '../JourneyContext'
+import { useJourney, useFreshOnOpen } from '../JourneyContext'
+import { useAutoChecks, checkTruck, isDue, COOLDOWN_MIN } from '../autoChecks'
+import AutoStatus from '../AutoStatus'
 import { Icon, Chip, fmtDate, timeAgo } from '../ui'
 // the map (and its map library) loads only when this page opens
 const TruckMap = lazy(() => import('../TruckMap'))
 import { truckPoints } from '../truckPoints'
 
-// Trucks: where each truck was last seen (saved FASTag answers), and jobs
-// waiting for one. Truck checks run ONLY when staff press the check button.
+// Trucks: where each truck was last seen (FASTag), and jobs waiting for one.
+// Opening the page finds every truck on the road by itself and checks each
+// truck's papers once (limits in autoChecks.js). "Where is it?" still works by hand.
 
 const WHERE_CHECK = {
   api: 'FASTAG/01', title: 'Where is the truck now?', description: 'Asks FASTag for the toll plazas this truck crossed in the last 72 hours.',
@@ -109,6 +112,23 @@ export default function TrucksPage({ currentUserName, onOpenJob, showToast, canU
     || onRoad.find((x) => isLinked(x.r.job, x.t.no))
     || onRoad.find((x) => x.t.location)
     || onRoad[0] || null
+
+  // ── checks this page makes by itself when opened ──
+  const fresh = useFreshOnOpen()
+  const savedFor = (jobId, api, no) => [].concat(data?.resultsByJob?.[jobId]?.[api] || [])
+    .filter((r) => r && sameNo(r.params?.vehiclenumber, no))
+  const autoItems = onRoad.flatMap(({ r, t }) => {
+    const out = []
+    const where = savedFor(r.job.id, 'FASTAG/01', t.no)
+    // where is it: at most every COOLDOWN_MIN minutes per truck
+    if (isDue(...where.map((x) => x.checked_at), ...where.map((x) => x.last_error_at)))
+      out.push({ key: `w:${t.no}`, label: `truck ${t.no}`, run: () => checkTruck('FASTAG/01', t.no, r.job.id) })
+    // papers don't change from day to day: once per truck
+    if (!savedFor(r.job.id, 'VAHAN/04', t.no).some((x) => x.checked_at))
+      out.push({ key: `p:${t.no}`, label: `truck ${t.no} papers`, run: () => checkTruck('VAHAN/04', t.no, r.job.id) })
+    return out
+  })
+  const auto = useAutoChecks(autoItems, fresh, refresh)
 
   const setForm = (jobId, patch) => setForms((p) => ({ ...p, [jobId]: { ...p[jobId], ...patch } }))
   const togglePanel = (key, kind) => setPanel((p) => (p?.key === key && p.kind === kind ? null : { key, kind }))
@@ -307,6 +327,9 @@ export default function TrucksPage({ currentUserName, onOpenJob, showToast, canU
           <button type="button" className="ix-btn sm ghost" onClick={refresh} disabled={loading}><Icon name="refresh" />{loading ? 'Loading…' : 'Refresh'}</button>
         </div>
       </div>
+
+      <AutoStatus auto={auto} fresh={fresh} what="trucks"
+        idle={onRoad.length ? `Trucks on the road are found by themselves when you open this page (each at most every ${COOLDOWN_MIN} min). Mark a job delivered and its trucks stop being checked.` : 'No trucks on the road, so nothing to check.'} />
 
       {error && (
         <div className="ix-error">

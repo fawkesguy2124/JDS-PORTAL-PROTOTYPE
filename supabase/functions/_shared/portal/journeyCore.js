@@ -323,7 +323,7 @@ export function journeyFor(job, data) {
     if (c.minFree !== null && c.minFree < 0) add('red', `Detention running — ${-c.minFree} day${c.minFree === -1 ? '' : 's'} over free time${outLate ? ' (delivered, empty not back yet)' : ''}`, 'containers')
     else if (c.minFree !== null && c.minFree <= 2) add('red', c.minFree === 0 ? 'Last free day today' : `Only ${c.minFree} free day${c.minFree === 1 ? '' : 's'} left`, 'containers')
     else if (c.minFree !== null && c.minFree <= 5) add('amber', `${c.minFree} free days left`, 'containers')
-    if (oocDate && stage < 7) add('amber', 'OOC granted — move the job to the OOC stage', 'customs')
+    // (no "move the job to the OOC stage" reminder: the customs check moves it by itself)
     if (readyForTruck) add('amber', mode === 'truck' ? 'OOC done — no truck assigned yet' : 'OOC done — arrange truck or rail', 'truck')
     if (beFiled && !oocDone) {
       const filedDays = daysSince(job.be_date)

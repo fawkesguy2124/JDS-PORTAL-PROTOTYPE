@@ -77,7 +77,8 @@ export default function CustomsStatusCard({ job, canEditBE, canUpdateStage, onMo
             OOC from Customs (ICEGATE); for Nhava Sheva jobs also IGM, delivery order and trucks from JNPT
           </div>
         </div>
-        {hasBE && (
+        {/* once OOC is granted for this BE there is nothing more to ask Customs */}
+        {hasBE && !(oocGranted && status?.be_no === job.be_no) && (
           <button type="button" onClick={check} disabled={checking} style={primaryButton(checking)}>
             {checking ? <><Spinner light /> Checking…</> : 'Check customs status'}
           </button>
@@ -123,7 +124,7 @@ export default function CustomsStatusCard({ job, canEditBE, canUpdateStage, onMo
       ) : !status ? (
         hasBE && !error && (
           <div style={{ padding: '28px 18px', textAlign: 'center', fontSize: '12px', color: '#8a96a8' }}>
-            Not checked yet. Click "Check customs status".
+            Not checked yet. It is checked by itself when the BE &amp; OOC page is opened, or click "Check customs status".
           </div>
         )
       ) : (
@@ -138,6 +139,7 @@ export default function CustomsStatusCard({ job, canEditBE, canUpdateStage, onMo
           {oocGranted ? (
             <div style={banner('#ecfdf5', '#d1fae5')}>
               <div style={{ fontSize: '13px', fontWeight: 700, color: '#065f46' }}>✓ OOC granted on {formatDate(status.ooc_date)}</div>
+              <div style={{ fontSize: '11px', color: '#047857', marginTop: '2px' }}>Customs is done for this BE, so it is not checked again.</div>
               {status.ooc_no && <div style={{ fontSize: '11px', color: '#047857', marginTop: '2px' }}>OOC number {status.ooc_no}</div>}
               {showMoveButton && (
                 <button type="button" onClick={moveToOOC} disabled={movingStage} style={{ ...primaryButton(movingStage), marginTop: '10px', background: movingStage ? '#94a3b8' : '#059669' }}>

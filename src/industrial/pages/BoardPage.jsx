@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { PHASES, EXPORT_PHASES, isExportJob, truckNos } from '../../services/journey'
-import { useJourney } from '../JourneyContext'
+import { useJourney, useFreshOnOpen } from '../JourneyContext'
 import { Icon, Chip, FreeDays, Owner, worst, jobOwnerName } from '../ui'
 
 // Shipment board: one column per phase of the journey. Saved data only.
@@ -40,6 +40,7 @@ function BoardCard({ job, j, level, owner, onOpen }) {
 
 export default function BoardPage({ onOpenJob }) {
   const { rows, profiles, loading, error, refresh, data } = useJourney()
+  useFreshOnOpen() // opening the page shows the latest saved data
   const [kind, setKind] = useState('import')
   const [query, setQuery] = useState('')
   const [allDelivered, setAllDelivered] = useState(false)

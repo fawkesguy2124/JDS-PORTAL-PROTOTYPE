@@ -58,3 +58,18 @@ export function JourneyProvider({ children }) {
 }
 
 export const useJourney = () => useContext(Ctx)
+
+// Opening a page reloads the saved data (database only, never ULIP), so every
+// tab shows the latest. A load from the last 20 seconds counts as fresh, so
+// starting the portal doesn't load twice. Returns true once the data on screen
+// is from this opening.
+const FRESH_MS = 20_000
+export function useFreshOnOpen() {
+  const { data, refresh } = useContext(Ctx)
+  const [openedAt] = useState(() => Date.now())
+  const [since] = useState(() => (data && Date.now() - new Date(data.loadedAt).getTime() < FRESH_MS ? new Date(data.loadedAt).getTime() : openedAt))
+  useEffect(() => {
+    if (since === openedAt) refresh()
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  return !!data && new Date(data.loadedAt).getTime() >= since
+}

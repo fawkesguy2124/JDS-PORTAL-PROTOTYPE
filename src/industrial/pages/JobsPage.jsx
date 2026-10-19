@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { parseContainerNos } from '../../utils/jobHelpers'
 import { isDelivered, truckNos } from '../../services/journey'
-import { useJourney } from '../JourneyContext'
+import { useJourney, useFreshOnOpen } from '../JourneyContext'
 import { FreeDays, Icon, Owner, PhaseChip, jobOwnerName, timeAgo, worst } from '../ui'
 
 const num = (job) => parseInt(String(job.job_no || '').replace(/\D/g, ''), 10) || 0
@@ -27,6 +27,7 @@ const LEVEL_ORDER = { red: 0, amber: 1, info: 2, none: 3 }
 
 export default function JobsPage({ profile, onOpenJob, onCreateJob, selectedId }) {
   const { rows, profiles, loading, error, refresh } = useJourney()
+  useFreshOnOpen() // opening the page shows the latest saved data
   const [view, setView] = useState(() => { try { return localStorage.getItem('ix_jobs_view') || 'action' } catch { return 'action' } })
   const [sort, setSort] = useState({ key: null, dir: 1 })
   const [q, setQ] = useState('')
