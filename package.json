@@ -11,10 +11,12 @@
     "test:ulip": "node --experimental-strip-types --no-warnings --test \"supabase/functions/ulip/apis/*.test.ts\""
   },
   "dependencies": {
+    "@maplibre/maplibre-gl-leaflet": "0.1.4",
     "@supabase/supabase-js": "^2.106.2",
     "@tabler/icons-webfont": "^3.19.0",
     "docx": "^9.7.1",
     "leaflet": "^1.9.4",
+    "maplibre-gl": "4.7.1",
     "openai": "^6.39.0",
     "pdfjs-dist": "^5.7.284",
     "react": "^19.2.6",

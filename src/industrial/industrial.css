@@ -302,15 +302,20 @@
 .ix-realmap { position: relative; height: 340px; border-bottom: 1px solid var(--line); border-radius: 12px 12px 0 0; overflow: hidden; isolation: isolate }
 .ix-realmap-canvas { position: absolute; inset: 0; z-index: 0 }
 .ix-realmap-msg { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 500; background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 12px 16px; text-align: center; color: var(--text-2); font-size: 13px; box-shadow: 0 4px 14px rgba(26,34,51,.12); max-width: calc(100% - 32px) }
-.ix-realmap-legend { position: absolute; left: 10px; bottom: 10px; z-index: 500; background: #fff; border: 1px solid var(--line); border-radius: 8px; padding: 5px 10px; font-size: 11.5px; display: flex; gap: 12px; flex-wrap: wrap; max-width: calc(100% - 64px) }
+.ix-realmap-legend { position: absolute; left: 10px; bottom: 26px; z-index: 500; background: #fff; border: 1px solid var(--line); border-radius: 8px; padding: 5px 10px; font-size: 11.5px; display: flex; gap: 12px; flex-wrap: wrap; max-width: calc(100% - 64px) }
 .ix-realmap-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 5px; vertical-align: -1px }
 .ix-tpin { overflow: visible }
-.ix-tmark { position: absolute; left: 0; top: 0; transform: translate(-50%, -135%); width: max-content; background: #1a4fa0; color: #fff; font: 700 11px var(--mono); padding: 3px 7px; border-radius: 5px; border: 2px solid #fff; box-shadow: 0 2px 6px rgba(0,0,0,.25); cursor: pointer }
-.ix-tmark::after { content: ''; position: absolute; left: 50%; bottom: -7px; margin-left: -5px; border: 5px solid transparent; border-top-color: #fff }
-.ix-tmark.stale { background: #b91c1c }
+.ix-tmark { position: absolute; left: 0; top: 0; transform: translate(-50%, -100%) translateY(-9px); width: max-content; display: flex; align-items: center; gap: 6px; background: #fff; color: var(--text); font: 700 11.5px var(--mono); padding: 3px 9px 3px 3px; border-radius: 999px; border: 2px solid #1a4fa0; box-shadow: 0 3px 10px rgba(0,0,0,.25); cursor: pointer }
+.ix-tmark .ic { width: 26px; height: 26px; border-radius: 50%; background: #1a4fa0; color: #fff; display: grid; place-items: center; font-size: 16px }
+.ix-tmark::after { content: ''; position: absolute; left: 50%; bottom: -9px; margin-left: -7px; border: 7px solid transparent; border-bottom: 0; border-top-color: #1a4fa0 }
+.ix-tmark.stale { border-color: #b91c1c }
+.ix-tmark.stale .ic { background: #b91c1c }
+.ix-tmark.stale::after { border-top-color: #b91c1c }
 .ix-tmark.sel { outline: 3px solid #f59e0b; outline-offset: 1px }
 @media (max-width: 760px) { .ix-realmap { height: 260px } }
 /* expand button (bottom right) and the expanded map */
+.ix-realmap .leaflet-control-attribution { font-size: 10px }
+.ix-realmap .leaflet-control-attribution .leaflet-attribution-flag { display: none !important }
 .ix-realmap-expand { position: absolute; right: 10px; bottom: 26px; z-index: 600; width: 34px; height: 34px; border-radius: 8px; border: 1px solid var(--line); background: #fff; color: var(--text); display: grid; place-items: center; font-size: 18px; cursor: pointer; box-shadow: 0 2px 6px rgba(26,34,51,.12) }
 .ix-realmap-expand:hover { background: var(--bg, #f4f6fa); color: var(--navy) }
 .ix-realmap-backdrop { position: fixed; inset: 0; z-index: 1999; background: rgba(15,23,42,.45) }

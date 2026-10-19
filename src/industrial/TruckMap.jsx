@@ -1,9 +1,31 @@
 import { useEffect, useRef, useState } from 'react'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
+import 'maplibre-gl/dist/maplibre-gl.css'
+import '@maplibre/maplibre-gl-leaflet'
 import { Icon } from './ui'
 
-// A real street map (OpenStreetMap) of the trucks on the road. A truck's
+// The background map: OpenFreeMap (free, no key, allowed for business use), a
+// clean Google-Maps-like style with place names in English. If the browser
+// can't draw it (very old phone, no WebGL), the plain OpenStreetMap tiles.
+const MAP_STYLE = 'https://tiles.openfreemap.org/styles/liberty'
+const ENGLISH = ['coalesce', ['get', 'name:en'], ['get', 'name_int'], ['get', 'name:latin'], ['get', 'name']]
+function addBaseMap(m) {
+  try {
+    const gl = L.maplibreGL({ style: MAP_STYLE, attribution: '© <a href="https://openfreemap.org" target="_blank">OpenFreeMap</a> · <a href="https://www.openmaptiles.org/" target="_blank">OpenMapTiles</a> · <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a>' }).addTo(m)
+    const ml = gl.getMaplibreMap()
+    ml.on('style.load', () => {
+      for (const layer of ml.getStyle().layers || []) {
+        // only place/road NAMES; road-number signs (ref) stay as they are
+        if (layer.type === 'symbol' && /name/.test(JSON.stringify(layer.layout?.['text-field'] || ''))) ml.setLayoutProperty(layer.id, 'text-field', ENGLISH)
+      }
+    })
+  } catch {
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 18, attribution: '© OpenStreetMap contributors' }).addTo(m)
+  }
+}
+
+// A real street map of the trucks on the road. A truck's
 // position is its last FASTag toll crossing; nothing here calls ULIP — it only
 // draws answers already saved when staff pressed "Where is it?".
 // trucks: [{ id, no, job, points }] — one pin per truck (a job can have several).
@@ -12,6 +34,8 @@ const fmt = (v) => { if (!v) return ''; const d = new Date(v); return isNaN(d) ?
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]))
 const STALE_HOURS = 6
 const fit = (m, bounds) => {
+  // the map may have been closed in the meantime (page changed)
+  if (!m || !m.getContainer()?.isConnected) return
   if (bounds.length === 1) m.setView(bounds[0], 11)
   else if (bounds.length) m.fitBounds(L.latLngBounds(bounds).pad(0.25))
 }
@@ -26,7 +50,7 @@ export default function TruckMap({ trucks, selectedId, onSelect }) {
   useEffect(() => {
     if (!box.current || map.current) return
     map.current = L.map(box.current, { zoomControl: true, scrollWheelZoom: false }).setView([19.05, 73.05], 9)
-    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 18, attribution: '© OpenStreetMap contributors' }).addTo(map.current)
+    addBaseMap(map.current)
     layer.current = L.layerGroup().addTo(map.current)
     return () => { map.current?.remove(); map.current = null }
   }, [])
@@ -55,7 +79,7 @@ export default function TruckMap({ trucks, selectedId, onSelect }) {
         }
         route.forEach((p) => bounds.push(p.pos))
       }
-      const html = `<div class="ix-tmark ${stale ? 'stale' : ''} ${isSel ? 'sel' : ''}">${esc(t.no)}</div>`
+      const html = `<div class="ix-tmark ${stale ? 'stale' : ''} ${isSel ? 'sel' : ''}"><span class="ic"><i class="ti ti-truck"></i></span>${esc(t.no)}</div>`
       L.marker(t.last.pos, { icon: L.divIcon({ className: 'ix-tpin', iconSize: [0, 0], html }), zIndexOffset: isSel ? 1000 : 0 })
         .bindTooltip(`<b>${esc(t.no)}</b> · ${esc(t.job.job_no)}<br>${esc(t.last.plaza)}<br>${esc(fmt(t.last.at))}${stale ? ' · <b>no newer crossing</b>' : ''}${t.last.approx ? '<br><i>approximate position</i>' : ''}`, { direction: 'top', offset: [0, -28] })
         .on('click', () => onSelect?.(t.id))
@@ -67,14 +91,14 @@ export default function TruckMap({ trucks, selectedId, onSelect }) {
     lastBounds.current = bounds
     fit(m, bounds)
     // the page layout can change size after the first draw
-    setTimeout(() => m.invalidateSize(), 0)
+    setTimeout(() => { if (m.getContainer()?.isConnected) m.invalidateSize() }, 0)
   }) // redraw on every render: the lists are small
 
   // expanded: fit the map to its new size, zoom with the mouse wheel, Esc closes
   useEffect(() => {
     const m = map.current
     if (!m) return
-    setTimeout(() => { m.invalidateSize(); fit(m, lastBounds.current) }, 60)
+    setTimeout(() => { if (!m.getContainer()?.isConnected) return; m.invalidateSize(); fit(m, lastBounds.current) }, 60)
     if (big) m.scrollWheelZoom.enable(); else m.scrollWheelZoom.disable()
     if (!big) return
     const onKey = (e) => { if (e.key === 'Escape') setBig(false) }
