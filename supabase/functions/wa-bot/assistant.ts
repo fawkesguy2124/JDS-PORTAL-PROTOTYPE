@@ -12,7 +12,8 @@ const API = 'https://generativelanguage.googleapis.com/v1beta/models'
 let lastGood: string | null = null
 // models that refused "thinking off" don't get that setting again
 const noThinkingSetting = new Set<string>()
-const MODELS = () => [...new Set([lastGood, Deno.env.get('GEMINI_MODEL'), 'gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-flash-latest', 'gemini-flash-lite-latest'].filter(Boolean))] as string[]
+// (the 2.5 models were retired by Google; the "-latest" names follow the current ones)
+const MODELS = () => [...new Set([lastGood, Deno.env.get('GEMINI_MODEL'), 'gemini-flash-latest', 'gemini-flash-lite-latest'].filter(Boolean))] as string[]
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 const MAX_TOOL_ROUNDS = 5
 const TIME_LIMIT_MS = 25_000 // Gemini's share; Groq gets its own time after it
@@ -44,11 +45,30 @@ export async function askAssistant(question: string, history: Turn[], data: unkn
 
 // ── Groq (OpenAI-style API) ──
 const GROQ_API = 'https://api.groq.com/openai/v1/chat/completions'
-// reasoning models first: they think briefly before answering (fast on Groq)
-const GROQ_MODELS = () => [...new Set([Deno.env.get('GROQ_MODEL'), 'openai/gpt-oss-120b', 'qwen/qwen3-32b', 'llama-3.3-70b-versatile'].filter(Boolean))] as string[]
+// Preferred order (reasoning models first: they think briefly, fast on Groq).
+// Only models Groq really offers today are used: its model list is read once
+// per start and kept, so retired models are never tried.
+const GROQ_PREFERRED = ['openai/gpt-oss-120b', 'openai/gpt-oss-20b', 'moonshotai/kimi-k2-instruct-0905', 'qwen/qwen3-32b', 'meta-llama/llama-4-maverick-17b-128e-instruct', 'llama-3.3-70b-versatile', 'meta-llama/llama-4-scout-17b-16e-instruct']
+let groqAvailable: Set<string> | null = null
+let groqLastGood: string | null = null
+async function groqModels(key: string): Promise<string[]> {
+  if (!groqAvailable) {
+    try {
+      const res = await fetch('https://api.groq.com/openai/v1/models', { headers: { Authorization: `Bearer ${key}` } })
+      const ids = ((await res.json())?.data || []).map((m: any) => String(m.id))
+      if (ids.length) {
+        groqAvailable = new Set(ids)
+        console.log(`[wa-bot] Groq models available: ${ids.filter((id: string) => !/whisper|tts|guard|playai|orpheus|compound/i.test(id)).join(', ')}`)
+      }
+    } catch { /* fall back to the preferred list */ }
+  }
+  const wanted = [Deno.env.get('GROQ_MODEL'), groqLastGood, ...GROQ_PREFERRED].filter(Boolean) as string[]
+  return [...new Set(wanted)].filter((m) => !groqAvailable || groqAvailable.has(m))
+}
 // per-model reasoning settings; the thinking itself is kept out of the reply
 const REASONING: Record<string, Record<string, unknown>> = {
   'openai/gpt-oss-120b': { reasoning_effort: 'medium', include_reasoning: false },
+  'openai/gpt-oss-20b': { reasoning_effort: 'medium', include_reasoning: false },
   'qwen/qwen3-32b': { reasoning_format: 'hidden' },
 }
 const noExtras = new Set<string>() // models that refused those settings
@@ -70,7 +90,7 @@ async function askGroq(question: string, history: Turn[], data: unknown, person:
   const timer = setTimeout(() => controller.abort(), 30_000)
   const tried: string[] = []
   try {
-    for (const model of GROQ_MODELS()) {
+    for (const model of await groqModels(key)) {
       const convo = [...messages]
       let rounds = 0
       let skip = false
@@ -96,7 +116,8 @@ async function askGroq(question: string, history: Turn[], data: unknown, person:
         const calls: any[] = msg.tool_calls || []
         if (!calls.length) {
           const text = stripThinking(String(msg.content || ''))
-          return text ? { text, note: `groq ${model}, ${rounds} tool round(s)` } : { text: null, note: 'groq empty answer' }
+          if (text) groqLastGood = model
+          return text ? { text, note: `groq ${model}, ${rounds} tool round(s)${tried.length ? ` (skipped ${tried.join(", ")})` : ""}` } : { text: null, note: 'groq empty answer' }
         }
         convo.push({ role: 'assistant', content: stripThinking(String(msg.content || '')), tool_calls: calls })
         for (const c of calls) {
