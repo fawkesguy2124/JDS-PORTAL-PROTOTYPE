@@ -234,7 +234,9 @@ function jobCard(job, data) {
     if (nos.length > 10) rows.push(`  +${nos.length - 10} more`)
     lines.push(`Containers (${nos.length}):\n${rows.join('\n')}`)
   }
-  if (j.truck) lines.push(`Truck: ${j.truck}${j.truckLocation ? ` · last seen ${j.truckLocation.plaza}` : ''}`)
+  for (const t of j.trucks || (j.truck ? [{ no: j.truck, location: j.truckLocation }] : [])) {
+    lines.push(`Truck: ${t.no}${t.container ? ` (${t.container})` : ''}${t.location ? ` · last seen ${t.location.plaza}` : ''}`)
+  }
   if (j.attention.length) lines.push(j.attention.map((a) => `${a.level === 'red' ? '🔴' : a.level === 'amber' ? '🟠' : 'ℹ️'} ${a.text}`).join('\n'))
   return lines.join('\n\n')
 }

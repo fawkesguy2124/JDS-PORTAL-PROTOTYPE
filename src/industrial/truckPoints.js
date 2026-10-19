@@ -14,16 +14,17 @@ const knownPos = (plaza) => KNOWN_PLAZAS.find(([re]) => re.test(String(plaza || 
 
 const sameNo = (a, b) => !!a && !!b && String(a).toUpperCase().replace(/\s+/g, '') === String(b).toUpperCase().replace(/\s+/g, '')
 
-// Saved toll crossings of this job's truck, oldest first, each with a position or null
-export function truckPoints(job, j, results) {
-  const row = [].concat(results?.['FASTAG/01'] || []).filter(Boolean).find((r) => sameNo(r.params?.vehiclenumber, job.truck_no))
+// Saved toll crossings of one of the job's trucks (the first if none named),
+// oldest first, each with a position or null
+export function truckPoints(job, j, results, truckNo = job.truck_no) {
+  const row = [].concat(results?.['FASTAG/01'] || []).filter(Boolean).find((r) => sameNo(r.params?.vehiclenumber, truckNo))
   const extra = row?.parsed?.found ? row.parsed.extra : null
   let pts = []
   if (extra?.points?.length) {
     pts = extra.points.map((p) => ({ plaza: p.plaza, at: p.at, pos: p.pos || knownPos(p.plaza), approx: !p.pos }))
   } else if (row?.parsed?.found) {
     pts = (row.parsed.tables?.[0]?.rows || []).filter((r) => r?.[0]).map((r) => ({ plaza: r[0], at: r[1] || '', pos: knownPos(r[0]), approx: true }))
-  } else if (j?.truckLocation) {
+  } else if (j?.truckLocation && sameNo(j.truckLocation.truck || job.truck_no, truckNo)) {
     pts = [{ plaza: j.truckLocation.plaza, at: j.truckLocation.at, pos: knownPos(j.truckLocation.plaza), approx: true }]
   }
   return pts.reverse() // newest first in the answer → oldest first for the route

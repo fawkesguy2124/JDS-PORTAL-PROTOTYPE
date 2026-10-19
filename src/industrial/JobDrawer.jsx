@@ -163,7 +163,6 @@ export default function JobDrawer({ jobId, initialTab = 'overview', onClose, onO
     ['Shipping line', job.shipping_line || '—'],
     ['RMS', job.rms_status ? String(job.rms_status).toUpperCase() : '—'],
     ['CFS', job.cfs_name || '—'],
-    ['Truck', job.truck_no || '—', true],
   ]
 
   const tabs = [
@@ -240,6 +239,23 @@ export default function JobDrawer({ jobId, initialTab = 'overview', onClose, onO
                   </div>
                 </div>
                 <div><div className="k">Goods</div><div className="v">{job.goods || '—'}</div></div>
+                <div>
+                  <div className="k">{(j.trucks || []).length > 1 ? `Trucks · ${j.trucks.length}` : 'Truck'}</div>
+                  <div className="v" style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                    {(j.trucks || []).length === 0 && <span>—</span>}
+                    {(j.trucks || []).map((t) => (
+                      <span key={t.no} title={t.location ? `Last seen ${t.location.plaza}` : 'Not checked yet'}>
+                        <span className="ix-plate" style={{ fontSize: 12 }}>{t.no}</span>
+                        {t.container && <span className="mono" style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 4 }}>{t.container}</span>}
+                      </span>
+                    ))}
+                    {!isExport && j.oocDone && j.onwardMode !== 'rail' && (
+                      <button type="button" className="ix-link" style={{ margin: 0 }} onClick={() => onOpenTruck(job.id)}>
+                        {(j.trucks || []).length ? 'Add / manage trucks →' : 'Assign truck →'}
+                      </button>
+                    )}
+                  </div>
+                </div>
                 {!isExport && (
                   <div>
                     <div className="k">Leaves the port / CFS by</div>

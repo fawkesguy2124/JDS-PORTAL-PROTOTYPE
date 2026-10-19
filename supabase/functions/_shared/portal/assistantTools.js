@@ -2,7 +2,7 @@
 // data only: no ULIP calls, no documents. Each tool returns plain facts, small
 // enough to send to the AI model. The same file runs in the portal (for testing)
 // and on the server (wa-bot).
-import { journeyFor, isDelivered, parseContainerNos, containerTrip, containerFinishedOn, deliveryBy } from './journeyCore.js'
+import { journeyFor, isDelivered, parseContainerNos, containerTrip, containerFinishedOn, deliveryBy, truckNos } from './journeyCore.js'
 import { jobsFor } from './botMessages.js'
 import { lineName } from './shippingLines.js'
 
@@ -67,7 +67,7 @@ function jobFacts(job, data, detail = false) {
     next_step: cur?.nextText || (j.phase === 'delivered' ? 'Finished' : null),
     be_no: job.be_no || null, be_date: day(job.be_date), ooc_date: day(j.oocDate) || (j.oocDone && !j.oocDate ? 'recorded by staff' : null),
     free_days_left: j.freeDaysLeft, problems: j.attention.map((a) => `${a.level === 'red' ? 'URGENT' : a.level === 'amber' ? 'TO DO' : 'NOTE'}: ${a.text}`),
-    leaves_by: j.onwardMode || 'not decided', truck: job.truck_no || null,
+    leaves_by: j.onwardMode || 'not decided', trucks: (j.trucks || []).map((t) => `${t.no}${t.container ? ` (${t.container})` : ''}`),
   }
   if (!detail) return { ...facts, containers: parseContainerNos(job.containers).length }
   const docs = (data.documents || []).filter((d) => d.job_id === job.id)
@@ -84,7 +84,7 @@ function jobFacts(job, data, detail = false) {
     delivery_to_warehouse: deliveryBy(job) === 'client' ? 'client collects' : 'JDS delivers',
     igm: job.ulip_refs?.igm_no ? `${job.ulip_refs.igm_no} (${day(job.ulip_refs.igm_date) || ''})` : null,
     steps: j.steps.map((s) => `${s.done ? 'done' : s.current ? 'CURRENT' : 'later'}: ${s.label}${s.when ? ` ${s.when}` : ''}${s.sub ? ` (${s.sub})` : ''}`),
-    truck_last_seen: j.truckLocation ? `${j.truckLocation.plaza} at ${day(j.truckLocation.at)}` : null,
+    trucks_last_seen: (j.trucks || []).filter((t) => t.location).map((t) => `${t.no}: ${t.location.plaza} at ${day(t.location.at)}`),
     container_list: parseContainerNos(job.containers).slice(0, 25).map((no) => {
       const t = data.containersByNo[no]
       if (!t) return { no, tracking: 'not tracked' }
@@ -226,7 +226,7 @@ function runToolRaw(name, args, data, person) {
       || jobs.find((x) => ref.length === 7 && norm(x.be_no) === ref)
       || jobs.find((x) => parseContainerNos(x.containers).includes(ref))
       || jobs.find((x) => ref.length >= 6 && norm(x.bl_no) === ref)
-      || jobs.find((x) => ref.length >= 6 && norm(x.truck_no) === ref)
+      || jobs.find((x) => ref.length >= 6 && truckNos(x).includes(ref))
     return job ? jobFacts(job, data, true) : { not_found: args?.ref }
   }
   if (name === 'clients_overview') {
@@ -264,7 +264,7 @@ function runToolRaw(name, args, data, person) {
         if (!m.includes(key)) continue
       }
       if (port && !norm(job.port_code).includes(port) && !norm(job.port_name).includes(port)) continue
-      if (a.has_truck !== undefined && a.has_truck !== null && !!job.truck_no !== !!a.has_truck) continue
+      if (a.has_truck !== undefined && a.has_truck !== null && truckNos(job).length > 0 !== !!a.has_truck) continue
       if (words.length) { const all = norm(Object.values(job).filter((v) => typeof v === 'string').join(' ')); if (!words.every((w) => all.includes(w))) continue }
       const full = r.j.phase === 'delivered' ? { ...journeyFor(job, data), phase: 'delivered' } : r.j
       if (a.leaves_by && (full.onwardMode || 'not decided') !== a.leaves_by) continue

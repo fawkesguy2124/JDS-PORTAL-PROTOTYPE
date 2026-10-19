@@ -1,4 +1,5 @@
 import { supabase } from '../supabase'
+import { jobTrucks, plateNo } from './journey'
 
 // The few things staff record in the portal after doing them elsewhere.
 // Each returns { ok: true, job } or { ok: false, error } in plain words.
@@ -53,22 +54,47 @@ export async function markSbFiled(job, { sbNo, sbDate }, userName) {
   return { ok: true, job: row }
 }
 
-// "Assign truck": truck number, and the driver's licence if known. A new
-// truck clears the previous driver's licence so papers are not checked for
-// the wrong driver.
-export async function assignTruck(job, { truckNo, dlNo }, userName) {
-  const truck = String(truckNo || '').toUpperCase().replace(/\s+/g, '')
+// "Add truck": a job can have several trucks (a big job after OOC, often one
+// truck per container). Each truck: number, and if known the container it
+// carries and the driver's licence. jobs.truck_no stays = the first truck, for
+// older screens; the job's first driver licence stays in ulip_refs.dl_no for
+// the driver checks.
+export async function assignTruck(job, { truckNo, dlNo, container }, userName) {
+  const truck = plateNo(truckNo)
   // State series (MH04AB1234, KA01A1234) or Bharat series (22BH1234AA)
   if (!/^([A-Z]{2}\d{1,2}[A-Z]{0,3}\d{3,4}|\d{2}BH\d{4}[A-Z]{1,2})$/.test(truck)) return { ok: false, error: 'Truck number looks wrong. Example: MH04AB1234.' }
   const dl = dlNo ? String(dlNo).trim().toUpperCase() : null
+  const box = container ? String(container).trim().toUpperCase() : null
+
+  const list = jobTrucks(job)
+  const had = list.find((t) => t.no === truck)
+  if (had) { if (dl) had.dl = dl; if (box) had.container = box }
+  else list.push({ no: truck, container: box, dl, at: new Date().toISOString(), by: userName || null })
 
   const refs = { ...(job.ulip_refs || {}) }
-  if (dl) refs.dl_no = dl
-  else if (job.truck_no && job.truck_no !== truck) delete refs.dl_no
+  if (list[0].dl) refs.dl_no = list[0].dl
+  else delete refs.dl_no
 
-  const res = await updateJob(job.id, { truck_no: truck, ulip_refs: refs, updated_at: new Date().toISOString() })
+  const res = await updateJob(job.id, { trucks: list, truck_no: list[0].no, ulip_refs: refs, updated_at: new Date().toISOString() })
   if (!res.ok) return res
-  await log(job, 'truck_dispatched', `Truck ${truck} assigned — ${job.job_no}`, `Truck ${truck}${dl ? `, driver licence ${dl}` : ''} (by ${userName || 'staff'})`, userName, { truckNo: truck, enteredBy: userName })
+  if (!had) {
+    const n = list.length
+    await log(job, 'truck_dispatched', `Truck ${truck} assigned — ${job.job_no}${n > 1 ? ` (truck ${n})` : ''}`,
+      `Truck ${truck}${box ? ` with ${box}` : ''}${dl ? `, driver licence ${dl}` : ''} (by ${userName || 'staff'})`, userName, { truckNo: truck, container: box, enteredBy: userName })
+  }
+  return res
+}
+
+// Takes a truck off a job (typed by mistake, or replaced)
+export async function removeTruck(job, truckNo, userName) {
+  const truck = plateNo(truckNo)
+  const list = jobTrucks(job).filter((t) => t.no !== truck)
+  const refs = { ...(job.ulip_refs || {}) }
+  if (list[0]?.dl) refs.dl_no = list[0].dl
+  else delete refs.dl_no
+  const res = await updateJob(job.id, { trucks: list, truck_no: list[0]?.no || null, ulip_refs: refs, updated_at: new Date().toISOString() })
+  if (!res.ok) return res
+  await log(job, 'truck_removed', `Truck ${truck} removed — ${job.job_no}`, `Truck ${truck} taken off the job (by ${userName || 'staff'})`, userName, { truckNo: truck, enteredBy: userName })
   return res
 }
 

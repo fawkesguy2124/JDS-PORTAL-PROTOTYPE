@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from 'react'
-import { journeyFor, isDelivered, isExportJob } from '../../services/journey'
-import { assignTruck, setStage } from '../../services/jobActions'
+import { journeyFor, isDelivered, isExportJob, truckNos } from '../../services/journey'
+import { assignTruck, removeTruck, setStage } from '../../services/jobActions'
 import UlipCheck from '../../components/ulip/UlipCheck'
 import { JOB_TABS } from '../../components/ulip/ulipChecks'
 import { JobPicker, TruckWorkspace, NoJobChosen } from '../JobChecks'
@@ -35,12 +35,17 @@ const containersText = (nos) => (!nos?.length ? '—' : nos.length > 2 ? `${nos.
 function useOverlay(data, rows) {
   const [extra, setExtra] = useState({ loadedAt: null, results: {} })
   const live = !!data && extra.loadedAt === data.loadedAt
-  const add = (jobId, value) => setExtra((p) => {
-    const base = p.loadedAt === data?.loadedAt ? p : { loadedAt: data?.loadedAt, results: {} }
-    const id = String(jobId)
-    return { ...base, results: { ...base.results, [id]: { ...(base.results[id] || {}), ...value } } }
-  })
   const resultsFor = (jobId) => ({ ...(data?.resultsByJob?.[jobId] || {}), ...(live ? extra.results[String(jobId)] || {} : {}) })
+  // a new answer for one truck replaces only that truck's older answer (a job can have several trucks)
+  const add = (jobId, api, row) => {
+    const others = [].concat(resultsFor(jobId)[api] || []).filter((r) => r && !sameNo(r.params?.vehiclenumber, row.params?.vehiclenumber))
+    const value = { [api]: [row, ...others] }
+    setExtra((p) => {
+      const base = p.loadedAt === data?.loadedAt ? p : { loadedAt: data?.loadedAt, results: {} }
+      const id = String(jobId)
+      return { ...base, results: { ...base.results, [id]: { ...(base.results[id] || {}), ...value } } }
+    })
+  }
   const view = useMemo(() => {
     if (!data || extra.loadedAt !== data.loadedAt || !Object.keys(extra.results).length) return rows
     const resultsByJob = { ...data.resultsByJob }
@@ -74,36 +79,38 @@ export default function TrucksPage({ currentUserName, onOpenJob, showToast, canU
   const [search, setSearch] = useState(urlQ)
   const [selectedId, setSelectedId] = useState(null)
   const [checkId, setCheckId] = useState(() => new URLSearchParams(window.location.search).get('job'))
-  const [panel, setPanel] = useState(null)          // { jobId, kind: 'where' | 'papers' }
-  const [forms, setForms] = useState({})            // jobId -> { truckNo, dlNo, error }
+  const [panel, setPanel] = useState(null)          // { key: jobId:truckNo, kind: 'where' | 'papers' }
+  const [forms, setForms] = useState({})            // jobId -> { open, truckNo, container, dlNo, error }
   const [busyId, setBusyId] = useState(null)        // one save at a time
   const lock = useRef(false)
   const anyBusy = busyId !== null
 
   const lists = useMemo(() => {
     const q = search.trim().toLowerCase()
-    const match = (j) => !q || [j.truck_no, j.job_no, j.client].some((v) => String(v || '').toLowerCase().includes(q))
+    const match = (j) => !q || [...truckNos(j), j.job_no, j.client].some((v) => String(v || '').toLowerCase().includes(q))
     const ready = [], road = [], carting = []
     for (const r of rows) {
       const { job, j } = r
       if (isDelivered(job) || j.phase === 'delivered' || !match(job)) continue
       if (isExportJob(job)) carting.push(r)
-      else if (job.truck_no) road.push(r)
+      else if (truckNos(job).length) road.push(r)
       else if (j.readyForTruck) ready.push(r)
     }
     return { ready, road, carting }
   }, [rows, search])
 
   // the ?q= job (from a link elsewhere) is highlighted and shown on the map
-  const isLinked = (job) => !!urlQ && (sameNo(job.job_no, urlQ) || sameNo(job.truck_no, urlQ))
-  const onRoad = [...lists.road, ...lists.carting.filter((r) => r.job.truck_no)]
-  const sel = onRoad.find((r) => r.job.id === selectedId)
-    || onRoad.find((r) => isLinked(r.job))
-    || onRoad.find((r) => r.j.truckLocation)
+  const isLinked = (job, no) => !!urlQ && (sameNo(job.job_no, urlQ) || (no ? sameNo(no, urlQ) : truckNos(job).some((n) => sameNo(n, urlQ))))
+  // one entry per truck: a job can have several
+  const onRoad = [...lists.road, ...lists.carting.filter((r) => truckNos(r.job).length)]
+    .flatMap((r) => (r.j.trucks || []).map((t) => ({ key: `${r.job.id}:${t.no}`, r, t })))
+  const sel = onRoad.find((x) => x.key === selectedId)
+    || onRoad.find((x) => isLinked(x.r.job, x.t.no))
+    || onRoad.find((x) => x.t.location)
     || onRoad[0] || null
 
   const setForm = (jobId, patch) => setForms((p) => ({ ...p, [jobId]: { ...p[jobId], ...patch } }))
-  const togglePanel = (jobId, kind) => setPanel((p) => (p?.jobId === jobId && p.kind === kind ? null : { jobId, kind }))
+  const togglePanel = (key, kind) => setPanel((p) => (p?.key === key && p.kind === kind ? null : { key, kind }))
 
   const guarded = async (jobId, fn) => {
     if (lock.current) return
@@ -114,15 +121,23 @@ export default function TrucksPage({ currentUserName, onOpenJob, showToast, canU
 
   const assign = (job) => guarded(job.id, async () => {
     const f = forms[job.id] || {}
-    const res = await assignTruck(job, { truckNo: f.truckNo, dlNo: f.dlNo }, currentUserName)
-    if (!res.ok) {
-      if (!f.dlNo && /licence/i.test(res.error || '')) { showToast?.(`Truck assigned to ${job.job_no}`, 'success'); setForms((p) => ({ ...p, [job.id]: undefined })); refresh(); return }
-      setForm(job.id, { error: res.error }); return
-    }
-    showToast?.(`Truck assigned to ${job.job_no}`, 'success')
+    const res = await assignTruck(job, { truckNo: f.truckNo, dlNo: f.dlNo, container: f.container }, currentUserName)
+    if (!res.ok) { setForm(job.id, { error: res.error }); return }
+    showToast?.(`Truck ${String(f.truckNo).toUpperCase()} added to ${job.job_no}`, 'success')
     setForms((p) => ({ ...p, [job.id]: undefined }))
     patchJob(res.job)
   })
+
+  const unassign = (job, no) => {
+    if (!window.confirm(`Take truck ${no} off job ${job.job_no}?`)) return
+    return guarded(job.id, async () => {
+      const res = await removeTruck(job, no, currentUserName)
+      if (!res.ok) { showToast?.(res.error, 'error'); return }
+      showToast?.(`Truck ${no} taken off ${job.job_no}`, 'success')
+      setPanel(null)
+      patchJob(res.job)
+    })
+  }
 
   const deliver = (job) => {
     if (!window.confirm(`Mark job ${job.job_no} as delivered?`)) return
@@ -130,7 +145,7 @@ export default function TrucksPage({ currentUserName, onOpenJob, showToast, canU
       const res = await setStage(job, 10, 'Delivered', currentUserName)
       if (!res.ok) { showToast?.(res.error, 'error'); return }
       showToast?.(`${job.job_no} marked delivered`, 'success')
-      if (panel?.jobId === job.id) setPanel(null)
+      if (panel?.key?.startsWith(`${job.id}:`)) setPanel(null)
       patchJob(res.job)
     })
   }
@@ -142,21 +157,26 @@ export default function TrucksPage({ currentUserName, onOpenJob, showToast, canU
     </button>
   )
 
-  const renderRoad = ({ job, j }) => {
-    const loc = j.truckLocation
-    const open = panel?.jobId === job.id ? panel.kind : null
-    const cls = ['ix-truck-row', sel?.job.id === job.id ? 'sel' : '', isLinked(job) ? 'hl' : ''].join(' ')
+  // one row per truck; a job's trucks sit together, with "Add another truck" after them
+  const renderTruck = ({ job, j }, t, idx) => {
+    const key = `${job.id}:${t.no}`
+    const loc = t.location
+    const open = panel?.key === key ? panel.kind : null
+    const cls = ['ix-truck-row', sel?.key === key ? 'sel' : '', isLinked(job, t.no) ? 'hl' : ''].join(' ')
+    const many = (j.trucks || []).length > 1
     return (
-      <div key={job.id}>
+      <div key={key}>
         <div className={cls}>
           <div>
-            <button type="button" className="ix-plate" onClick={() => setSelectedId(job.id)} title="Show this truck on the map" style={{ cursor: 'pointer' }}>
-              {job.truck_no}
+            <button type="button" className="ix-plate" onClick={() => setSelectedId(key)} title="Show this truck on the map" style={{ cursor: 'pointer' }}>
+              {t.no}
             </button>
           </div>
           <div style={{ minWidth: 0 }}>
-            {jobLink(job)}
-            <div style={{ fontSize: 12, color: 'var(--muted)' }} className="mono">{j.containers?.nos?.[0] || ''}</div>
+            {idx === 0 ? jobLink(job) : <span style={{ fontSize: 12, color: 'var(--muted)' }}>{job.job_no} · truck {idx + 1}</span>}
+            <div style={{ fontSize: 12, color: 'var(--muted)' }} className="mono">
+              {t.container || (many ? 'Container not noted' : j.containers?.nos?.[0] || '')}{many && idx === 0 ? ` · ${j.trucks.length} trucks` : ''}
+            </div>
           </div>
           <div style={{ fontSize: 13, minWidth: 0 }}>
             <Icon name="map-pin" style={{ color: 'var(--navy)' }} />{' '}
@@ -164,22 +184,21 @@ export default function TrucksPage({ currentUserName, onOpenJob, showToast, canU
               ? <>{loc.plaza}<div style={{ fontSize: 12, color: 'var(--muted)' }}>{loc.at ? fmtTime(loc.at) : ''}{loc.checkedAt ? ` · checked ${timeAgo(loc.checkedAt)}` : ''}</div></>
               : <span style={{ color: 'var(--muted)' }}>Not checked yet</span>}
           </div>
-          <div><PapersChip papers={j.truckPapers} onClick={() => togglePanel(job.id, 'papers')} /></div>
+          <div><PapersChip papers={t.papers} onClick={() => togglePanel(key, 'papers')} /></div>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-            <button type="button" className={`ix-btn sm ${open === 'where' ? 'primary' : ''}`} onClick={() => { togglePanel(job.id, 'where'); setSelectedId(job.id) }}>
+            <button type="button" className={`ix-btn sm ${open === 'where' ? 'primary' : ''}`} onClick={() => { togglePanel(key, 'where'); setSelectedId(key) }}>
               <Icon name="map-pin" />Where is it?
             </button>
-            {canUpdateStage && (
-              <button type="button" className="ix-btn sm" disabled={anyBusy} onClick={() => deliver(job)}>
-                <Icon name="flag" />{busyId === job.id ? 'Saving…' : 'Mark delivered'}
-              </button>
-            )}
+            <button type="button" className="ix-btn sm ghost" disabled={anyBusy} onClick={() => unassign(job, t.no)} title={`Take truck ${t.no} off this job`} aria-label={`Remove truck ${t.no}`}>
+              <Icon name="x" />
+            </button>
           </div>
         </div>
         {open && (
           <div style={{ padding: '0 16px 14px' }}>
-            <UlipCheck key={open} check={open === 'where' ? WHERE_CHECK : PAPERS_CHECK} job={job} compact
-              onResult={(row) => { if (row) addResults(job.id, { [open === 'where' ? 'FASTAG/01' : 'VAHAN/04']: row }) }}
+            {/* the check is filled in with THIS truck's number */}
+            <UlipCheck key={`${key}:${open}`} check={open === 'where' ? WHERE_CHECK : PAPERS_CHECK} job={{ ...job, truck_no: t.no }} compact
+              onResult={(row) => { if (row) addResults(job.id, open === 'where' ? 'FASTAG/01' : 'VAHAN/04', row) }}
               onJobChange={patchJob} />
             <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
               <button type="button" className="ix-btn sm ghost" onClick={() => onOpenJob?.(job.id, 'truck')}>More truck and driver checks</button>
@@ -187,6 +206,62 @@ export default function TrucksPage({ currentUserName, onOpenJob, showToast, canU
             </div>
           </div>
         )}
+      </div>
+    )
+  }
+
+  // the truck form: truck no, which container it carries (when the job has
+  // containers) or else the driver licence
+  const truckForm = (job, j) => {
+    const f = forms[job.id] || {}
+    const taken = new Set((j.trucks || []).map((t) => t.container).filter(Boolean))
+    const boxes = (j.containers?.nos || []).filter((no) => !taken.has(no))
+    return (
+      <>
+        <input value={f.truckNo || ''} placeholder="Truck no, like MH04AB1234" aria-label={`Truck number for ${job.job_no}`} disabled={anyBusy}
+          onChange={(e) => setForm(job.id, { truckNo: e.target.value.toUpperCase(), error: '' })} />
+        {boxes.length > 0 ? (
+          <select value={f.container || ''} aria-label={`Container on this truck for ${job.job_no} (optional)`} disabled={anyBusy}
+            onChange={(e) => setForm(job.id, { container: e.target.value, error: '' })}
+            style={{ height: 32, border: '1px solid var(--line)', borderRadius: 8, padding: '0 8px', font: '13px Inter, sans-serif', background: '#fff', color: 'var(--text)', minWidth: 0 }}>
+            <option value="">Container (optional)</option>
+            {boxes.map((no) => <option key={no} value={no}>{no}</option>)}
+          </select>
+        ) : (
+          <input value={f.dlNo || ''} placeholder="Driver licence (optional)" aria-label={`Driver licence for ${job.job_no} (optional)`} disabled={anyBusy}
+            onChange={(e) => setForm(job.id, { dlNo: e.target.value.toUpperCase(), error: '' })} style={{ fontFamily: 'Inter, sans-serif' }} />
+        )}
+        <button type="button" className="ix-btn sm primary" disabled={anyBusy || !f.truckNo} onClick={() => assign(job)}>
+          {busyId === job.id ? 'Saving…' : (j.trucks || []).length ? 'Add truck' : 'Assign'}
+        </button>
+      </>
+    )
+  }
+
+  const renderRoad = (r) => {
+    const { job, j } = r
+    const f = forms[job.id] || {}
+    return (
+      <div key={job.id}>
+        {(j.trucks || []).map((t, i) => renderTruck(r, t, i))}
+        {f.open && (
+          <div className="ix-truck-row ready">
+            <div><b className="mono">{job.job_no}</b></div>
+            <div style={{ fontSize: 12, color: 'var(--muted)' }}>Another truck for this job</div>
+            {truckForm(job, j)}
+          </div>
+        )}
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', padding: '0 16px 10px' }}>
+          {f.open
+            ? <button type="button" className="ix-btn sm ghost" onClick={() => setForms((p) => ({ ...p, [job.id]: undefined }))}>Cancel</button>
+            : <button type="button" className="ix-btn sm ghost" disabled={anyBusy} onClick={() => setForm(job.id, { open: true })}><Icon name="plus" />Add another truck</button>}
+          {canUpdateStage && (
+            <button type="button" className="ix-btn sm" disabled={anyBusy} onClick={() => deliver(job)} style={{ marginLeft: 'auto' }}>
+              <Icon name="flag" />{busyId === job.id ? 'Saving…' : `Mark ${job.job_no} delivered`}
+            </button>
+          )}
+        </div>
+        {f.error && <div className="ix-error" style={{ margin: '0 16px 10px' }}><Icon name="alert-triangle" /> {f.error}</div>}
       </div>
     )
   }
@@ -207,13 +282,7 @@ export default function TrucksPage({ currentUserName, onOpenJob, showToast, canU
               {j.oocDate ? `OOC ${fmtDate(j.oocDate)}` : isExportJob(job) ? 'Export cargo to the port' : 'OOC recorded'} · <span className="mono">{containersText(j.containers?.nos)}</span>
             </div>
           </div>
-          <input value={f.truckNo || ''} placeholder="Truck no, like MH04AB1234" aria-label={`Truck number for ${job.job_no}`} disabled={anyBusy}
-            onChange={(e) => setForm(job.id, { truckNo: e.target.value.toUpperCase(), error: '' })} />
-          <input value={f.dlNo || ''} placeholder="Driver licence (optional)" aria-label={`Driver licence for ${job.job_no} (optional)`} disabled={anyBusy}
-            onChange={(e) => setForm(job.id, { dlNo: e.target.value.toUpperCase(), error: '' })} style={{ fontFamily: 'Inter, sans-serif' }} />
-          <button type="button" className="ix-btn sm primary" disabled={anyBusy || !f.truckNo} onClick={() => assign(job)}>
-            {busyId === job.id ? 'Saving…' : 'Assign'}
-          </button>
+          {truckForm(job, j)}
         </div>
         {f.error && <div className="ix-error" style={{ margin: '0 16px 10px' }}><Icon name="alert-triangle" /> {f.error}</div>}
       </div>
@@ -250,10 +319,10 @@ export default function TrucksPage({ currentUserName, onOpenJob, showToast, canU
       ) : error ? null : (
         <>
           <div className="ix-card" style={{ marginBottom: 16 }}>
-            <TruckMap trucks={onRoad.map((r) => ({ job: r.job, points: truckPoints(r.job, r.j, resultsFor(r.job.id)) }))} selectedId={sel?.job.id || null} onSelect={setSelectedId} />
+            <TruckMap trucks={onRoad.map((x) => ({ id: x.key, no: x.t.no, job: x.r.job, points: truckPoints(x.r.job, x.r.j, resultsFor(x.r.job.id), x.t.no) }))} selectedId={sel?.key || null} onSelect={setSelectedId} />
             <div className="ix-card-head">
               <Icon name="truck" style={{ color: 'var(--navy)' }} />
-              <h2>On the road</h2><span className="ix-chip grey">{lists.road.length}</span>
+              <h2>On the road</h2><span className="ix-chip grey">{onRoad.filter((x) => !isExportJob(x.r.job)).length}</span>
               <span className="sub hide-m">Each check asks FASTag. Check when you need to know.</span>
             </div>
             {lists.road.length === 0 && <div className="ix-empty">{search ? 'No truck on the road matches your search.' : 'No trucks on the road right now.'}</div>}
@@ -277,7 +346,7 @@ export default function TrucksPage({ currentUserName, onOpenJob, showToast, canU
               <span className="sub">Export cargo going to the port</span>
             </div>
             {lists.carting.length === 0 && <div className="ix-empty">No export jobs waiting for cargo to reach the port.</div>}
-            {lists.carting.map((r) => (r.job.truck_no ? renderRoad(r) : renderReady(r)))}
+            {lists.carting.map((r) => (truckNos(r.job).length ? renderRoad(r) : renderReady(r)))}
           </div>
 
           <div className="ix-page-head" style={{ marginTop: 24 }}>
@@ -291,7 +360,7 @@ export default function TrucksPage({ currentUserName, onOpenJob, showToast, canU
               onSelect={setCheckId}
               placeholder="Job no, client, truck no…"
               lists={[
-                { title: 'On the road', icon: 'truck', color: 'var(--navy)', rows: lists.road, empty: 'No trucks on the road.', sub: ({ job }) => `Truck ${job.truck_no}` },
+                { title: 'On the road', icon: 'truck', color: 'var(--navy)', rows: lists.road, empty: 'No trucks on the road.', sub: ({ job }) => `Truck ${truckNos(job).join(', ')}` },
                 { title: 'Ready for a truck', icon: 'circle-check', color: 'var(--green)', rows: lists.ready, empty: 'No jobs waiting for a truck.', sub: () => 'OOC granted, no truck yet' },
               ]}
             />

@@ -6,6 +6,7 @@ import { Icon } from './ui'
 // A real street map (OpenStreetMap) of the trucks on the road. A truck's
 // position is its last FASTag toll crossing; nothing here calls ULIP — it only
 // draws answers already saved when staff pressed "Where is it?".
+// trucks: [{ id, no, job, points }] — one pin per truck (a job can have several).
 
 const fmt = (v) => { if (!v) return ''; const d = new Date(v); return isNaN(d) ? String(v) : d.toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }) }
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]))
@@ -34,7 +35,7 @@ export default function TruckMap({ trucks, selectedId, onSelect }) {
     const bounds = []
     for (const t of placed) {
       if (!t.last) continue
-      const isSel = t.job.id === selectedId
+      const isSel = t.id === selectedId
       const lastAt = new Date(t.last.at)
       const stale = !isNaN(lastAt) && Date.now() - lastAt.getTime() > STALE_HOURS * 3600e3
       const route = t.points.filter((p) => p.pos)
@@ -48,10 +49,10 @@ export default function TruckMap({ trucks, selectedId, onSelect }) {
         }
         route.forEach((p) => bounds.push(p.pos))
       }
-      const html = `<div class="ix-tmark ${stale ? 'stale' : ''} ${isSel ? 'sel' : ''}">${esc(t.job.truck_no)}</div>`
+      const html = `<div class="ix-tmark ${stale ? 'stale' : ''} ${isSel ? 'sel' : ''}">${esc(t.no)}</div>`
       L.marker(t.last.pos, { icon: L.divIcon({ className: 'ix-tpin', iconSize: [0, 0], html }), zIndexOffset: isSel ? 1000 : 0 })
-        .bindTooltip(`<b>${esc(t.job.truck_no)}</b> · ${esc(t.job.job_no)}<br>${esc(t.last.plaza)}<br>${esc(fmt(t.last.at))}${stale ? ' · <b>no newer crossing</b>' : ''}${t.last.approx ? '<br><i>approximate position</i>' : ''}`, { direction: 'top', offset: [0, -28] })
-        .on('click', () => onSelect?.(t.job.id))
+        .bindTooltip(`<b>${esc(t.no)}</b> · ${esc(t.job.job_no)}<br>${esc(t.last.plaza)}<br>${esc(fmt(t.last.at))}${stale ? ' · <b>no newer crossing</b>' : ''}${t.last.approx ? '<br><i>approximate position</i>' : ''}`, { direction: 'top', offset: [0, -28] })
+        .on('click', () => onSelect?.(t.id))
         .addTo(layer.current)
       if (!bounds.length && !selectedId) bounds.push(t.last.pos)
     }
@@ -62,7 +63,7 @@ export default function TruckMap({ trucks, selectedId, onSelect }) {
     setTimeout(() => m.invalidateSize(), 0)
   }) // redraw on every render: the lists are small
 
-  const unplaced = trucks.filter((t) => t.points.length && !placed.find((p) => p.job.id === t.job.id)?.last)
+  const unplaced = trucks.filter((t) => t.points.length && !placed.find((p) => p.id === t.id)?.last)
   return (
     <div className="ix-realmap">
       <div ref={box} className="ix-realmap-canvas" role="img" aria-label="Map of trucks on the road" />

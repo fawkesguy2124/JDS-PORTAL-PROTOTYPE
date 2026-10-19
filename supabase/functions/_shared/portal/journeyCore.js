@@ -175,6 +175,18 @@ export function freeDaysLeftFor(job, row) {
   return Number(row.free_days) - snapshotAge
 }
 
+// Every truck on a job. A big job can need several trucks after OOC (often one
+// per container). Saved in jobs.trucks [{ no, container, dl, at, by }]; jobs saved
+// before that only have truck_no, which is also kept = the first truck.
+export const plateNo = (s) => String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, '')
+export function jobTrucks(job) {
+  const list = (Array.isArray(job?.trucks) ? job.trucks : []).filter((t) => t?.no).map((t) => ({ ...t, no: plateNo(t.no) }))
+  const first = plateNo(job?.truck_no)
+  if (first && !list.some((t) => t.no === first)) list.unshift({ no: first, dl: job?.ulip_refs?.dl_no || null })
+  return list
+}
+export const truckNos = (job) => jobTrucks(job).map((t) => t.no)
+
 // How the cargo leaves after OOC: not always a truck. Staff can set it on the job
 // (field_meta.onward_mode = 'truck' | 'rail'); otherwise rail is recognised from the
 // container's own tracking (rail transport, station crossed, wagon), and a truck
@@ -186,7 +198,7 @@ export function onwardMode(job, rows = []) {
   const onRail = rows.some((t) => (Array.isArray(t?.milestones) ? t.milestones : [])
     .some((m) => RAIL_EVENT.test(String(m?.description || '').toUpperCase()) || /^R(AIL)?$/i.test(String(m?.transportMode || '').trim())))
   if (onRail || rows.some((t) => t?.status === 'on_rail')) return 'rail'
-  return job?.truck_no ? 'truck' : null
+  return truckNos(job).length ? 'truck' : null
 }
 
 // Container facts for a job (containers still in play only)
@@ -259,10 +271,18 @@ export function journeyFor(job, data) {
   const oocDate = cs?.ooc_date || null
   const oocDone = !!oocDate || stage >= 7
   const beFiled = !!(job.be_no && job.be_date)
-  const truck = job.truck_no || null
-  // truck answers only count for the job's CURRENT truck
-  const fastag = truck ? resultFor(results, ['FASTAG/01'], 'vehiclenumber', truck) : null
-  const truckPapers = truck ? (resultFor(results, ['VAHAN/04', 'VAHAN/01'], 'vehiclenumber', truck)) : null
+  // every truck on the job, each with its own saved FASTag and papers answers
+  const trucks = jobTrucks(job).map((t) => {
+    const fastag = resultFor(results, ['FASTAG/01'], 'vehiclenumber', t.no)
+    const papers = resultFor(results, ['VAHAN/04', 'VAHAN/01'], 'vehiclenumber', t.no)
+    const plaza = fastag?.parsed?.extra?.lastPlaza || null
+    return {
+      ...t,
+      location: plaza ? { plaza, at: fastag.parsed.extra.lastSeenAt, checkedAt: fastag.checked_at } : null,
+      papers: papers ? { found: !!papers.parsed?.found, tone: papers.parsed?.tone, summary: papers.summary, checkedAt: papers.checked_at } : null,
+    }
+  })
+  const truck = trucks[0]?.no || null
   const vessel = resultFor(results, ['JNPT/01', 'MBPT/01', 'IPORTMAN/01'])
   const ata = vessel?.parsed?.extra?.ata || null
   const arrived = !!(ata || c.portIn || stage >= 3)
@@ -277,7 +297,7 @@ export function journeyFor(job, data) {
     { id: 'ooc', label: 'OOC', done: oocDone, when: dayLabel(oocDate), sub: oocDate ? (cs.ooc_no ? `OOC ${cs.ooc_no}` : null) : oocDone ? 'Recorded by staff' : beFiled ? 'Waiting' : null },
     { id: 'out', label: isAirJob(job) ? 'Cargo out' : 'Container out', done: c.anyOut || stage >= 9, when: null, sub: c.tracked[0]?.status_text || null },
     { id: 'truck', label: mode === 'rail' ? 'Rail' : mode === 'truck' ? 'Truck' : 'Truck / rail', done: oocDone && (!!truck || railMoving), when: null,
-      sub: truck || (mode === 'rail' ? (railMoving ? 'On its way by rail' : 'Going by rail') : oocDone ? 'Not arranged yet' : null) },
+      sub: truck ? (trucks.length > 1 ? `${trucks.length} trucks` : truck) : (mode === 'rail' ? (railMoving ? 'On its way by rail' : 'Going by rail') : oocDone ? 'Not arranged yet' : null) },
     { id: 'delivered', label: 'Delivered', done: delivered, when: !isDelivered(job) && c.finishedOn ? dayLabel(c.finishedOn) : null, sub: !isDelivered(job) && c.allDelivered ? (deliveryBy(job) === 'client' ? 'Collected by client' : 'Empty container back') : null },
   ]
   markCurrent(steps)
@@ -309,20 +329,21 @@ export function journeyFor(job, data) {
       const filedDays = daysSince(job.be_date)
       if (filedDays !== null && filedDays >= 3) add('amber', `BE filed ${filedDays} days ago — OOC not yet`, 'customs')
     }
-    if (truckPapers?.parsed?.found && truckPapers.parsed.tone === 'bad') add('red', `Truck ${truck} papers problem: ${truckPapers.summary}`, 'truck')
+    for (const t of trucks) if (t.papers?.found && t.papers.tone === 'bad') add('red', `Truck ${t.no} papers problem: ${t.papers.summary}`, 'truck')
     if (job.detention_risk === 'high') add('red', 'Marked as high detention risk', 'containers')
     if (c.allStale) add('info', `No container movement for ${c.staleDays} days — is this job finished? If so, mark it delivered.`, 'details')
   }
 
-  const lastPlaza = fastag?.parsed?.extra?.lastPlaza || null
+  // the newest toll crossing of any of the job's trucks
+  const seen = trucks.filter((t) => t.location).sort((a, b) => String(b.location.at || '').localeCompare(String(a.location.at || '')))
   return {
     steps, phase, attention,
-    oocDate, oocDone, beFiled, truck, readyForTruck, onwardMode: mode,
+    oocDate, oocDone, beFiled, truck, trucks, readyForTruck, onwardMode: mode,
     arrivedAt: ata || c.portIn || null,
     freeDaysLeft: c.minFree,
     containers: c,
-    truckLocation: lastPlaza ? { plaza: lastPlaza, at: fastag.parsed.extra.lastSeenAt, checkedAt: fastag.checked_at } : null,
-    truckPapers: truckPapers ? { found: !!truckPapers.parsed?.found, tone: truckPapers.parsed?.tone, summary: truckPapers.summary, checkedAt: truckPapers.checked_at } : null,
+    truckLocation: seen[0] ? { ...seen[0].location, truck: seen[0].no } : null,
+    truckPapers: trucks[0]?.papers || null,
     customs: cs,
   }
 }
@@ -340,7 +361,8 @@ function exportJourney(job, results) {
     : null
   const leoDate = leoRow?.parsed?.extra?.leoDate || null
   const egmNo = refs.egm_no || null
-  const truck = job.truck_no || null
+  const trucks = jobTrucks(job).map((t) => ({ ...t, location: null, papers: null }))
+  const truck = trucks[0]?.no || null
 
   const steps = [
     { id: 'sb', label: 'Shipping bill', done: !!sbNo, when: dayLabel(refs.sb_date), sub: sbNo ? `SB ${sbNo}` : 'In LiveImpex' },
@@ -362,7 +384,7 @@ function exportJourney(job, results) {
     if (d !== null && d >= 2) add('amber', `Shipping bill filed ${d} days ago — LEO not yet`, isAirJob(job) ? 'air' : 'export')
   }
   return {
-    steps, phase, attention, sbNo, leoDate, egmNo, truck,
+    steps, phase, attention, sbNo, leoDate, egmNo, truck, trucks,
     readyForTruck: false, oocDone: false, freeDaysLeft: null,
     customs: null, containers: { nos: [], tracked: [] },
     truckLocation: null, truckPapers: null,

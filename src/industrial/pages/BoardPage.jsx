@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { PHASES, EXPORT_PHASES, isExportJob } from '../../services/journey'
+import { PHASES, EXPORT_PHASES, isExportJob, truckNos } from '../../services/journey'
 import { useJourney } from '../JourneyContext'
 import { Icon, Chip, FreeDays, Owner, worst, jobOwnerName } from '../ui'
 
@@ -31,7 +31,7 @@ function BoardCard({ job, j, level, owner, onOpen }) {
       {next && <div className="nx">{next}</div>}
       <div className="meta">
         {j.freeDaysLeft !== null && j.freeDaysLeft !== undefined && <FreeDays value={j.freeDaysLeft} />}
-        {job.truck_no && <Chip tone="grey" icon="truck" className="mono">{job.truck_no}</Chip>}
+        {truckNos(job).length > 0 && <Chip tone="grey" icon="truck" className="mono">{truckNos(job).length > 1 ? `${truckNos(job)[0]} +${truckNos(job).length - 1}` : truckNos(job)[0]}</Chip>}
         <span style={{ marginLeft: 'auto' }}><Owner name={owner} short /></span>
       </div>
     </button>
@@ -53,7 +53,7 @@ export default function BoardPage({ onOpenJob }) {
       if (isExportJob(job) !== (kind === 'export')) continue
       if (!out[j.phase]) continue
       if (q) {
-        const hay = [job.job_no, job.client, job.containers, job.be_no, job.truck_no]
+        const hay = [job.job_no, job.client, job.containers, job.be_no, ...truckNos(job)]
           .map((v) => (Array.isArray(v) ? v.join(' ') : String(v ?? ''))).join(' ').toLowerCase()
         if (!hay.includes(q)) continue
       }

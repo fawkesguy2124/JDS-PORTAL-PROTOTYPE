@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { parseContainerNos } from '../../utils/jobHelpers'
-import { isDelivered } from '../../services/journey'
+import { isDelivered, truckNos } from '../../services/journey'
 import { useJourney } from '../JourneyContext'
 import { FreeDays, Icon, Owner, PhaseChip, jobOwnerName, timeAgo, worst } from '../ui'
 
@@ -47,7 +47,7 @@ export default function JobsPage({ profile, onOpenJob, onCreateJob, selectedId }
       .filter(({ job }) => !mode || job.mode === mode)
       .filter(({ job }) => !type || (job.job_type || 'import') === type)
       .filter(({ job }) => !owner || job.assigned_to === owner)
-      .filter(({ job }) => !needle || [job.job_no, job.client, job.be_no, job.bl_no, job.truck_no, job.vessel, job.ulip_refs?.igm_no, ...parseContainerNos(job.containers)]
+      .filter(({ job }) => !needle || [job.job_no, job.client, job.be_no, job.bl_no, ...truckNos(job), job.vessel, job.ulip_refs?.igm_no, ...parseContainerNos(job.containers)]
         .filter(Boolean).some((x) => String(x).toLowerCase().replace(/\s+/g, '').includes(needle)))
     if (sort.key) out = [...out].sort((a, b) => SORTS[sort.key](a, b) * sort.dir)
     else out = [...out].sort((a, b) => LEVEL_ORDER[worst(a.j)] - LEVEL_ORDER[worst(b.j)] || num(b.job) - num(a.job))

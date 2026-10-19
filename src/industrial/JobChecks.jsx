@@ -6,6 +6,7 @@ import CustomsStatusCard from '../components/CustomsStatusCard'
 import UlipSection from '../components/ulip/UlipSection'
 import { useJourney } from './JourneyContext'
 import { Icon, PhaseChip } from './ui'
+import { truckNos } from '../services/journey'
 
 // Left: find a job (search + short lists). Right: that job's government checks.
 // Used by BE & OOC (customs checks) and Trucks (truck & driver checks).
@@ -14,7 +15,7 @@ export function JobPicker({ title, rows, selectedId, onSelect, lists = [], place
   const [q, setQ] = useState('')
   const needle = q.trim().toLowerCase().replace(/\s+/g, '')
   const hits = needle
-    ? rows.filter(({ job }) => [job.job_no, job.client, job.be_no, job.bl_no, job.truck_no, job.ulip_refs?.igm_no, ...parseContainerNos(job.containers)]
+    ? rows.filter(({ job }) => [job.job_no, job.client, job.be_no, job.bl_no, ...truckNos(job), job.ulip_refs?.igm_no, ...parseContainerNos(job.containers)]
       .filter(Boolean).some((x) => String(x).toLowerCase().replace(/\s+/g, '').includes(needle))).slice(0, 30)
     : null
   const item = ({ job, j }, sub) => (
@@ -118,10 +119,10 @@ export function TruckWorkspace({ jobId, onOpenJob, groups }) {
   return (
     <div className="ix-card">
       <JobHead job={job} j={j} onOpenJob={onOpenJob}>
-        {job.truck_no && <span className="ix-plate" style={{ fontSize: 12 }}>{job.truck_no}</span>}
+        {truckNos(job).map((t) => <span key={t} className="ix-plate" style={{ fontSize: 12 }}>{t}</span>)}
       </JobHead>
       <div style={{ padding: 16 }}>
-        {!job.truck_no && <div className="ix-next" style={{ marginBottom: 16 }}><Icon name="info-circle" /><div><div className="t">No truck assigned yet</div><div className="s">Type the truck number in a check below, or assign it from the list.</div></div></div>}
+        {!truckNos(job).length && <div className="ix-next" style={{ marginBottom: 16 }}><Icon name="info-circle" /><div><div className="t">No truck assigned yet</div><div className="s">Type the truck number in a check below, or assign it from the list.</div></div></div>}
         <UlipSection key={job.id} job={job} groups={groups} onJobChange={() => reloadJob(job.id, patchJob)} />
       </div>
     </div>

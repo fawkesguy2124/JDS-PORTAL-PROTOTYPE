@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { parseContainerNos } from '../utils/jobHelpers'
 import { useJourney } from './JourneyContext'
 import { Icon, phaseChip } from './ui'
+import { truckNos } from '../services/journey'
 
 // Ctrl K: one box for every job number, client, BE, BL, container and truck,
 // plus the pages. Searches saved data only.
@@ -21,11 +22,11 @@ function Palette({ onClose, pages, onGo, onOpenJob }) {
     const needle = q.trim().toLowerCase().replace(/\s+/g, '')
     const jobs = rows.filter(({ job }) => {
       if (!needle) return true
-      const hay = [job.job_no, job.client, job.be_no, job.bl_no, job.truck_no, job.ulip_refs?.igm_no, job.ulip_refs?.sb_no, ...parseContainerNos(job.containers)]
+      const hay = [job.job_no, job.client, job.be_no, job.bl_no, ...truckNos(job), job.ulip_refs?.igm_no, job.ulip_refs?.sb_no, ...parseContainerNos(job.containers)]
       return hay.filter(Boolean).some((x) => String(x).toLowerCase().replace(/\s+/g, '').includes(needle))
     }).slice(0, 8).map(({ job, j }) => {
       const hit = needle && !String(job.job_no || '').toLowerCase().includes(needle) && !String(job.client || '').toLowerCase().includes(needle)
-        ? [['BE', job.be_no], ['BL', job.bl_no], ['Truck', job.truck_no], ['IGM', job.ulip_refs?.igm_no], ...parseContainerNos(job.containers).map((c) => ['Container', c])]
+        ? [['BE', job.be_no], ['BL', job.bl_no], ...truckNos(job).map((t) => ['Truck', t]), ['IGM', job.ulip_refs?.igm_no], ...parseContainerNos(job.containers).map((c) => ['Container', c])]
           .find(([, v]) => v && String(v).toLowerCase().replace(/\s+/g, '').includes(needle)) : null
       return { type: 'job', id: job.id, job, j, hit }
     })
