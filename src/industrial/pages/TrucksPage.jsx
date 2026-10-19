@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { Suspense, lazy, useMemo, useRef, useState } from 'react'
 import { journeyFor, isDelivered, isExportJob, truckNos } from '../../services/journey'
 import { assignTruck, removeTruck, setStage } from '../../services/jobActions'
 import UlipCheck from '../../components/ulip/UlipCheck'
@@ -8,7 +8,8 @@ import { JobPicker, TruckWorkspace, NoJobChosen } from '../JobChecks'
 const TRUCK_GROUPS = JOB_TABS.find((t) => t.id === 'truck')?.groups || []
 import { useJourney } from '../JourneyContext'
 import { Icon, Chip, fmtDate, timeAgo } from '../ui'
-import TruckMap from '../TruckMap'
+// the map (and its map library) loads only when this page opens
+const TruckMap = lazy(() => import('../TruckMap'))
 import { truckPoints } from '../truckPoints'
 
 // Trucks: where each truck was last seen (saved FASTag answers), and jobs
@@ -319,7 +320,9 @@ export default function TrucksPage({ currentUserName, onOpenJob, showToast, canU
       ) : error ? null : (
         <>
           <div className="ix-card" style={{ marginBottom: 16 }}>
+            <Suspense fallback={<div className="ix-realmap"><div className="ix-realmap-msg">Loading map…</div></div>}>
             <TruckMap trucks={onRoad.map((x) => ({ id: x.key, no: x.t.no, job: x.r.job, points: truckPoints(x.r.job, x.r.j, resultsFor(x.r.job.id), x.t.no) }))} selectedId={sel?.key || null} onSelect={setSelectedId} />
+            </Suspense>
             <div className="ix-card-head">
               <Icon name="truck" style={{ color: 'var(--navy)' }} />
               <h2>On the road</h2><span className="ix-chip grey">{onRoad.filter((x) => !isExportJob(x.r.job)).length}</span>

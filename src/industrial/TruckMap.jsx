@@ -33,9 +33,10 @@ function addBaseMap(m) {
 const fmt = (v) => { if (!v) return ''; const d = new Date(v); return isNaN(d) ? String(v) : d.toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }) }
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]))
 const STALE_HOURS = 6
+// the map may have been closed in the meantime (page changed)
+const alive = (m) => !!m && !!m._mapPane && !!m.getContainer()?.isConnected
 const fit = (m, bounds) => {
-  // the map may have been closed in the meantime (page changed)
-  if (!m || !m.getContainer()?.isConnected) return
+  if (!alive(m)) return
   if (bounds.length === 1) m.setView(bounds[0], 11)
   else if (bounds.length) m.fitBounds(L.latLngBounds(bounds).pad(0.25))
 }
@@ -91,14 +92,14 @@ export default function TruckMap({ trucks, selectedId, onSelect }) {
     lastBounds.current = bounds
     fit(m, bounds)
     // the page layout can change size after the first draw
-    setTimeout(() => { if (m.getContainer()?.isConnected) m.invalidateSize() }, 0)
+    setTimeout(() => { if (alive(m)) m.invalidateSize() }, 0)
   }) // redraw on every render: the lists are small
 
   // expanded: fit the map to its new size, zoom with the mouse wheel, Esc closes
   useEffect(() => {
     const m = map.current
     if (!m) return
-    setTimeout(() => { if (!m.getContainer()?.isConnected) return; m.invalidateSize(); fit(m, lastBounds.current) }, 60)
+    setTimeout(() => { if (!alive(m)) return; m.invalidateSize(); fit(m, lastBounds.current) }, 60)
     if (big) m.scrollWheelZoom.enable(); else m.scrollWheelZoom.disable()
     if (!big) return
     const onKey = (e) => { if (e.key === 'Escape') setBig(false) }
