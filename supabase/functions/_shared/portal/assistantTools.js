@@ -34,7 +34,7 @@ const inRange = (iso, from, to) => {
 // portal document types are short codes (BL, BE, COO…): map spoken names to them
 const DOC_ALIAS = { BILLOFLADING: 'BL', HBL: 'BL', MBL: 'BL', AWB: 'BL', BILLOFENTRY: 'BE', CERTIFICATEOFORIGIN: 'COO', PACKING: 'PACKINGLIST', PL: 'PACKINGLIST', COMMERCIALINVOICE: 'INVOICE', INV: 'INVOICE', EWAY: 'EWAYBILL', PROOFOFDELIVERY: 'POD', EXAMORDER: 'EXAMINATIONORDER', OUTOFCHARGE: 'OOC' }
 const docType = (s) => DOC_ALIAS[norm(s)] || norm(s)
-const PORT_ALIAS = { JNPT: 'INNSA', NHAVASHEVA: 'INNSA', NSA: 'INNSA', JNPA: 'INNSA', MUMBAI: 'INBOM', MUMBAIPORT: 'INBOM', MBPT: 'INBOM', AIR: 'INBOM4', MUMBAIAIR: 'INBOM4', SAHAR: 'INBOM4' }
+const PORT_ALIAS = { JNPT: 'INNSA', NHAVASHEVA: 'INNSA', NSA: 'INNSA', JNPA: 'INNSA', MUMBAI: 'INBOM1', MUMBAIPORT: 'INBOM1', MBPT: 'INBOM1', AIR: 'INBOM4', MUMBAIAIR: 'INBOM4', SAHAR: 'INBOM4' }
 const STAGE = ['Job created', 'Docs received', 'Verification', 'BE filing', 'Customs review', 'Assessment', 'Duty paid', 'OOC', 'Out of port', 'In transit', 'Delivered']
 
 // One job as facts
