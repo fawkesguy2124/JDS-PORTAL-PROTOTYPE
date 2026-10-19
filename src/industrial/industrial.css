@@ -308,6 +308,8 @@
 .ix-tmark { position: absolute; left: 0; top: 0; transform: translate(-50%, -100%) translateY(-9px); width: max-content; display: flex; align-items: center; gap: 6px; background: #fff; color: var(--text); font: 700 11.5px var(--mono); padding: 3px 9px 3px 3px; border-radius: 999px; border: 2px solid #1a4fa0; box-shadow: 0 3px 10px rgba(0,0,0,.25); cursor: pointer }
 .ix-tmark .ic { width: 26px; height: 26px; border-radius: 50%; background: #1a4fa0; color: #fff; display: grid; place-items: center; font-size: 16px }
 .ix-tmark::after { content: ''; position: absolute; left: 50%; bottom: -9px; margin-left: -7px; border: 7px solid transparent; border-bottom: 0; border-top-color: #1a4fa0 }
+.ix-tmark .job { font: 700 10.5px Inter, sans-serif; color: #1a4fa0; background: #e8eef9; border-radius: 999px; padding: 2px 7px; margin-left: -1px }
+.ix-tmark.stale .job { color: #b91c1c; background: #fdecec }
 .ix-tmark.stale { border-color: #b91c1c }
 .ix-tmark.stale .ic { background: #b91c1c }
 .ix-tmark.stale::after { border-top-color: #b91c1c }
