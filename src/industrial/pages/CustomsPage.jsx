@@ -225,7 +225,7 @@ export default function CustomsPage({ currentUserName, onOpenJob, showToast, can
               { title: 'Waiting for OOC', icon: 'hourglass', color: 'var(--amber)', rows: inPhase('ooc'), empty: 'No jobs waiting for OOC.',
                 sub: ({ job, j }) => `BE ${job.be_no} · ${filedText(job.be_date)} · checked ${j.customs?.checked_at ? timeAgo(j.customs.checked_at) : 'never'}` },
               { title: 'OOC granted — next steps', icon: 'circle-check', color: 'var(--green)', rows: inPhase('release'), empty: 'No jobs with OOC granted right now.',
-                sub: ({ j }) => `OOC ${j.oocDate ? fmtDate(j.oocDate) : 'recorded by staff'} · no truck yet` },
+                sub: ({ j }) => `OOC ${j.oocDate ? fmtDate(j.oocDate) : 'recorded by staff'} · truck or rail not arranged` },
             ]}
           />
           {selId

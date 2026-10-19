@@ -11,7 +11,7 @@ const PHASE_CHIPS = {
   docs: ['blue', 'file-text', 'BE to file'],
   ooc: ['amber', 'hourglass', 'Waiting OOC'],
   release: ['green', 'circle-check', 'OOC granted'],
-  truck: ['blue', 'truck', 'On the road'],
+  truck: ['blue', 'truck', 'On the move'],
   delivered: ['grey', 'flag', 'Delivered'],
   sb: ['blue', 'file-text', 'SB to file'],
   leo: ['amber', 'hourglass', 'Waiting LEO'],

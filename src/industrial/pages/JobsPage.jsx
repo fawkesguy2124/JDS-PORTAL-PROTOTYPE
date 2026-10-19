@@ -11,7 +11,7 @@ const VIEWS = [
   { id: 'action', label: 'Needs action', test: ({ j }) => j.attention.some((a) => a.level !== 'info') },
   { id: 'mine', label: 'My jobs', test: ({ job }, me) => !!me && job.assigned_to === me },
   { id: 'ooc', label: 'Waiting OOC', test: ({ j }) => j.phase === 'ooc' },
-  { id: 'truck', label: 'Needs a truck', test: ({ j }) => j.readyForTruck },
+  { id: 'truck', label: 'Needs truck / rail', test: ({ j }) => j.readyForTruck },
   { id: 'detention', label: 'Detention risk', test: ({ j }) => j.freeDaysLeft !== null && j.freeDaysLeft <= 2 },
   { id: 'open', label: 'All open', test: ({ job, j }) => !isDelivered(job) && j.phase !== 'delivered' },
   { id: 'all', label: 'Everything', test: () => true },

@@ -68,6 +68,15 @@ export default function JobDrawer({ jobId, initialTab = 'overview', onClose, onO
   const isExport = job.job_type === 'export'
   const ownerName = jobOwnerName(job, profiles)
 
+  // Save one choice into the job's field_meta (delivery_by, onward_mode)
+  const setMeta = async (key, value, done) => {
+    const field_meta = { ...(job.field_meta && typeof job.field_meta === 'object' ? job.field_meta : {}), [key]: value }
+    const { data: saved, error } = await supabase.from('jobs').update({ field_meta, updated_at: new Date().toISOString() }).eq('id', job.id).select().single()
+    if (error) { showToast?.(`Could not save: ${error.message}`, 'error'); return }
+    patchJob(saved)
+    showToast?.(done, 'success')
+  }
+
   // Who takes the cargo to the client's warehouse (decides when JDS's part ends)
   const setDelivery = async (by) => {
     const field_meta = { ...(job.field_meta && typeof job.field_meta === 'object' ? job.field_meta : {}), delivery_by: by }
@@ -94,7 +103,7 @@ export default function JobDrawer({ jobId, initialTab = 'overview', onClose, onO
 
   // ── action for the "next step" box ──
   let action = null
-  if (!isExport && j.phase === 'release') action = { label: 'Assign truck', run: () => onOpenTruck(job.id) }
+  if (!isExport && j.phase === 'release' && j.onwardMode !== 'rail') action = { label: 'Assign truck', run: () => onOpenTruck(job.id) }
   else if (!isExport && j.phase === 'ooc') action = { label: 'Check OOC', run: () => onOpenFull(job.id, 'customs') }
   else if (!isExport && (j.phase === 'docs' || j.phase === 'arrival') && !job.be_no) action = { label: 'Record BE no', run: () => onOpenFull(job.id, 'customs') }
   else if (isExport && !j.sbNo) action = { label: 'Record SB no', run: () => onOpenFull(job.id, job.mode === 'Air' ? 'air' : 'export') }
@@ -231,6 +240,18 @@ export default function JobDrawer({ jobId, initialTab = 'overview', onClose, onO
                   </div>
                 </div>
                 <div><div className="k">Goods</div><div className="v">{job.goods || '—'}</div></div>
+                {!isExport && (
+                  <div>
+                    <div className="k">Leaves the port / CFS by</div>
+                    <div className="v" style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                      {[['truck', 'Truck'], ['rail', 'Rail']].map(([id, l]) => (
+                        <button key={id} type="button" className={`ix-btn sm ${j.onwardMode === id ? 'primary' : ''}`}
+                          onClick={() => job.field_meta?.onward_mode !== id && setMeta('onward_mode', id, id === 'rail' ? 'Saved: goes by rail' : 'Saved: goes by truck')}>{l}</button>
+                      ))}
+                      {!job.field_meta?.onward_mode && j.onwardMode && <span style={{ fontSize: 12, color: 'var(--muted)', alignSelf: 'center' }}>(from tracking)</span>}
+                    </div>
+                  </div>
+                )}
                 {!isExport && (
                   <div>
                     <div className="k">Delivery to warehouse</div>

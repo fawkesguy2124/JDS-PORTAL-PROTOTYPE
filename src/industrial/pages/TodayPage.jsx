@@ -75,7 +75,7 @@ export default function TodayPage({ onOpenJob, currentUserName, onGo }) {
   const kpis = [
     { id: 'active', icon: 'package', label: 'Active jobs', value: sets.active.size, trend: `${active.filter(({ job }) => job.job_type === 'export').length} exports · ${active.filter(({ job }) => job.mode === 'Air').length} air` },
     { id: 'ooc', icon: 'hourglass', label: 'Waiting for OOC', value: sets.ooc.size, trend: oocWaitDays ? `avg ${oocWaitDays} days since BE` : 'none waiting' },
-    { id: 'nottruck', icon: 'truck', label: 'OOC, no truck', value: sets.nottruck.size, trend: sets.nottruck.size ? 'assign a truck' : 'all assigned', bad: sets.nottruck.size > 0 },
+    { id: 'nottruck', icon: 'truck', label: 'OOC, move not arranged', value: sets.nottruck.size, trend: sets.nottruck.size ? 'arrange truck or rail' : 'all arranged', bad: sets.nottruck.size > 0 },
     { id: 'truck', icon: 'road', label: 'Trucks on the road', value: sets.truck.size, trend: 'from FASTag and stages' },
     { id: 'free', icon: 'clock-exclamation', label: 'Free days ≤ 2', value: sets.free.size, trend: sets.free.size ? 'detention risk' : 'no risk today', bad: sets.free.size > 0, red: true },
   ]

@@ -56,7 +56,7 @@ export const PHASES = [
   { id: 'docs', label: 'Docs & BE filing', hint: 'Preparing / filing in LiveImpex' },
   { id: 'ooc', label: 'Waiting for OOC', hint: 'BE filed, OOC not yet' },
   { id: 'release', label: 'OOC — to be moved', hint: 'OOC granted, cargo still at port/CFS' },
-  { id: 'truck', label: 'On the road', hint: 'Truck assigned / out of port' },
+  { id: 'truck', label: 'On the move', hint: 'Out of port by truck or rail' },
   { id: 'delivered', label: 'Delivered', hint: 'Job complete' },
 ]
 export const EXPORT_PHASES = [
@@ -171,6 +171,20 @@ export function freeDaysLeftFor(job, row) {
   return Number(row.free_days) - snapshotAge
 }
 
+// How the cargo leaves after OOC: not always a truck. Staff can set it on the job
+// (field_meta.onward_mode = 'truck' | 'rail'); otherwise rail is recognised from the
+// container's own tracking (rail transport, station crossed, wagon), and a truck
+// number means truck. null = not decided yet.
+const RAIL_EVENT = /RAIL|STATION|WAGON|TRAIN/
+export function onwardMode(job, rows = []) {
+  const set = job?.field_meta?.onward_mode
+  if (set === 'truck' || set === 'rail') return set
+  const onRail = rows.some((t) => (Array.isArray(t?.milestones) ? t.milestones : [])
+    .some((m) => RAIL_EVENT.test(String(m?.description || '').toUpperCase()) || /^R(AIL)?$/i.test(String(m?.transportMode || '').trim())))
+  if (onRail || rows.some((t) => t?.status === 'on_rail')) return 'rail'
+  return job?.truck_no ? 'truck' : null
+}
+
 // Container facts for a job (containers still in play only)
 function containerFacts(job, data) {
   const nos = parseContainerNos(job.containers)
@@ -193,7 +207,7 @@ function containerFacts(job, data) {
   const allDelivered = all.length > 0 && all.every((t) => isFinished(t) || t.status === 'empty_returned')
   const finishedOn = allDelivered ? finished.map((f) => f.on).filter((d) => d !== 'yes').sort().at(-1) || null : null
   const portIn = all.map((t) => containerTrip(t, job).portIn || t.port_in).filter(Boolean).sort()[0] || null
-  return { nos, tracked, minFree, anyOut, allDelivered, finishedOn, portIn, allStale, staleDays }
+  return { nos, all, tracked, minFree, anyOut, allDelivered, finishedOn, portIn, allStale, staleDays }
 }
 
 // What staff see as the next thing to happen, for the step that is "current"
@@ -202,7 +216,7 @@ const NEXT_TEXT = {
   be: 'Next: file the BE in LiveImpex',
   ooc: 'Waiting for OOC',
   out: 'Next: get the container out',
-  truck: 'Next: assign a truck',
+  truck: 'Next: arrange truck or rail',
   delivered: 'Next: deliver and close the job',
   sb: 'Next: file the shipping bill in LiveImpex',
   leo: 'Waiting for LEO',
@@ -248,6 +262,8 @@ export function journeyFor(job, data) {
   const vessel = resultFor(results, ['JNPT/01', 'MBPT/01', 'IPORTMAN/01'])
   const ata = vessel?.parsed?.extra?.ata || null
   const arrived = !!(ata || c.portIn || stage >= 3)
+  const mode = onwardMode(job, c.all)
+  const railMoving = mode === 'rail' && c.anyOut
 
   const steps = [
     arrived
@@ -256,19 +272,23 @@ export function journeyFor(job, data) {
     { id: 'be', label: 'BE filed', done: beFiled, when: dayLabel(job.be_date), sub: beFiled ? `BE ${job.be_no}` : 'In LiveImpex' },
     { id: 'ooc', label: 'OOC', done: oocDone, when: dayLabel(oocDate), sub: oocDate ? (cs.ooc_no ? `OOC ${cs.ooc_no}` : null) : oocDone ? 'Recorded by staff' : beFiled ? 'Waiting' : null },
     { id: 'out', label: isAirJob(job) ? 'Cargo out' : 'Container out', done: c.anyOut || stage >= 9, when: null, sub: c.tracked[0]?.status_text || null },
-    { id: 'truck', label: 'Truck', done: !!truck && oocDone, when: null, sub: truck || (oocDone ? 'Not assigned' : null) },
+    { id: 'truck', label: mode === 'rail' ? 'Rail' : mode === 'truck' ? 'Truck' : 'Truck / rail', done: oocDone && (!!truck || railMoving), when: null,
+      sub: truck || (mode === 'rail' ? (railMoving ? 'On its way by rail' : 'Going by rail') : oocDone ? 'Not arranged yet' : null) },
     { id: 'delivered', label: 'Delivered', done: delivered, when: !isDelivered(job) && c.finishedOn ? dayLabel(c.finishedOn) : null, sub: !isDelivered(job) && c.allDelivered ? (deliveryBy(job) === 'client' ? 'Collected by client' : 'Empty container back') : null },
   ]
   markCurrent(steps)
+  const moveStep = steps.find((s) => s.id === 'truck')
+  if (moveStep?.current) moveStep.nextText = mode === 'rail' ? 'Next: send the container by rail' : mode === 'truck' ? 'Next: assign a truck' : 'Next: arrange truck or rail'
 
   let phase = 'arrival'
   if (delivered) phase = 'delivered'
-  else if ((truck && oocDone) || stage >= 9) phase = 'truck'
+  else if ((truck && oocDone) || (railMoving && oocDone) || stage >= 9) phase = 'truck'
   else if (oocDone) phase = 'release'
   else if (beFiled) phase = 'ooc'
   else if (arrived || stage >= 1) phase = 'docs'
 
-  const readyForTruck = !delivered && oocDone && !truck
+  // OOC done and the onward move not arranged yet (rail jobs don't wait for a truck)
+  const readyForTruck = !delivered && oocDone && !truck && mode !== 'rail'
 
   // ── What needs attention ──
   const attention = []
@@ -280,7 +300,7 @@ export function journeyFor(job, data) {
     else if (c.minFree !== null && c.minFree <= 2) add('red', c.minFree === 0 ? 'Last free day today' : `Only ${c.minFree} free day${c.minFree === 1 ? '' : 's'} left`, 'containers')
     else if (c.minFree !== null && c.minFree <= 5) add('amber', `${c.minFree} free days left`, 'containers')
     if (oocDate && stage < 7) add('amber', 'OOC granted — move the job to the OOC stage', 'customs')
-    if (readyForTruck) add('amber', 'OOC done — no truck assigned yet', 'truck')
+    if (readyForTruck) add('amber', mode === 'truck' ? 'OOC done — no truck assigned yet' : 'OOC done — arrange truck or rail', 'truck')
     if (beFiled && !oocDone) {
       const filedDays = daysSince(job.be_date)
       if (filedDays !== null && filedDays >= 3) add('amber', `BE filed ${filedDays} days ago — OOC not yet`, 'customs')
@@ -293,7 +313,7 @@ export function journeyFor(job, data) {
   const lastPlaza = fastag?.parsed?.extra?.lastPlaza || null
   return {
     steps, phase, attention,
-    oocDate, oocDone, beFiled, truck, readyForTruck,
+    oocDate, oocDone, beFiled, truck, readyForTruck, onwardMode: mode,
     freeDaysLeft: c.minFree,
     containers: c,
     truckLocation: lastPlaza ? { plaza: lastPlaza, at: fastag.parsed.extra.lastSeenAt, checkedAt: fastag.checked_at } : null,

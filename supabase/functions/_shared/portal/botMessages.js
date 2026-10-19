@@ -143,7 +143,7 @@ export function instantAlerts(data, events = [], now = new Date()) {
     if (ev.action === 'ooc_granted') {
       const job = byId[ev.job_id] || byNo[ev.job_no] || byNo[String(ev.title || '').split('— ').pop()?.trim()]
       const ooc = meta.ooc_no ? `OOC ${meta.ooc_no}${meta.ooc_date ? ` dated ${dayText(meta.ooc_date)}` : ''}` : 'OOC granted'
-      add('ooc', `ooc:${job?.id}:${meta.ooc_no || ev.id}`, job, `✅ OOC granted: ${ooc}. Arrange the truck.`)
+      add('ooc', `ooc:${job?.id}:${meta.ooc_no || ev.id}`, job, `✅ OOC granted: ${ooc}. Arrange truck or rail.`)
     }
     if (ev.action === 'container_update' && LEFT_CFS.test(ev.title || '')) {
       const job = byId[meta.job_id || ev.job_id]
