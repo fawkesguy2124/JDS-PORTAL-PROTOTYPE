@@ -107,6 +107,9 @@ function toWhatsApp(s: string) {
     .replace(/^#{1,6}\s*(.+)$/gm, '*$1*')
     .replace(/^\s*[-*]\s+/gm, '• ')
     .replace(/\*{2,}/g, '*')
+    // bold inside a bold line ("*Only one is *PORT OUT*:*") breaks in WhatsApp: one bold line
+    .replace(/^\*(.*\*.*)\*(:?)$/gm, (_m, inner: string, colon: string) => `*${inner.replace(/\*/g, '')}*${colon}`)
+    .replace(/^\[checked:.*\]$/gm, '') // the bot's own note, never shown
     .trim()
 }
 
@@ -232,14 +235,17 @@ async function handleInbound(admin: Admin, payload: any) {
     if (!text) { await send(person.phone, { text: 'Please send text: ask a question, or a job no, a container no or SUMMARY.' }); continue }
     // fixed commands are instant and free; anything else goes to the assistant
     let reply = answer(data, text, person, new Date(), { fallback: false })
+    let checked: string[] = []
     if (!reply) {
       const aiStart = Date.now()
       const ai = await askAssistant(text, history, data, person)
+      checked = ai.checked
       console.log(`[wa-bot] assistant: ${ai.note} | data ${aiStart - started} ms, AI ${Date.now() - aiStart} ms`)
       reply = ai.text ? toWhatsApp(ai.text) : "⏳ The AI is busy right now, so I couldn't answer that question. Please ask again in a minute.\n\nThese always work instantly: a job no (J-193), a container no, a BE no, SUMMARY or URGENT."
     }
     await send(person.phone, { text: reply })
-    const next = [...history, { role: 'user', text: String(text).slice(0, 500) }, { role: 'model', text: String(reply).slice(0, 1500) }].slice(-10)
+    const note = checked.length ? `\n[checked: ${checked.join('; ').slice(0, 400)}]` : ''
+    const next = [...history, { role: 'user', text: String(text).slice(0, 500) }, { role: 'model', text: `${String(reply).slice(0, 1500)}${note}` }].slice(-10)
     await admin.from('bot_inbox').update({ history: next }).eq('phone', person.phone)
   }
 }
@@ -305,13 +311,19 @@ Deno.serve(async (req) => {
         const [team, data] = await Promise.all([loadTeam(admin), loadDataCached(admin)])
         const person = team[0]
         const out = []
+        const chat = !!JSON.parse(raw).conversation
+        const convo: any[] = []
         const gap = Math.min(Number(JSON.parse(raw).gap) || 0, 20_000) // pause between questions, like a person typing
         for (const q of questions) {
           if (out.length && gap) await new Promise((r) => setTimeout(r, gap))
           const t0 = Date.now()
           const fixed = answer(data, q, person, new Date(), { fallback: false })
-          const ai = fixed ? null : await askAssistant(q, [], data, person)
-          out.push({ q, a: fixed || (ai?.text ? toWhatsApp(ai.text) : null), how: fixed ? 'fixed' : ai?.note, ms: Date.now() - t0 })
+          const ai = fixed ? null : await askAssistant(q, chat ? convo : [], data, person)
+          const a = fixed || (ai?.text ? toWhatsApp(ai.text) : null)
+          out.push({ q, a, how: fixed ? 'fixed' : ai?.note, checked: ai?.checked, ms: Date.now() - t0 })
+          // conversation mode: each question sees the earlier ones, like a real chat
+          const note = ai?.checked?.length ? `\n[checked: ${ai.checked.join('; ')}]` : ''
+          if (chat) convo.push({ role: 'user', text: q }, { role: 'model', text: `${a || ''}${note}` })
         }
         return json({ success: true, answers: out, groq: questions.length ? undefined : await groqInfo() })
       }

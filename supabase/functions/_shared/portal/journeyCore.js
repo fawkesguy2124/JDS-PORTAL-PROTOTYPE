@@ -101,6 +101,7 @@ const DAYS_BEFORE_ETA = 20
 const LATER_TRIP_AFTER_DAYS = 60
 // CFS OUT then CFS/ICD IN this soon (or before OOC) = moved between CFSs, not delivered
 const TRANSFER_WITHIN_DAYS = 3
+const TRANSFER_BEFORE_OOC_DAYS = 15
 
 export function containerTrip(row, job) {
   const ms = (Array.isArray(row?.milestones) ? row.milestones : [])
@@ -127,7 +128,10 @@ export function containerTrip(row, job) {
   for (let k = 0; k < after.length; k++) {
     if (!LEFT_CFS.test(NAME(after[k]))) continue
     const nxt = after.slice(k + 1).find((m) => !/TOLL|STATION|GATE CROSSED/.test(NAME(m)))
-    const isTransfer = nxt && AT_CFS.test(NAME(nxt)) && !/EMPTY/.test(NAME(nxt)) && (!pastOoc || WHEN(nxt) - WHEN(after[k]) <= TRANSFER_WITHIN_DAYS * DAY)
+    // before OOC a CFS-to-CFS move can take a while, but not months: a CFS IN long
+    // after (e.g. 3 months) is the empty box's next life, so this was the real exit
+    const gap = nxt ? WHEN(nxt) - WHEN(after[k]) : Infinity
+    const isTransfer = nxt && AT_CFS.test(NAME(nxt)) && !/EMPTY/.test(NAME(nxt)) && gap <= (pastOoc ? TRANSFER_WITHIN_DAYS : TRANSFER_BEFORE_OOC_DAYS) * DAY
     if (isTransfer) continue
     exit = after[k]
     break

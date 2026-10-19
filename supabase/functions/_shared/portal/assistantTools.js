@@ -34,6 +34,19 @@ const inRange = (iso, from, to) => {
 // portal document types are short codes (BL, BE, COO…): map spoken names to them
 const DOC_ALIAS = { BILLOFLADING: 'BL', HBL: 'BL', MBL: 'BL', AWB: 'BL', BILLOFENTRY: 'BE', CERTIFICATEOFORIGIN: 'COO', PACKING: 'PACKINGLIST', PL: 'PACKINGLIST', COMMERCIALINVOICE: 'INVOICE', INV: 'INVOICE', EWAY: 'EWAYBILL', PROOFOFDELIVERY: 'POD', EXAMORDER: 'EXAMINATIONORDER', OUTOFCHARGE: 'OOC' }
 const docType = (s) => DOC_ALIAS[norm(s)] || norm(s)
+// what staff may call an event → the name in the tracking data
+const EVENT_ALIAS = { CFSGATEOUT: 'CFSOUT', CFSGATEIN: 'CFSIN', ICDGATEOUT: 'ICDOUT', ICDGATEIN: 'ICDIN', OUTOFCFS: 'CFSOUT', OUTOFPORT: 'PORTOUT', PORTGATEOUT: 'GATEOUT', PORTGATEIN: 'GATEIN', DISCHARGED: 'PORTIN', ARRIVED: 'PORTIN', TOLL: 'TOLLPLAZACROSSED', ONROAD: 'TOLLPLAZACROSSED', ONRAIL: 'STATIONCROSSED' }
+// what kind of place a container is at, from the place name and the event
+const placeType = (where, ev) => {
+  const w = String(where || '').toUpperCase()
+  const e = String(ev || '').toUpperCase()
+  if (/STATION|LOADING|RAIL/.test(e) || /RAIL|STATION/.test(w)) return 'rail'
+  if (/TOLL|GATE CROSSED|TRANSIT/.test(e) || /TOLL/.test(w)) return 'road'
+  if (/\bICD\b/.test(w) || /^ICD/.test(e)) return 'ICD'
+  if (/\bCFS\b|LOGISTICS PARK|WAREHOUS/.test(w) || /^CFS/.test(e)) return 'CFS'
+  if (/TERMINAL|PORT|GATE|JNPA|NSICT|NSFT|NSIGT|GTI|BMCT|PSA|APMT/.test(w) || /^(PORT|GATE|TERMINAL|DPD)/.test(e)) return 'port'
+  return 'unknown'
+}
 const PORT_ALIAS = { JNPT: 'INNSA', NHAVASHEVA: 'INNSA', NSA: 'INNSA', JNPA: 'INNSA', MUMBAI: 'INBOM1', MUMBAIPORT: 'INBOM1', MBPT: 'INBOM1', AIR: 'INBOM4', MUMBAIAIR: 'INBOM4', SAHAR: 'INBOM4' }
 const STAGE = ['Job created', 'Docs received', 'Verification', 'BE filing', 'Customs review', 'Assessment', 'Duty paid', 'OOC', 'Out of port', 'In transit', 'Delivered']
 
@@ -315,7 +328,8 @@ function runToolRaw(name, args, data, person) {
     }
   }
   if (name === 'list_containers') {
-    const want = norm(args?.last_event)
+    const want = EVENT_ALIAS[norm(args?.last_event)] || norm(args?.last_event)
+    const pool = [] // every current box before the event filter, to say which events exist
     const stage = args?.stage && args.stage !== 'any' ? args.stage : null
     const c = norm(args?.client)
     const jn = norm(args?.job).replace(/^J/, '')
@@ -335,7 +349,6 @@ function runToolRaw(name, args, data, person) {
         const freeLeft = live?.freeLeft ?? null
         const ev = String(t.status_text || '').toUpperCase().trim()
         const st = boxStage(t, r.job, trip, fin, freeLeft)
-        if (want && norm(ev) !== want) continue
         if (stage && st !== stage) continue
         const lastAt = (Array.isArray(t.milestones) ? t.milestones : []).map((m) => m?.date).filter(Boolean).sort().at(-1)
         // current containers only: skip boxes already back empty, and boxes with no
@@ -344,12 +357,19 @@ function runToolRaw(name, args, data, person) {
         if (!stage && !old && lastAt && Date.now() - new Date(lastAt).getTime() > 30 * 864e5) continue
         if (place && !has2(t.current_location, args.place)) continue
         if (!inRange(lastAt, args?.moved_from, args?.moved_to)) continue
-        out.push({ container: no, job: r.job.job_no, client: r.job.client || null, last_event: ev || null, where: t.current_location || null, when: day(lastAt), stage: st, free_days_left: freeLeft })
+        const row = { container: no, job: r.job.job_no, client: r.job.client || null, last_event: ev || null, where: t.current_location || null, place_type: placeType(t.current_location, ev), when: day(lastAt), stage: st, free_days_left: freeLeft }
+        pool.push(row)
+        if (!want || norm(ev) === want) out.push(row)
       }
     }
     const limit = Math.min(Math.max(Number(args?.limit) || 30, 1), 60)
     const byEvent = {}
     for (const x of out) byEvent[x.last_event || 'none'] = (byEvent[x.last_event || 'none'] || 0) + 1
+    if (want && !out.length) {
+      const now = {}
+      for (const x of pool) now[x.last_event || 'none'] = (now[x.last_event || 'none'] || 0) + 1
+      return { filter: { last_event: args?.last_event, matched_as: want }, total: 0, note: `No current container has "${args?.last_event}" as its latest event. These are the latest events right now (use these exact names):`, events_now: now }
+    }
     return { filter: { last_event: args?.last_event || null, stage: stage || 'any', client: args?.client || null, job: args?.job || null, place: args?.place || null, moved_from: args?.moved_from || null, moved_to: args?.moved_to || null, include_old: old }, total: out.length, shown: Math.min(limit, out.length), counts_by_last_event: byEvent, containers: out.slice(0, limit) }
   }
   return { error: `unknown tool ${name}` }
@@ -396,10 +416,12 @@ Rules:
 - You can only READ. For changes (mark delivered, assign truck, notes), say WhatsApp changes are coming soon; use the portal for now.
 - Reply in the question's language: an English question gets an English answer; Hindi or Hinglish only when the question itself is in Hindi/Hinglish. WhatsApp style: short, *bold* key facts, "• " bullets, no tables or headers, about 12 lines max unless a full list is asked.
 - free_days_left below 0 = detention running that many days. Never mention tools, JSON or AI.
-- Container tracking events (staff use these words): PORT IN (unloaded at the port), PORT OUT (left the port, usually to a CFS), CFS IN / ICD IN (entered the CFS / ICD), CFS OUT / ICD OUT (left with cargo for the client), GATE IN / GATE OUT, TOLL PLAZA CROSSED (on the road), DPD (direct port delivery). "Containers in port out" or "port out containers" = containers whose latest event is PORT OUT: use list_containers with last_event. Same for any other event name.
+- Container tracking events (staff use these words): PORT IN (unloaded at the port), PORT OUT (left the port terminal, usually to a CFS), CFS IN / ICD IN (entered the CFS / ICD), CFS OUT / ICD OUT (left with cargo for the client; "CFS gate out" = CFS OUT), GATE IN / GATE OUT (a PORT gate, not a CFS), GATE CROSSED / TOLL PLAZA CROSSED (on the road), STATION CROSSED / LOADING (on rail), DPD (direct port delivery), DPE (export). Use place_type to say where it is (port, CFS, ICD, road, rail); never call an event or place by a name the data doesn't show. "Containers in port out" or "port out containers" = containers whose latest event is PORT OUT: use list_containers with last_event. Same for any other event name.
 - Which tool: one job / container / BE / BL / truck number → get_job. Jobs by ANY field, date range, count, "how many", "per client", averages → search_jobs (combine filters freely; use group_by for counts per group). A container's full journey → container_history. "What happened", updates, who did what, uploads → recent_activity. Containers by event, place or movement date → list_containers.
 - Use the date ranges above exactly as given (YYYY-MM-DD). "OOC granted / BE filed / arrived in a period" → search_jobs with ooc_/be_/arrived_ dates (the real dates); recent_activity only shows when staff recorded something in the portal.
 - The portal does NOT hold: payments, duty or invoice amounts, freight rates, bank details, phone numbers or emails of clients/CFS/transporters, or the contents of documents. If asked, say plainly the portal doesn't have that. Only for duty suggest ICEGATE / LiveImpex; for DO or line charges the shipping line. Never invent other places to look.
 - If a tool answers with not_found or zero jobs, say so plainly and suggest the closest thing you can check (e.g. a similar client name).
+- Follow-ups: your earlier replies end with "[checked: …]" = the exact checks behind them (never write such a line yourself). "What about X" = the same check with X changed. "Are you sure?" / "check again" = run the same check again; if it agrees, say yes and why (event, place, date); if your earlier answer was wrong, say so plainly and give the right one. Never contradict yourself without explaining.
+- If a check finds nothing, say what the data DOES show (e.g. the events containers are at right now), not just "none".
 - Don't ask the user to clarify when the meaning is reasonably clear: pick the most likely meaning, answer it, and mention the other reading in one short line if useful.
-- Bold in WhatsApp is single asterisks: *like this*. Never use **double**.`
+- Bold in WhatsApp is single asterisks: *like this*. Never use **double**, and never bold inside bold.`
