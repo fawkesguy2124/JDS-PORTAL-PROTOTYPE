@@ -134,6 +134,25 @@ export function runTool(name, args, data, person) {
   return { error: `unknown tool ${name}` }
 }
 
+// Today's basics, given with every question so simple ones need no tool call
+export function TODAY_BRIEF(data, person) {
+  const counts = runTool('today_counts', {}, data, person)
+  const lines = []
+  for (const job of jobsFor(person, data.jobs)) {
+    if (isDelivered(job)) continue
+    const j = journeyFor(job, data)
+    if (j.phase === 'delivered') continue
+    const a = j.attention.find((x) => x.level === 'red') || j.attention.find((x) => x.level === 'amber')
+    if (a) lines.push(`${a.level === 'red' ? 'URGENT' : 'TO DO'} ${job.job_no} ${job.client || ''}: ${a.text}`)
+  }
+  lines.sort((x, y) => (x.startsWith('URGENT') ? 0 : 1) - (y.startsWith('URGENT') ? 0 : 1))
+  return `Today's basics (from the portal, right now):
+Counts: ${Object.entries(counts).filter(([k]) => k !== 'date').map(([k, v]) => `${k.replace(/_/g, ' ')} ${v}`).join(', ')}.
+Jobs that need attention:
+${lines.slice(0, 20).join('\n') || 'none'}${lines.length > 20 ? `\n(+${lines.length - 20} more: use list_jobs)` : ''}
+For anything not shown here (a job's details, containers, a client's jobs, other lists), use the tools.`
+}
+
 export const SYSTEM_PROMPT = (person, now = new Date()) => `You are the WhatsApp assistant of JDS Logistics, a customs broker (CHA) in Navi Mumbai that clears IMPORT cargo at JNPT / Nhava Sheva, Mumbai Port and Mumbai air cargo, and moves it to the client's warehouse by truck or by rail.
 You are talking to ${person?.name || 'a JDS team member'} (JDS staff).
 Today is ${now.toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: TZ })}, ${now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: TZ })} India time.

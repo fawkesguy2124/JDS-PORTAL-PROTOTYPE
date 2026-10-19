@@ -3,7 +3,7 @@
 // sees job facts from those tools, never documents, and never calls ULIP.
 //
 // Secrets: GEMINI_API_KEY (required); GEMINI_MODEL (optional, default below).
-import { TOOLS, runTool, SYSTEM_PROMPT } from '../_shared/portal/assistantTools.js'
+import { TOOLS, runTool, SYSTEM_PROMPT, TODAY_BRIEF } from '../_shared/portal/assistantTools.js'
 
 const API = 'https://generativelanguage.googleapis.com/v1beta/models'
 // tried in order; a model Google has retired (404) is skipped
@@ -38,9 +38,11 @@ export async function askAssistant(question: string, history: Turn[], data: unkn
     { role: 'user', parts: [{ text: question }] },
   ]
   const base = {
-    systemInstruction: { parts: [{ text: SYSTEM_PROMPT(person) }] },
+    // today's basics up front, so simple questions need no tool round trip
+    systemInstruction: { parts: [{ text: `${SYSTEM_PROMPT(person)}\n\n${TODAY_BRIEF(data, person)}` }] },
     tools: [{ functionDeclarations: TOOLS }],
-    generationConfig: { temperature: 0.2, maxOutputTokens: 1200, thinkingConfig: { thinkingBudget: 512 } },
+    // thinking off: much faster, and the tools give it the facts anyway
+    generationConfig: { temperature: 0.2, maxOutputTokens: 900, thinkingConfig: { thinkingBudget: 0 } },
   }
 
   const controller = new AbortController()

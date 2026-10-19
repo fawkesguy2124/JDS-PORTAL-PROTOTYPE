@@ -56,6 +56,28 @@ async function loadData(admin: Admin) {
   return buildJourneyData({ jobs, customs, results, containers })
 }
 
+// For questions: reuse the data loaded in the last minute (the bot stays warm
+// between messages), so a follow-up question doesn't wait for a fresh load.
+// Scheduled alerts and the summary always load fresh.
+const DATA_FRESH_MS = 60_000
+let dataCache: { at: number; data: any } | null = null
+async function loadDataCached(admin: Admin) {
+  if (dataCache && Date.now() - dataCache.at < DATA_FRESH_MS) return dataCache.data
+  const data = await loadData(admin)
+  dataCache = { at: Date.now(), data }
+  return data
+}
+
+// Shows "typing…" in the person's chat (and marks their message read) right away
+async function showTyping(messageId: string) {
+  if (!sendingOn() || !messageId) return
+  await fetch(`${GRAPH}/${env('WHATSAPP_PHONE_ID')}/messages`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${env('WHATSAPP_TOKEN')}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ messaging_product: 'whatsapp', status: 'read', message_id: messageId, typing_indicator: { type: 'text' } }),
+  }).catch(() => {})
+}
+
 async function loadTeam(admin: Admin): Promise<Person[]> {
   const { data, error } = await admin.from('profiles').select('id, name, email, role')
   if (error) throw new Error(error.message)
@@ -156,18 +178,25 @@ async function handleInbound(admin: Admin, payload: any) {
       const { error: dup } = await admin.from('bot_sent').insert({ key: `in:${m.id}`, phone: person.phone, kind: 'inbound' })
       if (dup?.code === '23505') continue
     }
-    // the last few messages, so follow-up questions make sense
-    const { data: inbox } = await admin.from('bot_inbox').select('history').eq('phone', person.phone).maybeSingle()
-    const history = Array.isArray(inbox?.history) ? inbox.history : []
-    await admin.from('bot_inbox').upsert({ phone: person.phone, last_inbound_at: new Date().toISOString() })
+    const started = Date.now()
+    const typing = showTyping(m.id) // "typing…" appears straight away
     const text = m.type === 'text' ? m.text?.body : m.type === 'button' ? m.button?.text : ''
+    // the last few messages (so follow-ups make sense) and the portal data, loaded together
+    const [inboxRes, loaded] = await Promise.all([
+      admin.from('bot_inbox').select('history').eq('phone', person.phone).maybeSingle(),
+      data ? Promise.resolve(data) : loadDataCached(admin),
+      admin.from('bot_inbox').upsert({ phone: person.phone, last_inbound_at: new Date().toISOString() }),
+      typing,
+    ])
+    data = loaded
+    const history = Array.isArray(inboxRes?.data?.history) ? inboxRes.data.history : []
     if (!text) { await send(person.phone, { text: 'Please send text: ask a question, or a job no, a container no or SUMMARY.' }); continue }
-    data ||= await loadData(admin)
     // fixed commands are instant and free; anything else goes to the assistant
     let reply = answer(data, text, person, new Date(), { fallback: false })
     if (!reply) {
+      const aiStart = Date.now()
       const ai = await askAssistant(text, history, data, person)
-      console.log(`[wa-bot] assistant: ${ai.note}`)
+      console.log(`[wa-bot] assistant: ${ai.note} | data ${aiStart - started} ms, AI ${Date.now() - aiStart} ms`)
       reply = ai.text || "⏳ Google's AI is busy right now, so I couldn't answer that question. Please ask again in a minute.\n\nThese always work instantly: a job no (J-193), a container no, a BE no, SUMMARY or URGENT."
     }
     await send(person.phone, { text: reply })
