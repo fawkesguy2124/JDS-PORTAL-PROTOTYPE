@@ -7,7 +7,9 @@ import { TOOLS, runTool, SYSTEM_PROMPT } from '../_shared/portal/assistantTools.
 
 const API = 'https://generativelanguage.googleapis.com/v1beta/models'
 // tried in order; a model Google has retired (404) is skipped
-const MODELS = () => [Deno.env.get('GEMINI_MODEL'), 'gemini-2.5-flash', 'gemini-flash-latest', 'gemini-2.5-flash-lite'].filter(Boolean) as string[]
+// an overloaded (503) or rate-limited (429) model is retried once, then the next is tried
+const MODELS = () => [...new Set([Deno.env.get('GEMINI_MODEL'), 'gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-flash-latest', 'gemini-flash-lite-latest'].filter(Boolean))] as string[]
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 const MAX_TOOL_ROUNDS = 5
 const TIME_LIMIT_MS = 45_000
 
@@ -44,13 +46,19 @@ export async function askAssistant(question: string, history: Turn[], data: unkn
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), TIME_LIMIT_MS)
   try {
+    const tried: string[] = []
     for (const model of MODELS()) {
       let rounds = 0
+      let retried = false
+      let skip = false
       const convo = [...contents]
       while (rounds <= MAX_TOOL_ROUNDS) {
         const { status, out } = await callGemini(model, { ...base, contents: convo }, key, controller.signal)
-        if (status === 404) break // model retired: try the next one
-        if (status === 429) return { text: null, note: `quota (${model})` }
+        if (status === 404) { tried.push(`${model}: not available`); skip = true; break }
+        if (status === 429 || status >= 500) {
+          if (!retried) { retried = true; await sleep(2000); continue } // busy: one quick retry
+          tried.push(`${model}: ${status}`); skip = true; break // still busy: next model
+        }
         if (status >= 400) return { text: null, note: `gemini ${status}: ${String(out?.error?.message || '').slice(0, 120)}` }
         const content = out?.candidates?.[0]?.content
         const parts: any[] = content?.parts || []
@@ -71,9 +79,9 @@ export async function askAssistant(question: string, history: Turn[], data: unkn
         })
         rounds++
       }
-      if (rounds > MAX_TOOL_ROUNDS) return { text: null, note: 'too many tool rounds' }
+      if (!skip && rounds > MAX_TOOL_ROUNDS) return { text: null, note: 'too many tool rounds' }
     }
-    return { text: null, note: 'no Gemini model available' }
+    return { text: null, note: `all Gemini models busy (${tried.join(', ')})` }
   } catch (e) {
     return { text: null, note: (e as Error).name === 'AbortError' ? 'gemini timed out' : (e as Error).message }
   } finally {

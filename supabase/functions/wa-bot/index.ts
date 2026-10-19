@@ -168,7 +168,7 @@ async function handleInbound(admin: Admin, payload: any) {
     if (!reply) {
       const ai = await askAssistant(text, history, data, person)
       console.log(`[wa-bot] assistant: ${ai.note}`)
-      reply = ai.text || `${answer(data, text, person)}\n\n(The assistant is busy right now. Please try again in a minute.)`
+      reply = ai.text || "⏳ Google's AI is busy right now, so I couldn't answer that question. Please ask again in a minute.\n\nThese always work instantly: a job no (J-193), a container no, a BE no, SUMMARY or URGENT."
     }
     await send(person.phone, { text: reply })
     const next = [...history, { role: 'user', text: String(text).slice(0, 500) }, { role: 'model', text: String(reply).slice(0, 1500) }].slice(-10)
