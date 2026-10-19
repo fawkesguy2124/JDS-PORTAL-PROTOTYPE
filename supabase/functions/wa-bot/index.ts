@@ -17,6 +17,7 @@
 import { adminClient, json } from '../_shared/ulip.ts'
 import { buildJourneyData } from '../_shared/portal/journeyCore.js'
 import { morningSummary, instantAlerts, answer, teamFromProfiles } from '../_shared/portal/botMessages.js'
+import { askAssistant } from './assistant.ts'
 
 const GRAPH = 'https://graph.facebook.com/v21.0'
 const DAY = 24 * 60 * 60 * 1000
@@ -150,11 +151,28 @@ async function handleInbound(admin: Admin, payload: any) {
   for (const m of messages) {
     const person = team.find((t) => t.phone === String(m.from))
     if (!person) continue // not a JDS team number: ignore silently
+    // WhatsApp resends a message when we are slow: answer each message once
+    if (m.id) {
+      const { error: dup } = await admin.from('bot_sent').insert({ key: `in:${m.id}`, phone: person.phone, kind: 'inbound' })
+      if (dup?.code === '23505') continue
+    }
+    // the last few messages, so follow-up questions make sense
+    const { data: inbox } = await admin.from('bot_inbox').select('history').eq('phone', person.phone).maybeSingle()
+    const history = Array.isArray(inbox?.history) ? inbox.history : []
     await admin.from('bot_inbox').upsert({ phone: person.phone, last_inbound_at: new Date().toISOString() })
     const text = m.type === 'text' ? m.text?.body : m.type === 'button' ? m.button?.text : ''
+    if (!text) { await send(person.phone, { text: 'Please send text: ask a question, or a job no, a container no or SUMMARY.' }); continue }
     data ||= await loadData(admin)
-    const reply = text ? answer(data, text, person) : 'Please send text: a job no, a container no, a BE no or SUMMARY.'
+    // fixed commands are instant and free; anything else goes to the assistant
+    let reply = answer(data, text, person, new Date(), { fallback: false })
+    if (!reply) {
+      const ai = await askAssistant(text, history, data, person)
+      console.log(`[wa-bot] assistant: ${ai.note}`)
+      reply = ai.text || `${answer(data, text, person)}\n\n(The assistant is busy right now. Please try again in a minute.)`
+    }
     await send(person.phone, { text: reply })
+    const next = [...history, { role: 'user', text: String(text).slice(0, 500) }, { role: 'model', text: String(reply).slice(0, 1500) }].slice(-10)
+    await admin.from('bot_inbox').update({ history: next }).eq('phone', person.phone)
   }
 }
 
@@ -225,10 +243,12 @@ Deno.serve(async (req) => {
     console.warn(`[wa-bot] bad signature: header ${sig ? 'present' : 'missing'}; app secret ${secret ? `set, ${secret.length} chars (Meta's are 32)${/^[0-9a-f]+$/.test(secret) ? '' : ', has characters other than 0-9 a-f'}` : 'not set'}; token ${env('WHATSAPP_TOKEN').length} chars`)
     return new Response('Bad signature', { status: 401 })
   }
-  try {
-    await handleInbound(admin, JSON.parse(raw))
-  } catch (e) {
-    console.error('[wa-bot] inbound failed:', (e as Error).message)
-  }
+  // reply in the background: Meta gets its 200 at once (it retries slow answers)
+  let payload: unknown = null
+  try { payload = JSON.parse(raw) } catch { return new Response('ok', { status: 200 }) }
+  const work = handleInbound(admin, payload).catch((e) => console.error('[wa-bot] inbound failed:', (e as Error).message))
+  // @ts-ignore EdgeRuntime is provided by Supabase
+  if (typeof EdgeRuntime !== 'undefined' && EdgeRuntime?.waitUntil) EdgeRuntime.waitUntil(work)
+  else await work
   return new Response('ok', { status: 200 }) // always 200, or Meta keeps retrying
 })

@@ -213,6 +213,7 @@ const HELP = [
   '• a BE no (7 digits)',
   '• SUMMARY for today\'s list',
   '• URGENT for urgent jobs only',
+  '• or just ask, e.g. "which PCM jobs are waiting for OOC?"',
 ].join('\n')
 
 function jobCard(job, data) {
@@ -238,7 +239,9 @@ function jobCard(job, data) {
   return lines.join('\n\n')
 }
 
-export function answer(data, message, person, now = new Date()) {
+// Fixed commands (instant, no AI). With { fallback: false } it returns null for
+// anything else, so the bot can pass the question to the assistant.
+export function answer(data, message, person, now = new Date(), { fallback = true } = {}) {
   const text = oneLine(message).toUpperCase()
   if (!text || /^(HI|HELLO|HELP|MENU|\?)$/.test(text)) return HELP
   if (/^(SUMMARY|TODAY|SUMMARY PLEASE)$/.test(text)) return morningSummary(data, person, now).text
@@ -268,12 +271,13 @@ export function answer(data, message, person, now = new Date()) {
     const job = data.jobs.find((j) => String(j.be_no || '').trim() === text)
     return job ? jobCard(job, data) : `I could not find BE ${text}.`
   }
-  // client name: list their open jobs
-  if (text.length >= 3) {
+  // client name: list their open jobs (one or two words only, not a sentence)
+  if (text.length >= 3 && text.split(' ').length <= 2) {
     const hits = data.jobs.filter((j) => !isDelivered(j) && String(j.client || '').toUpperCase().includes(text))
     if (hits.length === 1) return jobCard(hits[0], data)
     if (hits.length > 1) return section(`Open jobs for "${oneLine(message)}" (${hits.length})`, hits.map((j) => `${j.job_no}: ${journeyFor(j, data).steps.find((s) => s.current)?.nextText || 'in progress'}`)) + '\n\nReply a job no for details.'
   }
+  if (!fallback) return null
   return `Sorry, I did not understand "${oneLine(message).slice(0, 40)}".\n\n${HELP}`
 }
 
