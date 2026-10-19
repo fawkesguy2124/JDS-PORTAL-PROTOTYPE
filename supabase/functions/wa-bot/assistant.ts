@@ -8,7 +8,11 @@ import { TOOLS, runTool, SYSTEM_PROMPT, TODAY_BRIEF } from '../_shared/portal/as
 const API = 'https://generativelanguage.googleapis.com/v1beta/models'
 // tried in order; a model Google has retired (404) is skipped
 // an overloaded (503) or rate-limited (429) model is retried once, then the next is tried
-const MODELS = () => [...new Set([Deno.env.get('GEMINI_MODEL'), 'gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-flash-latest', 'gemini-flash-lite-latest'].filter(Boolean))] as string[]
+// The model that answered last time goes first (Google's busy models change during the day).
+let lastGood: string | null = null
+// models that refused "thinking off" don't get that setting again
+const noThinkingSetting = new Set<string>()
+const MODELS = () => [...new Set([lastGood, Deno.env.get('GEMINI_MODEL'), 'gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-flash-latest', 'gemini-flash-lite-latest'].filter(Boolean))] as string[]
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 const MAX_TOOL_ROUNDS = 5
 const TIME_LIMIT_MS = 45_000
@@ -49,24 +53,28 @@ export async function askAssistant(question: string, history: Turn[], data: unkn
   const timer = setTimeout(() => controller.abort(), TIME_LIMIT_MS)
   try {
     const tried: string[] = []
-    for (const model of MODELS()) {
+    const models = MODELS()
+    for (const [i, model] of models.entries()) {
       let rounds = 0
       let retried = false
       let skip = false
-      let config: any = base.generationConfig
+      const { thinkingConfig, ...plain } = base.generationConfig
+      let config: any = noThinkingSetting.has(model) ? plain : { ...plain, thinkingConfig }
       const convo = [...contents]
       while (rounds <= MAX_TOOL_ROUNDS) {
         const { status, out } = await callGemini(model, { ...base, generationConfig: config, contents: convo }, key, controller.signal)
         if (status === 404) { tried.push(`${model}: not available`); skip = true; break }
         if (status === 429 || status >= 500) {
-          if (!retried) { retried = true; await sleep(2000); continue } // busy: one quick retry
-          tried.push(`${model}: ${status}`); skip = true; break // still busy: next model
+          // busy: go straight to the next model; only the last one gets a short wait and retry
+          if (i === models.length - 1 && !retried) { retried = true; await sleep(1500); continue }
+          if (lastGood === model) lastGood = null
+          tried.push(`${model}: ${status}`); skip = true; break
         }
         if (status === 400 && config.thinkingConfig) {
-          // some models don't accept "thinking off": ask again without that setting
-          console.warn(`[wa-bot] ${model} refused the request (${String(out?.error?.message || '').slice(0, 160)}); retrying without the thinking setting`)
-          const { thinkingConfig: _drop, ...rest } = config
-          config = rest
+          // some models don't accept "thinking off": ask again without that setting, and remember
+          console.warn(`[wa-bot] ${model} refused the thinking setting (${String(out?.error?.message || '').slice(0, 160)}); retrying without it`)
+          noThinkingSetting.add(model)
+          config = plain
           continue
         }
         if (status >= 400) {
@@ -79,7 +87,8 @@ export async function askAssistant(question: string, history: Turn[], data: unkn
         const calls = parts.filter((p) => p.functionCall)
         if (!calls.length) {
           const text = parts.map((p) => p.text || '').join('').trim()
-          return text ? { text, note: `${model}, ${rounds} tool round(s)` } : { text: null, note: `empty answer (${out?.candidates?.[0]?.finishReason || 'no candidate'})` }
+          if (text) lastGood = model
+          return text ? { text, note: `${model}, ${rounds} tool round(s)${tried.length ? ` (skipped ${tried.join(', ')})` : ''}` } : { text: null, note: `empty answer (${out?.candidates?.[0]?.finishReason || 'no candidate'})` }
         }
         // run the tools the model asked for and hand back the results
         convo.push({ role: 'model', parts })
