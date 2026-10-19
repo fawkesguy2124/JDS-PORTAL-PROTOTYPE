@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { Icon } from './ui'
@@ -11,11 +11,17 @@ import { Icon } from './ui'
 const fmt = (v) => { if (!v) return ''; const d = new Date(v); return isNaN(d) ? String(v) : d.toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }) }
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]))
 const STALE_HOURS = 6
+const fit = (m, bounds) => {
+  if (bounds.length === 1) m.setView(bounds[0], 11)
+  else if (bounds.length) m.fitBounds(L.latLngBounds(bounds).pad(0.25))
+}
 
 export default function TruckMap({ trucks, selectedId, onSelect }) {
   const box = useRef(null)
   const map = useRef(null)
   const layer = useRef(null)
+  const [big, setBig] = useState(false) // expanded to fill the screen
+  const lastBounds = useRef([])
 
   useEffect(() => {
     if (!box.current || map.current) return
@@ -56,16 +62,33 @@ export default function TruckMap({ trucks, selectedId, onSelect }) {
         .addTo(layer.current)
       if (!bounds.length && !selectedId) bounds.push(t.last.pos)
     }
-    if (!bounds.length) shown.forEach((t) => bounds.push(t.last.pos))
-    if (bounds.length === 1) m.setView(bounds[0], 11)
-    else if (bounds.length) m.fitBounds(L.latLngBounds(bounds).pad(0.25))
+    // expanded: show every truck, not just the selected one
+    if (!bounds.length || big) shown.forEach((t) => bounds.push(t.last.pos))
+    lastBounds.current = bounds
+    fit(m, bounds)
     // the page layout can change size after the first draw
     setTimeout(() => m.invalidateSize(), 0)
   }) // redraw on every render: the lists are small
 
+  // expanded: fit the map to its new size, zoom with the mouse wheel, Esc closes
+  useEffect(() => {
+    const m = map.current
+    if (!m) return
+    setTimeout(() => { m.invalidateSize(); fit(m, lastBounds.current) }, 60)
+    if (big) m.scrollWheelZoom.enable(); else m.scrollWheelZoom.disable()
+    if (!big) return
+    const onKey = (e) => { if (e.key === 'Escape') setBig(false) }
+    window.addEventListener('keydown', onKey)
+    const overflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => { window.removeEventListener('keydown', onKey); document.body.style.overflow = overflow }
+  }, [big])
+
   const unplaced = trucks.filter((t) => t.points.length && !placed.find((p) => p.id === t.id)?.last)
   return (
-    <div className="ix-realmap">
+    <>
+    {big && <div className="ix-realmap-backdrop" onClick={() => setBig(false)} />}
+    <div className={`ix-realmap ${big ? 'big' : ''}`}>
       <div ref={box} className="ix-realmap-canvas" role="img" aria-label="Map of trucks on the road" />
       {!shown.length && (
         <div className="ix-realmap-msg">
@@ -78,6 +101,11 @@ export default function TruckMap({ trucks, selectedId, onSelect }) {
         <span><i style={{ background: '#b91c1c' }} />No crossing for {STALE_HOURS} h+</span>
         {unplaced.length > 0 && <span style={{ color: 'var(--muted)' }}>{unplaced.length} truck{unplaced.length === 1 ? '' : 's'} at a plaza we can’t place</span>}
       </div>
+      <button type="button" className="ix-realmap-expand" onClick={() => setBig((b) => !b)}
+        title={big ? 'Make the map small again (Esc)' : 'Expand the map'} aria-label={big ? 'Make the map small again' : 'Expand the map'}>
+        <Icon name={big ? 'arrows-diagonal-minimize-2' : 'arrows-diagonal'} />
+      </button>
     </div>
+    </>
   )
 }
