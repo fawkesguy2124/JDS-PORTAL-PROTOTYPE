@@ -201,7 +201,11 @@ Deno.serve(async (req) => {
   // 3. scheduler
   const cron = req.headers.get('x-bot-secret')
   if (cron !== null) {
-    if (!env('BOT_CRON_SECRET') || cron !== env('BOT_CRON_SECRET')) return json({ success: false, error: 'Not allowed' }, 403)
+    // the scheduler's password: the BOT_CRON_SECRET secret, or the one the database
+    // made for its own schedule (bot_state.cron_token, never shown to anyone)
+    const { data: st } = await admin.from('bot_state').select('cron_token').eq('id', 1).maybeSingle()
+    const allowed = [env('BOT_CRON_SECRET'), String(st?.cron_token || '').trim()].filter((v) => v.length >= 20)
+    if (!cron || !allowed.includes(cron.trim())) return json({ success: false, error: 'Not allowed' }, 403)
     let run = ''
     try { run = JSON.parse(raw || '{}').run } catch { /* below */ }
     try {

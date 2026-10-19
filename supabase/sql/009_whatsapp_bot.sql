@@ -42,3 +42,14 @@ insert into bot_state (id) values (1) on conflict (id) do nothing;
 --   $$ select net.http_post('https://<PROJECT>.supabase.co/functions/v1/wa-bot',
 --        '{"run":"alerts"}'::jsonb, '{}'::jsonb,
 --        '{"Content-Type":"application/json","x-bot-secret":"<BOT_CRON_SECRET>"}'::jsonb) $$);
+
+-- ── What was actually run (19 Oct 2026) ──
+-- The scheduler uses its own password made in the database (bot_state.cron_token),
+-- so nobody pastes a secret. wa-bot accepts it (or the BOT_CRON_SECRET secret).
+-- alter table public.bot_state add column if not exists cron_token text;
+-- update public.bot_state set cron_token = md5(random()::text || clock_timestamp()::text) || md5(random()::text || clock_timestamp()::text) where id = 1 and cron_token is null;
+-- select cron.schedule('wa-bot-morning', '30 3 * * *', $$ select net.http_post(url := '.../functions/v1/wa-bot',
+--   body := '{"run":"morning"}'::jsonb, headers := jsonb_build_object('Content-Type','application/json',
+--   'x-bot-secret', (select cron_token from public.bot_state where id = 1)), timeout_milliseconds := 60000) $$);
+-- same for 'wa-bot-alerts', '*/15 2-15 * * *' with {"run":"alerts"}
+-- To pause the bot:  select cron.unschedule('wa-bot-morning'); select cron.unschedule('wa-bot-alerts');
