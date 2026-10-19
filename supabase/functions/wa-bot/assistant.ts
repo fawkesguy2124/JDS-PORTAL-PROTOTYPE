@@ -46,6 +46,14 @@ export async function askAssistant(question: string, history: Turn[], data: unkn
   const g = await askGemini(question, history, data, person, used)
   return g.text ? { text: g.text, note: `${g.note} (Groq: ${q.note})`, checked: used } : { text: null, note: `Groq: ${q.note} | Gemini: ${g.note}`, checked: used }
 }
+// Questions about JDS's own jobs/containers MUST be checked in the portal first:
+// small models otherwise answer from memory and make things up. Pure "what is
+// an IGM" questions are left free.
+export const needsData = (q: string) => {
+  const t = String(q || '').trim()
+  if (/^(what is|what's|what are|what does|meaning of|explain|define|how does)\b/i.test(t) && !/\b[A-Z]{4}\d{7}\b|\bJ-?\s?\d+|\bour\b|\bmy\b|\bjds\b/i.test(t)) return false
+  return /\b[A-Z]{4}\d{7}\b|\bJ-?\s?\d+|container|box|job|\bbe\b|\bbl\b|ooc|truck|rail|client|detention|free ?day|port|cfs|icd|gate|where|which|how many|kitne|kaha|any\b|list|status|today|yesterday|week|month|sure|again|check|update|pending|urgent|arriv|vessel|ship/i.test(t)
+}
 const record = (used: string[], name: string, args: unknown) => used.push(`${name} ${JSON.stringify(args || {})}`)
 
 // ── Groq (OpenAI-style API) ──
@@ -98,6 +106,7 @@ async function askGroq(question: string, history: Turn[], data: unknown, person:
     ...history.slice(-8).map((t) => ({ role: t.role === 'model' ? 'assistant' : 'user', content: t.text })),
     { role: 'user', content: question },
   ]
+  const mustCheck = needsData(question)
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), 30_000)
   const tried: string[] = []
@@ -120,7 +129,7 @@ async function askGroq(question: string, history: Turn[], data: unknown, person:
         const res = await fetch(GROQ_API, {
           method: 'POST',
           headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ model, messages: convo, tools: GROQ_TOOLS, tool_choice: 'auto', temperature: 0.3, max_tokens: 1800, ...(noExtras.has(model) ? {} : REASONING[model] || {}) }),
+          body: JSON.stringify({ model, messages: convo, tools: GROQ_TOOLS, tool_choice: rounds === 0 && mustCheck ? 'required' : 'auto', temperature: 0.3, max_tokens: 1800, ...(noExtras.has(model) ? {} : REASONING[model] || {}) }),
           signal: controller.signal,
         })
         const out = await res.json().catch(() => ({}))
@@ -194,7 +203,8 @@ async function askGemini(question: string, history: Turn[], data: unknown, perso
       let config: any = noThinkingSetting.has(model) ? plain : { ...plain, thinkingConfig }
       const convo = [...contents]
       while (rounds <= MAX_TOOL_ROUNDS) {
-        const { status, out } = await callGemini(model, { ...base, generationConfig: config, contents: convo }, key, controller.signal)
+        const force = rounds === 0 && needsData(question) ? { toolConfig: { functionCallingConfig: { mode: 'ANY' } } } : {}
+        const { status, out } = await callGemini(model, { ...base, ...force, generationConfig: config, contents: convo }, key, controller.signal)
         if (status === 404) { tried.push(`${model}: not available`); skip = true; break }
         if (status === 429 || status >= 500) {
           // busy: go straight to the next model; only the last one gets a short wait and retry

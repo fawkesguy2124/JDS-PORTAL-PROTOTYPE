@@ -40,11 +40,18 @@ const EVENT_ALIAS = { CFSGATEOUT: 'CFSOUT', CFSGATEIN: 'CFSIN', ICDGATEOUT: 'ICD
 const placeType = (where, ev) => {
   const w = String(where || '').toUpperCase()
   const e = String(ev || '').toUpperCase()
-  if (/STATION|LOADING|RAIL/.test(e) || /RAIL|STATION/.test(w)) return 'rail'
-  if (/TOLL|GATE CROSSED|TRANSIT/.test(e) || /TOLL/.test(w)) return 'road'
-  if (/\bICD\b/.test(w) || /^ICD/.test(e)) return 'ICD'
-  if (/\bCFS\b|LOGISTICS PARK|WAREHOUS/.test(w) || /^CFS/.test(e)) return 'CFS'
-  if (/TERMINAL|PORT|GATE|JNPA|NSICT|NSFT|NSIGT|GTI|BMCT|PSA|APMT/.test(w) || /^(PORT|GATE|TERMINAL|DPD)/.test(e)) return 'port'
+  // the event says it best ("ICD IN" at "Dronagiri Rail Terminal CFS" = an ICD)
+  if (/^ICD/.test(e)) return 'ICD'
+  if (/^CFS/.test(e)) return 'CFS'
+  if (/STATION|LOADING/.test(e)) return 'rail'
+  if (/TOLL|GATE CROSSED|TRANSIT/.test(e)) return 'road'
+  if (/^(PORT|TERMINAL|DPD)/.test(e)) return 'port'
+  // otherwise the place name
+  if (/\bICD\b/.test(w)) return 'ICD'
+  if (/\bCFS\b|LOGISTICS PARK|WAREHOUS/.test(w)) return 'CFS'
+  if (/RAIL|STATION/.test(w)) return 'rail'
+  if (/TOLL/.test(w)) return 'road'
+  if (/TERMINAL|PORT|GATE|JNPA|NSICT|NSFT|NSIGT|GTI|BMCT|PSA|APMT/.test(w) || /^GATE/.test(e)) return 'port'
   return 'unknown'
 }
 const PORT_ALIAS = { JNPT: 'INNSA', NHAVASHEVA: 'INNSA', NSA: 'INNSA', JNPA: 'INNSA', MUMBAI: 'INBOM1', MUMBAIPORT: 'INBOM1', MBPT: 'INBOM1', AIR: 'INBOM4', MUMBAIAIR: 'INBOM4', SAHAR: 'INBOM4' }
@@ -355,11 +362,12 @@ function runToolRaw(name, args, data, person) {
         // movement for 30+ days (most likely finished but never marked), unless asked
         if (!stage && !old && st === 'empty_back') continue
         if (!stage && !old && lastAt && Date.now() - new Date(lastAt).getTime() > 30 * 864e5) continue
-        if (place && !has2(t.current_location, args.place)) continue
+        if (place && !has2(t.current_location, args.place) && placeType(t.current_location, ev).toUpperCase() !== place) continue
         if (!inRange(lastAt, args?.moved_from, args?.moved_to)) continue
         const row = { container: no, job: r.job.job_no, client: r.job.client || null, last_event: ev || null, where: t.current_location || null, place_type: placeType(t.current_location, ev), when: day(lastAt), stage: st, free_days_left: freeLeft }
         pool.push(row)
-        if (!want || norm(ev) === want) out.push(row)
+        // exact event, or a short word for a group ("ICD" = ICD IN / ICD OUT)
+        if (!want || norm(ev) === want || (want.length <= 4 && norm(ev).startsWith(want))) out.push(row)
       }
     }
     const limit = Math.min(Math.max(Number(args?.limit) || 30, 1), 60)
