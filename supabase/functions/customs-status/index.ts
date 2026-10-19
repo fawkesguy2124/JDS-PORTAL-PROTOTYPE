@@ -12,7 +12,7 @@ import { adminClient, callUlip, claimKey, corsHeaders, getCaller, json, releaseK
 
 const MIN_MINUTES_BETWEEN_CHECKS = 5
 const MIN_MINUTES_AFTER_FAILURE = 2
-const SKIP_SECOND_CALL_AFTER_MS = 50_000
+const SKIP_SECOND_CALL_AFTER_MS = 60_000
 
 const minutesSince = (iso: string | null | undefined) => (iso ? (Date.now() - new Date(iso).getTime()) / 60_000 : Infinity)
 const short = (e?: string) => (e || '').split(' | ')[0] || null

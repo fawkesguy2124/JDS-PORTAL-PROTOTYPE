@@ -13,7 +13,7 @@ import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-
 
 const ULIP_BASE              = 'http://13.200.155.29:3000/ulip/v1.0.0'
 const ULIP_TIMEOUT_MS        = 20_000
-const ICEGATE_TIMEOUT_MS     = 35_000
+const ICEGATE_TIMEOUT_MS     = 55_000 // ICEGATE's OOC lookup can take 40 s+ on busy mornings
 const TOKEN_REUSE_MINS       = 25
 const LOGIN_LOCK_SECS        = 30
 const LOGIN_RETRY_AFTER_MINS = 5
