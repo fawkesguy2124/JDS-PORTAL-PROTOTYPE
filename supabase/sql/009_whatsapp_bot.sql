@@ -53,3 +53,7 @@ insert into bot_state (id) values (1) on conflict (id) do nothing;
 --   'x-bot-secret', (select cron_token from public.bot_state where id = 1)), timeout_milliseconds := 60000) $$);
 -- same for 'wa-bot-alerts', '*/15 2-15 * * *' with {"run":"alerts"}
 -- To pause the bot:  select cron.unschedule('wa-bot-morning'); select cron.unschedule('wa-bot-alerts');
+-- 19 Oct 2026: keep the bot warm and its data pre-loaded, every 5 min, 7:30 am - 9:15 pm IST
+-- select cron.schedule('wa-bot-warm', '*/5 2-15 * * *', $$ select net.http_post(url := '.../functions/v1/wa-bot',
+--   body := '{"run":"warm"}'::jsonb, headers := jsonb_build_object('Content-Type','application/json',
+--   'x-bot-secret', (select cron_token from public.bot_state where id = 1)), timeout_milliseconds := 60000) $$);

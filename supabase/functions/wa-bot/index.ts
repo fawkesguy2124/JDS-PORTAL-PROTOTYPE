@@ -40,6 +40,11 @@ async function readAll(build: () => any) {
   }
 }
 
+// Only the saved checks the job rules actually read (truck place, truck papers,
+// vessel arrival, export LEO). Loading every saved ULIP answer was the slow part.
+const USED_CHECKS = ['FASTAG/01', 'VAHAN/04', 'VAHAN/01', 'JNPT/01', 'MBPT/01', 'IPORTMAN/01',
+  'ICEGATE/06', 'PCS/03', 'JNPT/03', 'ICEGATE/05', 'MBPT/03', 'IPORTMAN/03', 'ICEGATE/12']
+
 async function loadData(admin: Admin) {
   const since = new Date(Date.now() - 180 * DAY).toISOString()
   const [jobs, customs, results, containers] = await Promise.all([
@@ -47,10 +52,11 @@ async function loadData(admin: Admin) {
     readAll(() => admin.from('customs_status').select('*').order('job_id')),
     readAll(() => admin.from('ulip_results')
       .select('api, job_id, found, summary, parsed, params, checked_at, last_error, last_error_at')
+      .in('api', USED_CHECKS)
       .not('job_id', 'is', null).gte('checked_at', since)
       .order('checked_at', { ascending: false, nullsFirst: false })),
     readAll(() => admin.from('container_tracking')
-      .select('container_no, job_id, job_no, status, status_text, current_location, free_days, port_in, port_out, cfs_gate_in, milestones, last_refreshed_at')
+      .select('container_no, job_id, job_no, status, status_text, current_location, free_days, port_in, port_out, cfs_gate_in, milestones, last_refreshed_at, shipping_line_ldb')
       .order('container_no')),
   ])
   return buildJourneyData({ jobs, customs, results, containers })
@@ -59,7 +65,7 @@ async function loadData(admin: Admin) {
 // For questions: reuse the data loaded in the last minute (the bot stays warm
 // between messages), so a follow-up question doesn't wait for a fresh load.
 // Scheduled alerts and the summary always load fresh.
-const DATA_FRESH_MS = 60_000
+const DATA_FRESH_MS = 6 * 60_000 // refreshed every 5 min by the 'warm' run
 let dataCache: { at: number; data: any } | null = null
 async function loadDataCached(admin: Admin) {
   if (dataCache && Date.now() - dataCache.at < DATA_FRESH_MS) return dataCache.data
@@ -78,10 +84,14 @@ async function showTyping(messageId: string) {
   }).catch(() => {})
 }
 
+// the team list rarely changes: keep it for 5 minutes
+let teamCache: { at: number; team: Person[] } | null = null
 async function loadTeam(admin: Admin): Promise<Person[]> {
+  if (teamCache && Date.now() - teamCache.at < 5 * 60_000) return teamCache.team
   const { data, error } = await admin.from('profiles').select('id, name, email, role')
   if (error) throw new Error(error.message)
-  return teamFromProfiles(data || [])
+  teamCache = { at: Date.now(), team: teamFromProfiles(data || []) }
+  return teamCache.team
 }
 
 // ── sending ──
@@ -261,6 +271,8 @@ Deno.serve(async (req) => {
     try {
       if (run === 'morning') return json({ success: true, sending: sendingOn(), sent: await runMorning(admin) })
       if (run === 'alerts') return json({ success: true, sending: sendingOn(), sent: await runAlerts(admin) })
+      // keep the bot started, with the team list and portal data already loaded
+      if (run === 'warm') { dataCache = null; await Promise.all([loadTeam(admin), loadDataCached(admin)]); return json({ success: true, warm: true }) }
     } catch (e) {
       return json({ success: false, error: (e as Error).message }, 500)
     }
