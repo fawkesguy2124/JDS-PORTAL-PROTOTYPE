@@ -93,7 +93,9 @@ export default function UlipCheck({ check, job, saved, onResult, onJobChange, co
       }
       setResult(res.data)
       setEdited({})
-      if (job && res.data?.parsed?.found) {
+      // numbers are kept only from an answer that is really this job's (not an
+      // older BE with the same number, see presentResult)
+      if (job && res.data?.parsed?.found && presentResult(check.api, res.data.parsed, job)?.found) {
         const remembered = await rememberRefs(job, built.typedRefs, res.data.parsed.extra)
         if (remembered.job) onJobChange?.(remembered.job)
         if (remembered.error) setNote(remembered.error)

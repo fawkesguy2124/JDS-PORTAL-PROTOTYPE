@@ -49,7 +49,10 @@ function igm(parsed, job) {
 // over the years and across customs houses, so the answer can be someone
 // else's old BE (seen 19 Oct 2026: BE 4501905 of J-677, 17 Oct 2026 at
 // INBOM4, came back as a 2021 Chennai BE with "OOC granted"). If the BE date
-// or the customs house don't match this job, the answer is marked as not ours.
+// or the customs house don't match this job, the answer is not shown at all:
+// it counts as "no record for this job's BE". Same 30-day idea as containers
+// (tracking older than 30 days is not treated as this job's).
+const SAME_BE_WITHIN_DAYS = 30
 const MONTHS = { jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5, jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11 }
 function dayOf(v) {
   const s = String(v || '').trim()
@@ -62,20 +65,20 @@ function dayOf(v) {
 const fieldValue = (parsed, label) => (parsed.fields || []).find((f) => f.label === label)?.value || null
 function sameBe(parsed, job) {
   const theirDay = dayOf(fieldValue(parsed, 'BE date') || parsed.extra?.beDate)
-  const ourDay = dayOf(job?.be_date)
+  // compare with the job's BE date; with no BE date yet, with today
+  const ourDay = dayOf(job?.be_date) ?? Date.now()
   const house = String(fieldValue(parsed, 'Customs house') || '').toUpperCase()
   const port = String(job?.port_code || '').toUpperCase()
-  const dateWrong = theirDay !== null && ourDay !== null && Math.abs(theirDay - ourDay) > 3 * 864e5
+  const dateWrong = theirDay !== null && Math.abs(theirDay - ourDay) > SAME_BE_WITHIN_DAYS * 864e5
   const houseWrong = !!house && !!port && house.slice(0, 5) !== port.slice(0, 5)
   if (!dateWrong && !houseWrong) return parsed
-  const be = fieldValue(parsed, 'BE number') || job?.be_no || ''
-  const theirs = [fieldValue(parsed, 'BE date') && `dated ${fieldValue(parsed, 'BE date')}`, house && `at ${house}`].filter(Boolean).join(' ')
-  const ours = [ourDay !== null && `dated ${new Date(ourDay).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' })}`, port && `at ${port}`].filter(Boolean).join(' ')
+  // someone else's BE: show nothing of it, only that this job's BE isn't there
   return {
-    ...parsed,
-    tone: 'bad',
-    summary: `Not this job's Bill of Entry. This answer is for BE ${be} ${theirs}; this job's BE is ${ours}. BE numbers repeat over the years, so this check found someone else's BE. Ignore it.`,
-    note: 'This check looks a BE up by its number only. "Customs status" at the top uses the BE number AND date, so trust that one for this job.',
+    found: false,
+    tone: 'warn',
+    summary: `No record yet for this job's BE ${job?.be_no || ''}.`.replace(' .', '.'),
+    fields: [],
+    note: 'Only an older Bill of Entry with the same number was found (BE numbers repeat over the years), so it is not shown.',
   }
 }
 
