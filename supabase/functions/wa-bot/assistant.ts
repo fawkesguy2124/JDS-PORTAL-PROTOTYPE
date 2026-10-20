@@ -39,21 +39,25 @@ async function callGemini(model: string, body: unknown, key: string, signal: Abo
 
 // Returns the reply text, or null when the assistant is not available
 // (no key, quota used up, Google down) so the bot can fall back.
-// Order (Jose, 20 Oct 2026): DeepSeek on OpenCode first (OpenCode runs it on
-// US/EU servers, not DeepSeek's own in China), then Groq (US), then Gemini.
-// Each is tried only when the one before is busy, slow or not set up.
+// Order (Jose, 20 Oct 2026): DeepSeek V4.1 Flash on NVIDIA first (NVIDIA hosts it,
+// US; free developer access, 40 requests a minute), then Groq (US), then Gemini.
+// OpenCode's free models only work inside the OpenCode app, so OpenCode is used
+// only if a paid model is set (OPENCODE_MODEL). Each service is tried only when
+// the one before is busy, slow, refused or not set up.
 // `checked` lists the portal checks behind the answer; the bot keeps it with the
 // chat history, so a follow-up ("what about CFS OUT", "are you sure?") knows
 // exactly what was looked at last time
 export async function askAssistant(question: string, history: Turn[], data: unknown, person: Person): Promise<{ text: string | null; note: string; checked: string[]; proposal: Pending | null }> {
   const used: string[] = []
   const ctx: Ctx = { used, proposal: null }
-  const d = await askCompat(OPENCODE, question, history, data, person, ctx)
-  if (d.text || ctx.proposal) return { ...d, checked: used, proposal: ctx.proposal }
-  const q = await askCompat(GROQ, question, history, data, person, ctx)
-  if (q.text || ctx.proposal) return { ...q, note: `${q.note} (OpenCode: ${d.note})`, checked: used, proposal: ctx.proposal }
+  const notes: string[] = []
+  for (const p of [NVIDIA, ...(Deno.env.get('OPENCODE_MODEL') ? [OPENCODE] : []), GROQ]) {
+    const r = await askCompat(p, question, history, data, person, ctx)
+    if (r.text || ctx.proposal) return { ...r, note: `${r.note}${notes.length ? ` (${notes.join('; ')})` : ''}`, checked: used, proposal: ctx.proposal }
+    notes.push(`${p.label}: ${r.note}`)
+  }
   const g = await askGemini(question, history, data, person, ctx)
-  return g.text || ctx.proposal ? { text: g.text, note: `${g.note} (OpenCode: ${d.note}; Groq: ${q.note})`, checked: used, proposal: ctx.proposal } : { text: null, note: `OpenCode: ${d.note} | Groq: ${q.note} | Gemini: ${g.note}`, checked: used, proposal: null }
+  return g.text || ctx.proposal ? { text: g.text, note: `${g.note} (${notes.join('; ')})`, checked: used, proposal: ctx.proposal } : { text: null, note: `${notes.join(' | ')} | Gemini: ${g.note}`, checked: used, proposal: null }
 }
 // Questions about JDS's own jobs/containers MUST be checked in the portal first:
 // small models otherwise answer from memory and make things up. Pure "what is
@@ -129,6 +133,15 @@ const GROQ: Provider = { label: 'groq', url: GROQ_API, keyName: 'GROQ_API_KEY', 
 // OpenCode (opencode.ai): DeepSeek V4.1 Flash, free for now. Key in the Supabase
 // secret OPENCODE_API_KEY (made by Jose in the OpenCode console, never in chat).
 // Kept short on time so Groq still gets its turn when OpenCode is slow.
+// NVIDIA (build.nvidia.com): key in the Supabase secret NVIDIA_API_KEY (made by
+// Jose, never in chat). NVIDIA_MODEL picks another model by hand.
+const NVIDIA: Provider = {
+  label: 'nvidia',
+  url: 'https://integrate.api.nvidia.com/v1/chat/completions',
+  keyName: 'NVIDIA_API_KEY',
+  models: async () => (Deno.env.get('NVIDIA_MODEL') ? [Deno.env.get('NVIDIA_MODEL')!.trim()] : ['deepseek-ai/deepseek-v4.1-flash']),
+  timeoutMs: 20_000,
+}
 const OPENCODE: Provider = {
   label: 'opencode',
   url: (Deno.env.get('OPENCODE_URL') || 'https://opencode.ai/inference/openai/v1/chat/completions').trim(),
