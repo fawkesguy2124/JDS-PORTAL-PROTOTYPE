@@ -39,18 +39,21 @@ async function callGemini(model: string, body: unknown, key: string, signal: Abo
 
 // Returns the reply text, or null when the assistant is not available
 // (no key, quota used up, Google down) so the bot can fall back.
-// Groq first (US, fast, reasoning models; Jose 19 Oct 2026); Gemini only when
-// every Groq model is busy or its free limit is used up
+// Order (Jose, 20 Oct 2026): DeepSeek on OpenCode first (OpenCode runs it on
+// US/EU servers, not DeepSeek's own in China), then Groq (US), then Gemini.
+// Each is tried only when the one before is busy, slow or not set up.
 // `checked` lists the portal checks behind the answer; the bot keeps it with the
 // chat history, so a follow-up ("what about CFS OUT", "are you sure?") knows
 // exactly what was looked at last time
 export async function askAssistant(question: string, history: Turn[], data: unknown, person: Person): Promise<{ text: string | null; note: string; checked: string[]; proposal: Pending | null }> {
   const used: string[] = []
   const ctx: Ctx = { used, proposal: null }
-  const q = await askGroq(question, history, data, person, ctx)
-  if (q.text || ctx.proposal) return { ...q, checked: used, proposal: ctx.proposal }
+  const d = await askCompat(OPENCODE, question, history, data, person, ctx)
+  if (d.text || ctx.proposal) return { ...d, checked: used, proposal: ctx.proposal }
+  const q = await askCompat(GROQ, question, history, data, person, ctx)
+  if (q.text || ctx.proposal) return { ...q, note: `${q.note} (OpenCode: ${d.note})`, checked: used, proposal: ctx.proposal }
   const g = await askGemini(question, history, data, person, ctx)
-  return g.text || ctx.proposal ? { text: g.text, note: `${g.note} (Groq: ${q.note})`, checked: used, proposal: ctx.proposal } : { text: null, note: `Groq: ${q.note} | Gemini: ${g.note}`, checked: used, proposal: null }
+  return g.text || ctx.proposal ? { text: g.text, note: `${g.note} (OpenCode: ${d.note}; Groq: ${q.note})`, checked: used, proposal: ctx.proposal } : { text: null, note: `OpenCode: ${d.note} | Groq: ${q.note} | Gemini: ${g.note}`, checked: used, proposal: null }
 }
 // Questions about JDS's own jobs/containers MUST be checked in the portal first:
 // small models otherwise answer from memory and make things up. Pure "what is
@@ -117,9 +120,23 @@ const lowerTypes = (s: any): any => (Array.isArray(s) ? s.map(lowerTypes) : s &&
   ? Object.fromEntries(Object.entries(s).map(([k, v]) => [k, k === 'type' && typeof v === 'string' ? v.toLowerCase() : lowerTypes(v)])) : s)
 const GROQ_TOOLS = TOOLS.map((t: any) => ({ type: 'function', function: { name: t.name, description: t.description, parameters: lowerTypes(t.parameters) } }))
 
-async function askGroq(question: string, history: Turn[], data: unknown, person: Person, ctx: Ctx): Promise<{ text: string | null; note: string }> {
-  const key = (Deno.env.get('GROQ_API_KEY') || '').trim()
-  if (!key) return { text: null, note: 'no GROQ_API_KEY' }
+// Services that speak the OpenAI-style chat API (same code for both)
+type Provider = { label: string; url: string; keyName: string; models: (key: string) => Promise<string[]>; timeoutMs: number }
+const GROQ: Provider = { label: 'groq', url: GROQ_API, keyName: 'GROQ_API_KEY', models: groqModels, timeoutMs: 30_000 }
+// OpenCode (opencode.ai): DeepSeek V4.1 Flash, free for now. Key in the Supabase
+// secret OPENCODE_API_KEY (made by Jose in the OpenCode console, never in chat).
+// Kept short on time so Groq still gets its turn when OpenCode is slow.
+const OPENCODE: Provider = {
+  label: 'opencode',
+  url: (Deno.env.get('OPENCODE_URL') || 'https://opencode.ai/inference/openai/v1/chat/completions').trim(),
+  keyName: 'OPENCODE_API_KEY',
+  models: async () => [(Deno.env.get('OPENCODE_MODEL') || 'deepseek-v4.1-flash-free').trim()],
+  timeoutMs: 20_000,
+}
+
+async function askCompat(p: Provider, question: string, history: Turn[], data: unknown, person: Person, ctx: Ctx): Promise<{ text: string | null; note: string }> {
+  const key = (Deno.env.get(p.keyName) || '').trim()
+  if (!key) return { text: null, note: `no ${p.keyName}` }
   const messages: any[] = [
     { role: 'system', content: `${SYSTEM_PROMPT(person)}\n\n${TODAY_BRIEF(data, person)}` },
     ...history.slice(-8).map((t) => ({ role: t.role === 'model' ? 'assistant' : 'user', content: t.text })),
@@ -127,7 +144,7 @@ async function askGroq(question: string, history: Turn[], data: unknown, person:
   ]
   let mustCheck = needsData(question) || afterChangeTry(history)
   const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), 30_000)
+  const timer = setTimeout(() => controller.abort(), p.timeoutMs)
   const tried: string[] = []
   // the free plan allows 8,000 tokens a minute PER MODEL: when one model is full,
   // the next one carries on with the same conversation (tool answers kept); if
@@ -142,10 +159,10 @@ async function askGroq(question: string, history: Turn[], data: unknown, person:
       await new Promise((r) => setTimeout(r, wait + 300))
     }
     wait = Infinity
-    for (const model of await groqModels(key)) {
+    for (const model of await p.models(key)) {
       let skip = false
       while (rounds <= MAX_TOOL_ROUNDS) {
-        const res = await fetch(GROQ_API, {
+        const res = await fetch(p.url, {
           method: 'POST',
           headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
           body: JSON.stringify({ model, messages: convo, tools: GROQ_TOOLS, tool_choice: rounds === 0 && mustCheck ? 'required' : 'auto', temperature: 0.3, max_tokens: 1800, ...(noExtras.has(model) ? {} : REASONING[model] || {}) }),
@@ -160,7 +177,7 @@ async function askGroq(question: string, history: Turn[], data: unknown, person:
           noExtras.add(model)
           continue
         }
-        if (res.status === 404 || res.status === 429 || res.status >= 500 || (res.status === 400 && /model/i.test(out?.error?.message || ''))) {
+        if (res.status === 401 || res.status === 402 || res.status === 403 || res.status === 404 || res.status === 429 || res.status >= 500 || (res.status === 400 && /model/i.test(out?.error?.message || ''))) {
           const m = String(out?.error?.message || '')
           if (res.status === 429) {
             const t = m.match(/try again in (?:(\d+)m)?([\d.]+)(ms|s)/)
@@ -168,14 +185,14 @@ async function askGroq(question: string, history: Turn[], data: unknown, person:
           }
           tried.push(`${model}: ${res.status}${res.status === 429 ? ` ${m.match(/on (\w+ per \w+[^:]*): Limit \d+/)?.[0] || ''}` : res.status === 400 ? ` (${m.slice(0, 160)})` : ''}`); skip = true; break
         }
-        if (!res.ok) return { text: null, note: `groq ${res.status}: ${String(out?.error?.message || '').slice(0, 120)}` }
+        if (!res.ok) return { text: null, note: `${p.label} ${res.status}: ${String(out?.error?.message || '').slice(0, 120)}` }
         const msg = out?.choices?.[0]?.message || {}
         const calls: any[] = msg.tool_calls || []
         if (!calls.length) {
           const text = stripThinking(String(msg.content || ''))
           if (!text) { tried.push(`${model}: empty answer`); skip = true; break } // try the next model
-          groqLastGood = model
-          return text ? { text, note: `groq ${model}, ${rounds} tool round(s)${tried.length ? ` (skipped ${tried.join(", ")})` : ""}${pass ? ' after a short wait' : ''}` } : { text: null, note: 'groq empty answer' }
+          if (p === GROQ) groqLastGood = model
+          return text ? { text, note: `${p.label} ${model}, ${rounds} tool round(s)${tried.length ? ` (skipped ${tried.join(", ")})` : ""}${pass ? ' after a short wait' : ''}` } : { text: null, note: `${p.label} empty answer` }
         }
         convo.push({ role: 'assistant', content: stripThinking(String(msg.content || '')), tool_calls: calls })
         for (const c of calls) {
@@ -185,12 +202,12 @@ async function askGroq(question: string, history: Turn[], data: unknown, person:
         }
         rounds++
       }
-      if (!skip) return { text: null, note: 'groq too many tool rounds' }
+      if (!skip) return { text: null, note: `${p.label} too many tool rounds` }
     }
    }
-    return { text: null, note: `all Groq models busy (${tried.join(', ')})` }
+    return { text: null, note: `all ${p.label} models busy (${tried.join(', ')})` }
   } catch (e) {
-    return { text: null, note: (e as Error).name === 'AbortError' ? 'groq timed out' : (e as Error).message }
+    return { text: null, note: (e as Error).name === 'AbortError' ? `${p.label} timed out` : (e as Error).message }
   } finally {
     clearTimeout(timer)
   }
