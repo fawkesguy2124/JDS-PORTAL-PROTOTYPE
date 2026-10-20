@@ -18,6 +18,7 @@ import { adminClient, json } from '../_shared/ulip.ts'
 import { buildJourneyData } from '../_shared/portal/journeyCore.js'
 import { morningSummary, instantAlerts, answer, teamFromProfiles, BOT_NUMBERS } from '../_shared/portal/botMessages.js'
 import { askAssistant, groqInfo } from './assistant.ts'
+import { applyChange, confirmText, isNo, isYes, PENDING_MINUTES, type Pending } from './actions.ts'
 
 const GRAPH = 'https://graph.facebook.com/v21.0'
 const DAY = 24 * 60 * 60 * 1000
@@ -225,7 +226,7 @@ async function handleInbound(admin: Admin, payload: any) {
     const text = m.type === 'text' ? m.text?.body : m.type === 'button' ? m.button?.text : ''
     // the last few messages (so follow-ups make sense) and the portal data, loaded together
     const [inboxRes, loaded] = await Promise.all([
-      admin.from('bot_inbox').select('history').eq('phone', person.phone).maybeSingle(),
+      admin.from('bot_inbox').select('history, pending').eq('phone', person.phone).maybeSingle(),
       data ? Promise.resolve(data) : loadDataCached(admin),
       admin.from('bot_inbox').upsert({ phone: person.phone, last_inbound_at: new Date().toISOString() }),
       typing,
@@ -233,16 +234,36 @@ async function handleInbound(admin: Admin, payload: any) {
     data = loaded
     const history = Array.isArray(inboxRes?.data?.history) ? inboxRes.data.history : []
     if (!text) { await send(person.phone, { text: 'Please send text: ask a question, or a job no, a container no or SUMMARY.' }); continue }
-    // fixed commands are instant and free; anything else goes to the assistant
-    let reply = answer(data, text, person, new Date(), { fallback: false })
+    // a change waiting for this person's YES (asked in their previous message)
+    const pending: Pending | null = inboxRes?.data?.pending || null
+    const live = pending && Date.now() - new Date(pending.at).getTime() < PENDING_MINUTES * 60_000
+    let reply: string | null = null
     let checked: string[] = []
+    let ask: Pending | null = null
+    if (pending) await admin.from('bot_inbox').update({ pending: null }).eq('phone', person.phone) // a proposal is answered once
+    if (live && isYes(text)) {
+      reply = await applyChange(admin, pending, person)
+      dataCache = null // the next answer shows the change
+      checked = [`made the change: ${pending.summary}`]
+    } else if (pending && isNo(text)) {
+      reply = `Cancelled. Nothing was changed.`
+    } else if (pending && isYes(text)) {
+      reply = `That request is more than ${PENDING_MINUTES} minutes old, so nothing was changed. Please ask again.`
+    }
+    // fixed commands are instant and free; anything else goes to the assistant
+    if (!reply) reply = answer(data, text, person, new Date(), { fallback: false })
     if (!reply) {
       const aiStart = Date.now()
       const ai = await askAssistant(text, history, data, person)
       checked = ai.checked
+      ask = ai.proposal
       console.log(`[wa-bot] assistant: ${ai.note} | data ${aiStart - started} ms, AI ${Date.now() - aiStart} ms`)
-      reply = ai.text ? toWhatsApp(ai.text) : "⏳ The AI is busy right now, so I couldn't answer that question. Please ask again in a minute.\n\nThese always work instantly: a job no (J-193), a container no, a BE no, SUMMARY or URGENT."
+      // a proposed change: the bot itself asks for YES, in fixed words
+      if (ask) reply = confirmText(ask)
+      else reply = ai.text ? toWhatsApp(ai.text) : "⏳ The AI is busy right now, so I couldn't answer that question. Please ask again in a minute.\n\nThese always work instantly: a job no (J-193), a container no, a BE no, SUMMARY or URGENT."
     }
+    if (pending && live && !isYes(text) && !isNo(text) && !ask) reply = `(The earlier change was not made: ${pending.summary.replace(/\*/g, '')}.)\n\n${reply}`
+    if (ask) await admin.from('bot_inbox').update({ pending: ask }).eq('phone', person.phone)
     await send(person.phone, { text: reply })
     const note = checked.length ? `\n[checked: ${checked.join('; ').slice(0, 400)}]` : ''
     const next = [...history, { role: 'user', text: String(text).slice(0, 500) }, { role: 'model', text: `${String(reply).slice(0, 1500)}${note}` }].slice(-10)
@@ -313,13 +334,23 @@ Deno.serve(async (req) => {
         const out = []
         const chat = !!JSON.parse(raw).conversation
         const convo: any[] = []
+        let proposed: Pending | null = null
         const gap = Math.min(Number(JSON.parse(raw).gap) || 0, 20_000) // pause between questions, like a person typing
         for (const q of questions) {
           if (out.length && gap) await new Promise((r) => setTimeout(r, gap))
           const t0 = Date.now()
+          // test mode never changes anything: a YES only says what WOULD be done
+          if (proposed && isYes(q)) {
+            out.push({ q, a: `(test mode, nothing saved) would now do: ${proposed.summary}`, how: 'confirm', ms: Date.now() - t0 })
+            if (chat) convo.push({ role: 'user', text: q }, { role: 'model', text: `[change made: ${proposed.summary}]` })
+            proposed = null
+            continue
+          }
+          proposed = null
           const fixed = answer(data, q, person, new Date(), { fallback: false })
           const ai = fixed ? null : await askAssistant(q, chat ? convo : [], data, person)
-          const a = fixed || (ai?.text ? toWhatsApp(ai.text) : null)
+          if (ai?.proposal) proposed = ai.proposal
+          const a = fixed || (ai?.proposal ? confirmText(ai.proposal) : ai?.text ? toWhatsApp(ai.text) : null)
           out.push({ q, a, how: fixed ? 'fixed' : ai?.note, checked: ai?.checked, ms: Date.now() - t0 })
           // conversation mode: each question sees the earlier ones, like a real chat
           const note = ai?.checked?.length ? `\n[checked: ${ai.checked.join('; ')}]` : ''

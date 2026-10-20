@@ -3,7 +3,11 @@
 // sees job facts from those tools, never documents, and never calls ULIP.
 //
 // Secrets: GEMINI_API_KEY (required); GEMINI_MODEL (optional, default below).
-import { TOOLS, runTool, SYSTEM_PROMPT, TODAY_BRIEF } from '../_shared/portal/assistantTools.js'
+import { TOOLS as READ_TOOLS, runTool, SYSTEM_PROMPT, TODAY_BRIEF } from '../_shared/portal/assistantTools.js'
+import { CHANGE_TOOL, prepareChange, type Pending } from './actions.ts'
+
+// read tools + the one tool that PROPOSES a change (saved only after a YES)
+const TOOLS = [...READ_TOOLS, CHANGE_TOOL]
 
 const API = 'https://generativelanguage.googleapis.com/v1beta/models'
 // tried in order; a model Google has retired (404) is skipped
@@ -39,12 +43,13 @@ async function callGemini(model: string, body: unknown, key: string, signal: Abo
 // `checked` lists the portal checks behind the answer; the bot keeps it with the
 // chat history, so a follow-up ("what about CFS OUT", "are you sure?") knows
 // exactly what was looked at last time
-export async function askAssistant(question: string, history: Turn[], data: unknown, person: Person): Promise<{ text: string | null; note: string; checked: string[] }> {
+export async function askAssistant(question: string, history: Turn[], data: unknown, person: Person): Promise<{ text: string | null; note: string; checked: string[]; proposal: Pending | null }> {
   const used: string[] = []
-  const q = await askGroq(question, history, data, person, used)
-  if (q.text) return { ...q, checked: used }
-  const g = await askGemini(question, history, data, person, used)
-  return g.text ? { text: g.text, note: `${g.note} (Groq: ${q.note})`, checked: used } : { text: null, note: `Groq: ${q.note} | Gemini: ${g.note}`, checked: used }
+  const ctx: Ctx = { used, proposal: null }
+  const q = await askGroq(question, history, data, person, ctx)
+  if (q.text || ctx.proposal) return { ...q, checked: used, proposal: ctx.proposal }
+  const g = await askGemini(question, history, data, person, ctx)
+  return g.text || ctx.proposal ? { text: g.text, note: `${g.note} (Groq: ${q.note})`, checked: used, proposal: ctx.proposal } : { text: null, note: `Groq: ${q.note} | Gemini: ${g.note}`, checked: used, proposal: null }
 }
 // Questions about JDS's own jobs/containers MUST be checked in the portal first:
 // small models otherwise answer from memory and make things up. Pure "what is
@@ -54,7 +59,17 @@ export const needsData = (q: string) => {
   if (/^(what is|what's|what are|what does|meaning of|explain|define|how does)\b/i.test(t) && !/\b[A-Z]{4}\d{7}\b|\bJ-?\s?\d+|\bour\b|\bmy\b|\bjds\b/i.test(t)) return false
   return /\b[A-Z]{4}\d{7}\b|\bJ-?\s?\d+|container|box|job|\bbe\b|\bbl\b|ooc|truck|rail|client|detention|free ?day|port|cfs|icd|gate|where|which|how many|kitne|kaha|any\b|list|status|today|yesterday|week|month|sure|again|check|update|pending|urgent|arriv|vessel|ship/i.test(t)
 }
-const record = (used: string[], name: string, args: unknown) => used.push(`${name} ${JSON.stringify(args || {})}`)
+type Ctx = { used: string[]; proposal: Pending | null }
+// runs one tool call: notes it for the chat history; a change is only PREPARED
+// (checked and kept for the person's YES), never saved here
+function useTool(ctx: Ctx, name: string, args: any, data: any, person: Person): unknown {
+  ctx.used.push(`${name} ${JSON.stringify(args || {})}`)
+  if (name !== CHANGE_TOOL.name) return runTool(name, args || {}, data, person)
+  const res = prepareChange(args, data, person)
+  if (!res.ok) return { not_done: res.error }
+  ctx.proposal = res.pending
+  return { waiting_for_yes: res.pending.summary, tell_the_person: 'The bot is now asking them to reply YES. Do not say it is done.' }
+}
 
 // ── Groq (OpenAI-style API) ──
 const GROQ_API = 'https://api.groq.com/openai/v1/chat/completions'
@@ -98,7 +113,7 @@ const lowerTypes = (s: any): any => (Array.isArray(s) ? s.map(lowerTypes) : s &&
   ? Object.fromEntries(Object.entries(s).map(([k, v]) => [k, k === 'type' && typeof v === 'string' ? v.toLowerCase() : lowerTypes(v)])) : s)
 const GROQ_TOOLS = TOOLS.map((t: any) => ({ type: 'function', function: { name: t.name, description: t.description, parameters: lowerTypes(t.parameters) } }))
 
-async function askGroq(question: string, history: Turn[], data: unknown, person: Person, used: string[]): Promise<{ text: string | null; note: string }> {
+async function askGroq(question: string, history: Turn[], data: unknown, person: Person, ctx: Ctx): Promise<{ text: string | null; note: string }> {
   const key = (Deno.env.get('GROQ_API_KEY') || '').trim()
   if (!key) return { text: null, note: 'no GROQ_API_KEY' }
   const messages: any[] = [
@@ -159,7 +174,7 @@ async function askGroq(question: string, history: Turn[], data: unknown, person:
         convo.push({ role: 'assistant', content: stripThinking(String(msg.content || '')), tool_calls: calls })
         for (const c of calls) {
           let result: unknown
-          try { const args = JSON.parse(c.function?.arguments || '{}'); record(used, c.function?.name, args); result = runTool(c.function?.name, args, data, person) } catch (e) { result = { error: (e as Error).message } }
+          try { result = useTool(ctx, c.function?.name, JSON.parse(c.function?.arguments || '{}'), data, person) } catch (e) { result = { error: (e as Error).message } }
           convo.push({ role: 'tool', tool_call_id: c.id, content: JSON.stringify(result).slice(0, 9000) })
         }
         rounds++
@@ -175,7 +190,7 @@ async function askGroq(question: string, history: Turn[], data: unknown, person:
   }
 }
 
-async function askGemini(question: string, history: Turn[], data: unknown, person: Person, used: string[]): Promise<{ text: string | null; note: string }> {
+async function askGemini(question: string, history: Turn[], data: unknown, person: Person, ctx: Ctx): Promise<{ text: string | null; note: string }> {
   const key = (Deno.env.get('GEMINI_API_KEY') || '').trim()
   if (!key) return { text: null, note: 'no GEMINI_API_KEY' }
 
@@ -239,7 +254,7 @@ async function askGemini(question: string, history: Turn[], data: unknown, perso
           role: 'user',
           parts: calls.map((p) => {
             let result: unknown
-            try { record(used, p.functionCall.name, p.functionCall.args); result = runTool(p.functionCall.name, p.functionCall.args || {}, data, person) } catch (e) { result = { error: (e as Error).message } }
+            try { result = useTool(ctx, p.functionCall.name, p.functionCall.args || {}, data, person) } catch (e) { result = { error: (e as Error).message } }
             return { functionResponse: { name: p.functionCall.name, response: { result } } }
           }),
         })
