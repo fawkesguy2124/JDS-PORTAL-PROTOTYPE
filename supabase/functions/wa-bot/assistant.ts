@@ -51,7 +51,9 @@ export async function askAssistant(question: string, history: Turn[], data: unkn
   const used: string[] = []
   const ctx: Ctx = { used, proposal: null }
   const notes: string[] = []
-  for (const p of [GROQ, NVIDIA, ...(Deno.env.get('OPENCODE_MODEL') ? [OPENCODE] : [])]) {
+  // BOT_AI_FIRST=nvidia puts NVIDIA before Groq (to compare the two)
+  const first = (Deno.env.get('BOT_AI_FIRST') || 'groq').trim()
+  for (const p of [...(first === 'nvidia' ? [NVIDIA, GROQ] : [GROQ, NVIDIA]), ...(Deno.env.get('OPENCODE_MODEL') ? [OPENCODE] : [])]) {
     const r = await askCompat(p, question, history, data, person, ctx)
     if (r.text || ctx.proposal) return { ...r, note: `${r.note}${notes.length ? ` (${notes.join('; ')})` : ''}`, checked: used, proposal: ctx.proposal }
     notes.push(`${p.label}: ${r.note}`)
@@ -143,9 +145,10 @@ const NVIDIA: Provider = {
   label: 'nvidia',
   url: 'https://integrate.api.nvidia.com/v1/chat/completions',
   keyName: 'NVIDIA_API_KEY',
-  // 20 Oct 2026 test: GLM 5.3 Flash answered in 1.2 s; DeepSeek V4.1 Flash and
-  // gpt-oss-20b gave no answer in 60 s on the free tier; Kimi/Nemotron Ultra not enabled
-  models: async () => (Deno.env.get('NVIDIA_MODEL') ? [Deno.env.get('NVIDIA_MODEL')!.trim()] : ['z-ai/glm-5.3-flash']),
+  // 20 Oct 2026 test of every chat model on Jose's free key: these answer (0.5-2 s for
+  // a short reply); DeepSeek V4.1 Flash, GLM 5.3, Gemma 4, gpt-oss-20b gave no answer
+  // in 40 s; Kimi K2.6, Nemotron Super/Ultra-253B/70B, Mistral Large are not open
+  models: async () => (Deno.env.get('NVIDIA_MODEL') ? [Deno.env.get('NVIDIA_MODEL')!.trim()] : ['z-ai/glm-5.3-flash', 'nvidia/nemotron-3-ultra-550b-a55b']),
   timeoutMs: 15_000,
 }
 const OPENCODE: Provider = {
@@ -218,6 +221,9 @@ async function askCompat(p: Provider, question: string, history: Turn[], data: u
         if (!calls.length) {
           const text = stripThinking(String(msg.content || ''))
           if (!text) { tried.push(`${model}: empty answer`); skip = true; break } // try the next model
+          // some models write the lookup as text ([{"name": "search_jobs", ...}]) instead of
+          // running it: never send that to WhatsApp, try the next model
+          if (/^\s*\[?\[?\s*\{\s*"name"\s*:/.test(text) || /"parameters"\s*:\s*\{/.test(text)) { tried.push(`${model}: wrote a lookup as text`); skip = true; break }
           if (p === GROQ) groqLastGood = model
           return text ? { text, note: `${p.label} ${model}, ${rounds} tool round(s)${tried.length ? ` (skipped ${tried.join(", ")})` : ""}${pass ? ' after a short wait' : ''}` } : { text: null, note: `${p.label} empty answer` }
         }

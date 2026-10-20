@@ -337,19 +337,19 @@ Deno.serve(async (req) => {
       if (run === 'probe') {
         const body = JSON.parse(raw)
         const key = (Deno.env.get(body.keyName || 'NVIDIA_API_KEY') || '').trim()
-        const out = []
-        for (const extra of body.variants || [{}]) {
+        // all variants at once (each its own time limit), so many models fit in one run
+        const out = await Promise.all((body.variants || [{}]).map(async (extra: any) => {
           const t0 = Date.now()
           try {
             const res = await fetch(body.url || 'https://integrate.api.nvidia.com/v1/chat/completions', {
-              method: 'POST', signal: AbortSignal.timeout(60_000),
+              method: 'POST', signal: AbortSignal.timeout(Math.min(Number(body.timeoutMs) || 60_000, 100_000)),
               headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
               body: JSON.stringify({ model: body.model, messages: [{ role: 'user', content: 'Reply with one word: hello' }], max_tokens: 200, ...extra }),
             })
             const j = await res.json().catch(() => ({}))
-            out.push({ extra, status: res.status, ms: Date.now() - t0, reply: String(j?.choices?.[0]?.message?.content || j?.detail || j?.error?.message || JSON.stringify(j)).slice(0, 160) })
-          } catch (e) { out.push({ extra, ms: Date.now() - t0, error: (e as Error).name }) }
-        }
+            return { model: extra.model || body.model, status: res.status, ms: Date.now() - t0, reply: String(j?.choices?.[0]?.message?.content || j?.detail || j?.error?.message || JSON.stringify(j)).slice(0, 100) }
+          } catch (e) { return { model: extra.model || body.model, ms: Date.now() - t0, error: (e as Error).name } }
+        }))
         return json({ success: true, probe: out })
       }
       if (run === 'ask') {
