@@ -39,9 +39,9 @@ async function callGemini(model: string, body: unknown, key: string, signal: Abo
 
 // Returns the reply text, or null when the assistant is not available
 // (no key, quota used up, Google down) so the bot can fall back.
-// Order (Jose, 20 Oct 2026): DeepSeek V4.1 Flash on NVIDIA first (NVIDIA hosts it,
-// US; free developer access, 40 requests a minute), then Groq (US), then Gemini.
-// OpenCode's free models only work inside the OpenCode app, so OpenCode is used
+// Order (20 Oct 2026, after testing): Groq first (US, 1-3 s), then NVIDIA (US-hosted,
+// free developer access; GLM 5.3 Flash 7-16 s; DeepSeek there gave no answer in
+// 60 s), then Gemini. OpenCode's free models only work inside the OpenCode app, so OpenCode is used
 // only if a paid model is set (OPENCODE_MODEL). Each service is tried only when
 // the one before is busy, slow, refused or not set up.
 // `checked` lists the portal checks behind the answer; the bot keeps it with the
@@ -51,7 +51,7 @@ export async function askAssistant(question: string, history: Turn[], data: unkn
   const used: string[] = []
   const ctx: Ctx = { used, proposal: null }
   const notes: string[] = []
-  for (const p of [NVIDIA, ...(Deno.env.get('OPENCODE_MODEL') ? [OPENCODE] : []), GROQ]) {
+  for (const p of [GROQ, NVIDIA, ...(Deno.env.get('OPENCODE_MODEL') ? [OPENCODE] : [])]) {
     const r = await askCompat(p, question, history, data, person, ctx)
     if (r.text || ctx.proposal) return { ...r, note: `${r.note}${notes.length ? ` (${notes.join('; ')})` : ''}`, checked: used, proposal: ctx.proposal }
     notes.push(`${p.label}: ${r.note}`)
@@ -70,7 +70,11 @@ export const needsData = (q: string) => {
 }
 type Ctx = { used: string[]; proposal: Pending | null }
 // the last reply came from a change request (it may have asked for a missing detail)
-const afterChangeTry = (history: Turn[]) => /\[checked:[^\]]*propose_change/.test(String([...history].reverse().find((t) => t.role === 'model')?.text || ''))
+// (not after the bot already asked YES/NO: then the next message is a new question)
+const afterChangeTry = (history: Turn[]) => {
+  const last = String([...history].reverse().find((t) => t.role === 'model')?.text || '')
+  return /\[checked:[^\]]*propose_change/.test(last) && !/^Please confirm:/.test(last)
+}
 // runs one tool call: notes it for the chat history; a change is only PREPARED
 // (checked and kept for the person's YES), never saved here
 function useTool(ctx: Ctx, name: string, args: any, data: any, person: Person): unknown {
@@ -139,8 +143,10 @@ const NVIDIA: Provider = {
   label: 'nvidia',
   url: 'https://integrate.api.nvidia.com/v1/chat/completions',
   keyName: 'NVIDIA_API_KEY',
-  models: async () => (Deno.env.get('NVIDIA_MODEL') ? [Deno.env.get('NVIDIA_MODEL')!.trim()] : ['deepseek-ai/deepseek-v4.1-flash']),
-  timeoutMs: 20_000,
+  // 20 Oct 2026 test: GLM 5.3 Flash answered in 1.2 s; DeepSeek V4.1 Flash and
+  // gpt-oss-20b gave no answer in 60 s on the free tier; Kimi/Nemotron Ultra not enabled
+  models: async () => (Deno.env.get('NVIDIA_MODEL') ? [Deno.env.get('NVIDIA_MODEL')!.trim()] : ['z-ai/glm-5.3-flash']),
+  timeoutMs: 15_000,
 }
 const OPENCODE: Provider = {
   label: 'opencode',

@@ -333,6 +333,25 @@ Deno.serve(async (req) => {
       // keep the bot started, with the team list and portal data already loaded
       if (run === 'warm') { dataCache = null; await Promise.all([loadTeam(admin), loadDataCached(admin)]); return json({ success: true, warm: true }) }
       // test questions: answered as the first team member, nothing sent on WhatsApp
+      // speed check of one AI service, tiny question, no portal data (test only)
+      if (run === 'probe') {
+        const body = JSON.parse(raw)
+        const key = (Deno.env.get(body.keyName || 'NVIDIA_API_KEY') || '').trim()
+        const out = []
+        for (const extra of body.variants || [{}]) {
+          const t0 = Date.now()
+          try {
+            const res = await fetch(body.url || 'https://integrate.api.nvidia.com/v1/chat/completions', {
+              method: 'POST', signal: AbortSignal.timeout(60_000),
+              headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+              body: JSON.stringify({ model: body.model, messages: [{ role: 'user', content: 'Reply with one word: hello' }], max_tokens: 200, ...extra }),
+            })
+            const j = await res.json().catch(() => ({}))
+            out.push({ extra, status: res.status, ms: Date.now() - t0, reply: String(j?.choices?.[0]?.message?.content || j?.detail || j?.error?.message || JSON.stringify(j)).slice(0, 160) })
+          } catch (e) { out.push({ extra, ms: Date.now() - t0, error: (e as Error).name }) }
+        }
+        return json({ success: true, probe: out })
+      }
       if (run === 'ask') {
         const questions: string[] = (JSON.parse(raw).questions || []).slice(0, 8)
         const [team, data] = await Promise.all([loadTeam(admin), loadDataCached(admin)])
