@@ -21,6 +21,7 @@ const MODELS = () => [...new Set([lastGood, Deno.env.get('GEMINI_MODEL'), 'gemin
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 const MAX_TOOL_ROUNDS = 5
 const TIME_LIMIT_MS = 25_000 // Gemini's share; Groq gets its own time after it
+const PER_MODEL_MS = 12_000 // one Gemini model's turn (one round of talk)
 
 type Turn = { role: 'user' | 'model'; text: string }
 type Person = { id: string; name: string; role: string; phone: string }
@@ -57,7 +58,8 @@ export async function askAssistant(question: string, history: Turn[], data: unkn
 export const needsData = (q: string) => {
   const t = String(q || '').trim()
   if (/^(what is|what's|what are|what does|meaning of|explain|define|how does)\b/i.test(t) && !/\b[A-Z]{4}\d{7}\b|\bJ-?\s?\d+|\bour\b|\bmy\b|\bjds\b/i.test(t)) return false
-  return /\b[A-Z]{4}\d{7}\b|\bJ-?\s?\d+|container|box|job|\bbe\b|\bbl\b|ooc|truck|rail|client|detention|free ?day|port|cfs|icd|gate|where|which|how many|kitne|kaha|any\b|list|status|today|yesterday|week|month|sure|again|check|update|pending|urgent|arriv|vessel|ship/i.test(t)
+  // whole words only ("port" must not match "portal")
+  return /\b[A-Z]{4}\d{7}\b|\bJ-?\s?\d+|\bcontainers?\b|\bbox(es)?\b|\bjobs?\b|\bbe\b|\bbl\b|\booc\b|\btrucks?\b|\brail\b|\bclients?\b|\bdetention\b|\bfree ?days?\b|\bports?\b|\bcfs\b|\bicd\b|\bgate\b|\bwhere\b|\bwhich\b|\bhow many\b|\bkitne\b|\bkaha\b|\bany\b|\blist\b|\bstatus\b|\btoday\b|\byesterday\b|\bweek\b|\bmonth\b|\bsure\b|\bagain\b|\bupdates?\b|\bpending\b|\burgent\b|\barriv|\bvessels?\b|\bships?\b/i.test(t)
 }
 type Ctx = { used: string[]; proposal: Pending | null }
 // the last reply came from a change request (it may have asked for a missing detail)
@@ -123,7 +125,7 @@ async function askGroq(question: string, history: Turn[], data: unknown, person:
     ...history.slice(-8).map((t) => ({ role: t.role === 'model' ? 'assistant' : 'user', content: t.text })),
     { role: 'user', content: question },
   ]
-  const mustCheck = needsData(question) || afterChangeTry(history)
+  let mustCheck = needsData(question) || afterChangeTry(history)
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), 30_000)
   const tried: string[] = []
@@ -150,6 +152,8 @@ async function askGroq(question: string, history: Turn[], data: unknown, person:
           signal: controller.signal,
         })
         const out = await res.json().catch(() => ({}))
+        // "must check the portal" but the model had nothing to look up: ask again, free to answer
+        if (res.status === 400 && /tool choice is required/i.test(out?.error?.message || '')) { mustCheck = false; continue }
         if (res.status === 400 && REASONING[model] && !noExtras.has(model) && !/model/i.test(out?.error?.message || '')) {
           // the reasoning settings were refused: ask again without them, and remember
           console.warn(`[wa-bot] ${model} refused the reasoning settings (${String(out?.error?.message || '').slice(0, 140)})`)
@@ -162,7 +166,7 @@ async function askGroq(question: string, history: Turn[], data: unknown, person:
             const t = m.match(/try again in (?:(\d+)m)?([\d.]+)(ms|s)/)
             if (t) wait = Math.min(wait, (Number(t[1] || 0) * 60 + Number(t[2]) / (t[3] === 'ms' ? 1000 : 1)) * 1000)
           }
-          tried.push(`${model}: ${res.status}${res.status === 429 ? ` ${m.match(/on (\w+ per \w+[^:]*): Limit \d+/)?.[0] || ''}` : ''}`); skip = true; break
+          tried.push(`${model}: ${res.status}${res.status === 429 ? ` ${m.match(/on (\w+ per \w+[^:]*): Limit \d+/)?.[0] || ''}` : res.status === 400 ? ` (${m.slice(0, 160)})` : ''}`); skip = true; break
         }
         if (!res.ok) return { text: null, note: `groq ${res.status}: ${String(out?.error?.message || '').slice(0, 120)}` }
         const msg = out?.choices?.[0]?.message || {}
@@ -222,7 +226,15 @@ async function askGemini(question: string, history: Turn[], data: unknown, perso
       const convo = [...contents]
       while (rounds <= MAX_TOOL_ROUNDS) {
         const force = rounds === 0 && (needsData(question) || afterChangeTry(history)) ? { toolConfig: { functionCallingConfig: { mode: 'ANY' } } } : {}
-        const { status, out } = await callGemini(model, { ...base, ...force, generationConfig: config, contents: convo }, key, controller.signal)
+        // each model gets its own time: a slow model must not use up the lighter one's turn
+        let reply: { status: number; out: any }
+        try {
+          reply = await callGemini(model, { ...base, ...force, generationConfig: config, contents: convo }, key, AbortSignal.any([controller.signal, AbortSignal.timeout(PER_MODEL_MS)]))
+        } catch (e) {
+          if ((e as Error).name !== 'TimeoutError' || controller.signal.aborted) throw e
+          tried.push(`${model}: too slow`); skip = true; break
+        }
+        const { status, out } = reply
         if (status === 404) { tried.push(`${model}: not available`); skip = true; break }
         if (status === 429 || status >= 500) {
           // busy: go straight to the next model; only the last one gets a short wait and retry
