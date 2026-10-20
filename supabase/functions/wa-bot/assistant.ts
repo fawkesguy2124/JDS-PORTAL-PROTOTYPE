@@ -133,7 +133,8 @@ const OPENCODE: Provider = {
   label: 'opencode',
   url: (Deno.env.get('OPENCODE_URL') || 'https://opencode.ai/inference/openai/v1/chat/completions').trim(),
   keyName: 'OPENCODE_API_KEY',
-  models: async () => [(Deno.env.get('OPENCODE_MODEL') || 'deepseek-v4.1-flash-free').trim()],
+  // free models first (DeepSeek as Jose asked); OPENCODE_MODEL picks one by hand
+  models: async () => (Deno.env.get('OPENCODE_MODEL') ? [Deno.env.get('OPENCODE_MODEL')!.trim()] : ['deepseek-v4.1-flash-free', 'glm-5.3-flash-free', 'nemotron-3-ultra-free', 'minimax-m3.1-flash-free', 'nemotron-3.5-lightning-free']),
   timeoutMs: 20_000,
 }
 
@@ -184,7 +185,8 @@ async function askCompat(p: Provider, question: string, history: Turn[], data: u
         }
         if (res.status === 401 || res.status === 402 || res.status === 403 || res.status === 404 || res.status === 429 || res.status >= 500 || (res.status === 400 && /model/i.test(out?.error?.message || ''))) {
           const m = String(out?.error?.message || (typeof out?.error === 'string' ? out.error : '') || out?.message || JSON.stringify(out).slice(0, 200))
-          if ([401, 402, 403].includes(res.status)) { refusedUntil[p.label] = Date.now() + 60 * 60_000; refusedWhy[p.label] = `${res.status}: ${m.slice(0, 120)}` }
+          // a refusal that is about the account (not this one model) stops the whole service for an hour
+          if ([401, 402, 403].includes(res.status) && (p.label !== 'opencode' || tried.length >= 4)) { refusedUntil[p.label] = Date.now() + (/free tier can only be used/i.test(m) ? 24 * 60 : 60) * 60_000; refusedWhy[p.label] = `${res.status}: ${m.slice(0, 120)}` }
           if (res.status === 429) {
             const t = m.match(/try again in (?:(\d+)m)?([\d.]+)(ms|s)/)
             if (t) wait = Math.min(wait, (Number(t[1] || 0) * 60 + Number(t[2]) / (t[3] === 'ms' ? 1000 : 1)) * 1000)
