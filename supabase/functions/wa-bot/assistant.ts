@@ -120,6 +120,9 @@ const lowerTypes = (s: any): any => (Array.isArray(s) ? s.map(lowerTypes) : s &&
   ? Object.fromEntries(Object.entries(s).map(([k, v]) => [k, k === 'type' && typeof v === 'string' ? v.toLowerCase() : lowerTypes(v)])) : s)
 const GROQ_TOOLS = TOOLS.map((t: any) => ({ type: 'function', function: { name: t.name, description: t.description, parameters: lowerTypes(t.parameters) } }))
 
+// a service that refused (401/402/403) is skipped for an hour
+const refusedUntil: Record<string, number> = {}
+const refusedWhy: Record<string, string> = {}
 // Services that speak the OpenAI-style chat API (same code for both)
 type Provider = { label: string; url: string; keyName: string; models: (key: string) => Promise<string[]>; timeoutMs: number }
 const GROQ: Provider = { label: 'groq', url: GROQ_API, keyName: 'GROQ_API_KEY', models: groqModels, timeoutMs: 30_000 }
@@ -137,6 +140,8 @@ const OPENCODE: Provider = {
 async function askCompat(p: Provider, question: string, history: Turn[], data: unknown, person: Person, ctx: Ctx): Promise<{ text: string | null; note: string }> {
   const key = (Deno.env.get(p.keyName) || '').trim()
   if (!key) return { text: null, note: `no ${p.keyName}` }
+  // refused us recently (wrong key, not allowed, no credits): don't ask again for a while
+  if ((refusedUntil[p.label] || 0) > Date.now()) return { text: null, note: `${p.label} skipped (${refusedWhy[p.label]})` }
   const messages: any[] = [
     { role: 'system', content: `${SYSTEM_PROMPT(person)}\n\n${TODAY_BRIEF(data, person)}` },
     ...history.slice(-8).map((t) => ({ role: t.role === 'model' ? 'assistant' : 'user', content: t.text })),
@@ -178,12 +183,13 @@ async function askCompat(p: Provider, question: string, history: Turn[], data: u
           continue
         }
         if (res.status === 401 || res.status === 402 || res.status === 403 || res.status === 404 || res.status === 429 || res.status >= 500 || (res.status === 400 && /model/i.test(out?.error?.message || ''))) {
-          const m = String(out?.error?.message || '')
+          const m = String(out?.error?.message || (typeof out?.error === 'string' ? out.error : '') || out?.message || JSON.stringify(out).slice(0, 200))
+          if ([401, 402, 403].includes(res.status)) { refusedUntil[p.label] = Date.now() + 60 * 60_000; refusedWhy[p.label] = `${res.status}: ${m.slice(0, 120)}` }
           if (res.status === 429) {
             const t = m.match(/try again in (?:(\d+)m)?([\d.]+)(ms|s)/)
             if (t) wait = Math.min(wait, (Number(t[1] || 0) * 60 + Number(t[2]) / (t[3] === 'ms' ? 1000 : 1)) * 1000)
           }
-          tried.push(`${model}: ${res.status}${res.status === 429 ? ` ${m.match(/on (\w+ per \w+[^:]*): Limit \d+/)?.[0] || ''}` : res.status === 400 ? ` (${m.slice(0, 160)})` : ''}`); skip = true; break
+          tried.push(`${model}: ${res.status}${res.status === 429 ? ` ${m.match(/on (\w+ per \w+[^:]*): Limit \d+/)?.[0] || ''}` : [400, 401, 402, 403].includes(res.status) ? ` (${m.slice(0, 200)})` : ''}`); skip = true; break
         }
         if (!res.ok) return { text: null, note: `${p.label} ${res.status}: ${String(out?.error?.message || '').slice(0, 120)}` }
         const msg = out?.choices?.[0]?.message || {}
