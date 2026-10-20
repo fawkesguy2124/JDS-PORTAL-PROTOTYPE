@@ -250,6 +250,11 @@ async function handleInbound(admin: Admin, payload: any) {
     } else if (pending && isYes(text)) {
       reply = `That request is more than ${PENDING_MINUTES} minutes old, so nothing was changed. Please ask again.`
     }
+    else if (!pending && isYes(text)) {
+      reply = 'Nothing is waiting for a YES right now. Tell me the change, for example: "mark J-638 delivered".'
+    } else if (!pending && isNo(text)) {
+      reply = 'OK, nothing was changed.'
+    }
     // fixed commands are instant and free; anything else goes to the assistant
     if (!reply) reply = answer(data, text, person, new Date(), { fallback: false })
     if (!reply) {
@@ -260,6 +265,7 @@ async function handleInbound(admin: Admin, payload: any) {
       console.log(`[wa-bot] assistant: ${ai.note} | data ${aiStart - started} ms, AI ${Date.now() - aiStart} ms`)
       // a proposed change: the bot itself asks for YES, in fixed words
       if (ask) reply = confirmText(ask)
+      else if (ai.text && /reply\s*\*?yes/i.test(ai.text)) reply = "I couldn't prepare that change. Please send it again in one message with all the details, for example: record BE 1234567 dated 18 Oct on J-509."
       else reply = ai.text ? toWhatsApp(ai.text) : "⏳ The AI is busy right now, so I couldn't answer that question. Please ask again in a minute.\n\nThese always work instantly: a job no (J-193), a container no, a BE no, SUMMARY or URGENT."
     }
     if (pending && live && !isYes(text) && !isNo(text) && !ask) reply = `(The earlier change was not made: ${pending.summary.replace(/\*/g, '')}.)\n\n${reply}`
@@ -344,6 +350,17 @@ Deno.serve(async (req) => {
             out.push({ q, a: `(test mode, nothing saved) would now do: ${proposed.summary}`, how: 'confirm', ms: Date.now() - t0 })
             if (chat) convo.push({ role: 'user', text: q }, { role: 'model', text: `[change made: ${proposed.summary}]` })
             proposed = null
+            continue
+          }
+          if (proposed && isNo(q)) {
+            out.push({ q, a: 'Cancelled. Nothing was changed.', how: 'cancel', ms: Date.now() - t0 })
+            if (chat) convo.push({ role: 'user', text: q }, { role: 'model', text: 'Cancelled. Nothing was changed.' })
+            proposed = null
+            continue
+          }
+          if (!proposed && isYes(q)) {
+            out.push({ q, a: 'Nothing is waiting for a YES right now.', how: 'nothing pending', ms: Date.now() - t0 })
+            if (chat) convo.push({ role: 'user', text: q }, { role: 'model', text: 'Nothing is waiting for a YES right now.' })
             continue
           }
           proposed = null

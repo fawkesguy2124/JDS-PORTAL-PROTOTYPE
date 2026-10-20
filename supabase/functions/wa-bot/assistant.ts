@@ -60,6 +60,8 @@ export const needsData = (q: string) => {
   return /\b[A-Z]{4}\d{7}\b|\bJ-?\s?\d+|container|box|job|\bbe\b|\bbl\b|ooc|truck|rail|client|detention|free ?day|port|cfs|icd|gate|where|which|how many|kitne|kaha|any\b|list|status|today|yesterday|week|month|sure|again|check|update|pending|urgent|arriv|vessel|ship/i.test(t)
 }
 type Ctx = { used: string[]; proposal: Pending | null }
+// the last reply came from a change request (it may have asked for a missing detail)
+const afterChangeTry = (history: Turn[]) => /\[checked:[^\]]*propose_change/.test(String([...history].reverse().find((t) => t.role === 'model')?.text || ''))
 // runs one tool call: notes it for the chat history; a change is only PREPARED
 // (checked and kept for the person's YES), never saved here
 function useTool(ctx: Ctx, name: string, args: any, data: any, person: Person): unknown {
@@ -121,7 +123,7 @@ async function askGroq(question: string, history: Turn[], data: unknown, person:
     ...history.slice(-8).map((t) => ({ role: t.role === 'model' ? 'assistant' : 'user', content: t.text })),
     { role: 'user', content: question },
   ]
-  const mustCheck = needsData(question)
+  const mustCheck = needsData(question) || afterChangeTry(history)
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), 30_000)
   const tried: string[] = []
@@ -219,7 +221,7 @@ async function askGemini(question: string, history: Turn[], data: unknown, perso
       let config: any = noThinkingSetting.has(model) ? plain : { ...plain, thinkingConfig }
       const convo = [...contents]
       while (rounds <= MAX_TOOL_ROUNDS) {
-        const force = rounds === 0 && needsData(question) ? { toolConfig: { functionCallingConfig: { mode: 'ANY' } } } : {}
+        const force = rounds === 0 && (needsData(question) || afterChangeTry(history)) ? { toolConfig: { functionCallingConfig: { mode: 'ANY' } } } : {}
         const { status, out } = await callGemini(model, { ...base, ...force, generationConfig: config, contents: convo }, key, controller.signal)
         if (status === 404) { tried.push(`${model}: not available`); skip = true; break }
         if (status === 429 || status >= 500) {
