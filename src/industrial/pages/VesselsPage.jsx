@@ -10,7 +10,7 @@ import { Icon, Chip, fmtDate, timeAgo } from '../ui'
 // job's IGM check, or the vessel-track finder (the number the ship itself
 // broadcast, heard near Malacca / the Red Sea). Not ULIP.
 const FROM = {
-  typed: 'IMO typed by JDS',
+  typed: 'IMO saved on the job',
   igm: 'IMO from the IGM',
   found: 'Number found automatically from the ship\'s own signal',
 }
