@@ -5,6 +5,7 @@ import DocumentsMobile from './mobile/DocumentsMobile'
 import DocumentsDesktop from './desktop/DocumentsDesktop'
 
 import { availableTypes } from '../utils/docTypes'
+import { vesselFromBl } from '../services/blVessel'
 
 function DocumentsSection({ jobs, profiles, currentUserName, showToast, initialExpandJobId, onExpandConsumed }) {
   const { user, profile } = useAuth()
@@ -133,6 +134,17 @@ function DocumentsSection({ jobs, profiles, currentUserName, showToast, initialE
         created_at: new Date().toISOString(),
       })
       if (insErr) throw insErr
+      // a BL on a job with no ship yet: save the ship name from it, so the
+      // Vessels page can follow the ship from the pre-alert (never overwrites)
+      if (docType === 'BL' && !job.vessel) {
+        try {
+          const vessel = await vesselFromBl(uploadFile)
+          if (vessel) {
+            const { data: upd } = await supabase.from('jobs').update({ vessel }).eq('id', job.id).is('vessel', null).select('id')
+            if (upd?.length) showToast(`Ship name saved from the BL: ${vessel}`, 'success')
+          }
+        } catch (e) { console.warn('[Documents] could not read the ship name from the BL:', e?.message) }
+      }
       clearInterval(sim)
       setUploadProgress(100)
       showToast('Document uploaded successfully.', 'success')
