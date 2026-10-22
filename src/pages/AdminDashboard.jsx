@@ -36,7 +36,7 @@ const NAV_SECTIONS = [
     { id: 'vessels', label: 'Vessels', icon: 'ship' },
   ] },
   { label: 'CUSTOMS', items: [{ id: 'customs', label: 'BE & OOC', icon: 'file-certificate' }] },
-  { label: 'DOCUMENTS', items: [{ id: 'documents', label: 'Documents & OCR', icon: 'files' }] },
+  { label: 'DOCUMENTS', items: [{ id: 'documents', label: 'Documents', icon: 'files' }] },
   { label: 'MONEY', items: [
     { id: 'payments', label: 'Payments', icon: 'currency-rupee' },
     { id: 'detention', label: 'Detention', icon: 'clock-exclamation', alert: true },

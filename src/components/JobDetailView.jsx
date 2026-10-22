@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react'
 import { supabase } from '../supabase'
 import { getStageName, parseContainerNos, getContainerSize } from '../utils/jobHelpers'
-import OCRSection, { FIELD_LABELS_OCR, OCR_SECTIONS, OCR_FIELD_MAP, MULTI_VALUE_FIELDS } from '../components/OCRSection'
 import JobDetailMobile from './mobile/JobDetailMobile'
 import JobDetailDesktop from './desktop/JobDetailDesktop'
 import { useAuth } from '../contexts/AuthContext'
@@ -362,11 +361,8 @@ function JobDetailView({ job, profiles, currentUserName, isAdmin, canUpdateStage
   const [showFullAccountability, setShowFullAccountability] = useState(false)
   const [detailTab, setDetailTab] = useState(() => {
     const hash = window.location.hash.replace('#', '')
-    return ['details', 'ocr', 'fields', 'customs', ...JOB_TABS.map(t => t.id)].filter(t => !hideTabs.includes(t)).includes(hash) ? hash : 'details'
+    return ['details', 'customs', ...JOB_TABS.map(t => t.id)].filter(t => !hideTabs.includes(t)).includes(hash) ? hash : 'details'
   })
-  const [extractedFields, setExtractedFields] = useState(null)
-  const [loadingExtracted, setLoadingExtracted] = useState(false)
-  const [extractedData, setExtractedData] = useState(null)
   const [importedFields, setImportedFields] = useState({})
   const [fieldConfidence, setFieldConfidence] = useState({})
   const [form, setForm] = useState(() => ({ ...job }))
@@ -376,37 +372,6 @@ function JobDetailView({ job, profiles, currentUserName, isAdmin, canUpdateStage
 
   const { user: authUser, profile: authProfile } = useAuth()
 
-  const autoFillTimersRef = useRef([])
-  useEffect(() => {
-    return () => { autoFillTimersRef.current.forEach(clearTimeout) }
-  }, [])
-
-
-  const loadExtractedFields = async () => {
-    setLoadingExtracted(true)
-    try {
-      const { data } = await supabase
-        .from('job_extractions')
-        .select('id, job_id, job_no, extracted_data, extracted_at, extracted_by_name')
-        .eq('job_id', job.id)
-        .order('extracted_at', { ascending: false })
-        .limit(1)
-        .maybeSingle()
-      setExtractedFields(data || null)
-      setExtractedData(data?.extracted_data || null)
-    } catch {
-      setExtractedFields(null)
-      setExtractedData(null)
-    } finally {
-      setLoadingExtracted(false)
-    }
-  }
-
-  useEffect(() => {
-    if (!job.id) return
-    loadExtractedFields()
-  }, [job.id])
-
   useEffect(() => {
     setEditMode(false)
     setSaving(false)
@@ -415,7 +380,7 @@ function JobDetailView({ job, profiles, currentUserName, isAdmin, canUpdateStage
 
     // Open on the tab named in the link (#customs, #truck …), otherwise Job Details
     const hash = window.location.hash.replace('#', '')
-    const isReload = ['details', 'ocr', 'fields', 'customs', ...JOB_TABS.map(t => t.id)].includes(hash)
+    const isReload = ['details', 'customs', ...JOB_TABS.map(t => t.id)].includes(hash)
     if (!isReload) {
       setDetailTab('details')
       window.history.replaceState(null, '', window.location.pathname + window.location.search + '#details')
@@ -585,128 +550,6 @@ function JobDetailView({ job, profiles, currentUserName, isAdmin, canUpdateStage
 
   const inputBase = 'w-full h-9 px-3 py-2 text-xs rounded-lg bg-white border-[1.5px] border-[#e2e6ed] text-[#1a2233] outline-none focus:border-[#1a4fa0] focus:ring-2 focus:ring-[#e8eef8] disabled:opacity-60 disabled:cursor-not-allowed'
 
-  const handleAutoFill = async (fieldKey) => {
-    const ocrKey = OCR_FIELD_MAP[fieldKey]
-
-    if (!ocrKey) {
-      toast(`No extracted data available for ${FIELD_LABELS[fieldKey] || fieldKey}.`, 'info')
-      return
-    }
-    if (!extractedData) {
-      toast('No extracted data found. Run OCR Extract on this job first.', 'info')
-      return
-    }
-
-    const extracted = extractedData[ocrKey]
-    if (!extracted?.value) {
-      toast(`No extracted value for ${FIELD_LABELS[fieldKey] || fieldKey}.`, 'info')
-      return
-    }
-
-    const extractedValue = extracted.value.trim()
-    const sourceDoc = extracted.source || null
-    const now = Date.now()
-
-    if (MULTI_VALUE_FIELDS.includes(fieldKey)) {
-      const existing = parseContainerNos(form.containers)
-      const incoming = extractedValue
-        .split(/[\s,;/]+/).map(s => s.trim().toUpperCase()).filter(Boolean)
-      const merged = [...new Set([...existing, ...incoming])]
-      const sizes = { ...(form.container_sizes || {}) }
-      // New containers from OCR get no size — user selects manually
-      setForm(prev => ({ ...prev, _boxRows: undefined, containers: merged.join(' '), container_sizes: sizes }))
-      toast(`✓ Added ${incoming.length} container(s) to ${FIELD_LABELS[fieldKey]}.`, 'success')
-    } else {
-      setForm(prev => ({ ...prev, [fieldKey]: extractedValue }))
-      toast(`✓ Auto Filled ${FIELD_LABELS[fieldKey] || fieldKey}${sourceDoc ? ` from ${sourceDoc}` : ''}.`, 'success')
-    }
-
-    // Persist auto-fill record to field_meta
-    const newMeta = {
-      ...(meta || {}),
-      [fieldKey]: {
-        ...(meta?.[fieldKey] || {}),
-        autoFill: { ts: now, by: currentUserName, source: sourceDoc },
-      }
-    }
-    try {
-      await supabase.from('jobs').update({ field_meta: newMeta }).eq('id', job.id)
-      await onSaved()
-    } catch (e) {
-      console.warn('Could not persist auto-fill record:', e)
-    }
-
-    setImportedFields(prev => ({ ...prev, [fieldKey]: true }))
-    const t1 = setTimeout(() => setImportedFields(prev => ({ ...prev, [fieldKey]: false })), 2500)
-    autoFillTimersRef.current.push(t1)
-  }
-
-  const handleAutoFillAll = async () => {
-    if (!extractedData) {
-      toast('No extracted data found. Run OCR Extract on this job first.', 'info')
-      return
-    }
-
-      const fillableKeys = ['job_no','client','mode','goods','bl_no','containers',
-        'shipping_line','vessel','eta','hs_code','destination','importer_gstin','importer_iec',
-      'ad_code','igm_no','igm_date','hawb_no','hawb_date','bl_date','port_of_loading',
-      'port_of_shipment','port_of_discharge','country_of_origin','country_of_consignment',
-      'package_count','gross_weight','net_weight','supplier_name','supplier_address','supplier_country'
-    ].filter(k => canEditField(k) && OCR_FIELD_MAP[k] && extractedData[OCR_FIELD_MAP[k]]?.value)
-
-    if (fillableKeys.length === 0) {
-      toast('No extracted values available to fill.', 'info')
-      return
-    }
-
-    const newForm = { ...form }
-    const newMeta = { ...(meta || {}) }
-    const newConfidence = {}
-    const now = Date.now()
-
-    for (const k of fillableKeys) {
-      const ocrKey = OCR_FIELD_MAP[k]
-      const extracted = extractedData[ocrKey]
-      if (!extracted?.value) continue
-
-      const extractedValue = extracted.value.trim()
-      const sourceDoc = extracted.source || null
-      const confidence = extracted.confidence || 'low'
-
-      if (MULTI_VALUE_FIELDS.includes(k)) {
-        const existing = parseContainerNos(newForm.containers)
-        const incoming = extractedValue.split(/[\s,;/]+/).map(s => s.trim().toUpperCase()).filter(Boolean)
-        newForm.containers = [...new Set([...existing, ...incoming])].join(' ')
-        newForm._boxRows = undefined
-        if (!newForm.container_sizes) newForm.container_sizes = {}
-      } else {
-        newForm[k] = extractedValue
-      }
-
-      newConfidence[k] = confidence
-      newMeta[k] = {
-        ...(newMeta[k] || {}),
-        autoFill: { ts: now, by: currentUserName, source: sourceDoc },
-      }
-    }
-
-    setForm(newForm)
-    setFieldConfidence(newConfidence)
-    setImportedFields(Object.fromEntries(fillableKeys.map(k => [k, true])))
-
-    try {
-      await supabase.from('jobs').update({ field_meta: newMeta }).eq('id', job.id)
-      await onSaved()
-    } catch (e) {
-      console.warn('Could not persist auto-fill record:', e)
-    }
-
-    toast(`✓ ${fillableKeys.length} fields filled from OCR. Please review highlighted fields.`, 'success')
-
-    const t2 = setTimeout(() => setImportedFields({}), 3000)
-    autoFillTimersRef.current.push(t2)
-  }
-
   const renderFieldInput = (key) => {
     const disabled = !canEditField(key) || saving
     const value = form[key] ?? ''
@@ -805,19 +648,13 @@ function JobDetailView({ job, profiles, currentUserName, isAdmin, canUpdateStage
       </div>
       )}
 
+      {/* tabs only when there is more than Job Details to choose from */}
+      {((job.job_type !== 'export' && !hideTabs.includes('customs')) || JOB_TABS.some(t => t.showIf(job) && !hideTabs.includes(t.id))) && (
       <div className="px-4 sm:px-6 border-b border-[#e2e6ed] bg-[#f8f9fb]">
         <div className="flex gap-1 py-2 overflow-x-auto">
           <button type="button" onClick={() => { setDetailTab('details'); window.history.replaceState(null, '', window.location.pathname + window.location.search + '#details') }}
             className={classNames('px-4 py-1.5 text-xs font-bold rounded-lg transition-colors', detailTab === 'details' ? 'bg-white text-[#1a4fa0] shadow-sm border border-[#e2e6ed]' : 'text-[#8a96a8] hover:text-[#1a4fa0]')}>
             Job Details
-          </button>
-          <button type="button" onClick={() => { setDetailTab('ocr'); window.history.replaceState(null, '', window.location.pathname + window.location.search + '#ocr') }}
-            className={classNames('px-4 py-1.5 text-xs font-bold rounded-lg transition-colors', detailTab === 'ocr' ? 'bg-white text-[#1a4fa0] shadow-sm border border-[#e2e6ed]' : 'text-[#8a96a8] hover:text-[#1a4fa0]')}>
-            ✦ OCR Extract
-          </button>
-          <button type="button" onClick={() => { setDetailTab('fields'); window.history.replaceState(null, '', window.location.pathname + window.location.search + '#fields') }}
-            className={classNames('px-4 py-1.5 text-xs font-bold rounded-lg transition-colors', detailTab === 'fields' ? 'bg-white text-[#1a4fa0] shadow-sm border border-[#e2e6ed]' : 'text-[#8a96a8] hover:text-[#1a4fa0]')}>
-            ✦ Extracted Fields
           </button>
           {job.job_type !== 'export' && !hideTabs.includes('customs') && <button type="button" onClick={() => { setDetailTab('customs'); window.history.replaceState(null, '', window.location.pathname + window.location.search + '#customs') }}
             className={classNames('px-4 py-1.5 text-xs font-bold rounded-lg transition-colors', detailTab === 'customs' ? 'bg-white text-[#1a4fa0] shadow-sm border border-[#e2e6ed]' : 'text-[#8a96a8] hover:text-[#1a4fa0]')}>
@@ -831,6 +668,7 @@ function JobDetailView({ job, profiles, currentUserName, isAdmin, canUpdateStage
           ))}
         </div>
       </div>
+      )}
 
       {detailTab === 'details' && (
       <>
@@ -856,26 +694,6 @@ function JobDetailView({ job, profiles, currentUserName, isAdmin, canUpdateStage
       <div className="px-4 sm:px-6 py-5">
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-sm font-semibold text-[#1a2233]">Job Details</h3>
-          {editMode && (
-            <button
-              type="button"
-              onClick={handleAutoFillAll}
-              disabled={!extractedData}
-              className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg text-xs font-semibold border transition-all"
-              style={{
-                background: extractedData ? '#eff6ff' : '#f4f6f9',
-                color: extractedData ? '#1a4fa0' : '#8a96a8',
-                border: extractedData ? '1px solid #bfdbfe' : '1px solid #e2e6ed',
-                cursor: extractedData ? 'pointer' : 'not-allowed',
-                opacity: extractedData ? 1 : 0.6,
-              }}
-              onMouseEnter={e => { if (extractedData) { e.currentTarget.style.background='#1a4fa0'; e.currentTarget.style.color='white' }}}
-              onMouseLeave={e => { e.currentTarget.style.background= extractedData ? '#eff6ff' : '#f4f6f9'; e.currentTarget.style.color= extractedData ? '#1a4fa0' : '#8a96a8' }}
-              title={extractedData ? 'Fill all fields from OCR extracted data' : 'Run OCR Extract first to enable auto-fill'}
-            >
-              ✨ Auto Fill
-            </button>
-          )}
         </div>
         {!editMode ? (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -1024,7 +842,6 @@ function JobDetailView({ job, profiles, currentUserName, isAdmin, canUpdateStage
             {/* Left — editable fields, 2 columns wide */}
             <div className="lg:col-span-2 grid grid-cols-2 md:grid-cols-2 gap-x-4 gap-y-4 md:gap-x-8 md:gap-y-5">
               {['job_no','client','mode','job_type','port_code','priority','goods','bl_no','be_no','be_date','containers','shipping_line','vessel','eta','cfs_name','cfs_amount','hs_code','rms_status','bg_required','destination','free_days','detention_risk','delay_reason'].map((k) => {
-                const hasOcrValue   = OCR_FIELD_MAP[k] !== undefined && OCR_FIELD_MAP[k] !== null && !!extractedData?.[OCR_FIELD_MAP[k]]?.value
                 const isEditable    = canEditField(k)
                 const wasJustFilled = importedFields[k]
 
@@ -1257,93 +1074,6 @@ function JobDetailView({ job, profiles, currentUserName, isAdmin, canUpdateStage
         )}
       </div>
       </>
-      )}
-
-      {detailTab === 'ocr' && (
-        <div className="px-4 sm:px-6 py-5">
-          <OCRSection
-            job={job}
-            showToast={toast}
-            preloadedExtraction={extractedFields}
-            currentUserName={currentUserName}
-            user={authUser}
-            profile={authProfile}
-            onSaved={loadExtractedFields}
-          />
-        </div>
-      )}
-      {detailTab === 'fields' && (
-        <div className="px-4 sm:px-6 py-5">
-          {loadingExtracted ? (
-            <div className="flex items-center justify-center py-12">
-              <span className="h-5 w-5 border-2 border-[#1a4fa0] border-t-transparent rounded-full animate-spin" />
-              <span className="ml-3 text-sm text-[#8a96a8]">Loading extracted fields...</span>
-            </div>
-          ) : extractedFields ? (
-            <div>
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-sm font-semibold text-[#1a2233]">✦ Extracted Fields</h3>
-                {extractedFields.extracted_at && (
-                  <span className="text-xs text-[#8a96a8]">
-                    Extracted {new Date(extractedFields.extracted_at).toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' })}
-                    {extractedFields.extracted_by_name ? ` · by ${extractedFields.extracted_by_name}` : ''}
-                  </span>
-                )}
-              </div>
-              {OCR_SECTIONS.map((section) => {
-                const data = extractedFields.extracted_data || {}
-                const relevant = section.fields.filter((k) => data[k] !== undefined)
-                if (!relevant.length) return null
-                return (
-                  <div key={section.title} className="mb-5">
-                    <h4 className="text-xs font-bold uppercase tracking-wide text-[#8a96a8] mb-2 border-b border-[#e2e6ed] pb-1">{section.title}</h4>
-                    <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
-                      {relevant.map((k) => {
-                        const field = data[k] || {}
-                        let borderColor = 'border-gray-200'
-                        if (!field.value) borderColor = 'border-red-300 bg-red-50'
-                        else if (field.confidence === 'high') borderColor = 'border-green-400'
-                        else if (field.confidence === 'medium') borderColor = 'border-amber-400'
-                        else borderColor = 'border-red-300'
-                        const label = FIELD_LABELS_OCR?.[k] || k.replace(/_/g, ' ')
-                        return (
-                          <div key={k} className={'rounded-lg border-l-4 px-3 py-2 bg-white border-[1.5px] ' + borderColor}>
-                            <p className="text-[10px] font-bold uppercase tracking-widest text-[#8a96a8]">{label}</p>
-                            <p className="text-sm font-semibold text-[#1a2233] mt-0.5">{field.value || '—'}</p>
-                            {field.source && <p className="text-[10px] text-[#8a96a8] mt-0.5">Source: {field.source}</p>}
-                          </div>
-                        )
-                      })}
-                    </div>
-                  </div>
-                )
-              })}
-              {(() => {
-                const data = extractedFields.extracted_data || {}
-                const otherKeys = Object.keys(data).filter((k) => !OCR_SECTIONS.some(s => s.fields.includes(k)))
-                if (!otherKeys.length) return null
-                return (
-                  <div className="mb-5">
-                    <h4 className="text-xs font-bold uppercase tracking-wide text-[#8a96a8] mb-2 border-b border-[#e2e6ed] pb-1">Other Fields</h4>
-                    <div className="flex flex-wrap gap-2">
-                      {otherKeys.map((k) => {
-                        const label = FIELD_LABELS_OCR?.[k] || k.replace(/_/g, ' ')
-                        return (
-                          <span key={k} className="inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium bg-[#f4f6f9] text-[#8a96a8] border border-[#e2e6ed]">{label}: {data[k]?.value || '—'}</span>
-                        )
-                      })}
-                    </div>
-                  </div>
-                )
-              })()}
-            </div>
-          ) : (
-            <div className="flex flex-col items-center justify-center py-12 text-center">
-              <p className="text-sm text-[#8a96a8] mb-2">No extracted fields found for this job</p>
-              <p className="text-xs text-[#8a96a8]">Use the <strong>OCR Extract</strong> tab above to extract fields from uploaded documents</p>
-            </div>
-          )}
-        </div>
       )}
 
       {detailTab === 'customs' && job.job_type !== 'export' && !hideTabs.includes('customs') && (

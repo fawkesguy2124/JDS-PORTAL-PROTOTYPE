@@ -588,7 +588,7 @@ export default function EmployeeDashboard() {
     {
       label: 'DOCUMENTS',
       items: [
-        { id: 'documents',  label: 'Documents & OCR',    icon: '📄' },
+        { id: 'documents',  label: 'Documents',          icon: '📄' },
       ],
     },
     {
