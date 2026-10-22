@@ -113,6 +113,9 @@ Deno.serve(async (req) => {
   const arrivedLongAgo = (iso: string | null) => !!iso && Date.now() - new Date(iso).getTime() > 3 * 864e5
   for (const b of boxes || []) if (b.vessel && !arrivedLongAgo(b.port_in)) want(b.vessel, (open.get(b.job_id) as any)?.job_no)
   for (const j of jobs || []) if ((j as any).vessel) want((j as any).vessel, (j as any).job_no)
+  // watch list (a fair test of the finder over days): extra ship names from the
+  // VESSEL_WATCH setting, saved like job ships but under "watch"
+  for (const n of String(Deno.env.get('VESSEL_WATCH') || '').split(',').map((x) => x.trim()).filter(Boolean).slice(0, 40)) want(n, 'watch')
   // test only: listen for these names instead, and save nothing
   const testOnly = Array.isArray(body?.names) && body.names.length > 0
   if (testOnly) { wanted.clear(); for (const n of body.names.slice(0, 50)) want(n, 'test') }
