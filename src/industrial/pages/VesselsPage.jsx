@@ -14,14 +14,29 @@ export default function VesselsPage({ onOpenJob, showToast }) {
   const [selected, setSelected] = useState(null) // `${jobId}:${ship}`
   const [typing, setTyping] = useState({}) // jobId -> IMO being typed
   const [saving, setSaving] = useState(null)
+  const [naming, setNaming] = useState({}) // jobId -> ship name being typed
+
+  const saveShip = async (job) => {
+    const name = String(naming[job.id] || '').trim().toUpperCase()
+    if (name.length < 3) { showToast?.('Type the ship name, for example CSCL MARS.', 'error'); return }
+    setSaving(job.id)
+    const { data: rows, error } = await supabase.from('jobs').update({ vessel: name, updated_at: new Date().toISOString() }).eq('id', job.id).select()
+    setSaving(null)
+    if (error || !rows?.length) { showToast?.(`Could not save: ${error?.message || 'no permission'}`, 'error'); return }
+    patchJob(rows[0])
+    setNaming((p) => ({ ...p, [job.id]: undefined }))
+    showToast?.(`Ship ${name} saved on ${job.job_no}`, 'success')
+  }
 
   // one row per ship (a job whose containers sail on two ships has two rows)
   const ships = useMemo(() => (active || [])
-    .filter(({ job }) => !isDelivered(job) && !isExportJob(job))
-    .flatMap(({ job, j }) => vesselsOf(job, data).map((name, i) => {
-      const id = shipIdOf(job, name, data)
-      return { key: `${job.id}:${name}`, job, name, first: i === 0, arrived: j.arrivedAt, ...id }
-    }))
+    .filter(({ job }) => !isDelivered(job) && !isExportJob(job) && !/air/i.test(job.mode || ''))
+    .flatMap(({ job, j }) => {
+      const names = vesselsOf(job, data)
+      // a sea job whose ship isn't known yet still shows, to type the ship name
+      if (!names.length) return [{ key: `${job.id}:`, job, name: null, first: true, arrived: j.arrivedAt, imo: null, mmsi: null }]
+      return names.map((name, i) => ({ key: `${job.id}:${name}`, job, name, first: i === 0, arrived: j.arrivedAt, ...shipIdOf(job, name, data) }))
+    })
     // still at sea first, then the most recently arrived
     .sort((a, b) => (!!a.arrived - !!b.arrived) || String(b.arrived || '').localeCompare(String(a.arrived || ''))), [active, data])
 
@@ -62,7 +77,7 @@ export default function VesselsPage({ onOpenJob, showToast }) {
         <div className="ix-card-head">
           <Icon name="list-details" style={{ color: 'var(--navy)' }} />
           <h2>Ships of open jobs</h2><span className="ix-chip grey">{ships.length}</span>
-          <span className="sub hide-m">Type the ship's IMO number once to see it on the map.</span>
+          <span className="sub hide-m">Every open sea job. Type the ship's IMO once to see it on the map.</span>
         </div>
         {loading && !data && <div className="ix-empty">Loading…</div>}
         {data && ships.length === 0 && <div className="ix-empty">No open job has a ship name yet. Ship names come from container tracking.</div>}
@@ -70,26 +85,34 @@ export default function VesselsPage({ onOpenJob, showToast }) {
           <div key={s.key} className={`ix-ship-row ${sel?.key === s.key ? 'sel' : ''}`}>
             <div className="who">
               <button type="button" className="ix-plate" disabled={!shown(s)} onClick={() => setSelected(s.key)} title={shown(s) ? 'Show this ship on the map' : 'The ship\'s number is not known yet'} style={{ cursor: shown(s) ? 'pointer' : 'default', whiteSpace: 'nowrap' }}>
-                {s.name}
+                {s.name || 'Ship ?'}
               </button>
               <div style={{ minWidth: 0 }}>
                 <button type="button" className="ix-link" style={{ margin: 0 }} onClick={() => onOpenJob?.(s.job.id)}><b className="mono">{s.job.job_no}</b></button>
                 <span style={{ color: 'var(--text-2)' }}> · {s.job.client || 'No client'}</span>
                 <div style={{ fontSize: 12, color: 'var(--muted)' }}>
-                  {s.imo ? `IMO ${s.imo}` : s.mmsi ? 'Live position available' : 'IMO not added yet'}
+                  {!s.name ? 'Ship not known yet (upload the BL, or type the ship name)' : s.imo ? `IMO ${s.imo}` : s.mmsi ? 'Live position available' : 'IMO not added yet'}
                   {s.job.eta ? ` · ETA ${fmtDate(s.job.eta)}` : ''}
                 </div>
               </div>
             </div>
             <div className="act">
-              {s.arrived ? <Chip tone="green" icon="anchor">Arrived {fmtDate(s.arrived)}</Chip> : <Chip tone="blue" icon="ship">At sea</Chip>}
+              {s.name && (s.arrived ? <Chip tone="green" icon="anchor">Arrived {fmtDate(s.arrived)}</Chip> : <Chip tone="blue" icon="ship">At sea</Chip>)}
               {shown(s) && (
                 <>
                   <button type="button" className={`ix-btn sm ${sel?.key === s.key ? 'primary' : ''}`} onClick={() => setSelected(s.key)}><Icon name="map-pin" />Show</button>
                 </>
               )}
+              {/* no ship yet: type its name */}
+              {!s.name && (
+                <>
+                  <input value={naming[s.job.id] || ''} onChange={(e) => setNaming((p) => ({ ...p, [s.job.id]: e.target.value.toUpperCase().slice(0, 40) }))}
+                    placeholder="Ship name" aria-label={`Ship name for ${s.job.job_no}`} style={{ width: 160, fontFamily: 'Inter, sans-serif' }} />
+                  <button type="button" className="ix-btn sm primary" disabled={saving === s.job.id || String(naming[s.job.id] || '').trim().length < 3} onClick={() => saveShip(s.job)}>{saving === s.job.id ? 'Saving…' : 'Save'}</button>
+                </>
+              )}
               {/* the IMO box, until the ship can be shown */}
-              {s.first && !shown(s) && (
+              {s.name && s.first && !shown(s) && (
                 <>
                   <input value={typing[s.job.id] || ''} onChange={(e) => setTyping((p) => ({ ...p, [s.job.id]: e.target.value.replace(/\D/g, '').slice(0, 7) }))}
                     placeholder="IMO (7 digits)" inputMode="numeric" aria-label={`IMO number for ${s.job.job_no}`} />

@@ -23,7 +23,6 @@ const SORTS = {
   eta: (a, b) => String(a.job.eta || '9999').localeCompare(String(b.job.eta || '9999')),
   updated: (a, b) => new Date(a.job.updated_at || 0) - new Date(b.job.updated_at || 0),
 }
-const LEVEL_ORDER = { red: 0, amber: 1, info: 2, none: 3 }
 
 export default function JobsPage({ profile, onOpenJob, onCreateJob, selectedId }) {
   const { rows, profiles, loading, error, refresh } = useJourney()
@@ -51,7 +50,8 @@ export default function JobsPage({ profile, onOpenJob, onCreateJob, selectedId }
       .filter(({ job }) => !needle || [job.job_no, job.client, job.be_no, job.bl_no, ...truckNos(job), job.vessel, job.ulip_refs?.igm_no, ...parseContainerNos(job.containers)]
         .filter(Boolean).some((x) => String(x).toLowerCase().replace(/\s+/g, '').includes(needle)))
     if (sort.key) out = [...out].sort((a, b) => SORTS[sort.key](a, b) * sort.dir)
-    else out = [...out].sort((a, b) => LEVEL_ORDER[worst(a.j)] - LEVEL_ORDER[worst(b.j)] || num(b.job) - num(a.job))
+    // default: newest job number first (Jose, 22 Oct 2026)
+    else out = [...out].sort((a, b) => num(b.job) - num(a.job))
     return out
   }, [rows, view, me, q, mode, type, owner, sort])
 
