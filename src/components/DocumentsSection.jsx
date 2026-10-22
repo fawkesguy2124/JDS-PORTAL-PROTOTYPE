@@ -7,6 +7,7 @@ import DocumentsDesktop from './desktop/DocumentsDesktop'
 import { availableTypes } from '../utils/docTypes'
 import { vesselFromBl } from '../services/blVessel'
 import { downloadDoc, useDocUrl } from '../services/docFiles'
+import PdfPreview from './PdfPreview'
 
 function DocumentsSection({ jobs, profiles, currentUserName, showToast, initialExpandJobId, onExpandConsumed }) {
   const { user, profile } = useAuth()
@@ -324,7 +325,7 @@ function DocumentsSection({ jobs, profiles, currentUserName, showToast, initialE
             </div>
             <div className="flex-1 overflow-auto bg-[#f4f6f9] p-4 flex items-center justify-center min-h-[300px]">
               {['pdf'].includes((previewModal.doc.file_type || '').toLowerCase()) ? (
-                !previewUrl ? <p className="text-sm text-[#8a96a8]">Opening…</p> : <iframe src={previewUrl} title="PDF Preview" className="w-full h-[600px] rounded-lg border border-[#e2e6ed] bg-white" />
+                <PdfPreview doc={previewModal.doc} />
               ) : ['jpg', 'jpeg', 'png'].includes((previewModal.doc.file_type || '').toLowerCase()) ? (
                 !previewUrl ? <p className="text-sm text-[#8a96a8]">Opening…</p> : <img src={previewUrl} alt={previewModal.doc.file_name} className="max-w-full max-h-[600px] rounded-lg shadow-sm object-contain" />
               ) : (

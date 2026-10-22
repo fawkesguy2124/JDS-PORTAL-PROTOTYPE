@@ -6,7 +6,8 @@ import { useJourney } from './JourneyContext'
 import { containerFinishedOn, deliveryBy } from '../services/journey'
 import { Chip, FreeDays, Icon, PhaseChip, fmtDate, initials, jobOwnerName, timeAgo } from './ui'
 import ShipMap, { vesselOf, shipIdOf } from './ShipMap'
-import { openDoc } from '../services/docFiles'
+import { openDoc, downloadDoc } from '../services/docFiles'
+import PdfPreview from '../components/PdfPreview'
 
 // The side panel that opens when a job is clicked: what it is, where it is,
 // what is next, its containers, timeline, documents and team notes. Editing
@@ -20,6 +21,7 @@ export default function JobDrawer({ jobId, initialTab = 'overview', onClose, onO
   const [showShip, setShowShip] = useState(false)
   const [log, setLog] = useState([])
   const [docs, setDocs] = useState([])
+  const [viewDoc, setViewDoc] = useState(null) // a PDF shown inside the portal
   const [note, setNote] = useState('')
   const [saving, setSaving] = useState(false)
   const [ctrFilter, setCtrFilter] = useState('all')
@@ -369,13 +371,30 @@ export default function JobDrawer({ jobId, initialTab = 'overview', onClose, onO
                     <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.doc_type ? `${d.doc_type} · ` : ''}{d.file_name}</div>
                     <div className="s">{d.uploaded_by_name ? `by ${d.uploaded_by_name} · ` : ''}{timeAgo(d.created_at)}</div>
                   </div>
-                  {(d.file_path || d.file_url) && <button type="button" className="ix-btn sm" style={{ marginLeft: 'auto' }} onClick={() => openDoc(d)}>View</button>}
+                  {(d.file_path || d.file_url) && <button type="button" className="ix-btn sm" style={{ marginLeft: 'auto' }} onClick={() => (/pdf/i.test(d.file_type || d.file_name) ? setViewDoc(d) : openDoc(d))}>View</button>}
                 </div>
               ))}
               <button type="button" className="ix-btn" style={{ width: '100%', justifyContent: 'center', marginTop: 6 }} onClick={() => onOpenFull(job.id, 'documents')}>
                 <Icon name="upload" />Upload on the full job page
               </button>
             </>
+          )}
+          {/* a PDF, drawn by the portal itself (works on every browser and phone) */}
+          {viewDoc && (
+            <div role="dialog" aria-label={viewDoc.file_name} onClick={() => setViewDoc(null)}
+              style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,.55)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+              <div onClick={(e) => e.stopPropagation()}
+                style={{ background: '#fff', borderRadius: 12, width: 'min(900px, 100%)', maxHeight: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', borderBottom: '1px solid var(--line, #e2e6ed)' }}>
+                  <b style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{viewDoc.doc_type ? `${viewDoc.doc_type} · ` : ''}{viewDoc.file_name}</b>
+                  <button type="button" className="ix-btn sm" onClick={() => downloadDoc(viewDoc).catch((e) => showToast?.(`Could not download: ${e.message}`, 'error'))}><Icon name="download" />Download</button>
+                  <button type="button" className="ix-btn sm" onClick={() => setViewDoc(null)}>Close</button>
+                </div>
+                <div style={{ overflow: 'auto', padding: 12, background: '#f4f6f9' }}>
+                  <PdfPreview doc={viewDoc} />
+                </div>
+              </div>
+            </div>
           )}
 
           {tab === 'notes' && (
