@@ -23,6 +23,7 @@ import IxJobsPage from '../industrial/pages/JobsPage'
 import IxBoardPage from '../industrial/pages/BoardPage'
 import IxCustomsPage from '../industrial/pages/CustomsPage'
 import IxTrucksPage from '../industrial/pages/TrucksPage'
+import IxVesselsPage from '../industrial/pages/VesselsPage'
 import { forceRefreshAllContainers } from '../services/tracking/ldbProvider'
 
 const NAV_SECTIONS = [
@@ -32,6 +33,7 @@ const NAV_SECTIONS = [
     { id: 'board', label: 'Shipment board', icon: 'layout-kanban' },
     { id: 'containers', label: 'Containers', icon: 'box' },
     { id: 'trucks', label: 'Trucks', icon: 'truck' },
+    { id: 'vessels', label: 'Vessels', icon: 'ship' },
   ] },
   { label: 'CUSTOMS', items: [{ id: 'customs', label: 'BE & OOC', icon: 'file-certificate' }] },
   { label: 'DOCUMENTS', items: [{ id: 'documents', label: 'Documents & OCR', icon: 'files' }] },
@@ -733,6 +735,7 @@ function AdminDashboardInner() {
       {activeNav === 'board' && <IxBoardPage {...ixProps} />}
       {activeNav === 'customs' && <IxCustomsPage key={urlJob || 'none'} {...ixProps} />}
       {activeNav === 'trucks' && <IxTrucksPage key={urlJob || 'none'} {...ixProps} />}
+      {activeNav === 'vessels' && <IxVesselsPage {...ixProps} />}
 
       {!fullJob && activeNav === 'overview' && legacy(
         <ControlTowerSection

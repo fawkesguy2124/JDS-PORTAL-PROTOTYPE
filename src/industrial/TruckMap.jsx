@@ -10,7 +10,7 @@ import { Icon } from './ui'
 // can't draw it (very old phone, no WebGL), the plain OpenStreetMap tiles.
 const MAP_STYLE = 'https://tiles.openfreemap.org/styles/liberty'
 const ENGLISH = ['coalesce', ['get', 'name:en'], ['get', 'name_int'], ['get', 'name:latin'], ['get', 'name']]
-function addBaseMap(m) {
+export function addBaseMap(m) {
   try {
     const gl = L.maplibreGL({ style: MAP_STYLE, attribution: '© <a href="https://openfreemap.org" target="_blank">OpenFreeMap</a> · <a href="https://www.openmaptiles.org/" target="_blank">OpenMapTiles</a> · <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a>' }).addTo(m)
     const ml = gl.getMaplibreMap()
