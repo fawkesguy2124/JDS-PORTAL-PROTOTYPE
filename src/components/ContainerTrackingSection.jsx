@@ -1465,7 +1465,7 @@ function ContainerTrackingSection({ showToast, jobs, pendingNavAction, onNavActi
       .from('container_tracking')
       .select('*')
       .eq('container_no', cn)
-      .single()
+      .maybeSingle()
 
     await refreshTracking()
 

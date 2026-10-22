@@ -206,7 +206,7 @@ export async function persistLDBTracking(containerNo, jobContext, ldbData) {
     .from('container_tracking')
     .select('free_days, notes, status, milestones')
     .eq('container_no', containerNo)
-    .single()
+    .maybeSingle() // a new container has no row yet
   const row = {
     container_no:     containerNo,
     job_no:           jobContext.job_no   || null,
@@ -382,8 +382,8 @@ export async function refreshJobContainers(job, existingTrackingData = {}) {
         .from('container_tracking')
         .select('last_refreshed_at')
         .eq('container_no', cn)
-        .single()
-      // 406 = no row exists yet, treat as stale
+        .maybeSingle()
+      // no row yet = stale
       if (!dbErr && !isCacheStale(dbRow?.last_refreshed_at)) {
         log(cn, `Cache still fresh (refreshed: ${dbRow.last_refreshed_at}), skipping`)
         summary.skipped.push(cn)

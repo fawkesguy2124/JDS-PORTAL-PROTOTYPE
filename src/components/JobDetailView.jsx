@@ -369,7 +369,6 @@ function JobDetailView({ job, profiles, currentUserName, isAdmin, canUpdateStage
   const [extractedData, setExtractedData] = useState(null)
   const [importedFields, setImportedFields] = useState({})
   const [fieldConfidence, setFieldConfidence] = useState({})
-  const [summarising, setSummarising] = useState(false)
   const [form, setForm] = useState(() => ({ ...job }))
   const [hasUnsavedNotes, setHasUnsavedNotes] = useState(false)
   const notesRef = useRef(null)
@@ -766,67 +765,6 @@ function JobDetailView({ job, profiles, currentUserName, isAdmin, canUpdateStage
     return <input type="text" value={value||''} onChange={updateForm(key)} disabled={disabled} className={inputBase} />
   }
 
-  // Short summary for the job notes, written from the extracted fields
-  // (no AI: the same facts in a fixed sentence)
-  const handleAISummary = async () => {
-    if (!job?.id) return
-
-    if (!extractedData || Object.keys(extractedData).length === 0) {
-      toast('No extracted data found. Run OCR Extract on this job first.', 'info')
-      return
-    }
-
-    setSummarising(true)
-    try {
-      const val = (k) => {
-        const v = extractedData[k]?.value
-        if (v == null || v === '') return null
-        return Array.isArray(v) ? v.filter(Boolean).join(', ') : String(v)
-      }
-      const count = (k) => {
-        const v = extractedData[k]?.value
-        if (Array.isArray(v)) return v.filter(Boolean).length
-        return v ? String(v).split(/[\s,]+/).filter(Boolean).length : 0
-      }
-      const parts = []
-      const goods = val('goods_description')
-      const importer = val('consignee_name') || job.client
-      const supplier = val('supplier_name')
-      const from = [val('port_of_loading'), val('country_of_origin')].filter(Boolean).join(', ')
-      parts.push(`${goods ? `Import of ${goods}` : 'Import'}${importer ? ` for ${importer}` : ''}${supplier ? ` from ${supplier}` : ''}${from ? ` (${from})` : ''}.`)
-      const ctr = count('container_numbers')
-      const cargo = [
-        ctr ? `${ctr} container${ctr === 1 ? '' : 's'}${val('container_size') ? ` (${val('container_size')})` : ''}` : null,
-        val('package_count') ? `${val('package_count')} packages` : null,
-        val('gross_weight') ? `${val('gross_weight')} kg` : null,
-      ].filter(Boolean).join(', ')
-      if (cargo) parts.push(`Cargo: ${cargo}.`)
-      const refs = [
-        val('bl_number') ? `BL ${val('bl_number')}` : null,
-        val('vessel_name') ? `vessel ${val('vessel_name')}` : null,
-        val('igm_number') ? `IGM ${val('igm_number')}` : null,
-        val('hs_code') ? `HS ${val('hs_code')}` : null,
-        val('invoice_numbers') ? `invoice ${val('invoice_numbers')}${val('invoice_amounts') ? ` for ${val('invoice_currencies') || ''} ${val('invoice_amounts')}`.replace(/\s+/g, ' ') : ''}` : null,
-        val('payment_terms') ? `terms ${val('payment_terms')}` : null,
-      ].filter(Boolean).join(', ')
-      if (refs) parts.push(`${refs.charAt(0).toUpperCase()}${refs.slice(1)}.`)
-      const summary = parts.join(' ')
-      const provider = 'from documents'
-
-      const existing = form.notes ? form.notes.trim() : ''
-      const separator = existing ? '\n\n' : ''
-      const dateStamp = new Date().toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' })
-      const newNotes = `${existing}${separator}[Summary \u2014 ${dateStamp} \u00b7 ${provider}]\n${summary}`
-
-      setForm(prev => ({ ...prev, notes: newNotes }))
-      toast('Summary added to notes. Review and save when ready.', 'success')
-    } catch (e) {
-      toast(`Summary failed: ${e.message}`, 'error')
-    } finally {
-      setSummarising(false)
-    }
-  }
-
   const renderContent = (showDesktopHeader) => (
     <>
     <div className="bg-white border-[1.5px] border-[#e2e6ed] rounded-xl shadow-sm overflow-hidden">
@@ -993,21 +931,6 @@ function JobDetailView({ job, profiles, currentUserName, isAdmin, canUpdateStage
               <div className="flex flex-col rounded-lg border border-[#e2e6ed] bg-[#f8f9fb] overflow-hidden">
                 <div className="px-4 py-3 border-b border-[#e2e6ed] flex items-center justify-between">
                   <p className="text-xs font-semibold uppercase tracking-wide text-[#8a96a8]">Notes</p>
-                  {isAdmin && (
-                    <button
-                      type="button"
-                      onClick={handleAISummary}
-                      disabled={summarising}
-                      style={{
-                        padding:'2px 8px', borderRadius:'6px', fontSize:'11px', fontWeight:600,
-                        background: summarising ? '#f4f6f9' : '#eff6ff',
-                        color: summarising ? '#8a96a8' : '#1a4fa0',
-                        border:'1px solid #bfdbfe', cursor: summarising ? 'default' : 'pointer',
-                      }}
-                    >
-                      {summarising ? '...' : '✦ Summary'}
-                    </button>
-                  )}
                 </div>
                 <div className="px-4 py-3">
                   <textarea
@@ -1223,21 +1146,6 @@ function JobDetailView({ job, profiles, currentUserName, isAdmin, canUpdateStage
               <div className="flex flex-col rounded-lg border border-[#e2e6ed] bg-[#f8f9fb] overflow-hidden">
                 <div className="px-4 py-3 border-b border-[#e2e6ed] flex items-center justify-between">
                   <p className="text-xs font-semibold uppercase tracking-wide text-[#8a96a8]">Notes</p>
-                  {isAdmin && (
-                    <button
-                      type="button"
-                      onClick={handleAISummary}
-                      disabled={summarising}
-                      style={{
-                        padding:'2px 8px', borderRadius:'6px', fontSize:'11px', fontWeight:600,
-                        background: summarising ? '#f4f6f9' : '#eff6ff',
-                        color: summarising ? '#8a96a8' : '#1a4fa0',
-                        border:'1px solid #bfdbfe', cursor: summarising ? 'default' : 'pointer',
-                      }}
-                    >
-                      {summarising ? '...' : '✦ Summary'}
-                    </button>
-                  )}
                 </div>
                 <div className="px-4 py-3">
                   {canEditField('notes') ? (
