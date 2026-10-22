@@ -1,6 +1,9 @@
 // Document types a job can have. Each type is uploaded once per job, except
 // "Other", which can be used as often as needed.
-export const DOC_TYPES = ['BL', 'Invoice', 'Packing List', 'COO', 'Insurance', 'BE', 'Examination Order', 'OOC', 'E-Way Bill', 'POD', 'Other']
+export const DOC_TYPES = ['BE', 'BL', 'Invoice', 'Packing List', 'COO', 'Insurance', 'Examination Order', 'OOC', 'E-Way Bill', 'POD', 'Other']
+// What the dropdown says next to the type (Create job): BE + BL fill the form, the rest are filed only
+export const DOC_HINTS = { BE: 'BE (Bill of Entry): fills most fields', BL: 'BL / AWB: adds the ship name and container sizes' }
+export const docTypeLabel = (t) => DOC_HINTS[t] || t
 export const REPEATABLE = ['Other']
 
 // What the PDF reader found inside a file, as these type names (bundles

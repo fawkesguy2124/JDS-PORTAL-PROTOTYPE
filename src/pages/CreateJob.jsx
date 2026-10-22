@@ -8,7 +8,7 @@ import { PORTS } from '../utils/ports'
 import { CLIENT_NAMES, matchClient } from '../utils/clients'
 import { readPdf, describeDocuments } from '../utils/docReader'
 import { boxOwnerHint } from '../../supabase/functions/_shared/portal/shippingLines.js'
-import { availableTypes, typesFoundInside } from '../utils/docTypes'
+import { availableTypes, typesFoundInside, docTypeLabel } from '../utils/docTypes'
 
 const MODES = ['Sea FCL', 'Sea LCL', 'Air', 'BPT/MBPT']
 // sea jobs carry containers (LCL: the shared consolidation box, which LDB tracks to the CFS)
@@ -85,7 +85,7 @@ const fuzzyMatchShippingLine = (extracted) => {
 const INITIAL_FORM = {
   job_no: '',
   client: '',
-  mode: 'Sea FCL',
+  mode: '',
   job_type: 'import',
   port_code: 'INNSA1',
   containers: [],
@@ -108,7 +108,7 @@ const INITIAL_FORM = {
   igm_item_no: '',
   bg_required: 'no',
   destination: '',
-  free_days: '',
+  free_days: '14',
   detention_risk: 'low',
   stage: '0',
   delay_reason: '',
@@ -267,7 +267,6 @@ export default function CreateJob({ isModal = false, onCancel, onCreated }) {
     setExtracting(true)
 
     setExtractedFields(null)
-    setAutoFillApplied({})
     setExtractProgress(0)
     setExtractStatus('Reading document...')
 
@@ -300,6 +299,7 @@ export default function CreateJob({ isModal = false, onCancel, onCreated }) {
         iec: f.importer_iec || null,
         bl_no: f.bl_number || null,
         containers: (f.container_numbers || []).join(' '),
+        container_size: f.container_size || null,
         shipping_line: f.shipping_line || null,
         vessel: f.vessel_name ? `${f.vessel_name}${f.voyage_no ? ` / ${f.voyage_no}` : ''}` : null,
         goods: f.goods_description || null,
@@ -340,10 +340,24 @@ if (parsed.client && shouldFill('client')) {
         const extractedNos = parsed.containers.split(/[\s,;/]+/).map(s => s.trim().toUpperCase()).filter(s => s.length >= 4)
         // fill for any sea job, and when the rows are still blank (an empty row added
         // before the upload used to block this)
-        if (HAS_BOXES(form.mode) && extractedNos.length > 0 && form.containers.every(c => !String(c.no || '').trim())) {
+        if ((HAS_BOXES(form.mode) || !form.mode) && extractedNos.length > 0 && form.containers.every(c => !String(c.no || '').trim())) {
           updates.containers = extractedNos.map(no => ({ no, size: defaultSize(form.mode) }))
           applied.containers = true
         }
+      }
+      // a BL that says LCL sets the mode when it isn't chosen yet
+      if (parsed.container_size === 'LCL' && !form.mode) { updates.mode = 'Sea LCL'; applied.mode = true }
+      // the container size the BL shows, for rows that have no size yet (FCL)
+      const sz = parsed.container_size
+      if (sz && CONTAINER_SIZES.includes(sz) && (updates.mode || form.mode) !== 'Sea LCL') {
+        const rows = updates.containers || form.containers
+        if (rows.some(r => String(r.no || '').trim() && !r.size)) {
+          updates.containers = rows.map(r => (String(r.no || '').trim() && !r.size ? { ...r, size: sz } : r))
+          applied.container_size = true
+        }
+      }
+      if (updates.mode === 'Sea LCL') {
+        updates.containers = (updates.containers || form.containers).map(r => ({ ...r, size: 'LCL' }))
       }
       if (parsed.shipping_line && shouldFill('carrier')) {
         const matchedLine = fuzzyMatchShippingLine(parsed.shipping_line)
@@ -370,7 +384,7 @@ if (parsed.client && shouldFill('client')) {
 
       setForm(prev => ({ ...prev, ...updates }))
       setStagedDocs(prev => prev.map(d => d.id === docId ? { ...d, extracted: true } : d))
-      setAutoFillApplied(applied)
+      setAutoFillApplied(prev => ({ ...prev, ...applied }))
       setExtractProgress(100)
       setExtractStatus('Done!')
 
@@ -411,6 +425,19 @@ if (parsed.client && shouldFill('client')) {
     const clientValue = form.client === '__other__' ? (form.clientOther?.trim() || '') : form.client.trim()
     if (!clientValue) {
       setError('Client name is required.')
+      setSaving(false)
+      return
+    }
+
+    if (!form.mode) {
+      setError('Please select the mode (Sea FCL, Sea LCL, Air or BPT/MBPT).')
+      setSaving(false)
+      return
+    }
+
+    const freeDays = String(form.free_days ?? '').trim()
+    if (!/^\d{1,3}$/.test(freeDays)) {
+      setError('Free days is required (a whole number, e.g. 14).')
       setSaving(false)
       return
     }
@@ -477,10 +504,7 @@ if (parsed.client && shouldFill('client')) {
       },
       bg_required: form.bg_required,
       destination: form.destination.trim() || null,
-      free_days: (() => {
-        const n = Number(form.free_days)
-        return Number.isFinite(n) && n > 0 ? n : null
-      })(),
+      free_days: Number(form.free_days),
       detention_risk: form.detention_risk,
       stage: Number(form.stage),
       delay_reason: form.delay_reason.trim() || null,
@@ -652,7 +676,7 @@ if (parsed.client && shouldFill('client')) {
                         onChange={e => setStagedDocs(prev => prev.map(d => d.id === item.id ? { ...d, docType: e.target.value } : d))}
                         className="text-xs border border-gray-300 rounded-md px-2 py-1 bg-white"
                       >
-                        {availableTypes(usedTypes(item.id), item.docType).map(t => <option key={t} value={t}>{t}</option>)}
+                        {availableTypes(usedTypes(item.id), item.docType).map(t => <option key={t} value={t}>{docTypeLabel(t)}</option>)}
                       </select>
                       {item.foundInside?.length > 1 && (
                         <span className="text-xs text-gray-500 hidden sm:inline" title="Documents found inside this file">has {item.foundInside.join(', ')}</span>
@@ -686,7 +710,7 @@ if (parsed.client && shouldFill('client')) {
                     className={inputClass}
                   >
                     <option value="">Select type...</option>
-                    {availableTypes(usedTypes()).map(t => <option key={t} value={t}>{t}</option>)}
+                    {availableTypes(usedTypes()).map(t => <option key={t} value={t}>{docTypeLabel(t)}</option>)}
                   </select>
                 </div>
                 <div>
@@ -823,7 +847,8 @@ if (parsed.client && shouldFill('client')) {
               </Field>
 
               <Field label="Mode" required>
-                <select value={form.mode} onChange={set('mode')} className={inputClass}>
+                <select value={form.mode} onChange={set('mode')} className={inputClass} required>
+                  <option value="" disabled>Select mode</option>
                   {MODES.map((m) => (
                     <option key={m} value={m}>
                       {m}
@@ -1009,7 +1034,15 @@ if (parsed.client && shouldFill('client')) {
                 <Field label="Containers">
                   <p className="text-sm text-gray-400 italic">BPT/MBPT — container numbers not applicable.</p>
                 </Field>
-              ) : null}
+              ) : (
+                <Field label="Containers">
+                  <p className="text-sm text-gray-500">
+                    {form.containers.some(c => String(c.no || '').trim())
+                      ? `${form.containers.filter(c => String(c.no || '').trim()).length} container(s) found in the document. Select the mode above to see them.`
+                      : 'Select the mode above first.'}
+                  </p>
+                </Field>
+              )}
 
               <Field label="Vessel / Flight">
                 <input type="text" value={form.vessel} onChange={set('vessel')} className={fieldClass('vessel')} />
@@ -1096,10 +1129,13 @@ if (parsed.client && shouldFill('client')) {
                 />
               </Field>
 
-              <Field label="Free Days">
+              <Field label="Free Days" required>
                 <input
                   type="number"
                   min="0"
+                  step="1"
+                  inputMode="numeric"
+                  required
                   value={form.free_days}
                   onChange={set('free_days')}
                   className={inputClass}
