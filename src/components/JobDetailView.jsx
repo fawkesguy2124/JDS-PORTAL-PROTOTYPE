@@ -486,47 +486,44 @@ function JobDetailView({ job, profiles, currentUserName, isAdmin, canUpdateStage
 
   const updateForm = (key) => (e) => setForm((prev) => ({ ...prev, [key]: e.target.value }))
 
+  // The container editor keeps its own rows while typing (form._boxRows), so a
+  // half-typed number or a new blank row doesn't vanish; the saved text
+  // (form.containers / container_sizes) is updated from the complete rows.
+  const boxRowsOf = (f) => {
+    const rows = f._boxRows ?? parseContainersWithSizes(f.containers, f.container_sizes)
+    return rows.length ? rows : [{ no: '', size: '' }]
+  }
+  const setBoxRows = (rows) => setForm(prev => ({
+    ...prev,
+    _boxRows: rows,
+    containers: rows.map(r => r.no.trim()).filter(Boolean).join(' '),
+    container_sizes: rows.reduce((acc, r) => {
+      if (r.no.trim() && r.size) acc[r.no.trim()] = r.size
+      return acc
+    }, {}),
+  }))
+
   const updateContainerRow = (i, field, value) => {
-    const rows = parseContainersWithSizes(form.containers, form.container_sizes)
+    const rows = boxRowsOf(form).map(r => ({ ...r }))
     rows[i] = { ...rows[i], [field]: value }
-    setForm(prev => ({
-      ...prev,
-      containers: rows.map(r => r.no).filter(Boolean).join(' '),
-      container_sizes: rows.reduce((acc, r) => {
-        if (r.no && r.size) acc[r.no] = r.size
-        return acc
-      }, {})
-    }))
+    setBoxRows(rows)
   }
 
-  const addContainerRow = () => {
-    const rows = parseContainersWithSizes(form.containers, form.container_sizes)
-    rows.push({ no: '', size: '' })
-    setForm(prev => ({
-      ...prev,
-      containers: rows.map(r => r.no).filter(Boolean).join(' '),
-      container_sizes: rows.reduce((acc, r) => {
-        if (r.no && r.size) acc[r.no] = r.size
-        return acc
-      }, {})
-    }))
-  }
+  const addContainerRow = () => setBoxRows([...boxRowsOf(form), { no: '', size: '' }])
 
   const removeContainerRow = (i) => {
-    const rows = parseContainersWithSizes(form.containers, form.container_sizes)
+    const rows = boxRowsOf(form)
     if (rows.length === 1) return
-    rows.splice(i, 1)
-    setForm(prev => ({
-      ...prev,
-      containers: rows.map(r => r.no).filter(Boolean).join(' '),
-      container_sizes: rows.reduce((acc, r) => {
-        if (r.no && r.size) acc[r.no] = r.size
-        return acc
-      }, {})
-    }))
+    setBoxRows(rows.filter((_, idx) => idx !== i))
   }
 
   const handleSave = async () => {
+    // container numbers must be complete (4 letters + 7 digits) before saving
+    const wrongBoxes = boxRowsOf(form).map(r => r.no.trim().toUpperCase()).filter(no => no && !/^[A-Z]{4}\d{7}$/.test(no))
+    if (wrongBoxes.length) {
+      toast(`Container number looks wrong: ${wrongBoxes.join(', ')}. It is 4 letters and 7 digits, for example MSCU1234567.`, 'error')
+      return
+    }
     setSaving(true)
     try {
       const updates = {}
@@ -615,7 +612,7 @@ function JobDetailView({ job, profiles, currentUserName, isAdmin, canUpdateStage
       const merged = [...new Set([...existing, ...incoming])]
       const sizes = { ...(form.container_sizes || {}) }
       // New containers from OCR get no size — user selects manually
-      setForm(prev => ({ ...prev, containers: merged.join(' '), container_sizes: sizes }))
+      setForm(prev => ({ ...prev, _boxRows: undefined, containers: merged.join(' '), container_sizes: sizes }))
       toast(`✓ Added ${incoming.length} container(s) to ${FIELD_LABELS[fieldKey]}.`, 'success')
     } else {
       setForm(prev => ({ ...prev, [fieldKey]: extractedValue }))
@@ -678,6 +675,7 @@ function JobDetailView({ job, profiles, currentUserName, isAdmin, canUpdateStage
         const existing = parseContainerNos(newForm.containers)
         const incoming = extractedValue.split(/[\s,;/]+/).map(s => s.trim().toUpperCase()).filter(Boolean)
         newForm.containers = [...new Set([...existing, ...incoming])].join(' ')
+        newForm._boxRows = undefined
         if (!newForm.container_sizes) newForm.container_sizes = {}
       } else {
         newForm[k] = extractedValue
@@ -1115,9 +1113,9 @@ function JobDetailView({ job, profiles, currentUserName, isAdmin, canUpdateStage
                     {isEditable ? (
                       k === 'containers' ? (
                         (() => {
-                          const rows = parseContainersWithSizes(form.containers, form.container_sizes)
+                          const rows = boxRowsOf(form)
                           const lastRow = rows[rows.length - 1]
-                          const canAdd = !lastRow || (lastRow.no.trim().length >= 4 && lastRow.size !== '')
+                          const canAdd = !lastRow || lastRow.no.trim().length >= 4
                           return (
                             <div className="flex flex-col gap-1">
                               <div style={{ display:'grid', gridTemplateColumns:'1fr 130px 32px', gap:'8px', marginBottom:'4px' }}>
