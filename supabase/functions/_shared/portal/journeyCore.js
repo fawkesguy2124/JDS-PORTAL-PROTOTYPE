@@ -3,6 +3,7 @@
 // both use this file, so they always agree. The portal loads the data in
 // src/services/journey.js; the bot loads it on the server.
 import { correctTrackingRow } from './eventOrder.js'
+import { lineName } from './shippingLines.js'
 
 const DAY = 24 * 60 * 60 * 1000
 
@@ -48,6 +49,26 @@ const sameNo = (a, b) => !!a && !!b && String(a).toUpperCase().replace(/\s+/g, '
 export const isExportJob = (job) => job?.job_type === 'export'
 export const isAirJob = (job) => job?.mode === 'Air'
 export const isDelivered = (job) => Number(job?.stage) >= 10
+
+// The stage a job has really reached: the saved stage, or further when the facts
+// show it (BE filed, OOC, cargo out, on the road, delivered). Never lower than
+// what staff saved. Shown everywhere instead of the bare saved stage, so the
+// panel never says "Job Created" for a job waiting for OOC (Jose, 22 Oct 2026).
+export function effectiveStage(job, j) {
+  const saved = Number(job?.stage) || 0
+  if (!j || isExportJob(job)) return saved
+  let s = 0
+  if (j.beFiled) s = 4 // Customs review
+  if (j.oocDone) s = 7 // OOC
+  if (j.oocDone && (j.containers?.tracked || []).some((t) => t.outWithCargo)) s = 8 // out with the cargo
+  if (j.phase === 'truck') s = Math.max(s, 9) // on the road
+  if (j.phase === 'delivered') s = 10
+  return Math.max(saved, s)
+}
+
+// COSCO boxes sail on OOCL bills and the other way round: one group
+const LINE_GROUP = { OOCL: 'COSCO' }
+const lineGroup = (n) => LINE_GROUP[n] || n
 const DONE_CONTAINER = ['delivered', 'empty_returned']
 
 // Board columns, in order
@@ -314,6 +335,12 @@ export function journeyFor(job, data) {
   // OOC done and the onward move not arranged yet (rail jobs don't wait for a truck)
   const readyForTruck = !delivered && oocDone && !truck && mode !== 'rail'
 
+  // ── Saved job details that container tracking (LDB) contradicts ──
+  const mismatches = []
+  const jobLine = lineName(job.shipping_line)
+  const ldbLines = [...new Set(c.tracked.map((t) => lineName(t.shipping_line_ldb)).filter(Boolean))]
+  if (jobLine && ldbLines.length === 1 && lineGroup(ldbLines[0]) !== lineGroup(jobLine)) mismatches.push({ field: 'Shipping line', job: jobLine, tracking: ldbLines[0] })
+
   // ── What needs attention ──
   const attention = []
   const add = (level, text, action) => attention.push({ level, text, action, jobId: job.id, jobNo: job.job_no, client: job.client })
@@ -332,6 +359,7 @@ export function journeyFor(job, data) {
     for (const t of trucks) if (t.papers?.found && t.papers.tone === 'bad') add('red', `Truck ${t.no} papers problem: ${t.papers.summary}`, 'truck')
     if (job.detention_risk === 'high') add('red', 'Marked as high detention risk', 'containers')
     if (c.allStale) add('info', `No container movement for ${c.staleDays} days — is this job finished? If so, mark it delivered.`, 'details')
+    for (const m of mismatches) add('info', `Check the ${m.field.toLowerCase()}: the job says ${m.job}, container tracking says ${m.tracking}`, 'details')
   }
 
   // the newest toll crossing of any of the job's trucks
@@ -345,6 +373,7 @@ export function journeyFor(job, data) {
     truckLocation: seen[0] ? { ...seen[0].location, truck: seen[0].no } : null,
     truckPapers: trucks[0]?.papers || null,
     customs: cs,
+    mismatches,
   }
 }
 

@@ -2,7 +2,7 @@
 // data only: no ULIP calls, no documents. Each tool returns plain facts, small
 // enough to send to the AI model. The same file runs in the portal (for testing)
 // and on the server (wa-bot).
-import { journeyFor, isDelivered, isExportJob, parseContainerNos, containerTrip, containerFinishedOn, deliveryBy, truckNos } from './journeyCore.js'
+import { journeyFor, isDelivered, isExportJob, effectiveStage, parseContainerNos, containerTrip, containerFinishedOn, deliveryBy, truckNos } from './journeyCore.js'
 import { jobsFor } from './botMessages.js'
 import { lineName } from './shippingLines.js'
 import { vesselsOf, shipIdOf, seaArea, cargoOnShip } from './ships.js'
@@ -64,7 +64,7 @@ function jobFacts(job, data, detail = false) {
   const cur = j.steps.find((s) => s.current)
   const facts = {
     job_no: job.job_no, client: job.client || null, mode: job.mode || null, port: job.port_code || null,
-    eta: day(job.eta), stage: STAGE[Number(job.stage)] || null, status: j.phase,
+    eta: day(job.eta), stage: STAGE[effectiveStage(job, j)] || null, status: j.phase,
     next_step: cur?.nextText || (j.phase === 'delivered' ? 'Finished' : null),
     be_no: job.be_no || null, be_date: day(job.be_date), ooc_date: day(j.oocDate) || (j.oocDone && !j.oocDate ? 'recorded by staff' : null),
     free_days_left: j.freeDaysLeft, problems: j.attention.map((a) => `${a.level === 'red' ? 'URGENT' : a.level === 'amber' ? 'TO DO' : 'NOTE'}: ${a.text}`),

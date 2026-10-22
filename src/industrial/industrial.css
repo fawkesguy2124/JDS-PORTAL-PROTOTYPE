@@ -377,3 +377,36 @@
   /* maps: pinch to zoom on a phone; the +/- buttons only covered the truck labels */
   .ix .leaflet-control-zoom { display: none }
 }
+
+/* a saved detail that container tracking contradicts ("check this") */
+.ix-check-note { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; margin: -6px 0 14px; border: 1px solid var(--amber-line); background: var(--amber-bg); color: #78350f; border-radius: var(--radius); font-size: 13px; line-height: 1.45 }
+.ix-check-note i { font-size: 18px; color: var(--amber); margin-top: 1px }
+
+/* phone-only bits: the client under the job no (Jobs), jump chips (Board) */
+.ix-sub-m, .ix .show-m { display: none }
+.ix-board-jump { gap: 6px; overflow-x: auto; padding: 0 0 10px; scrollbar-width: none }
+.ix-board-jump button { flex-shrink: 0; height: 38px; padding: 0 12px; border-radius: 19px; border: 1px solid var(--line-2); background: #fff; font-weight: 600; font-size: 13px; color: var(--text-2); display: inline-flex; align-items: center; gap: 6px }
+.ix-board-jump button.has { color: var(--navy); border-color: var(--navy-100); background: var(--navy-50) }
+.ix-board-jump .n { font-size: 11px; background: var(--grey-bg); border-radius: 10px; padding: 1px 7px; color: var(--text-2) }
+.ix-board-jump button.has .n { background: var(--navy); color: #fff }
+@media (max-width: 760px) {
+  .ix-sub-m { display: block; font-size: 12px; color: var(--muted); max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin: 2px 0 0 16px }
+  .ix .show-m { display: flex }
+  /* job panel tabs: all of them fit on a phone */
+  .ix-dr-tabs { padding: 0 4px; gap: 0 }
+  .ix-dr-tab { flex: 1 1 auto; padding: 0 5px; font-size: 12.5px; height: 42px }
+}
+
+/* loading outline (Skeleton) */
+.ix-skel { padding: 6px 16px 12px }
+.ix-skel-row { display: flex; gap: 12px; align-items: center; height: 44px; border-bottom: 1px solid var(--line) }
+.ix-skel-row:last-of-type { border-bottom: none }
+.ix-skel-row span { display: block; height: 12px; border-radius: 6px; background: linear-gradient(90deg, #eef1f5 0%, #f7f8fa 40%, #eef1f5 80%); background-size: 200% 100%; animation: ixSkel 1.3s ease-in-out infinite }
+.ix-skel-row span:last-child { width: 18%; margin-left: auto }
+.ix-skel-slow { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 12px 0 2px; color: var(--text-2); font-size: 13px }
+@keyframes ixSkel { 0% { background-position: 100% 0 } 100% { background-position: -100% 0 } }
+@media (prefers-reduced-motion: reduce) { .ix-skel-row span { animation: none } }
+@media (max-width: 380px) {
+  /* narrow Android phones: all five job-panel tabs still fit */
+  .ix-dr-tab { padding: 0 3px; font-size: 12px }
+}

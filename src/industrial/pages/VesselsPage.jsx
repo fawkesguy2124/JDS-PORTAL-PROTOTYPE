@@ -4,7 +4,7 @@ import { isDelivered, isExportJob } from '../../services/journey'
 import { useJourney, useFreshOnOpen } from '../JourneyContext'
 import ShipMap, { vesselsOf, shipIdOf } from '../ShipMap'
 import { cargoOnShip } from '../../../supabase/functions/_shared/portal/ships.js'
-import { Icon, Chip, fmtDate } from '../ui'
+import { Icon, Chip, Skeleton, fmtDate } from '../ui'
 
 // Vessels: every ship that still carries our cargo, live on VesselFinder's free
 // map, one row per ship with all its jobs (Jose, 22 Oct 2026). Once the cargo is
@@ -106,7 +106,7 @@ export default function VesselsPage({ onOpenJob, showToast }) {
           <h2>Ships with our cargo on board</h2><span className="ix-chip grey">{ships.length}</span>
           <span className="sub hide-m">Click a ship to see it on the map. A ship leaves this list once our cargo is unloaded.</span>
         </div>
-        {loading && !data && <div className="ix-empty">Loading…</div>}
+        {loading && !data && <Skeleton rows={4} />}
         {data && ships.length === 0 && <div className="ix-empty">No ship is carrying our cargo right now.</div>}
         {ships.map((s) => (
           // the whole row shows the ship on the map (job numbers open the job instead)

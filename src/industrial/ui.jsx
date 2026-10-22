@@ -1,4 +1,5 @@
 // Small shared pieces of the industrial design.
+import { useEffect, useState } from 'react'
 
 export const Icon = ({ name, style }) => <i className={`ti ti-${name}`} style={style} aria-hidden="true" />
 
@@ -77,3 +78,26 @@ export function Sparkline({ points, color = '#1a4fa0' }) {
 }
 
 export const jobOwnerName = (job, profiles) => profiles?.[job?.assigned_to] || null
+
+// While a page loads: grey outline rows instead of a blank "Loading…". After
+// 15 seconds a Reload button appears (a stuck connection or an expired sign-in).
+export function Skeleton({ rows = 5 }) {
+  const [slow, setSlow] = useState(false)
+  useEffect(() => {
+    const t = setTimeout(() => setSlow(true), 15000)
+    return () => clearTimeout(t)
+  }, [])
+  return (
+    <div className="ix-skel" aria-busy="true" aria-label="Loading">
+      {Array.from({ length: rows }, (_, i) => (
+        <div key={i} className="ix-skel-row"><span style={{ width: `${30 + ((i * 37) % 45)}%` }} /><span /></div>
+      ))}
+      {slow && (
+        <div className="ix-skel-slow">
+          Taking longer than usual.
+          <button type="button" className="ix-btn sm" onClick={() => window.location.reload()}><Icon name="refresh" />Reload</button>
+        </div>
+      )}
+    </div>
+  )
+}

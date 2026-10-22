@@ -52,11 +52,8 @@ export default function DocumentsDesktop({
 }) {
   return (
     <div>
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-4">
-        <div>
-          <div className="text-lg font-bold text-[#1a2233]">Documents</div>
-          <div className="text-sm text-[#8a96a8]">Operational document register \u2014 all jobs</div>
-        </div>
+      {/* the page heading comes from the frame, like every page; the search stays here */}
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-end gap-3 mb-4">
         <div className="flex items-center h-9 px-3 bg-[#f8f9fb] border-[1.5px] border-[#e2e6ed] rounded-lg min-w-[240px]">
           <input value={docSearch} onChange={(e) => setDocSearch(e.target.value)}
             placeholder="Search job no., client, file name..."

@@ -3,6 +3,7 @@ import { parseContainerNos } from '../utils/jobHelpers'
 import { useJourney } from './JourneyContext'
 import { Icon, phaseChip } from './ui'
 import { truckNos } from '../services/journey'
+import { recentJobIds } from './recentJobs'
 
 // Ctrl K: one box for every job number, client, BE, BL, container and truck,
 // plus the pages. Searches saved data only.
@@ -20,6 +21,13 @@ function Palette({ onClose, pages, onGo, onOpenJob }) {
 
   const items = useMemo(() => {
     const needle = q.trim().toLowerCase().replace(/\s+/g, '')
+    // nothing typed yet: the jobs opened last
+    if (!needle) {
+      const byId = Object.fromEntries(rows.map((r) => [r.job.id, r]))
+      const recent = recentJobIds().map((id) => byId[id]).filter(Boolean)
+        .map(({ job, j }) => ({ type: 'job', id: job.id, job, j, hit: null, recent: true }))
+      if (recent.length) return [...recent, ...pages.slice(0, 5).map((p) => ({ type: 'page', ...p }))]
+    }
     const jobs = rows.filter(({ job }) => {
       if (!needle) return true
       const hay = [job.job_no, job.client, job.be_no, job.bl_no, ...truckNos(job), job.ulip_refs?.igm_no, job.ulip_refs?.sb_no, ...parseContainerNos(job.containers)]
@@ -54,7 +62,7 @@ function Palette({ onClose, pages, onGo, onOpenJob }) {
         <input ref={inputRef} value={q} onChange={(e) => { setQ(e.target.value); setHl(0) }} onKeyDown={onKey}
           placeholder="Type a job no, client, BE, BL, container or truck…" autoComplete="off" />
         <div className="ix-pal-res">
-          {jobItems.length > 0 && <div className="ix-pal-group">Jobs</div>}
+          {jobItems.length > 0 && <div className="ix-pal-group">{jobItems[0].recent ? 'Recent' : 'Jobs'}</div>}
           {jobItems.map((it) => {
             const idx = items.indexOf(it)
             const c = phaseChip(it.job, it.j)

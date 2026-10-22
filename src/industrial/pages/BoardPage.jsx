@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { PHASES, EXPORT_PHASES, isExportJob, truckNos } from '../../services/journey'
 import { useJourney, useFreshOnOpen } from '../JourneyContext'
-import { Icon, Chip, FreeDays, Owner, worst, jobOwnerName } from '../ui'
+import { Icon, Chip, FreeDays, Owner, worst, jobOwnerName, Skeleton } from '../ui'
 
 // Shipment board: one column per phase of the journey. Saved data only.
 
@@ -67,6 +67,15 @@ export default function BoardPage({ onOpenJob }) {
     return out
   }, [rows, kind, query, phases])
 
+  // phones: slide the board sideways to one column (the page itself stays put)
+  const jumpTo = (id) => {
+    const board = document.querySelector('.ix-board')
+    const col = document.getElementById(`ix-col-${id}`)
+    if (!board || !col) return
+    const left = board.scrollLeft + col.getBoundingClientRect().left - board.getBoundingClientRect().left
+    board.scrollTo({ left, behavior: 'smooth' })
+  }
+
   const kindBtn = (id, label, icon) => (
     <button type="button" className={`ix-btn sm ${kind === id ? 'primary' : ''}`} onClick={() => { setKind(id); setAllDelivered(false) }} aria-pressed={kind === id}>
       <Icon name={icon} />{label}
@@ -98,15 +107,24 @@ export default function BoardPage({ onOpenJob }) {
       )}
 
       {loading && !data ? (
-        <div className="ix-card"><div className="ix-empty">Loading…</div></div>
+        <div className="ix-card"><Skeleton rows={6} /></div>
       ) : error ? null : (
+        <>
+        <div className="ix-board-jump show-m" role="tablist" aria-label="Jump to a column">
+          {phases.map((p) => (
+            <button key={p.id} type="button" className={grouped[p.id].length ? 'has' : ''}
+              onClick={() => jumpTo(p.id)}>
+              {p.label}<span className="n">{grouped[p.id].length}</span>
+            </button>
+          ))}
+        </div>
         <div className="ix-board">
           {phases.map((p) => {
             const list = grouped[p.id]
             const capped = p.id === 'delivered' && !allDelivered && list.length > DELIVERED_SHOWN
             const shown = capped ? list.slice(0, DELIVERED_SHOWN) : list
             return (
-              <div key={p.id} className="ix-col">
+              <div key={p.id} id={`ix-col-${p.id}`} className="ix-col">
                 <div className="ix-col-h" title={p.hint}>
                   <Icon name={PHASE_ICONS[p.id] || 'circle'} style={{ color: 'var(--muted)' }} />
                   {p.label}
@@ -125,6 +143,7 @@ export default function BoardPage({ onOpenJob }) {
             )
           })}
         </div>
+        </>
       )}
     </div>
   )

@@ -7,7 +7,7 @@ import { JobPicker, CustomsWorkspace, NoJobChosen } from '../JobChecks'
 import { useJourney, useFreshOnOpen } from '../JourneyContext'
 import { useAutoChecks, checkCustoms, isDue, COOLDOWN_MIN } from '../autoChecks'
 import AutoStatus from '../AutoStatus'
-import { Icon, fmtDate, timeAgo } from '../ui'
+import { Icon, fmtDate, timeAgo, Skeleton } from '../ui'
 
 // BE & OOC desk. Imports: pick a job on the left, see and run all its customs
 // checks on the right (BE, OOC, cargo, IGM …). Exports: SB & LEO queues.
@@ -231,7 +231,7 @@ export default function CustomsPage({ currentUserName, onOpenJob, showToast, can
       )}
 
       {loading && !data ? (
-        <div className="ix-card"><div className="ix-empty">Loading…</div></div>
+        <div className="ix-card"><Skeleton rows={6} /></div>
       ) : error ? null : kind === 'import' ? (
         <div className="ix-split">
           <JobPicker

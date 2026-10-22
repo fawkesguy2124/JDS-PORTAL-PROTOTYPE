@@ -4,6 +4,8 @@ import { getStageName, parseContainerNos, getContainerSize } from '../utils/jobH
 import JobDetailMobile from './mobile/JobDetailMobile'
 import JobDetailDesktop from './desktop/JobDetailDesktop'
 import { useAuth } from '../contexts/AuthContext'
+import { useJourney } from '../industrial/JourneyContext'
+import { effectiveStage } from '../services/journey'
 import CustomsStatusCard from './CustomsStatusCard'
 import { PORTS, portLabel } from '../utils/ports'
 import UlipSection from './ulip/UlipSection'
@@ -389,7 +391,10 @@ function JobDetailView({ job, profiles, currentUserName, isAdmin, canUpdateStage
     }
   }, [job?.id])
 
-  const stage = Number(job.stage) || 0
+  // the stage the job has really reached (BE filed, OOC, out …), never lower than saved
+  const journey = useJourney()
+  const jRow = journey?.byId?.[job.id]
+  const stage = jRow ? effectiveStage(job, jRow.j) : (Number(job.stage) || 0)
   const pct = Math.min(100, Math.round((stage / 10) * 100))
   const stageName = getStageName(stage)
   const priority = priorityChip(job.priority)

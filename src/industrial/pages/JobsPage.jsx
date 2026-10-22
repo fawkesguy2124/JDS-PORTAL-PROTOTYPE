@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { parseContainerNos } from '../../utils/jobHelpers'
 import { isDelivered, truckNos } from '../../services/journey'
 import { useJourney, useFreshOnOpen } from '../JourneyContext'
-import { FreeDays, Icon, Owner, PhaseChip, jobOwnerName, timeAgo, worst } from '../ui'
+import { FreeDays, Icon, Owner, PhaseChip, Skeleton, jobOwnerName, timeAgo, worst } from '../ui'
 
 const num = (job) => parseInt(String(job.job_no || '').replace(/\D/g, ''), 10) || 0
 
@@ -12,7 +12,8 @@ const VIEWS = [
   { id: 'mine', label: 'My jobs', test: ({ job }, me) => !!me && job.assigned_to === me },
   { id: 'ooc', label: 'Waiting OOC', test: ({ j }) => j.phase === 'ooc' },
   { id: 'truck', label: 'Needs truck / rail', test: ({ j }) => j.readyForTruck },
-  { id: 'detention', label: 'Detention risk', test: ({ j }) => j.freeDaysLeft !== null && j.freeDaysLeft <= 2 },
+  { id: 'onroad', label: 'On the road', test: ({ j }) => j.phase === 'truck' },
+  { id: 'detention', label: 'Detention risk', test: ({ job, j }) => !isDelivered(job) && j.phase !== 'delivered' && j.freeDaysLeft !== null && j.freeDaysLeft <= 2 },
   { id: 'open', label: 'All open', test: ({ job, j }) => !isDelivered(job) && j.phase !== 'delivered' },
   { id: 'all', label: 'Everything', test: () => true },
 ]
@@ -110,7 +111,7 @@ export default function JobsPage({ profile, onOpenJob, onCreateJob, selectedId }
                 const next = j.attention[0]?.text || j.steps.find((s) => s.current)?.nextText || '—'
                 return (
                   <tr key={job.id} className={selectedId === job.id ? 'sel' : ''} onClick={() => onOpenJob(job.id)}>
-                    <td><span style={{ display: 'inline-flex', gap: 8, alignItems: 'center' }}><span className={`ix-dot ${lvl}`} title={lvl === 'none' ? '' : 'Needs attention'} /><b className="mono">{job.job_no}</b></span></td>
+                    <td><span style={{ display: 'inline-flex', gap: 8, alignItems: 'center' }}><span className={`ix-dot ${lvl}`} title={lvl === 'none' ? '' : 'Needs attention'} /><b className="mono">{job.job_no}</b></span><div className="ix-sub-m" title={job.client || ''}>{job.client || 'No client'}</div></td>
                     <td className="ix-cell-client hide-m" title={job.client || ''}>{job.client || '—'}</td>
                     <td className="hide-m">{job.mode || '—'}{job.job_type === 'export' ? ' · Exp' : ''}</td>
                     <td><PhaseChip job={job} j={j} /></td>
@@ -126,7 +127,7 @@ export default function JobsPage({ profile, onOpenJob, onCreateJob, selectedId }
               {!loading && list.length === 0 && (
                 <tr><td colSpan={10} style={{ color: 'var(--muted)', cursor: 'default' }}>{filtered ? 'No jobs match these filters.' : 'No jobs in this view.'}</td></tr>
               )}
-              {loading && !rows.length && <tr><td colSpan={10} style={{ color: 'var(--muted)' }}>Loading…</td></tr>}
+              {loading && !rows.length && <tr><td colSpan={10} style={{ padding: 0, cursor: 'default' }}><Skeleton rows={6} /></td></tr>}
             </tbody>
           </table>
         </div>

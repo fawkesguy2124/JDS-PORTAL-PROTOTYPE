@@ -16,6 +16,7 @@ import BotPreviewPage from './v2/BotPreviewPage'
 import CreateJob from './CreateJob'
 import '../industrial/industrial.css'
 import { JourneyProvider, useJourney } from '../industrial/JourneyContext'
+import { rememberJob } from '../industrial/recentJobs'
 import Shell from '../industrial/Shell'
 import JobDrawer from '../industrial/JobDrawer'
 import IxTodayPage from '../industrial/pages/TodayPage'
@@ -603,6 +604,7 @@ function AdminDashboardInner() {
   const DRAWER_TABS = ['overview', 'containers', 'timeline', 'docs', 'notes']
   const openFullJob = async (jobId, tab = 'details') => {
     setDrawer(null)
+    rememberJob(jobId)
     // customs and truck checks now live on their own pages
     if (tab === 'customs') { navigate(`/admin?tab=customs&job=${jobId}`); return }
     if (tab === 'truck') { navigate(`/admin?tab=trucks&job=${jobId}`); return }
@@ -619,6 +621,7 @@ function AdminDashboardInner() {
     navigate(`/admin?tab=trucks&q=${encodeURIComponent(job?.job_no || '')}`)
   }
   const openJob = async (jobId, tab = 'overview') => {
+    rememberJob(jobId)
     if (tab === 'truck') return openTruck(jobId)
     // a job the shared data has not loaded yet (just created): open it in full
     if (!journey?.byId?.[jobId]) return openFullJob(jobId, DRAWER_TABS.includes(tab) ? 'details' : tab)
@@ -691,6 +694,13 @@ function AdminDashboardInner() {
   }
   const urlJob = new URLSearchParams(location.search).get('job')
   const legacy = (node) => <div className="ix-legacy">{node}</div>
+  // an older screen with the same page heading as the new ones
+  const legacyPage = (title, sub, node) => (
+    <div className="ix-legacy">
+      <div className="ix-page-head"><div><h1>{title}</h1><p>{sub}</p></div></div>
+      {node}
+    </div>
+  )
   const fullJob = selectedJob && (activeNav === 'jobs' || activeNav === 'overview')
   const closeFullJob = () => {
     setSelectedJob(null)
@@ -736,7 +746,7 @@ function AdminDashboardInner() {
       {activeNav === 'trucks' && <IxTrucksPage key={urlJob || 'none'} {...ixProps} />}
       {activeNav === 'vessels' && <IxVesselsPage {...ixProps} />}
 
-      {!fullJob && activeNav === 'overview' && legacy(
+      {!fullJob && activeNav === 'overview' && legacyPage('Team & stages', 'Urgent jobs, detention risk and jobs that have not moved',
         <ControlTowerSection
           jobs={jobs} profiles={profiles} currentUserName={currentUserName}
           selectedJob={selectedJob}
@@ -747,7 +757,7 @@ function AdminDashboardInner() {
       )}
 
       {/* Containers: kept exactly as it was */}
-      {activeNav === 'containers' && legacy(
+      {activeNav === 'containers' && legacyPage('Containers', 'Every container of the open jobs, from container tracking (LDB)',
         <ContainerTrackingSection
           showToast={showToast}
           jobs={jobs}
@@ -756,7 +766,7 @@ function AdminDashboardInner() {
         />
       )}
 
-      {activeNav === 'documents' && legacy(
+      {activeNav === 'documents' && legacyPage('Documents', 'Every job’s papers in one place',
         <DocumentsSection
           jobs={jobs} profiles={profiles} currentUserName={currentUserName} showToast={showToast}
           initialExpandJobId={documentExpandJobId} onExpandConsumed={() => setDocumentExpandJobId(null)}
@@ -765,8 +775,8 @@ function AdminDashboardInner() {
       {activeNav === 'search' && legacy(<SearchPage {...pageProps} />)}
       {activeNav === 'clients' && legacy(<ClientsPage {...pageProps} />)}
       {activeNav === 'detention' && legacy(<DetentionPage {...pageProps} />)}
-      {activeNav === 'payments' && legacy(<PaymentsSection jobs={jobs} profiles={profiles} showToast={showToast} getStageName={getStageName} />)}
-      {activeNav === 'compliance' && legacy(<ComplianceSection showToast={showToast} />)}
+      {activeNav === 'payments' && legacyPage('Payments', 'Payments waiting for approval', <PaymentsSection jobs={jobs} profiles={profiles} showToast={showToast} getStageName={getStageName} />)}
+      {activeNav === 'compliance' && legacyPage('BIS & Licences', 'Certificates and licences, with their expiry dates', <ComplianceSection showToast={showToast} />)}
       {activeNav === 'bot' && legacy(<BotPreviewPage {...pageProps} />)}
 
       {!NAV_ITEMS.some(n => n.id === activeNav) && (

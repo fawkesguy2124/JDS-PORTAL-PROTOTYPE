@@ -9,7 +9,7 @@ const TRUCK_GROUPS = JOB_TABS.find((t) => t.id === 'truck')?.groups || []
 import { useJourney, useFreshOnOpen } from '../JourneyContext'
 import { useAutoChecks, checkTruck, isDue, COOLDOWN_MIN } from '../autoChecks'
 import AutoStatus from '../AutoStatus'
-import { Icon, Chip, fmtDate, timeAgo } from '../ui'
+import { Icon, Chip, fmtDate, timeAgo, Skeleton } from '../ui'
 // the map (and its map library) loads only when this page opens
 const TruckMap = lazy(() => import('../TruckMap'))
 import { truckPoints } from '../truckPoints'
@@ -339,7 +339,7 @@ export default function TrucksPage({ currentUserName, onOpenJob, showToast, canU
       )}
 
       {loading && !data ? (
-        <div className="ix-card"><div className="ix-empty">Loading…</div></div>
+        <div className="ix-card"><Skeleton rows={6} /></div>
       ) : error ? null : (
         <>
           <div className="ix-card" style={{ marginBottom: 16 }}>

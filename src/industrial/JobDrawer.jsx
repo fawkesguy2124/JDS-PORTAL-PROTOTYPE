@@ -3,7 +3,7 @@ import { supabase } from '../supabase'
 import { getStageName, parseContainerNos, getContainerSize } from '../utils/jobHelpers'
 import { portLabel } from '../utils/ports'
 import { useJourney } from './JourneyContext'
-import { containerFinishedOn, deliveryBy } from '../services/journey'
+import { containerFinishedOn, deliveryBy, effectiveStage } from '../services/journey'
 import { Chip, FreeDays, Icon, PhaseChip, fmtDate, initials, jobOwnerName, timeAgo } from './ui'
 import ShipMap, { vesselOf, shipIdOf } from './ShipMap'
 import { openDoc, downloadDoc } from '../services/docFiles'
@@ -195,7 +195,7 @@ export default function JobDrawer({ jobId, initialTab = 'overview', onClose, onO
           <div style={{ color: 'var(--text-2)', marginTop: 2 }}>{job.client || '—'} · {job.mode || '—'} · {isExport ? 'Export' : 'Import'}</div>
           <div className="ix-facts">
             <div className="ix-fact"><div className="k">ETA</div><div className="v">{fmtDate(job.eta)}</div></div>
-            <div className="ix-fact"><div className="k">Stage</div><div className="v" title={getStageName(job.stage)}>{getStageName(job.stage)}</div></div>
+            <div className="ix-fact"><div className="k">Stage</div><div className="v" title={getStageName(effectiveStage(job, j))}>{getStageName(effectiveStage(job, j))}</div></div>
             <div className="ix-fact"><div className="k">Free days</div><div className="v"><FreeDays value={j.freeDaysLeft} /></div></div>
             <div className="ix-fact"><div className="k">Owner</div><div className="v">{ownerName || '—'}</div></div>
           </div>
@@ -233,6 +233,13 @@ export default function JobDrawer({ jobId, initialTab = 'overview', onClose, onO
                   ))}
                 </div>
               )}
+              {/* saved details that container tracking contradicts */}
+              {(j.mismatches || []).map((m) => (
+                <div key={m.field} className="ix-check-note" role="note">
+                  <Icon name="alert-circle" />
+                  <div><b>Check the {m.field.toLowerCase()}:</b> this job says <b>{m.job}</b>, container tracking (LDB) says <b>{m.tracking}</b>. Correct it on the full job page if the job is wrong.</div>
+                </div>
+              ))}
               <div className="ix-kv">
                 {kv.map(([k, v, mono]) => <div key={k}><div className="k">{k}</div><div className={`v ${mono ? 'mono' : ''}`}>{v}</div></div>)}
                 <div>
