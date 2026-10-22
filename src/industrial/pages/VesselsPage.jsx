@@ -61,12 +61,8 @@ export default function VesselsPage({ onOpenJob, showToast }) {
         <div className="ix-card-head">
           <Icon name="ship" style={{ color: 'var(--navy)' }} />
           <h2>{sel && shown(sel) ? `${sel.name} · ${sel.job.job_no}` : 'Ships near Nhava Sheva'}</h2>
-          {sel && shown(sel) && <a className="ix-link" href={vesselFinderLink(sel.imo, sel.name, sel.mmsi)} target="_blank" rel="noreferrer" style={{ marginLeft: 'auto' }}>Open on VesselFinder ↗</a>}
         </div>
         <ShipMap imo={sel?.imo} mmsi={sel?.mmsi} height={440} />
-        <div style={{ padding: '8px 16px', fontSize: 12, color: 'var(--muted)' }}>
-          Map and positions by VesselFinder. The line shows the ship's last 24 hours. Pick a ship below.
-        </div>
       </div>
 
       <div className="ix-card">

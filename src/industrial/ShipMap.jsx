@@ -1,4 +1,6 @@
+import { useEffect, useState } from 'react'
 import { parseContainerNos } from '../services/journey'
+import { Icon } from './ui'
 
 // A ship's live position on VesselFinder's free embedded map (their own data,
 // shown in a frame; the portal reads nothing from it). Needs the ship's IMO or
@@ -31,17 +33,19 @@ export const vesselOf = (job, data) => vesselsOf(job, data)[0] || null
 
 // IMO from the job: typed by JDS first, then the job's IGM / vessel-arrival check
 function jobImo(job, data) {
-  const typed = digits(job?.ulip_refs?.imo_code)
-  if (typed.length === 7) return { imo: typed, from: 'typed' }
+  let igm = null
   const results = data?.resultsByJob?.[job?.id] || {}
   for (const api of ['ICEGATE/07', 'ICEGATE/01']) {
     for (const r of [].concat(results[api] || [])) {
       const f = (r?.parsed?.fields || []).find((x) => /imo/i.test(x?.label || ''))
       const n = digits(f?.value || r?.parsed?.extra?.imoCode)
-      if (n.length === 7) return { imo: n, from: 'igm' }
+      if (n.length === 7 && !igm) igm = n
     }
   }
-  return null
+  // the job's saved IMO is either typed by staff or remembered from the IGM check
+  const saved = digits(job?.ulip_refs?.imo_code)
+  if (saved.length === 7) return { imo: saved, from: saved === igm ? 'igm' : 'typed' }
+  return igm ? { imo: igm, from: 'igm' } : null
 }
 
 // The numbers to show one ship by, in order of trust: typed by JDS, from the IGM
@@ -66,14 +70,26 @@ export const vesselFinderLink = (imo, name, mmsi) => (imo
   : mmsi ? `https://www.vesselfinder.com/vessels/details/${mmsi}` : `https://www.vesselfinder.com/vessels?name=${encodeURIComponent(name || '')}`)
 
 export default function ShipMap({ imo, mmsi, height = 420, title }) {
+  const [big, setBig] = useState(false) // full screen, like the Trucks map
+  useEffect(() => {
+    if (!big) return
+    const onKey = (e) => { if (e.key === 'Escape') setBig(false) }
+    window.addEventListener('keydown', onKey)
+    const overflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => { window.removeEventListener('keydown', onKey); document.body.style.overflow = overflow }
+  }, [big])
+
   const ship = digits(imo).length === 7 ? digits(imo) : null
   const radio = !ship && digits(mmsi).length === 9 ? digits(mmsi) : null
+  // full screen: the map is drawn for the window's height
+  const h = big && typeof window !== 'undefined' ? Math.max(400, window.innerHeight - 64) : height
   const params = new URLSearchParams({
     zoom: ship || radio ? 'undefined' : '8',
     lat: ship || radio ? 'undefined' : String(NHAVA_SHEVA.lat),
     lon: ship || radio ? 'undefined' : String(NHAVA_SHEVA.lon),
     width: '100%',
-    height: String(height),
+    height: String(h),
     names: 'true',
     ...(ship ? { imo: ship } : radio ? { mmsi: radio } : {}),
     track: ship || radio ? 'true' : 'false',
@@ -85,12 +101,21 @@ export default function ShipMap({ imo, mmsi, height = 420, title }) {
     ra: typeof window !== 'undefined' ? window.location.origin : '',
   })
   return (
-    <iframe
-      key={ship || radio || 'area'}
-      title={title || (ship ? `Ship IMO ${ship} on VesselFinder` : radio ? `Ship MMSI ${radio} on VesselFinder` : 'Ships near Nhava Sheva on VesselFinder')}
-      src={`https://www.vesselfinder.com/aismap?${params.toString()}`}
-      width="100%" height={height} frameBorder="0" loading="lazy"
-      style={{ display: 'block', border: 0, borderRadius: 10, background: '#e8eef5' }}
-    />
+    <>
+      {big && <div className="ix-realmap-backdrop" onClick={() => setBig(false)} />}
+      <div className={`ix-shipmap ${big ? 'big' : ''}`} style={big ? undefined : { height }}>
+        <iframe
+          key={`${ship || radio || 'area'}:${big}`}
+          title={title || (ship ? `Ship IMO ${ship} on VesselFinder` : radio ? `Ship MMSI ${radio} on VesselFinder` : 'Ships near Nhava Sheva on VesselFinder')}
+          src={`https://www.vesselfinder.com/aismap?${params.toString()}`}
+          width="100%" height={h} frameBorder="0" loading="lazy"
+          style={{ display: 'block', border: 0, width: '100%', height: '100%' }}
+        />
+        <button type="button" className="ix-realmap-expand" onClick={() => setBig((b) => !b)}
+          title={big ? 'Make the map small again (Esc)' : 'Full screen'} aria-label={big ? 'Make the map small again' : 'Full screen map'}>
+          <Icon name={big ? 'arrows-diagonal-minimize-2' : 'arrows-diagonal'} />
+        </button>
+      </div>
+    </>
   )
 }
