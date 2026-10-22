@@ -10,6 +10,7 @@
 //    person has written to the bot in the last 24 hours.
 //  - Replies to a person's question are normal messages (no template).
 import { journeyFor, isDelivered, isExportJob, parseContainerNos, containerFinishedOn } from './journeyCore.js'
+import { vesselsOf, cargoOnShip } from './ships.js'
 
 const DAY = 24 * 60 * 60 * 1000
 const TZ = 'Asia/Kolkata'
@@ -132,6 +133,60 @@ const BOX_ICON = [[/PORT IN|DISCHARGE|VESSEL ARRIVED|DPD/, '🚢'], [/PORT OUT|G
 const boxIcon = (ev) => BOX_ICON.find(([re]) => re.test(ev))?.[1] || '📦'
 const placeOf = (note) => oneLine(String(note || '').split('·').slice(1).join('·')).replace(/^Latest:.*$/i, '').trim() || null
 
+// When a job's ship is due: the ETA typed on the job, else the IGM's expected arrival
+function shipEta(job, data) {
+  if (job.eta) return String(job.eta).slice(0, 10)
+  const igm = [].concat(data.resultsByJob?.[job.id]?.['ICEGATE/01'] || [])
+  const d = igm.map((r) => r?.parsed?.extra?.expectedArrival).find(Boolean)
+  return d ? String(d).slice(0, 10) : null
+}
+
+// Ship alerts (Jose, 22 Oct 2026), one message per ship, all its jobs in it:
+//  • the ship arrives today / tomorrow, with each job's BE filed or not
+//  • all our cargo on the ship is unloaded (seen in the container events), so
+//    the ship leaves the Vessels page
+function shipAlerts(data, today, now) {
+  const ships = new Map()
+  for (const job of data.jobs) {
+    if (isDelivered(job) || isExportJob(job) || /air/i.test(job.mode || '')) continue
+    const j = journeyFor(job, data)
+    for (const name of vesselsOf(job, data)) {
+      const g = ships.get(name) || { name, jobs: [] }
+      g.jobs.push({ job, cargo: cargoOnShip(job, name, data, j), eta: shipEta(job, data) })
+      ships.set(name, g)
+    }
+  }
+  const out = []
+  const push = (kind, key, g, list, what) => {
+    const nos = list.map((x) => x.job.job_no)
+    const who = `${nos.join(', ')} (ship ${g.name})`
+    out.push({
+      key, kind, jobId: list[0].job.id, jobNo: nos[0], jobIds: list.map((x) => x.job.id),
+      text: `🔔 *Ship ${g.name}*\n${what}\nReply ${nos[0]} for the job details.`,
+      template: { name: 'jds_alert', values: [who, oneLine(what).replace(/[.\s]+$/, ''), nos[0]] },
+    })
+  }
+  for (const g of ships.values()) {
+    const aboard = g.jobs.filter((x) => x.cargo.onBoard)
+    // arriving: the earliest ETA of the jobs still on board
+    const due = aboard.filter((x) => x.eta).map((x) => ({ ...x, inDays: daysBetween(today, x.eta) })).filter((x) => x.inDays >= 0 && x.inDays <= 1)
+    if (due.length && !aboard.some((x) => x.cargo.arrivedAt)) {
+      const first = Math.min(...due.map((x) => x.inDays))
+      const lines = aboard.map((x) => `• ${jobTag(x.job)}: BE ${x.job.be_no ? 'filed ✅' : 'not filed ❌'}`).join('\n')
+      push('ship_due', `ship_due:${g.name}:${today}`, g, aboard,
+        `🚢 Arrives ${first === 0 ? 'today' : 'tomorrow'} at ${aboard[0].job.port_code === 'INBOM1' ? 'Mumbai port' : 'Nhava Sheva'} (ETA ${dayText(due.find((x) => x.inDays === first).eta)}) with ${plural(aboard.length, 'job')}:\n${lines}`)
+    }
+    // unloaded: nothing of ours left on board, and the containers show it in the last 36 h
+    const open = g.jobs.filter((x) => Number(x.job.stage) < 7)
+    const when = open.map((x) => x.cargo.unloadedOn).filter(Boolean).sort().pop()
+    if (open.length && !aboard.length && open.every((x) => x.cargo.unloadedOn) && when && now - new Date(when) < 36 * 60 * 60 * 1000) {
+      push('ship_unloaded', `ship_unloaded:${g.name}:${when.slice(0, 10)}`, g, open,
+        `⚓ All our cargo is unloaded (${dayText(when)}): ${open.map((x) => jobTag(x.job)).join(', ')}. The ship is now off the Vessels page.`)
+    }
+  }
+  return out
+}
+
 export function instantAlerts(data, events = [], now = new Date()) {
   const today = istDate(now)
   const byId = Object.fromEntries(data.jobs.map((j) => [j.id, j]))
@@ -195,8 +250,12 @@ export function instantAlerts(data, events = [], now = new Date()) {
         `⏱ ${left === 0 ? 'Last free day today' : `Only ${plural(left, 'free day')} left`} for the containers. Get them out to avoid detention.`)
     }
   }
+  // ships due / unloaded; a job in a "ship arrives" message gets no separate BE reminder
+  const ships = shipAlerts(data, today, new Date(now).getTime())
+  out.push(...ships)
+  const inShipMsg = new Set(ships.filter((a) => a.kind === 'ship_due').flatMap((a) => a.jobIds))
   for (const { job, inDays } of arrivingSoon(data, today, 1)) {
-    if (job.be_no && job.be_date) continue
+    if ((job.be_no && job.be_date) || inShipMsg.has(job.id)) continue
     add('be_not_filed', `be:${job.id}:${today}`, job,
       `📄 ${inDays === 0 ? 'Arrives today' : 'Arrives tomorrow'} (ETA ${dayText(job.eta)}) and the BE is not filed yet.`)
   }
