@@ -91,7 +91,7 @@ Deno.serve(async (req) => {
 
   // one run at a time, and not more often than every few minutes
   const { data: last } = await admin.from('vessel_positions').select('checked_at').order('checked_at', { ascending: false, nullsFirst: false }).limit(1).maybeSingle()
-  if (last?.checked_at && Date.now() - new Date(last.checked_at).getTime() < MIN_MINUTES_BETWEEN_RUNS * 60_000) {
+  if (!Array.isArray(body?.names) && last?.checked_at && Date.now() - new Date(last.checked_at).getTime() < MIN_MINUTES_BETWEEN_RUNS * 60_000) {
     return json({ success: true, skipped: 'checked a few minutes ago' })
   }
 
@@ -113,6 +113,9 @@ Deno.serve(async (req) => {
   const arrivedLongAgo = (iso: string | null) => !!iso && Date.now() - new Date(iso).getTime() > 3 * 864e5
   for (const b of boxes || []) if (b.vessel && !arrivedLongAgo(b.port_in)) want(b.vessel, (open.get(b.job_id) as any)?.job_no)
   for (const j of jobs || []) if ((j as any).vessel) want((j as any).vessel, (j as any).job_no)
+  // test only: listen for these names instead, and save nothing
+  const testOnly = Array.isArray(body?.names) && body.names.length > 0
+  if (testOnly) { wanted.clear(); for (const n of body.names.slice(0, 50)) want(n, 'test') }
   if (!wanted.size) return json({ success: true, ships: 0, note: 'No open job has a ship name yet.' })
 
   // ships found before: follow their MMSI everywhere
@@ -182,6 +185,7 @@ Deno.serve(async (req) => {
     }
     rows.push(row)
   }
+  if (testOnly) return json({ success: true, test: true, messages, results: rows.map((r: any) => ({ name: r.name, mmsi: r.mmsi || null, imo: r.imo || null, type: r.ship_type ?? null, destination: r.destination || null, unclear: r.candidates || null })) })
   // one by one, so a ship not heard this time keeps its last known position
   for (const row of rows) {
     const { error } = await admin.from('vessel_positions').upsert(row, { onConflict: 'name' })
