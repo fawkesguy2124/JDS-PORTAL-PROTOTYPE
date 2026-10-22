@@ -11,6 +11,9 @@ import { boxOwnerHint } from '../../supabase/functions/_shared/portal/shippingLi
 import { availableTypes, typesFoundInside } from '../utils/docTypes'
 
 const MODES = ['Sea FCL', 'Sea LCL', 'Air', 'BPT/MBPT']
+// sea jobs carry containers (LCL: the shared consolidation box, which LDB tracks to the CFS)
+const HAS_BOXES = (mode) => mode === 'Sea FCL' || mode === 'Sea LCL'
+const BOX_NO = /^[A-Z]{4}\d{7}$/
 const CONTAINER_SIZES = ['20GP','40GP','40HC','45HC','20RF','40RF','40RFHC','20OT','40OT','20FR','40FR','20TK']
 const PRIORITIES = ['normal', 'high', 'urgent']
 const RMS_STATUSES = ['pending', 'rms', 'apr', 'acl', 'check', 'hold']
@@ -205,7 +208,7 @@ export default function CreateJob({ isModal = false, onCancel, onCreated }) {
         if (value !== 'Air' && prev.port_code === 'INBOM4') next.port_code = 'INNSA1'
         if (value === 'BPT/MBPT' && (prev.port_code === 'INNSA1' || prev.port_code === 'INBOM4')) next.port_code = 'INBOM1'
         if (value !== 'BPT/MBPT' && value !== 'Air' && prev.mode === 'BPT/MBPT' && prev.port_code === 'INBOM1') next.port_code = 'INNSA1'
-        if (value === 'Sea FCL') {
+        if (HAS_BOXES(value)) {
           next.containers = prev.containers.length === 0 ? [{ no: '', size: '' }] : prev.containers
         } else {
           next.containers = []
@@ -330,7 +333,9 @@ if (parsed.client && shouldFill('client')) {
       if (parsed.bl_no && shouldFill('bl_no'))           { updates.bl_no = parsed.bl_no;         applied.bl_no = true }
       if (parsed.containers) {
         const extractedNos = parsed.containers.split(/[\s,;/]+/).map(s => s.trim().toUpperCase()).filter(s => s.length >= 4)
-        if (form.mode === 'Sea FCL' && extractedNos.length > 0 && form.containers.length === 0) {
+        // fill for any sea job, and when the rows are still blank (an empty row added
+        // before the upload used to block this)
+        if (HAS_BOXES(form.mode) && extractedNos.length > 0 && form.containers.every(c => !String(c.no || '').trim())) {
           updates.containers = extractedNos.map(no => ({ no, size: '' }))
           applied.containers = true
         }
@@ -405,10 +410,32 @@ if (parsed.client && shouldFill('client')) {
       return
     }
 
-    const containersString = form.mode === 'Sea FCL'
+    // container number is required for sea jobs (Jose, 22 Oct 2026)
+    if (HAS_BOXES(form.mode)) {
+      const typed = form.containers.map(c => String(c.no || '').trim().toUpperCase()).filter(Boolean)
+      const wrong = typed.filter(no => !BOX_NO.test(no))
+      if (!typed.length) {
+        setError('Container number is required for a sea job (LCL: the consolidation container). Upload the BL or BE to fill it, or type it.')
+        setSaving(false)
+        return
+      }
+      if (wrong.length) {
+        setError(`Container number looks wrong: ${wrong.join(', ')}. It is 4 letters and 7 digits, for example MSCU1234567.`)
+        setSaving(false)
+        return
+      }
+      // checked before saving, so a job is never saved half-done
+      if (!form.carrier) {
+        setError('Shipping line is required when containers are given (it is used to track them).')
+        setSaving(false)
+        return
+      }
+    }
+
+    const containersString = HAS_BOXES(form.mode)
       ? form.containers.map(c => c.no).filter(Boolean).join(' ')
       : ''
-    const containerSizes = form.mode === 'Sea FCL'
+    const containerSizes = HAS_BOXES(form.mode)
       ? form.containers.reduce((acc, c) => {
           if (c.no && c.size) acc[c.no] = c.size
           return acc
@@ -560,7 +587,7 @@ if (parsed.client && shouldFill('client')) {
   }
 
   const lastRow = form.containers[form.containers.length - 1]
-  const canAddRow = !lastRow || (lastRow.no.trim().length >= 4 && lastRow.size !== '')
+  const canAddRow = !lastRow || (lastRow.no.trim().length >= 4 && (form.mode !== 'Sea FCL' || lastRow.size !== ''))
   useEffect(() => { if (canAddRow) setShowRowWarning(false) }, [canAddRow])
   const handleAddRow = () => {
     if (!canAddRow) { setShowRowWarning(true); return }
@@ -892,10 +919,10 @@ if (parsed.client && shouldFill('client')) {
                 )}
               </Field>
 
-              {/* Containers — per-container rows for Sea FCL, notice for others */}
-              {form.mode === 'Sea FCL' ? (
+              {/* Containers — rows for sea jobs (required), notice for others */}
+              {HAS_BOXES(form.mode) ? (
                 <div className="col-span-full">
-                  <label className={labelClass}>Containers</label>
+                  <label className={labelClass}>Containers <span className="text-red-500">*</span>{form.mode === 'Sea LCL' && <span className="font-normal text-gray-400"> (the consolidation container)</span>}</label>
                   <div className="border border-gray-300 rounded-lg overflow-hidden">
                     <table className="w-full text-sm">
                       <thead>
@@ -969,10 +996,6 @@ if (parsed.client && shouldFill('client')) {
                   </div>
                   <p className="text-xs text-gray-400 mt-1">Each container can have a different size as per BL</p>
                 </div>
-              ) : form.mode === 'Sea LCL' ? (
-                <Field label="Containers">
-                  <p className="text-sm text-gray-400 italic">Sea LCL — container numbers not applicable. Shipment is consolidated.</p>
-                </Field>
               ) : form.mode === 'Air' ? (
                 <Field label="Containers">
                   <p className="text-sm text-gray-400 italic">Air — container numbers not applicable. Enter AWB number in BL field.</p>
