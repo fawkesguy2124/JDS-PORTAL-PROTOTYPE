@@ -2,19 +2,12 @@ import { useMemo, useState } from 'react'
 import { supabase } from '../../supabase'
 import { isDelivered, isExportJob } from '../../services/journey'
 import { useJourney, useFreshOnOpen } from '../JourneyContext'
-import ShipMap, { vesselsOf, shipIdOf, vesselFinderLink } from '../ShipMap'
-import { Icon, Chip, fmtDate, timeAgo } from '../ui'
+import ShipMap, { vesselsOf, shipIdOf } from '../ShipMap'
+import { Icon, Chip, fmtDate } from '../ui'
 
-// Vessels: every ship of every open job, live on VesselFinder's free map. The
-// ship's number comes, in order of trust, from: the IMO typed here by JDS, the
-// job's IGM check, or the vessel-track finder (the number the ship itself
-// broadcast, heard near Malacca / the Red Sea). Not ULIP.
-const FROM = {
-  typed: 'IMO saved on the job',
-  igm: 'IMO from the IGM',
-  found: 'Number found automatically from the ship\'s own signal',
-}
-
+// Vessels: every ship of every open job, live on VesselFinder's free map. Staff
+// type the IMO once; behind the scenes the IGM check and the vessel-track finder
+// may also supply it (never shown on screen: Jose, 22 Oct 2026). Not ULIP.
 export default function VesselsPage({ onOpenJob, showToast }) {
   const { data, active, loading, patchJob } = useJourney()
   useFreshOnOpen()
@@ -69,7 +62,7 @@ export default function VesselsPage({ onOpenJob, showToast }) {
         <div className="ix-card-head">
           <Icon name="list-details" style={{ color: 'var(--navy)' }} />
           <h2>Ships of open jobs</h2><span className="ix-chip grey">{ships.length}</span>
-          <span className="sub hide-m">Ship numbers fill in by themselves when possible; type the IMO to be sure.</span>
+          <span className="sub hide-m">Type the ship's IMO number once to see it on the map.</span>
         </div>
         {loading && !data && <div className="ix-empty">Loading…</div>}
         {data && ships.length === 0 && <div className="ix-empty">No open job has a ship name yet. Ship names come from container tracking.</div>}
@@ -83,28 +76,24 @@ export default function VesselsPage({ onOpenJob, showToast }) {
                 <button type="button" className="ix-link" style={{ margin: 0 }} onClick={() => onOpenJob?.(s.job.id)}><b className="mono">{s.job.job_no}</b></button>
                 <span style={{ color: 'var(--text-2)' }}> · {s.job.client || 'No client'}</span>
                 <div style={{ fontSize: 12, color: 'var(--muted)' }}>
-                  {s.imo ? `IMO ${s.imo}` : s.mmsi ? `MMSI ${s.mmsi}` : s.from === 'unclear' ? `${s.candidates.length} ships share this name: type the IMO` : 'Number not known yet'}
-                  {s.from && s.from !== 'unclear' ? ` · ${FROM[s.from]}` : ''}
+                  {s.imo ? `IMO ${s.imo}` : s.mmsi ? 'Live position available' : 'IMO not added yet'}
                   {s.job.eta ? ` · ETA ${fmtDate(s.job.eta)}` : ''}
                 </div>
               </div>
             </div>
             <div className="act">
               {s.arrived ? <Chip tone="green" icon="anchor">Arrived {fmtDate(s.arrived)}</Chip> : <Chip tone="blue" icon="ship">At sea</Chip>}
-              {s.from === 'found' && s.seenAt && <Chip tone="grey" icon="broadcast">heard {timeAgo(s.seenAt)}</Chip>}
               {shown(s) && (
                 <>
                   <button type="button" className={`ix-btn sm ${sel?.key === s.key ? 'primary' : ''}`} onClick={() => setSelected(s.key)}><Icon name="map-pin" />Show</button>
-                  <a className="ix-btn sm ghost" href={vesselFinderLink(s.imo, s.name, s.mmsi)} target="_blank" rel="noreferrer">VesselFinder ↗</a>
                 </>
               )}
-              {/* JDS can always type the IMO (it beats a number found automatically) */}
-              {s.first && s.from !== 'typed' && s.from !== 'igm' && (
+              {/* the IMO box, until the ship can be shown */}
+              {s.first && !shown(s) && (
                 <>
                   <input value={typing[s.job.id] || ''} onChange={(e) => setTyping((p) => ({ ...p, [s.job.id]: e.target.value.replace(/\D/g, '').slice(0, 7) }))}
                     placeholder="IMO (7 digits)" inputMode="numeric" aria-label={`IMO number for ${s.job.job_no}`} />
                   <button type="button" className="ix-btn sm primary" disabled={saving === s.job.id || String(typing[s.job.id] || '').length !== 7} onClick={() => saveImo(s.job)}>{saving === s.job.id ? 'Saving…' : 'Save'}</button>
-                  {!shown(s) && <a className="ix-btn sm ghost" href={vesselFinderLink(null, s.name)} target="_blank" rel="noreferrer" title="Find the IMO by ship name">Find IMO ↗</a>}
                 </>
               )}
             </div>

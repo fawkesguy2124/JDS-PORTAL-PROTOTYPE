@@ -5,7 +5,7 @@ import { portLabel } from '../utils/ports'
 import { useJourney } from './JourneyContext'
 import { containerFinishedOn, deliveryBy } from '../services/journey'
 import { Chip, FreeDays, Icon, PhaseChip, fmtDate, initials, jobOwnerName, timeAgo } from './ui'
-import ShipMap, { vesselOf, shipIdOf, vesselFinderLink } from './ShipMap'
+import ShipMap, { vesselOf, shipIdOf } from './ShipMap'
 
 // The side panel that opens when a job is clicked: what it is, where it is,
 // what is next, its containers, timeline, documents and team notes. Editing
@@ -250,10 +250,10 @@ export default function JobDrawer({ jobId, initialTab = 'overview', onClose, onO
                     <div>
                       <div className="k">Ship</div>
                       <div className="v" style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-                        <span>{ship}{imo || mmsi ? <span className="mono" style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 6 }}>{imo ? `IMO ${imo}` : `MMSI ${mmsi}`}</span> : null}</span>
+                        <span>{ship}{imo ? <span className="mono" style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 6 }}>IMO {imo}</span> : null}</span>
                         {imo || mmsi
                           ? <button type="button" className="ix-link" style={{ margin: 0 }} onClick={() => setShowShip((v) => !v)}>{showShip ? 'Hide map' : 'Where is it now? →'}</button>
-                          : <a className="ix-link" style={{ margin: 0 }} href={vesselFinderLink(null, ship)} target="_blank" rel="noreferrer">Find on VesselFinder ↗</a>}
+                          : <span style={{ fontSize: 12, color: 'var(--muted)' }}>IMO not added yet (Vessels page)</span>}
                       </div>
                     </div>
                   )
