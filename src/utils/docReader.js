@@ -206,6 +206,8 @@ function readBl(lines, text) {
   const t = text
   let bl = afterLabel(lines, /(?:B\/L\s*No\.?|BILL\s*No\.?|BILL OF LADING\s*(?:NUMBER|NO\.?)|BL\s*NO\.?|B\/L\s*NUMBER|SEA WAYBILL NO\.?)\s*:?/i, /^(?=[A-Z0-9-]*\d)[A-Z0-9][A-Z0-9-]{6,20}(?:\s|$)/i)
   if (bl) bl = bl.split(/\s+/)[0]
+  // European house BLs: "HB/L number" with the value a few lines below, slashes allowed ("900051/2025/FI")
+  if (!bl) bl = afterLabel(lines, /\bHB\/?L\s*(?:NUMBER|NO\.?)/i, /^(?=[A-Z0-9/-]*\d)[A-Z0-9][A-Z0-9/-]{5,24}$/i)
   if (!bl) {
     // house BLs often print the number alone near the top
     const top = lines.slice(0, 6).map((l) => l.trim())
@@ -346,7 +348,7 @@ function readInsurance(lines, text) {
 function fromBe(be) {
   if (!be) return {}
   return {
-    be_number: be.be_no, be_date: be.be_date, port_code: be.port_code, mode: be.mode,
+    be_number: be.be_no, be_date: be.be_date, port_code: be.port_code, mode: be.mode, container_load: be.load || null,
     igm_number: be.igm_no, igm_date: be.igm_date, bl_number: be.bl_no, hawb_number: be.hbl_no, bl_date: be.bl_date,
     container_numbers: be.containers, package_count: be.packages, gross_weight: be.gross_weight,
     consignee_name: be.client, consignee_address: be.client_address, importer_iec: be.iec, importer_gstin: be.gstin,

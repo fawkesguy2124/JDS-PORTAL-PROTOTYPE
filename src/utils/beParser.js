@@ -165,16 +165,22 @@ export function parseBeLines(lines) {
 
   // Containers: only from the container tables (Part I "J." and Part IV "N."), never from BL numbers
   const containers = new Set()
+  const loads = new Set() // the "LCL/FCL" column: F or L per container row
   lines.forEach((ln, i) => {
     if (/CONTAINER NUMBER/.test(ln)) {
       for (let j = i + 1; j < Math.min(i + 400, lines.length); j++) {
         const row = lines[j]
         if (/^(OOC NO|INVOICE DETAILS|O\. INVOICE|=== PAGE|COPY|J\.|GLOSSARY|Page\s+\d)/.test(row) && !/[A-Z]{4}\d{7}/.test(row)) break
         for (const c of row.matchAll(CONTAINER)) containers.add(c[1])
+        // Part I: "1 F 0675120 BMOU4978572" · Part IV: "BMOU4978572 0675120 F"
+        const load = row.match(/\b\d{1,3}\s+([FL])\s+\S+\s+[A-Z]{4}\d{7}\b/) || row.match(/\b[A-Z]{4}\d{7}\s+\S+\s+([FL])\s*$/)
+        if (load) loads.add(load[1])
       }
     }
   })
   out.containers = [...containers]
+  // FCL or LCL for the whole BE (mixed or not printed: unknown)
+  out.load = loads.size === 1 ? (loads.has('F') ? 'FCL' : 'LCL') : null
 
   // Processing events
   const ev = (name) => text.match(new RegExp(`${name}\\s+(\\d{2}-[A-Z]{3}-\\d{2})\\s+(\\d{2}:\\d{2})`))

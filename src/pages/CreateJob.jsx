@@ -300,6 +300,7 @@ export default function CreateJob({ isModal = false, onCancel, onCreated }) {
         bl_no: f.bl_number || null,
         containers: (f.container_numbers || []).join(' '),
         container_size: f.container_size || null,
+        container_load: f.container_load || null,
         shipping_line: f.shipping_line || null,
         vessel: f.vessel_name ? `${f.vessel_name}${f.voyage_no ? ` / ${f.voyage_no}` : ''}` : null,
         goods: f.goods_description || null,
@@ -319,6 +320,16 @@ export default function CreateJob({ isModal = false, onCancel, onCreated }) {
       if (!hasMinimumFields) {
         setStagedDocs(prev => prev.map(d => d.id === docId ? { ...d, irrelevant: true } : d))
         setExtractedFields({ _irrelevant: true, _unreadable: result.unreadablePages, _found: parsed._found })
+        return
+      }
+
+      // a document of another shipment must not fill this job: when the job already has
+      // containers and this document's are all different, nothing is filled from it
+      const haveBoxes = form.containers.map(c => String(c.no || '').trim().toUpperCase()).filter(Boolean)
+      const docBoxes = String(parsed.containers || '').split(/[\s,;/]+/).map(s => s.trim().toUpperCase()).filter(s => /^[A-Z]{4}\d{7}$/.test(s))
+      if (haveBoxes.length && docBoxes.length && !docBoxes.some(b => haveBoxes.includes(b))) {
+        setStagedDocs(prev => prev.map(d => d.id === docId ? { ...d, mismatch: true } : d))
+        setExtractedFields({ _mismatch: true, _docBoxes: docBoxes.slice(0, 3), _haveBoxes: haveBoxes.slice(0, 3) })
         return
       }
 
@@ -345,8 +356,9 @@ if (parsed.client && shouldFill('client')) {
           applied.containers = true
         }
       }
-      // a BL that says LCL sets the mode when it isn't chosen yet
-      if (parsed.container_size === 'LCL' && !form.mode) { updates.mode = 'Sea LCL'; applied.mode = true }
+      // FCL / LCL sets the mode when it isn't chosen yet: the BE's LCL/FCL column, or a BL that says LCL
+      if (!form.mode && (parsed.container_load === 'LCL' || parsed.container_size === 'LCL')) { updates.mode = 'Sea LCL'; applied.mode = true }
+      else if (!form.mode && parsed.container_load === 'FCL') { updates.mode = 'Sea FCL'; applied.mode = true }
       // the container size the BL shows, for rows that have no size yet (FCL)
       const sz = parsed.container_size
       if (sz && CONTAINER_SIZES.includes(sz) && (updates.mode || form.mode) !== 'Sea LCL') {
@@ -779,6 +791,13 @@ if (parsed.client && shouldFill('client')) {
               {extractedFields?._error && (
                 <div className="mt-3 bg-red-50 rounded-lg border border-red-200 p-3">
                   <p className="text-xs font-semibold text-red-700">⚠ {extractedFields._message || 'Could not read this document — please fill the fields by hand.'}</p>
+                </div>
+              )}
+              {extractedFields?._mismatch && (
+                <div className="mt-3 bg-amber-50 rounded-lg border border-amber-200 p-3">
+                  <p className="text-xs font-semibold text-amber-700">
+                    ⚠ This document looks like a different shipment: its containers ({extractedFields._docBoxes.join(', ')}) are not this job's ({extractedFields._haveBoxes.join(', ')}). Nothing was filled from it. Please check it is the right document.
+                  </p>
                 </div>
               )}
               {extractedFields?._irrelevant && (
