@@ -206,7 +206,7 @@ if (filter === 'container') return t.includes('container') || t === 'detention_a
           <span style={{
             position: 'absolute', top: '-5px', right: '-5px',
             background: '#dc2626', color: 'white', borderRadius: '9999px',
-            fontSize: '9px', fontWeight: 700, minWidth: '16px', height: '16px',
+            fontSize: '10px', fontWeight: 700, minWidth: '16px', height: '16px',
             padding: '0 3px', display: 'flex', alignItems: 'center', justifyContent: 'center',
             border: '2px solid white', animation: 'bellBadgePop 0.25s cubic-bezier(0.16,1,0.3,1)',
           }}>

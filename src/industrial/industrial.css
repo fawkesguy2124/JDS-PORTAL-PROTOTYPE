@@ -339,3 +339,41 @@
 .ix-shipmap { position: relative; overflow: hidden; border-radius: 10px; background: #e8eef5; isolation: isolate }
 .ix-shipmap.big { position: fixed; inset: 24px; z-index: 2000; border: 1px solid var(--line); box-shadow: 0 20px 50px rgba(15,23,42,.35); background: #fff }
 @media (max-width: 760px) { .ix-shipmap.big { inset: 8px } }
+
+/* ── Phones (iPhone + Android), Jose 22 Oct 2026: easy to tap, no zoom jumps ── */
+/* crisp taps everywhere: no grey flash, no double-tap zoom delay */
+.ix button, .ix a, .ix [role=button], .ix select, .ix input { -webkit-tap-highlight-color: transparent; touch-action: manipulation }
+/* panels scroll on their own, never the page behind them */
+.ix-drawer, .ix-mnav, .ix-col, .ix-q-list, .ix-pick-list { overscroll-behavior: contain }
+@media (max-width: 760px) {
+  /* iPhone zooms the whole page when a field with text under 16 px is tapped */
+  input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=file]), select, textarea { font-size: 16px !important }
+  /* finger-sized buttons and fields (Apple asks 44 px, Android 48 px) */
+  .ix-btn { height: 42px; padding: 0 14px }
+  .ix-btn.sm { height: 38px; padding: 0 12px; font-size: 13px }
+  .ix-toolbar input[type=search], .ix-toolbar select, .ix-ship-row .act input { height: 42px }
+  .ix-icon-btn { width: 40px; height: 40px }
+  .ix-link { display: inline-flex; align-items: center; min-height: 34px; padding: 0 2px }
+  /* bottom tabs: bigger targets, clear of the iPhone home bar */
+  .ix-app { grid-template-rows: 56px minmax(0, 1fr) calc(62px + env(safe-area-inset-bottom, 0px)) }
+  .ix-tabbar { padding-bottom: env(safe-area-inset-bottom, 0px) }
+  .ix-tabbar button { flex: 1; height: 100%; justify-content: center; min-width: 0 }
+  .ix-mnav { width: min(300px, 86vw); padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px)) }
+  .ix-mnav .ix-nav-item { height: 44px }
+  .ix-drawer { padding-bottom: env(safe-area-inset-bottom, 0px) }
+  /* messages appear above the bottom tabs, full width */
+  .ix-toast { left: 12px; right: 12px; bottom: calc(74px + env(safe-area-inset-bottom, 0px)); text-align: center }
+  /* shipment board: swipe one column at a time */
+  .ix-board { grid-auto-columns: 84vw; scroll-snap-type: x mandatory; -webkit-overflow-scrolling: touch }
+  .ix-col { scroll-snap-align: start; max-height: none }
+}
+@media (max-width: 760px) {
+  /* search boxes (some screens set a small height inline) and truck-row taps */
+  .ix input[type=search], .ix input[type=text], .ix input:not([type]) { min-height: 42px }
+  .ix-truck-row button { min-height: 38px }
+  .ix button.ix-plate { min-height: 38px; display: inline-flex; align-items: center }
+}
+@media (max-width: 760px) {
+  /* maps: pinch to zoom on a phone; the +/- buttons only covered the truck labels */
+  .ix .leaflet-control-zoom { display: none }
+}

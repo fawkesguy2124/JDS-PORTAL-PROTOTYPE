@@ -718,7 +718,6 @@ function AdminDashboardInner() {
     >
       {fullJob && legacy(
         <>
-          <button type="button" className="ix-btn sm" style={{ marginBottom: 12 }} onClick={closeFullJob}>← Back</button>
           <JobDetailView
             job={selectedJob} profiles={profiles} currentUserName={currentUserName}
             isAdmin={isAdmin} canUpdateStage={canUpdateStage}

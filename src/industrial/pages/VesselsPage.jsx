@@ -97,7 +97,7 @@ export default function VesselsPage({ onOpenJob, showToast }) {
           <Icon name="ship" style={{ color: 'var(--navy)' }} />
           <h2>{sel && shown(sel) ? `${sel.name} · ${sel.jobs.map((x) => x.job.job_no).join(', ')}` : 'Ships near Nhava Sheva'}</h2>
         </div>
-        <ShipMap imo={sel?.imo} mmsi={sel?.mmsi} height={440} />
+        <ShipMap imo={sel?.imo} mmsi={sel?.mmsi} height={typeof window !== 'undefined' && window.innerWidth < 760 ? 320 : 440} />
       </div>
 
       <div className="ix-card">
