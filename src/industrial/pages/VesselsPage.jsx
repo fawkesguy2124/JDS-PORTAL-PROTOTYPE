@@ -68,21 +68,19 @@ export default function VesselsPage({ onOpenJob, showToast }) {
         {loading && !data && <div className="ix-empty">Loading…</div>}
         {data && ships.length === 0 && <div className="ix-empty">No open job has a ship name yet. Ship names come from container tracking.</div>}
         {ships.map((s) => (
-          <div key={s.job.id} className={`ix-truck-row ${sel?.job.id === s.job.id ? 'sel' : ''}`}>
-            <div>
+          <div key={s.job.id} className={`ix-ship-row ${sel?.job.id === s.job.id ? 'sel' : ''}`}>
+            <div className="who">
               <button type="button" className="ix-plate" disabled={!s.imo} onClick={() => setSelected(s.job.id)} title={s.imo ? 'Show this ship on the map' : 'Add the IMO number to see it on the map'} style={{ cursor: s.imo ? 'pointer' : 'default', whiteSpace: 'nowrap' }}>
                 {s.name || `IMO ${s.imo}`}
               </button>
+              <div style={{ minWidth: 0 }}>
+                <button type="button" className="ix-link" style={{ margin: 0 }} onClick={() => onOpenJob?.(s.job.id)}><b className="mono">{s.job.job_no}</b></button>
+                <span style={{ color: 'var(--text-2)' }}> · {s.job.client || 'No client'}</span>
+                <div style={{ fontSize: 12, color: 'var(--muted)' }}>{s.imo ? `IMO ${s.imo}` : 'IMO not known yet'}{s.job.eta ? ` · ETA ${fmtDate(s.job.eta)}` : ''}</div>
+              </div>
             </div>
-            <div style={{ minWidth: 0 }}>
-              <button type="button" className="ix-link" style={{ margin: 0 }} onClick={() => onOpenJob?.(s.job.id)}><b className="mono">{s.job.job_no}</b></button>
-              <span style={{ color: 'var(--text-2)' }}> · {s.job.client || 'No client'}</span>
-              <div style={{ fontSize: 12, color: 'var(--muted)' }}>{s.imo ? `IMO ${s.imo}` : 'IMO number not known yet'}{s.job.eta ? ` · ETA ${fmtDate(s.job.eta)}` : ''}</div>
-            </div>
-            <div style={{ fontSize: 13 }}>
+            <div className="act">
               {s.arrived ? <Chip tone="green" icon="anchor">Arrived {fmtDate(s.arrived)}</Chip> : <Chip tone="blue" icon="ship">At sea</Chip>}
-            </div>
-            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
               {s.imo ? (
                 <>
                   <button type="button" className={`ix-btn sm ${sel?.job.id === s.job.id ? 'primary' : ''}`} onClick={() => setSelected(s.job.id)}><Icon name="map-pin" />Show</button>
@@ -91,7 +89,7 @@ export default function VesselsPage({ onOpenJob, showToast }) {
               ) : (
                 <>
                   <input value={typing[s.job.id] || ''} onChange={(e) => setTyping((p) => ({ ...p, [s.job.id]: e.target.value.replace(/\D/g, '').slice(0, 7) }))}
-                    placeholder="IMO (7 digits)" inputMode="numeric" aria-label={`IMO number for ${s.job.job_no}`} style={{ width: 120 }} />
+                    placeholder="IMO (7 digits)" inputMode="numeric" aria-label={`IMO number for ${s.job.job_no}`} />
                   <button type="button" className="ix-btn sm primary" disabled={saving === s.job.id || String(typing[s.job.id] || '').length !== 7} onClick={() => saveImo(s.job)}>{saving === s.job.id ? 'Saving…' : 'Save'}</button>
                   <a className="ix-btn sm ghost" href={vesselFinderLink(null, s.name)} target="_blank" rel="noreferrer" title="Find the IMO by ship name">Find IMO ↗</a>
                 </>

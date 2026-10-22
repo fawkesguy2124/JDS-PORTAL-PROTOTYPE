@@ -327,3 +327,10 @@
 /* "updating by itself" line under a page title (AutoStatus.jsx) */
 .ix-autostatus { display: flex; align-items: center; gap: 8px; font-size: 12.5px; margin: -6px 0 14px; padding: 8px 12px; background: #fff; border: 1px solid var(--line); border-radius: 10px }
 @keyframes ixSpin { to { transform: rotate(360deg) } }
+
+/* Vessels list: wraps neatly on narrow screens */
+.ix-ship-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; padding: 12px 16px; border-top: 1px solid var(--line) }
+.ix-ship-row.sel { background: #f3f7fd }
+.ix-ship-row .who { display: flex; align-items: center; gap: 12px; flex: 1 1 280px; min-width: 0 }
+.ix-ship-row .act { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; flex: 0 1 auto }
+.ix-ship-row .act input { width: 130px; height: 30px; border: 1px solid var(--line); border-radius: 8px; padding: 0 8px; font: 13px var(--mono) }
