@@ -72,6 +72,22 @@ Deno.serve(async (req) => {
   const key = (Deno.env.get('AISSTREAM_API_KEY') || '').trim()
   if (!key) return json({ success: false, error: 'The ship tracking key (AISSTREAM_API_KEY) is not set yet.' }, 400)
 
+  // coverage check (test only): listen to the whole area and count ships heard, by area
+  let body: any = {}
+  try { body = await req.json() } catch { /* empty */ }
+  if (body?.coverage) {
+    const heard = new Map<string, [number, number]>()
+    const why = await listen(key, { BoundingBoxes: [INDIAN_OCEAN], FilterMessageTypes: ['PositionReport'] }, 60_000, (m: any) => {
+      const meta = m?.MetaData || {}
+      const la = meta.latitude ?? meta.Latitude, lo = meta.longitude ?? meta.Longitude
+      if (typeof la === 'number') heard.set(String(meta.MMSI), [la, lo])
+    })
+    const area = ([la, lo]: [number, number]) => (lo < 60 ? 'Red Sea / Gulf / Oman' : lo < 78 && la > 15 && la < 24 && lo > 70 ? 'Mumbai / Nhava Sheva / Gujarat coast' : lo < 78 && la > 5 ? 'Arabian Sea / west India' : lo < 78 ? 'Maldives / south of India' : lo < 92 ? 'Sri Lanka / Bay of Bengal' : 'Andaman / Malacca')
+    const byArea: Record<string, number> = {}
+    for (const p of heard.values()) byArea[area(p)] = (byArea[area(p)] || 0) + 1
+    return json({ success: true, ships_heard: heard.size, by_area: byArea, ended: why })
+  }
+
   // one run at a time, and not more often than every few minutes
   const { data: last } = await admin.from('vessel_positions').select('checked_at').order('checked_at', { ascending: false, nullsFirst: false }).limit(1).maybeSingle()
   if (last?.checked_at && Date.now() - new Date(last.checked_at).getTime() < MIN_MINUTES_BETWEEN_RUNS * 60_000) {
@@ -80,7 +96,9 @@ Deno.serve(async (req) => {
 
   // ships of open jobs: from container tracking and from the job itself; a ship
   // that reached the port more than 3 days ago is no longer of interest
-  const { data: jobs } = await admin.from('jobs').select('id, job_no, vessel, stage').or('stage.is.null,stage.lt.10')
+  // jobs opened in the last 75 days (older open jobs are finished but never closed)
+  const since = new Date(Date.now() - 75 * 864e5).toISOString()
+  const { data: jobs } = await admin.from('jobs').select('id, job_no, vessel, stage, eta').or('stage.is.null,stage.lt.10').gte('created_at', since)
   const open = new Map((jobs || []).map((j: any) => [j.id, j]))
   const { data: boxes } = await admin.from('container_tracking').select('job_id, vessel, port_in').in('job_id', [...open.keys()])
   const wanted = new Map<string, Set<string>>() // ship key → job numbers
@@ -90,7 +108,8 @@ Deno.serve(async (req) => {
     if (!wanted.has(k)) wanted.set(k, new Set())
     wanted.get(k)!.add(jobNo)
   }
-  const arrivedLongAgo = (iso: string | null) => !!iso && Date.now() - new Date(iso).getTime() > 3 * 864e5
+  // a ship is followed until its container is in port (plus a day, to see it berth)
+  const arrivedLongAgo = (iso: string | null) => !!iso && Date.now() - new Date(iso).getTime() > 1 * 864e5
   for (const b of boxes || []) if (b.vessel && !arrivedLongAgo(b.port_in)) want(b.vessel, (open.get(b.job_id) as any)?.job_no)
   for (const j of jobs || []) if ((j as any).vessel) want((j as any).vessel, (j as any).job_no)
   if (!wanted.size) return json({ success: true, ships: 0, note: 'No open job has a ship name yet.' })
@@ -101,11 +120,14 @@ Deno.serve(async (req) => {
 
   const seen = new Map<string, Seen>() // mmsi → latest
   let messages = 0
+  const heard = new Map<string, [number, number]>() // for a coverage check: ship → position
   const onMsg = (m: any) => {
     messages++
     const meta = m?.MetaData || {}
     const mmsi = String(meta.MMSI ?? meta.MMSI_String ?? '')
     const name = shipKey(meta.ShipName)
+    const la = meta.latitude ?? meta.Latitude, lo = meta.longitude ?? meta.Longitude
+    if (name && typeof la === 'number' && heard.size < 400) heard.set(name, [Math.round(la * 10) / 10, Math.round(lo * 10) / 10])
     if (!mmsi || !wanted.has(name)) return
     const s: Seen = seen.get(mmsi) || { mmsi, name }
     const pr = m?.Message?.PositionReport
@@ -159,5 +181,9 @@ Deno.serve(async (req) => {
   }
   const located = rows.filter((r) => r.lat !== undefined).length
   console.log(`[vessel-track] ${wanted.size} ships wanted, ${located} placed, ${messages} AIS messages heard (${why.join(', ')})`)
-  return json({ success: true, ships: wanted.size, placed: located, messages, ended: why })
+  // coverage check: how many ships were heard in each area
+  const area = ([la, lo]: [number, number]) => (lo < 60 ? 'Red Sea / Gulf of Aden / Oman' : lo < 78 && la > 5 ? 'Arabian Sea / west India' : lo < 78 ? 'Maldives / south of India' : lo < 92 ? 'Sri Lanka / Bay of Bengal' : 'Andaman / Malacca')
+  const byArea: Record<string, number> = {}
+  for (const p of heard.values()) byArea[area(p)] = (byArea[area(p)] || 0) + 1
+  return json({ success: true, ships: wanted.size, wanted: [...wanted.keys()], placed: located, messages, ships_heard: heard.size, by_area: byArea, ended: why })
 })
