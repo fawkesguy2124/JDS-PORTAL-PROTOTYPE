@@ -38,9 +38,12 @@ export default function TodayPage({ onOpenJob, currentUserName, onGo }) {
 
   useEffect(() => {
     let cancelled = false
+    // today's updates only (from midnight India time; Jose, 22 Oct 2026)
+    const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' })
     supabase.from('activity_log').select('*')
       .or(`type.in.(${GOV_TYPES.join(',')}),action.eq.stage_update`)
-      .order('created_at', { ascending: false }).limit(8)
+      .gte('created_at', new Date(`${today}T00:00:00+05:30`).toISOString())
+      .order('created_at', { ascending: false }).limit(25)
       .then(({ data: rows }) => { if (!cancelled) setLog(rows || []) })
     return () => { cancelled = true }
   }, [data])
@@ -166,7 +169,7 @@ export default function TodayPage({ onOpenJob, currentUserName, onGo }) {
 
           <div className="ix-card">
             <div className="ix-card-head"><Icon name="activity" style={{ color: 'var(--navy)' }} /><h2>Latest updates</h2></div>
-            {log.length === 0 ? <div className="ix-empty">No updates yet.</div> : log.map((r, i) => {
+            {log.length === 0 ? <div className="ix-empty">No updates yet today.</div> : log.map((r, i) => {
               const [ic, bg, fg] = FEED_ICON[r.type] || FEED_ICON[r.action] || ['point', 'var(--grey-bg)', 'var(--text-2)']
               return (
                 <div key={r.id ?? i} className={`ix-feed-row ${r.job_id ? 'click' : ''}`} onClick={() => r.job_id && onOpenJob?.(r.job_id)}>
