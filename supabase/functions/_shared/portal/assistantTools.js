@@ -5,7 +5,7 @@
 import { journeyFor, isDelivered, isExportJob, parseContainerNos, containerTrip, containerFinishedOn, deliveryBy, truckNos } from './journeyCore.js'
 import { jobsFor } from './botMessages.js'
 import { lineName } from './shippingLines.js'
-import { vesselsOf, shipIdOf, seaArea } from './ships.js'
+import { vesselsOf, shipIdOf, seaArea, cargoOnShip } from './ships.js'
 
 const TZ = 'Asia/Kolkata'
 const day = (iso) => {
@@ -227,7 +227,7 @@ function shipInfo(args, data, rows) {
       const key = id.imo ? `imo:${id.imo}` : id.mmsi ? `mmsi:${id.mmsi}` : `name:${name}`
       const g = groups.get(key) || { name, names: [], imo: id.imo, mmsi: id.mmsi, jobs: [] }
       if (!g.names.includes(name)) g.names.push(name)
-      if (!g.jobs.some((x) => x.job.id === job.id)) g.jobs.push({ job, j, first: i === 0 })
+      if (!g.jobs.some((x) => x.job.id === job.id)) g.jobs.push({ job, j, first: i === 0, cargo: cargoOnShip(job, name, data, j) })
       groups.set(key, g)
     })
   }
@@ -238,10 +238,12 @@ function shipInfo(args, data, rows) {
     ships = byJob.length ? byJob : ships.filter((g) => g.imo === ref || g.names.some((n) => has2(n, want)))
     if (!ships.length) return { not_found: want, note: 'no job of yours is on a ship by that name, IMO or job no' }
   } else {
-    ships = ships.filter((g) => g.jobs.some((x) => x.j.phase !== 'delivered'))
+    // the list = ships with our cargo still on board (like the Vessels page)
+    ships = ships.filter((g) => g.jobs.some((x) => x.cargo.onBoard))
   }
   const out = ships.map((g) => {
-    const open = g.jobs.filter((x) => x.j.phase !== 'delivered')
+    const open = g.jobs.filter((x) => x.cargo.onBoard)
+    const unloaded = g.jobs.map((x) => x.cargo.unloadedOn).filter(Boolean).sort().pop() || null
     const arrived = g.jobs.map((x) => x.j.arrivedAt).filter(Boolean).sort()[0] || null
     const etas = open.map((x) => x.job.eta).filter(Boolean).sort()
     // the finder's position, only when it is this same ship (not a namesake)
@@ -254,13 +256,13 @@ function shipInfo(args, data, rows) {
     }
     return {
       ship: g.names.join(' / '), imo: g.imo || (g.mmsi ? 'not known (radio no. known, map works)' : 'not added yet (type it on the Vessels page)'),
-      status: !open.length ? 'all its jobs finished' : arrived ? `arrived ${day(arrived)}` : 'at sea',
+      status: !open.length ? `our cargo already unloaded${unloaded ? ` (${day(unloaded)})` : arrived ? ` (ship arrived ${day(arrived)})` : ''}: no longer tracked` : arrived ? `at port since ${day(arrived)}, unloading` : 'at sea, our cargo on board',
       eta: etas.length ? day(etas[0]) : null,
-      jobs: g.jobs.map((x) => `${x.job.job_no} · ${x.job.client || 'No client'}${x.j.phase === 'delivered' ? ' (finished)' : ''}${x.job.eta ? `, ETA ${day(x.job.eta)}` : ''}`),
+      jobs: g.jobs.map((x) => `${x.job.job_no} · ${x.job.client || 'No client'}${x.j.phase === 'delivered' ? ' (finished)' : !x.cargo.onBoard ? ' (unloaded)' : ''}${x.job.eta ? `, ETA ${day(x.job.eta)}` : ''}`),
       last_heard,
-      live_map: g.imo || g.mmsi ? VESSELS_PAGE : null,
+      live_map: open.length && (g.imo || g.mmsi) ? VESSELS_PAGE : null,
     }
-  }).sort((a, b) => (a.status === 'at sea' ? 0 : 1) - (b.status === 'at sea' ? 0 : 1))
+  }).sort((a, b) => (/^at sea/.test(a.status) ? 0 : 1) - (/^at sea/.test(b.status) ? 0 : 1))
   return { total: out.length, ships: out.slice(0, 20), vessels_page: VESSELS_PAGE }
 }
 
@@ -485,7 +487,7 @@ Rules:
 - Reply in the question's language: an English question gets an English answer; Hindi or Hinglish only when the question itself is in Hindi/Hinglish. WhatsApp style: short, *bold* key facts, "• " bullets, no tables or headers, about 12 lines max unless a full list is asked.
 - free_days_left below 0 = detention running that many days. Never mention tools, JSON or AI.
 - Container tracking events (staff use these words): PORT IN (unloaded at the port), PORT OUT (left the port terminal, usually to a CFS), CFS IN / ICD IN (entered the CFS / ICD), CFS OUT / ICD OUT (left with cargo for the client; "CFS gate out" = CFS OUT), GATE IN / GATE OUT (a PORT gate, not a CFS), GATE CROSSED / TOLL PLAZA CROSSED (on the road), STATION CROSSED / LOADING (on rail), DPD (direct port delivery), DPE (export). Use place_type to say where it is (port, CFS, ICD, road, rail); never call an event or place by a name the data doesn't show. "Containers in port out" or "port out containers" = containers whose latest event is PORT OUT: use list_containers with last_event. Same for any other event name.
-- Which tool: one job / container / BE / BL / truck number → get_job. Jobs by ANY field, date range, count, "how many", "per client", averages → search_jobs (combine filters freely; use group_by for counts per group). A container's full journey → container_history. "What happened", updates, who did what, uploads → recent_activity. Containers by event, place or movement date → list_containers. A ship / vessel (where is it, its IMO, which jobs are on it, at sea or arrived, "ship of J-519", "which ships are at sea") → ship_info. A ship position is only "last heard" (give the time and say it is not live); for the live position give the Vessels page link (live_map). Never guess a position.
+- Which tool: one job / container / BE / BL / truck number → get_job. Jobs by ANY field, date range, count, "how many", "per client", averages → search_jobs (combine filters freely; use group_by for counts per group). A container's full journey → container_history. "What happened", updates, who did what, uploads → recent_activity. Containers by event, place or movement date → list_containers. A ship / vessel (where is it, its IMO, which jobs are on it, at sea or arrived, "ship of J-519", "which ships are at sea") → ship_info. "Ships at sea" / the ship list = ships still carrying our cargo; once our cargo is unloaded a ship is no longer tracked. A ship position is only "last heard" (give the time and say it is not live); for the live position give the Vessels page link (live_map). Never guess a position.
 - Use the date ranges above exactly as given (YYYY-MM-DD). "OOC granted / BE filed / arrived in a period" → search_jobs with ooc_/be_/arrived_ dates (the real dates); recent_activity only shows when staff recorded something in the portal.
 - The portal does NOT hold: payments, duty or invoice amounts, freight rates, bank details, phone numbers or emails of clients/CFS/transporters, or the contents of documents. If asked, say plainly the portal doesn't have that. Only for duty suggest ICEGATE / LiveImpex; for DO or line charges the shipping line. Never invent other places to look.
 - If a tool answers with not_found or zero jobs, say so plainly and suggest the closest thing you can check (e.g. a similar client name).

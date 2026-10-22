@@ -3,10 +3,12 @@ import { supabase } from '../../supabase'
 import { isDelivered, isExportJob } from '../../services/journey'
 import { useJourney, useFreshOnOpen } from '../JourneyContext'
 import ShipMap, { vesselsOf, shipIdOf } from '../ShipMap'
+import { cargoOnShip } from '../../../supabase/functions/_shared/portal/ships.js'
 import { Icon, Chip, fmtDate } from '../ui'
 
-// Vessels: every ship of the open sea jobs, live on VesselFinder's free map, one
-// row per ship with all its jobs (Jose, 22 Oct 2026). Staff type the IMO once
+// Vessels: every ship that still carries our cargo, live on VesselFinder's free
+// map, one row per ship with all its jobs (Jose, 22 Oct 2026). Once the cargo is
+// unloaded (cargoOnShip) the ship leaves this page. Staff type the IMO once
 // (saved on every job of that ship); behind the scenes the IGM check and the
 // vessel-track finder may also supply it (never shown on screen). Not ULIP.
 export default function VesselsPage({ onOpenJob, showToast }) {
@@ -18,17 +20,20 @@ export default function VesselsPage({ onOpenJob, showToast }) {
   const [saving, setSaving] = useState(null)
 
   // one row per ship: same IMO (or radio number, or name) = same ship; a job
-  // whose ship isn't known yet gets its own row, to type the ship name
+  // whose ship isn't known yet gets its own row, to type the ship name. Only
+  // ships with our cargo still on board.
   const ships = useMemo(() => {
     const groups = new Map()
     for (const { job, j } of active || []) {
       if (isDelivered(job) || isExportJob(job) || /air/i.test(job.mode || '')) continue
       const names = vesselsOf(job, data)
       if (!names.length) {
+        if (!cargoOnShip(job, null, data, j).onBoard) continue
         groups.set(`job:${job.id}`, { key: `job:${job.id}`, name: null, imo: null, mmsi: null, jobs: [{ job, arrived: j.arrivedAt, first: true }] })
         continue
       }
       names.forEach((name, i) => {
+        if (!cargoOnShip(job, name, data, j).onBoard) return
         const id = shipIdOf(job, name, data)
         const key = id.imo ? `imo:${id.imo}` : id.mmsi ? `mmsi:${id.mmsi}` : `name:${name}`
         const g = groups.get(key) || { key, name, imo: id.imo, mmsi: id.mmsi, jobs: [] }
@@ -37,7 +42,7 @@ export default function VesselsPage({ onOpenJob, showToast }) {
       })
     }
     return [...groups.values()].map((g) => {
-      // the ship is "at sea" until any of its jobs' containers reached port
+      // "at sea" until the ship reaches port (then unloading, for up to 2 days)
       const dates = g.jobs.map((x) => x.arrived).filter(Boolean).sort()
       return { ...g, arrived: dates[0] || null, jobs: g.jobs.sort((a, b) => String(a.job.job_no).localeCompare(String(b.job.job_no), undefined, { numeric: true })) }
     }).sort((a, b) => (!!a.arrived - !!b.arrived) || String(b.arrived || '').localeCompare(String(a.arrived || '')))
@@ -98,22 +103,26 @@ export default function VesselsPage({ onOpenJob, showToast }) {
       <div className="ix-card">
         <div className="ix-card-head">
           <Icon name="list-details" style={{ color: 'var(--navy)' }} />
-          <h2>Ships of open jobs</h2><span className="ix-chip grey">{ships.length}</span>
-          <span className="sub hide-m">One row per ship. Type the ship's IMO once to see it on the map.</span>
+          <h2>Ships with our cargo on board</h2><span className="ix-chip grey">{ships.length}</span>
+          <span className="sub hide-m">Click a ship to see it on the map. A ship leaves this list once our cargo is unloaded.</span>
         </div>
         {loading && !data && <div className="ix-empty">Loading…</div>}
-        {data && ships.length === 0 && <div className="ix-empty">No open sea job right now.</div>}
+        {data && ships.length === 0 && <div className="ix-empty">No ship is carrying our cargo right now.</div>}
         {ships.map((s) => (
-          <div key={s.key} className={`ix-ship-row ${sel?.key === s.key ? 'sel' : ''}`}>
+          // the whole row shows the ship on the map (job numbers open the job instead)
+          <div key={s.key} className={`ix-ship-row ${sel?.key === s.key ? 'sel' : ''}`}
+            onClick={() => shown(s) && setSelected(s.key)}
+            role={shown(s) ? 'button' : undefined} tabIndex={shown(s) ? 0 : undefined}
+            onKeyDown={(e) => { if (shown(s) && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); setSelected(s.key) } }}
+            title={shown(s) ? 'Show this ship on the map' : undefined}
+            style={{ cursor: shown(s) ? 'pointer' : 'default' }}>
             <div className="who">
-              <button type="button" className="ix-plate" disabled={!shown(s)} onClick={() => setSelected(s.key)} title={shown(s) ? 'Show this ship on the map' : 'The ship\'s number is not known yet'} style={{ cursor: shown(s) ? 'pointer' : 'default', whiteSpace: 'nowrap' }}>
-                {s.name || 'Ship ?'}
-              </button>
+              <span className="ix-plate" style={{ whiteSpace: 'nowrap' }}>{s.name || 'Ship ?'}</span>
               <div style={{ minWidth: 0 }}>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2px 12px' }}>
                   {s.jobs.map(({ job }) => (
                     <span key={job.id}>
-                      <button type="button" className="ix-link" style={{ margin: 0 }} onClick={() => onOpenJob?.(job.id)}><b className="mono">{job.job_no}</b></button>
+                      <button type="button" className="ix-link" style={{ margin: 0 }} onClick={(e) => { e.stopPropagation(); onOpenJob?.(job.id) }}><b className="mono">{job.job_no}</b></button>
                       <span style={{ color: 'var(--text-2)' }}> · {job.client || 'No client'}</span>
                     </span>
                   ))}
@@ -124,11 +133,8 @@ export default function VesselsPage({ onOpenJob, showToast }) {
                 </div>
               </div>
             </div>
-            <div className="act">
-              {s.name && (s.arrived ? <Chip tone="green" icon="anchor">Arrived {fmtDate(s.arrived)}</Chip> : <Chip tone="blue" icon="ship">At sea</Chip>)}
-              {shown(s) && (
-                <button type="button" className={`ix-btn sm ${sel?.key === s.key ? 'primary' : ''}`} onClick={() => setSelected(s.key)}><Icon name="map-pin" />Show</button>
-              )}
+            <div className="act" onClick={(e) => e.stopPropagation()}>
+              {s.name && (s.arrived ? <Chip tone="amber" icon="anchor">At port, unloading</Chip> : <Chip tone="blue" icon="ship">At sea</Chip>)}
               {/* no ship yet: type its name */}
               {!s.name && (
                 <>

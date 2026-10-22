@@ -1,7 +1,7 @@
 // Which ship each job is on, and that ship's numbers (IMO / MMSI). Shared by the
 // portal (Vessels page, job drawer) and the WhatsApp bot, so both say the same.
 // Not ULIP: saved job data, the saved IGM check and the vessel-track finder only.
-import { parseContainerNos } from './journeyCore.js'
+import { parseContainerNos, containerTrip, isDelivered } from './journeyCore.js'
 
 const digits = (v) => String(v || '').replace(/\D/g, '')
 
@@ -76,4 +76,45 @@ export function seaArea(lat, lon) {
   if (typeof lat !== 'number' || typeof lon !== 'number') return null
   const a = AREAS.find(([, la1, la2, lo1, lo2]) => lat >= la1 && lat <= la2 && lon >= lo1 && lon <= lo2)
   return a ? a[0] : 'at sea'
+}
+
+// Is this job's cargo still on this ship? (Jose, 22 Oct 2026: a ship stays on the
+// Vessels page only while our cargo is on board; once it is unloaded, the ship
+// is of no interest.) Unloaded when ANY of:
+//  • every container of the job on this ship has a port event of this trip that
+//    is the box itself (PORT IN / discharge / gate / CFS…, not just "vessel arrived")
+//  • the job reached OOC or was delivered (cargo is surely off)
+//  • the ship arrived (IGM / vessel check / port in) more than 2 days ago: a
+//    container ship unloads within a day or two of berthing
+// Returns { onBoard, unloadedOn, arrivedAt } (dates ISO or null).
+const UNLOAD_DAYS = 2
+const boxName = (m) => String(m?.description || m?.event || '').toUpperCase().trim()
+const boxWhen = (m) => (m?.date ? new Date(m.date).getTime() : NaN)
+export function cargoOnShip(job, name, data, j) {
+  const arrivedAt = j?.arrivedAt || null
+  if (isDelivered(job) || Number(job?.stage) >= 7) return { onBoard: false, unloadedOn: null, arrivedAt }
+  const ships = vesselsOf(job, data)
+  // the job's containers on this ship (a box with no ship of its own is on the job's ship)
+  const boxes = parseContainerNos(job?.containers).filter((no) => {
+    const own = shipKey(data?.containersByNo?.[no]?.vessel)
+    return own.length >= 3 ? own === name : name === ships[0]
+  })
+  let last = null
+  const off = boxes.length > 0 && boxes.every((no) => {
+    const t = data?.containersByNo?.[no]
+    if (!t) return false
+    const trip = containerTrip(t, job)
+    if (trip.laterTrip || trip.exitAt) return true
+    if (!trip.portIn) return false
+    const from = new Date(trip.portIn).getTime()
+    const ms = (Array.isArray(t.milestones) ? t.milestones : []).filter((m) => boxWhen(m) >= from && !/^VESSEL/.test(boxName(m)))
+    if (!ms.length) return false
+    const at = new Date(Math.min(...ms.map(boxWhen))).toISOString()
+    if (!last || at > last) last = at
+    return true
+  })
+  if (off) return { onBoard: false, unloadedOn: last, arrivedAt }
+  // no container news: go by the ship's arrival (only for a job on one ship)
+  if (ships.length <= 1 && arrivedAt && Date.now() - new Date(arrivedAt).getTime() > UNLOAD_DAYS * 86400000) return { onBoard: false, unloadedOn: null, arrivedAt }
+  return { onBoard: true, unloadedOn: null, arrivedAt }
 }
