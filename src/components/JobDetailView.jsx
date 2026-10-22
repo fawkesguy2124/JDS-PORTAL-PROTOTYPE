@@ -491,7 +491,10 @@ function JobDetailView({ job, profiles, currentUserName, isAdmin, canUpdateStage
   // (form.containers / container_sizes) is updated from the complete rows.
   const boxRowsOf = (f) => {
     const rows = f._boxRows ?? parseContainersWithSizes(f.containers, f.container_sizes)
-    return rows.length ? rows : [{ no: '', size: '' }]
+    const lcl = f.mode === 'Sea LCL'
+    // an LCL box's size is just "LCL"
+    const fixed = lcl ? rows.map(r => ({ ...r, size: 'LCL' })) : rows
+    return fixed.length ? fixed : [{ no: '', size: lcl ? 'LCL' : '' }]
   }
   const setBoxRows = (rows) => setForm(prev => ({
     ...prev,
@@ -509,7 +512,7 @@ function JobDetailView({ job, profiles, currentUserName, isAdmin, canUpdateStage
     setBoxRows(rows)
   }
 
-  const addContainerRow = () => setBoxRows([...boxRowsOf(form), { no: '', size: '' }])
+  const addContainerRow = () => setBoxRows([...boxRowsOf(form), { no: '', size: form.mode === 'Sea LCL' ? 'LCL' : '' }])
 
   const removeContainerRow = (i) => {
     const rows = boxRowsOf(form)
@@ -1133,7 +1136,7 @@ function JobDetailView({ job, profiles, currentUserName, isAdmin, canUpdateStage
                                     onChange={e => updateContainerRow(i, 'size', e.target.value)}
                                     className="w-full rounded-lg border border-[#e2e6ed] bg-white px-3 py-2 text-sm text-[#1a2233] focus:border-[#1a4fa0] focus:outline-none focus:ring-1 focus:ring-[#1a4fa0]">
                                     <option value="">Select size</option>
-                                    {CONTAINER_SIZES.map(s => <option key={s} value={s}>{s}</option>)}
+                                    {(form.mode === 'Sea LCL' ? ['LCL'] : CONTAINER_SIZES).map(s => <option key={s} value={s}>{s}</option>)}
                                   </select>
                                   <button type="button" onClick={() => removeContainerRow(i)}
                                     disabled={rows.length === 1}

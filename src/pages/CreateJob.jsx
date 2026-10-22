@@ -15,6 +15,9 @@ const MODES = ['Sea FCL', 'Sea LCL', 'Air', 'BPT/MBPT']
 const HAS_BOXES = (mode) => mode === 'Sea FCL' || mode === 'Sea LCL'
 const BOX_NO = /^[A-Z]{4}\d{7}$/
 const CONTAINER_SIZES = ['20GP','40GP','40HC','45HC','20RF','40RF','40RFHC','20OT','40OT','20FR','40FR','20TK']
+// an LCL job's box is a shared consolidation container: its size is just "LCL"
+const sizesFor = (mode) => (mode === 'Sea LCL' ? ['LCL'] : CONTAINER_SIZES)
+const defaultSize = (mode) => (mode === 'Sea LCL' ? 'LCL' : '')
 const PRIORITIES = ['normal', 'high', 'urgent']
 const RMS_STATUSES = ['pending', 'rms', 'apr', 'acl', 'check', 'hold']
 const BG_OPTIONS = ['no', 'yes', '100percent']
@@ -209,7 +212,9 @@ export default function CreateJob({ isModal = false, onCancel, onCreated }) {
         if (value === 'BPT/MBPT' && (prev.port_code === 'INNSA1' || prev.port_code === 'INBOM4')) next.port_code = 'INBOM1'
         if (value !== 'BPT/MBPT' && value !== 'Air' && prev.mode === 'BPT/MBPT' && prev.port_code === 'INBOM1') next.port_code = 'INNSA1'
         if (HAS_BOXES(value)) {
-          next.containers = prev.containers.length === 0 ? [{ no: '', size: '' }] : prev.containers
+          const rows = prev.containers.length === 0 ? [{ no: '', size: '' }] : prev.containers
+          // switching between FCL and LCL: sizes that don't fit the new mode are reset
+          next.containers = rows.map(r => ({ ...r, size: sizesFor(value).includes(r.size) ? r.size : defaultSize(value) }))
         } else {
           next.containers = []
         }
@@ -336,7 +341,7 @@ if (parsed.client && shouldFill('client')) {
         // fill for any sea job, and when the rows are still blank (an empty row added
         // before the upload used to block this)
         if (HAS_BOXES(form.mode) && extractedNos.length > 0 && form.containers.every(c => !String(c.no || '').trim())) {
-          updates.containers = extractedNos.map(no => ({ no, size: '' }))
+          updates.containers = extractedNos.map(no => ({ no, size: defaultSize(form.mode) }))
           applied.containers = true
         }
       }
@@ -592,7 +597,7 @@ if (parsed.client && shouldFill('client')) {
   const handleAddRow = () => {
     if (!canAddRow) { setShowRowWarning(true); return }
     setShowRowWarning(false)
-    setForm(p => ({ ...p, containers: [...p.containers, { no: '', size: '' }] }))
+    setForm(p => ({ ...p, containers: [...p.containers, { no: '', size: defaultSize(p.mode) }] }))
   }
 
   return (
@@ -964,7 +969,7 @@ if (parsed.client && shouldFill('client')) {
                                 className="w-full border border-gray-200 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-[#1e3a5f] focus:border-transparent"
                               >
                                 <option value="">Select size</option>
-                                {CONTAINER_SIZES.map(s => <option key={s} value={s}>{s}</option>)}
+                                {sizesFor(form.mode).map(s => <option key={s} value={s}>{s}</option>)}
                               </select>
                             </td>
                             <td className="px-3 py-1.5 text-center">
