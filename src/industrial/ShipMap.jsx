@@ -1,55 +1,82 @@
 import { parseContainerNos } from '../services/journey'
 
 // A ship's live position on VesselFinder's free embedded map (their own data,
-// shown in a frame; the portal reads nothing from it). Needs the ship's IMO
-// number; without one it shows the sea around Nhava Sheva with ship names.
+// shown in a frame; the portal reads nothing from it). Needs the ship's IMO or
+// MMSI number; without one it shows the sea around Nhava Sheva with ship names.
 // Not ULIP. (Jose, 22 Oct 2026: aisstream's free feed hears no ships off west
 // India, VesselFinder does.)
 
 const NHAVA_SHEVA = { lat: 18.95, lon: 72.95 }
 const digits = (v) => String(v || '').replace(/\D/g, '')
 
-// The job's ship name: typed on the job, else from its container tracking (LDB)
-export function vesselOf(job, data) {
-  if (job?.vessel) return String(job.vessel).trim()
-  for (const no of parseContainerNos(job?.containers)) {
-    const v = data?.containersByNo?.[no]?.vessel
-    if (v) return String(v).trim()
-  }
-  return null
+// "M.V. MSC AURORA V.543W" → "MSC AURORA" (same as the vessel-track finder)
+export function shipKey(raw) {
+  return String(raw || '').toUpperCase()
+    .replace(/^\s*(M\.?\s?V\.?|M\/V)\s+/, '')
+    .replace(/\s+(V\.?|VOY\.?|VOYAGE)\s*[\w-]+\s*$/, '')
+    .replace(/\s*\/.*$/, '')
+    .replace(/[^A-Z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim()
 }
 
-// The ship's IMO number (7 digits): typed or remembered on the job, else from the
-// job's saved IGM / vessel-arrival checks
-export function imoOf(job, data) {
+// Every ship of a job: typed on the job, and each container's ship (LDB). A job
+// can have two when its containers sail on different ships.
+export function vesselsOf(job, data) {
+  const names = []
+  const add = (v) => { const k = shipKey(v); if (k.length >= 3 && !names.includes(k)) names.push(k) }
+  if (job?.vessel) add(job.vessel)
+  for (const no of parseContainerNos(job?.containers)) add(data?.containersByNo?.[no]?.vessel)
+  return names
+}
+export const vesselOf = (job, data) => vesselsOf(job, data)[0] || null
+
+// IMO from the job: typed by JDS first, then the job's IGM / vessel-arrival check
+function jobImo(job, data) {
   const typed = digits(job?.ulip_refs?.imo_code)
-  if (typed.length === 7) return typed
+  if (typed.length === 7) return { imo: typed, from: 'typed' }
   const results = data?.resultsByJob?.[job?.id] || {}
   for (const api of ['ICEGATE/07', 'ICEGATE/01']) {
     for (const r of [].concat(results[api] || [])) {
       const f = (r?.parsed?.fields || []).find((x) => /imo/i.test(x?.label || ''))
       const n = digits(f?.value || r?.parsed?.extra?.imoCode)
-      if (n.length === 7) return n
+      if (n.length === 7) return { imo: n, from: 'igm' }
     }
   }
   return null
 }
 
-export const vesselFinderLink = (imo, name) => (imo
-  ? `https://www.vesselfinder.com/vessels/details/${imo}`
-  : `https://www.vesselfinder.com/vessels?name=${encodeURIComponent(name || '')}`)
+// The numbers to show one ship by, in order of trust: typed by JDS, from the IGM
+// check (both apply to the job's first ship), else what the finder heard the
+// ship broadcast. { imo, mmsi, from: 'typed'|'igm'|'found'|'unclear'|null, candidates }
+export function shipIdOf(job, name, data) {
+  const first = vesselsOf(job, data)[0]
+  if (!name || name === first) {
+    const own = jobImo(job, data)
+    if (own) return { ...own, mmsi: null }
+  }
+  const f = data?.shipIds?.[shipKey(name)]
+  if (f?.imo || f?.mmsi) return { imo: digits(f.imo).length === 7 ? digits(f.imo) : null, mmsi: f.mmsi || null, from: 'found', seenAt: f.seen_at }
+  if (f?.candidates?.length > 1) return { imo: null, mmsi: null, from: 'unclear', candidates: f.candidates }
+  return { imo: null, mmsi: null, from: null }
+}
+// (kept for older callers) the IMO of the job's first ship
+export const imoOf = (job, data) => shipIdOf(job, vesselOf(job, data), data).imo
 
-export default function ShipMap({ imo, height = 420, title }) {
+export const vesselFinderLink = (imo, name, mmsi) => (imo
+  ? `https://www.vesselfinder.com/vessels/details/${imo}`
+  : mmsi ? `https://www.vesselfinder.com/vessels/details/${mmsi}` : `https://www.vesselfinder.com/vessels?name=${encodeURIComponent(name || '')}`)
+
+export default function ShipMap({ imo, mmsi, height = 420, title }) {
   const ship = digits(imo).length === 7 ? digits(imo) : null
+  const radio = !ship && digits(mmsi).length === 9 ? digits(mmsi) : null
   const params = new URLSearchParams({
-    zoom: ship ? 'undefined' : '8',
-    lat: ship ? 'undefined' : String(NHAVA_SHEVA.lat),
-    lon: ship ? 'undefined' : String(NHAVA_SHEVA.lon),
+    zoom: ship || radio ? 'undefined' : '8',
+    lat: ship || radio ? 'undefined' : String(NHAVA_SHEVA.lat),
+    lon: ship || radio ? 'undefined' : String(NHAVA_SHEVA.lon),
     width: '100%',
     height: String(height),
     names: 'true',
-    ...(ship ? { imo: ship } : {}),
-    track: ship ? 'true' : 'false',
+    ...(ship ? { imo: ship } : radio ? { mmsi: radio } : {}),
+    track: ship || radio ? 'true' : 'false',
     fleet: 'false',
     fleet_name: 'false',
     fleet_hide_old_positions: 'false',
@@ -59,8 +86,8 @@ export default function ShipMap({ imo, height = 420, title }) {
   })
   return (
     <iframe
-      key={ship || 'area'}
-      title={title || (ship ? `Ship IMO ${ship} on VesselFinder` : 'Ships near Nhava Sheva on VesselFinder')}
+      key={ship || radio || 'area'}
+      title={title || (ship ? `Ship IMO ${ship} on VesselFinder` : radio ? `Ship MMSI ${radio} on VesselFinder` : 'Ships near Nhava Sheva on VesselFinder')}
       src={`https://www.vesselfinder.com/aismap?${params.toString()}`}
       width="100%" height={height} frameBorder="0" loading="lazy"
       style={{ display: 'block', border: 0, borderRadius: 10, background: '#e8eef5' }}

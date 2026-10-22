@@ -46,8 +46,12 @@ export async function loadJourneyData() {
   const firstError = [jobsRes, csRes, resultsRes, ctRes].find((r) => r.error)?.error
   if (firstError) console.warn('[journey] load problem:', firstError.message)
 
-  return buildJourneyData(
+  const built = buildJourneyData(
     { jobs: jobsRes.data, customs: csRes.data, results: resultsRes.data, containers: ctRes.data },
     firstError ? (firstError.message || 'Could not load the latest data') : null,
   )
+  // ship numbers found by the vessel-track finder (by ship name); optional
+  const ships = await supabase.from('vessel_positions').select('name, mmsi, imo, candidates, seen_at, destination')
+  built.shipIds = Object.fromEntries((ships.data || []).map((r) => [r.name, r]))
+  return built
 }

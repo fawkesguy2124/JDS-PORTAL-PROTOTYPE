@@ -29,5 +29,5 @@ select cron.schedule('vessel-track', '*/30 * * * *', $$
   select net.http_post(
     url := 'https://lokiszscjahxabturzoo.supabase.co/functions/v1/vessel-track',
     headers := jsonb_build_object('Content-Type', 'application/json', 'x-bot-secret', (select cron_token from bot_state where id = 1)),
-    body := '{}'::jsonb, timeout_milliseconds := 120000)
+    body := '{}'::jsonb, timeout_milliseconds := 150000)
 $$);

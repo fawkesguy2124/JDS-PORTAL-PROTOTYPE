@@ -1,9 +1,10 @@
-// Where are the ships of JDS's open jobs? (Jose, 22 Oct 2026)
-// Listens to aisstream.io (free, live AIS from coastal receivers) for about a
-// minute and keeps, for each ship name on an open job, its last position,
-// speed, course, destination and the ETA the ship itself broadcasts.
-// NOT ULIP: this never calls ULIP. Run by the database every 30 minutes and
-// when someone opens the Vessels page (at most once every 10 minutes).
+// Ship-number finder for the ships of JDS's open jobs (Jose, 22 Oct 2026).
+// The live map is VesselFinder's (by IMO / MMSI). When JDS hasn't typed the IMO
+// and the IGM check hasn't given it, this finds the ship's numbers itself: ships
+// broadcast their name, MMSI and (every ~6 min) IMO, type and destination; we
+// listen to aisstream.io (free) for about 2 minutes where its receivers are busy
+// (Malacca, Red Sea, Gulf) and keep the numbers of the ship with that name.
+// Also keeps its last heard position. NOT ULIP. Run by the database every 30 minutes.
 //
 // Ships are recognised by NAME (container tracking gives us "MSC AURORA").
 // Names can repeat, so once a ship is found its MMSI (radio id) is kept and
@@ -11,7 +12,7 @@
 import { adminClient, corsHeaders, getCaller, json } from '../_shared/ulip.ts'
 
 const STREAM = 'wss://stream.aisstream.io/v0/stream'
-const LISTEN_MS = 75_000
+const LISTEN_MS = 110_000 // ships send their IMO about every 6 minutes; numbers fill in over a few runs
 const MIN_MINUTES_BETWEEN_RUNS = 10
 // Red Sea and Suez mouth to the Malacca Strait: the waters ships cross on their
 // way to Nhava Sheva / Mumbai
@@ -108,8 +109,8 @@ Deno.serve(async (req) => {
     if (!wanted.has(k)) wanted.set(k, new Set())
     wanted.get(k)!.add(jobNo)
   }
-  // a ship is followed until its container is in port (plus a day, to see it berth)
-  const arrivedLongAgo = (iso: string | null) => !!iso && Date.now() - new Date(iso).getTime() > 1 * 864e5
+  // a ship is followed until 3 days after its container is in port
+  const arrivedLongAgo = (iso: string | null) => !!iso && Date.now() - new Date(iso).getTime() > 3 * 864e5
   for (const b of boxes || []) if (b.vessel && !arrivedLongAgo(b.port_in)) want(b.vessel, (open.get(b.job_id) as any)?.job_no)
   for (const j of jobs || []) if ((j as any).vessel) want((j as any).vessel, (j as any).job_no)
   if (!wanted.size) return json({ success: true, ships: 0, note: 'No open job has a ship name yet.' })
@@ -152,16 +153,20 @@ Deno.serve(async (req) => {
   if (mmsiOf.size) runs.push(listen(key, { BoundingBoxes: [WORLD], FiltersShipMMSI: [...new Set(mmsiOf.values())].slice(0, 200), FilterMessageTypes: types }, LISTEN_MS, onMsg))
   const why = await Promise.all(runs)
 
-  // one row per ship name: the MMSI we already follow, else the likeliest of the
-  // ships with that name (one heading for India first)
+  // one row per ship name. Safe matching (a wrong ship is worse than none):
+  // - only cargo / container ships (AIS type 70-79) when the type is known
+  // - a ship already matched keeps its number
+  // - one ship heard with that name → that ship
+  // - several → the one heading to India; if still unclear, no pick (staff confirm)
   const now = new Date().toISOString()
   const rows = []
+  const cargo = (s: Seen) => s.type === undefined || (s.type >= 70 && s.type <= 79)
+  const india = (s: Seen) => INDIA_DEST.test(String(s.destination || '').toUpperCase())
   for (const [name, jobNos] of wanted) {
-    const found = [...seen.values()].filter((s) => s.name === name)
-    const pick = found.find((s) => s.mmsi === mmsiOf.get(name))
-      || found.find((s) => INDIA_DEST.test(String(s.destination || '').toUpperCase()))
-      || found.find((s) => s.lat !== undefined)
-      || found[0]
+    const found = [...seen.values()].filter((s) => s.name === name && cargo(s))
+    const kept = found.find((s) => s.mmsi === mmsiOf.get(name))
+    const indian = found.filter(india)
+    const pick = kept || (found.length === 1 ? found[0] : indian.length === 1 ? indian[0] : null)
     const row: Record<string, unknown> = { name, jobs: [...jobNos].filter(Boolean), checked_at: now }
     if (pick) {
       Object.assign(row, {
@@ -169,8 +174,11 @@ Deno.serve(async (req) => {
         ...(pick.imo ? { imo: pick.imo } : {}), ...(pick.destination ? { destination: pick.destination } : {}), ...(pick.eta ? { eta_text: pick.eta } : {}),
         ...(pick.type !== undefined ? { ship_type: pick.type } : {}),
         ...(pick.lat !== undefined ? { lat: pick.lat, lon: pick.lon, sog: pick.sog, cog: pick.cog, heading: pick.heading, nav_status: pick.navStatus, seen_at: pick.at } : {}),
-        candidates: found.length > 1 ? found.map((f) => ({ mmsi: f.mmsi, destination: f.destination || null, lat: f.lat ?? null, lon: f.lon ?? null })) : null,
+        candidates: null,
       })
+    } else if (found.length > 1 && !mmsiOf.get(name)) {
+      // several ships with this name and none clearly ours: list them, pick none
+      row.candidates = found.map((f) => ({ mmsi: f.mmsi, imo: f.imo || null, destination: f.destination || null }))
     }
     rows.push(row)
   }

@@ -5,7 +5,7 @@ import { portLabel } from '../utils/ports'
 import { useJourney } from './JourneyContext'
 import { containerFinishedOn, deliveryBy } from '../services/journey'
 import { Chip, FreeDays, Icon, PhaseChip, fmtDate, initials, jobOwnerName, timeAgo } from './ui'
-import ShipMap, { vesselOf, imoOf, vesselFinderLink } from './ShipMap'
+import ShipMap, { vesselOf, shipIdOf, vesselFinderLink } from './ShipMap'
 
 // The side panel that opens when a job is clicked: what it is, where it is,
 // what is next, its containers, timeline, documents and team notes. Editing
@@ -244,14 +244,14 @@ export default function JobDrawer({ jobId, initialTab = 'overview', onClose, onO
                 {(() => {
                   // the ship, live on VesselFinder's free map (by IMO number)
                   const ship = vesselOf(job, data)
-                  const imo = imoOf(job, data)
-                  if (!ship && !imo) return null
+                  if (!ship) return null
+                  const { imo, mmsi } = shipIdOf(job, ship, data)
                   return (
                     <div>
                       <div className="k">Ship</div>
                       <div className="v" style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-                        <span>{ship || '—'}{imo ? <span className="mono" style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 6 }}>IMO {imo}</span> : null}</span>
-                        {imo
+                        <span>{ship}{imo || mmsi ? <span className="mono" style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 6 }}>{imo ? `IMO ${imo}` : `MMSI ${mmsi}`}</span> : null}</span>
+                        {imo || mmsi
                           ? <button type="button" className="ix-link" style={{ margin: 0 }} onClick={() => setShowShip((v) => !v)}>{showShip ? 'Hide map' : 'Where is it now? →'}</button>
                           : <a className="ix-link" style={{ margin: 0 }} href={vesselFinderLink(null, ship)} target="_blank" rel="noreferrer">Find on VesselFinder ↗</a>}
                       </div>
@@ -298,12 +298,12 @@ export default function JobDrawer({ jobId, initialTab = 'overview', onClose, onO
                   </div>
                 )}
               </div>
-              {showShip && imoOf(job, data) && (
+              {showShip && (() => { const id = shipIdOf(job, vesselOf(job, data), data); return id.imo || id.mmsi })() && (
                 <div style={{ margin: '4px 0 16px' }}>
-                  <ShipMap imo={imoOf(job, data)} height={400} />
+                  <ShipMap {...shipIdOf(job, vesselOf(job, data), data)} height={400} />
                   <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4 }}>
                     Live position by VesselFinder; the line is the last 24 hours.{' '}
-                    <a className="ix-link" style={{ margin: 0 }} href={vesselFinderLink(imoOf(job, data))} target="_blank" rel="noreferrer">Open on VesselFinder ↗</a>
+                    <a className="ix-link" style={{ margin: 0 }} href={(() => { const id = shipIdOf(job, vesselOf(job, data), data); return vesselFinderLink(id.imo, vesselOf(job, data), id.mmsi) })()} target="_blank" rel="noreferrer">Open on VesselFinder ↗</a>
                   </div>
                 </div>
               )}
