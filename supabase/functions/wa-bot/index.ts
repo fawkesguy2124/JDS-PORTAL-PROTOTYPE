@@ -44,7 +44,8 @@ async function readAll(build: () => any) {
 // Only the saved checks the job rules actually read (truck place, truck papers,
 // vessel arrival, export LEO). Loading every saved ULIP answer was the slow part.
 const USED_CHECKS = ['FASTAG/01', 'VAHAN/04', 'VAHAN/01', 'JNPT/01', 'MBPT/01', 'IPORTMAN/01',
-  'ICEGATE/06', 'PCS/03', 'JNPT/03', 'ICEGATE/05', 'MBPT/03', 'IPORTMAN/03', 'ICEGATE/12']
+  'ICEGATE/06', 'PCS/03', 'JNPT/03', 'ICEGATE/05', 'MBPT/03', 'IPORTMAN/03', 'ICEGATE/12',
+  'ICEGATE/07', 'ICEGATE/01'] // (07/01: the ship's IMO from the IGM, for ship questions)
 
 async function loadData(admin: Admin) {
   const since = new Date(Date.now() - 180 * DAY).toISOString()
@@ -64,13 +65,16 @@ async function loadData(admin: Admin) {
   // extras for the assistant only (what happened, which papers, who): a failure here
   // must never stop alerts or the summary
   const month = new Date(Date.now() - 30 * DAY).toISOString()
-  const [activity, documents, people] = await Promise.all([
+  const [activity, documents, people, ships] = await Promise.all([
     readAll(() => admin.from('activity_log').select('action, type, title, note, job_no, job_id, done_by_name, user_name, created_at')
       .gte('created_at', month).order('created_at', { ascending: false })).catch(() => []),
     // file names and types only: never the files or their links
     readAll(() => admin.from('documents').select('job_id, job_no, file_name, doc_type, uploaded_by_name, created_at').order('created_at', { ascending: false })).catch(() => []),
     readAll(() => admin.from('profiles').select('id, name').order('id')).catch(() => []),
+    // ship numbers and last-heard positions from the vessel-track finder
+    readAll(() => admin.from('vessel_positions').select('name, mmsi, imo, candidates, lat, lon, sog, nav_status, destination, seen_at').order('name')).catch(() => []),
   ])
+  data.shipIds = Object.fromEntries(ships.map((r: any) => [r.name, r]))
   data.activity = activity
   data.documents = documents
   data.people = Object.fromEntries(people.map((p: any) => [p.id, p.name]))

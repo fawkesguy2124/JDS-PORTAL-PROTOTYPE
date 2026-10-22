@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { parseContainerNos } from '../services/journey'
+import { vesselOf, shipIdOf } from '../../supabase/functions/_shared/portal/ships.js'
 import { Icon } from './ui'
 
 // A ship's live position on VesselFinder's free embedded map (their own data,
@@ -11,57 +11,9 @@ import { Icon } from './ui'
 const NHAVA_SHEVA = { lat: 18.95, lon: 72.95 }
 const digits = (v) => String(v || '').replace(/\D/g, '')
 
-// "M.V. MSC AURORA V.543W" → "MSC AURORA" (same as the vessel-track finder)
-export function shipKey(raw) {
-  return String(raw || '').toUpperCase()
-    .replace(/^\s*(M\.?\s?V\.?|M\/V)\s+/, '')
-    .replace(/\s+(V\.?|VOY\.?|VOYAGE)\s*[\w-]+\s*$/, '')
-    .replace(/\s*\/.*$/, '')
-    .replace(/[^A-Z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim()
-}
+// which ship a job is on and its numbers: shared with the WhatsApp bot
+export { shipKey, vesselsOf, vesselOf, shipIdOf } from '../../supabase/functions/_shared/portal/ships.js'
 
-// Every ship of a job: typed on the job, and each container's ship (LDB). A job
-// can have two when its containers sail on different ships.
-export function vesselsOf(job, data) {
-  const names = []
-  const add = (v) => { const k = shipKey(v); if (k.length >= 3 && !names.includes(k)) names.push(k) }
-  if (job?.vessel) add(job.vessel)
-  for (const no of parseContainerNos(job?.containers)) add(data?.containersByNo?.[no]?.vessel)
-  return names
-}
-export const vesselOf = (job, data) => vesselsOf(job, data)[0] || null
-
-// IMO from the job: typed by JDS first, then the job's IGM / vessel-arrival check
-function jobImo(job, data) {
-  let igm = null
-  const results = data?.resultsByJob?.[job?.id] || {}
-  for (const api of ['ICEGATE/07', 'ICEGATE/01']) {
-    for (const r of [].concat(results[api] || [])) {
-      const f = (r?.parsed?.fields || []).find((x) => /imo/i.test(x?.label || ''))
-      const n = digits(f?.value || r?.parsed?.extra?.imoCode)
-      if (n.length === 7 && !igm) igm = n
-    }
-  }
-  // the job's saved IMO is either typed by staff or remembered from the IGM check
-  const saved = digits(job?.ulip_refs?.imo_code)
-  if (saved.length === 7) return { imo: saved, from: saved === igm ? 'igm' : 'typed' }
-  return igm ? { imo: igm, from: 'igm' } : null
-}
-
-// The numbers to show one ship by, in order of trust: typed by JDS, from the IGM
-// check (both apply to the job's first ship), else what the finder heard the
-// ship broadcast. { imo, mmsi, from: 'typed'|'igm'|'found'|'unclear'|null, candidates }
-export function shipIdOf(job, name, data) {
-  const first = vesselsOf(job, data)[0]
-  if (!name || name === first) {
-    const own = jobImo(job, data)
-    if (own) return { ...own, mmsi: null }
-  }
-  const f = data?.shipIds?.[shipKey(name)]
-  if (f?.imo || f?.mmsi) return { imo: digits(f.imo).length === 7 ? digits(f.imo) : null, mmsi: f.mmsi || null, from: 'found', seenAt: f.seen_at }
-  if (f?.candidates?.length > 1) return { imo: null, mmsi: null, from: 'unclear', candidates: f.candidates }
-  return { imo: null, mmsi: null, from: null }
-}
 // (kept for older callers) the IMO of the job's first ship
 export const imoOf = (job, data) => shipIdOf(job, vesselOf(job, data), data).imo
 
