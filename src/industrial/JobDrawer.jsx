@@ -6,6 +6,7 @@ import { useJourney } from './JourneyContext'
 import { containerFinishedOn, deliveryBy } from '../services/journey'
 import { Chip, FreeDays, Icon, PhaseChip, fmtDate, initials, jobOwnerName, timeAgo } from './ui'
 import ShipMap, { vesselOf, shipIdOf } from './ShipMap'
+import { openDoc } from '../services/docFiles'
 
 // The side panel that opens when a job is clicked: what it is, where it is,
 // what is next, its containers, timeline, documents and team notes. Editing
@@ -368,7 +369,7 @@ export default function JobDrawer({ jobId, initialTab = 'overview', onClose, onO
                     <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.doc_type ? `${d.doc_type} · ` : ''}{d.file_name}</div>
                     <div className="s">{d.uploaded_by_name ? `by ${d.uploaded_by_name} · ` : ''}{timeAgo(d.created_at)}</div>
                   </div>
-                  {d.file_url && <a className="ix-btn sm" style={{ marginLeft: 'auto', textDecoration: 'none' }} href={d.file_url} target="_blank" rel="noreferrer">View</a>}
+                  {(d.file_path || d.file_url) && <button type="button" className="ix-btn sm" style={{ marginLeft: 'auto' }} onClick={() => openDoc(d)}>View</button>}
                 </div>
               ))}
               <button type="button" className="ix-btn" style={{ width: '100%', justifyContent: 'center', marginTop: 6 }} onClick={() => onOpenFull(job.id, 'documents')}>

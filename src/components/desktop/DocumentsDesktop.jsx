@@ -139,10 +139,10 @@ export default function DocumentsDesktop({
                                         className="h-7 px-2.5 text-xs rounded-md bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 font-semibold">
                                         View
                                       </button>
-                                      <a href={doc.file_url} download={doc.file_name}
+                                      <button type="button" onClick={() => onDownload(doc)}
                                         className="h-7 px-2.5 text-xs rounded-md bg-white border-[1.5px] border-[#d0d6e0] text-[#4a5568] hover:border-[#1a4fa0] hover:text-[#1a4fa0] hover:bg-[#e8eef8] font-semibold inline-flex items-center no-underline">
                                         Download
-                                      </a>
+                                      </button>
                                       {canDelete && (
                                         <button type="button" onClick={() => onDelete(doc)}
                                           className="h-7 px-2.5 text-xs rounded-md border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 font-semibold">

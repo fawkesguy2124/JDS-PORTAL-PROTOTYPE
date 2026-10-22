@@ -6,6 +6,7 @@ import DocumentsDesktop from './desktop/DocumentsDesktop'
 
 import { availableTypes } from '../utils/docTypes'
 import { vesselFromBl } from '../services/blVessel'
+import { downloadDoc, useDocUrl } from '../services/docFiles'
 
 function DocumentsSection({ jobs, profiles, currentUserName, showToast, initialExpandJobId, onExpandConsumed }) {
   const { user, profile } = useAuth()
@@ -15,6 +16,8 @@ function DocumentsSection({ jobs, profiles, currentUserName, showToast, initialE
   const [expandedJobId, setExpandedJobId] = useState(null)
   const [uploadModal, setUploadModal] = useState({ open: false, job: null })
   const [previewModal, setPreviewModal] = useState({ open: false, doc: null })
+  // the files are private: the preview uses a 1-hour link made for this user
+  const previewUrl = useDocUrl(previewModal.open ? previewModal.doc : null)
   const [uploading, setUploading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState(0)
   const [uploadDocType, setUploadDocType] = useState('BL')
@@ -219,27 +222,7 @@ function DocumentsSection({ jobs, profiles, currentUserName, showToast, initialE
           setExpandedJobId={setExpandedJobId}
           onUpload={(job) => setUploadModal({ open: true, job })}
           onPreview={(doc) => setPreviewModal({ open: true, doc })}
-          onDownload={async (doc) => {
-            try {
-              const res = await fetch(doc.file_url)
-              if (!res.ok) throw new Error(`HTTP ${res.status}`)
-              const blob = await res.blob()
-              const url = URL.createObjectURL(blob)
-              const a = document.createElement('a')
-              a.href = url
-              a.download = doc.file_name
-              document.body.appendChild(a)
-              a.click()
-              document.body.removeChild(a)
-              setTimeout(() => URL.revokeObjectURL(url), 1000)
-            } catch {
-              const a = document.createElement('a')
-              a.href = doc.file_url
-              a.download = doc.file_name
-              a.target = '_blank'
-              a.click()
-            }
-          }}
+          onDownload={(doc) => downloadDoc(doc).catch((e) => showToast?.(`Could not download: ${e.message}`, 'error'))}
           onDelete={handleDelete}
           isAdmin={isAdmin}
           docSearch={docSearch}
@@ -255,27 +238,7 @@ function DocumentsSection({ jobs, profiles, currentUserName, showToast, initialE
           setExpandedJobId={setExpandedJobId}
           onUpload={(job) => setUploadModal({ open: true, job })}
           onPreview={(doc) => setPreviewModal({ open: true, doc })}
-          onDownload={async (doc) => {
-            try {
-              const res = await fetch(doc.file_url)
-              if (!res.ok) throw new Error(`HTTP ${res.status}`)
-              const blob = await res.blob()
-              const url = URL.createObjectURL(blob)
-              const a = document.createElement('a')
-              a.href = url
-              a.download = doc.file_name
-              document.body.appendChild(a)
-              a.click()
-              document.body.removeChild(a)
-              setTimeout(() => URL.revokeObjectURL(url), 1000)
-            } catch {
-              const a = document.createElement('a')
-              a.href = doc.file_url
-              a.download = doc.file_name
-              a.target = '_blank'
-              a.click()
-            }
-          }}
+          onDownload={(doc) => downloadDoc(doc).catch((e) => showToast?.(`Could not download: ${e.message}`, 'error'))}
           onDelete={handleDelete}
           isAdmin={isAdmin}
           userId={user?.id}
@@ -361,9 +324,9 @@ function DocumentsSection({ jobs, profiles, currentUserName, showToast, initialE
             </div>
             <div className="flex-1 overflow-auto bg-[#f4f6f9] p-4 flex items-center justify-center min-h-[300px]">
               {['pdf'].includes((previewModal.doc.file_type || '').toLowerCase()) ? (
-                <iframe src={previewModal.doc.file_url} title="PDF Preview" className="w-full h-[600px] rounded-lg border border-[#e2e6ed] bg-white" />
+                !previewUrl ? <p className="text-sm text-[#8a96a8]">Opening…</p> : <iframe src={previewUrl} title="PDF Preview" className="w-full h-[600px] rounded-lg border border-[#e2e6ed] bg-white" />
               ) : ['jpg', 'jpeg', 'png'].includes((previewModal.doc.file_type || '').toLowerCase()) ? (
-                <img src={previewModal.doc.file_url} alt={previewModal.doc.file_name} className="max-w-full max-h-[600px] rounded-lg shadow-sm object-contain" />
+                !previewUrl ? <p className="text-sm text-[#8a96a8]">Opening…</p> : <img src={previewUrl} alt={previewModal.doc.file_name} className="max-w-full max-h-[600px] rounded-lg shadow-sm object-contain" />
               ) : (
                 <div className="text-center text-[#8a96a8]">
                   <p className="text-sm font-semibold">Preview not available</p>
@@ -372,10 +335,10 @@ function DocumentsSection({ jobs, profiles, currentUserName, showToast, initialE
               )}
             </div>
             <div className="px-5 py-3 border-t border-[#e2e6ed] flex items-center justify-end gap-2 shrink-0">
-              <a href={previewModal.doc.file_url} download={previewModal.doc.file_name}
+              <button type="button" onClick={() => downloadDoc(previewModal.doc).catch((e) => showToast?.(`Could not download: ${e.message}`, 'error'))}
                 className={`${btnBase} bg-[#1a4fa0] text-white hover:bg-[#153d82] no-underline inline-flex items-center`}>
                 Download
-              </a>
+              </button>
               <button type="button" onClick={() => setPreviewModal({ open: false, doc: null })}
                 className={`${btnBase} bg-white border-[1.5px] border-[#d0d6e0] text-[#4a5568] hover:border-[#1a4fa0] hover:text-[#1a4fa0] hover:bg-[#e8eef8]`}>
                 Close

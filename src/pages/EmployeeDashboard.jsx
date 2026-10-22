@@ -21,6 +21,7 @@ import DetentionPage from './v2/DetentionPage'
 import JobDetailView from '../components/JobDetailView'
 import { forceRefreshAllContainers } from '../services/tracking/ldbProvider'
 import { availableTypes } from '../utils/docTypes'
+import { downloadDoc, useDocUrl } from '../services/docFiles'
 
 function getGreeting() {
   const now = new Date()
@@ -494,6 +495,8 @@ export default function EmployeeDashboard() {
   const [showCreateJob, setShowCreateJob] = useState(false)
   const [pendingNavAction, setPendingNavAction] = useState(null)
   const [previewModal, setPreviewModal] = useState({ open: false, doc: null })
+  // the files are private: the preview uses a 1-hour link made for this user
+  const previewUrl = useDocUrl(previewModal.open ? previewModal.doc : null)
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [selectedJob, setSelectedJob] = useState(null)
   const [expandedDocJobId, setExpandedDocJobId] = useState(null)
@@ -1769,10 +1772,10 @@ export default function EmployeeDashboard() {
                                         >
                                           Preview
                                         </button>
-                                        <a href={doc.file_url} download={doc.file_name}
+                                        <button type="button" onClick={() => downloadDoc(doc).catch((e) => alert(`Could not download: ${e.message}`))}
                                           className="h-7 px-2.5 text-xs rounded-md bg-white text-[#4a5568] border border-[#e2e6ed] hover:bg-[#e8eef8] font-semibold inline-flex items-center no-underline">
                                           Download
-                                        </a>
+                                        </button>
                                       </div>
                                     </td>
                                   </tr>
@@ -1831,9 +1834,9 @@ export default function EmployeeDashboard() {
             </div>
             <div className="flex-1 overflow-auto bg-[#f4f6f9] p-4 flex items-center justify-center min-h-[300px]">
               {['pdf'].includes((previewModal.doc.file_type || '').toLowerCase()) ? (
-                <iframe src={previewModal.doc.file_url} title="PDF Preview" className="w-full h-[600px] rounded-lg border border-[#e2e6ed] bg-white" />
+                !previewUrl ? <p className="text-sm text-[#8a96a8]">Opening…</p> : <iframe src={previewUrl} title="PDF Preview" className="w-full h-[600px] rounded-lg border border-[#e2e6ed] bg-white" />
               ) : ['jpg', 'jpeg', 'png'].includes((previewModal.doc.file_type || '').toLowerCase()) ? (
-                <img src={previewModal.doc.file_url} alt={previewModal.doc.file_name} className="max-w-full max-h-[600px] rounded-lg shadow-sm object-contain" />
+                !previewUrl ? <p className="text-sm text-[#8a96a8]">Opening…</p> : <img src={previewUrl} alt={previewModal.doc.file_name} className="max-w-full max-h-[600px] rounded-lg shadow-sm object-contain" />
               ) : (
                 <div className="text-center text-[#8a96a8]">
                   <p className="text-sm font-semibold">Preview not available</p>
@@ -1842,10 +1845,10 @@ export default function EmployeeDashboard() {
               )}
             </div>
             <div className="px-5 py-3 border-t border-[#e2e6ed] flex items-center justify-end gap-2 shrink-0">
-              <a href={previewModal.doc.file_url} download={previewModal.doc.file_name}
+              <button type="button" onClick={() => downloadDoc(previewModal.doc).catch((e) => alert(`Could not download: ${e.message}`))}
                 className="h-9 px-4 text-sm rounded-lg bg-[#1a4fa0] text-white hover:bg-[#153d82] font-semibold no-underline inline-flex items-center">
                 Download
-              </a>
+              </button>
               <button type="button" onClick={() => setPreviewModal({ open: false, doc: null })}
                 className="h-9 px-4 text-sm rounded-lg bg-white border-[1.5px] border-[#d0d6e0] text-[#4a5568] hover:border-[#1a4fa0] hover:text-[#1a4fa0] hover:bg-[#e8eef8] font-semibold">
                 Close

@@ -3,6 +3,7 @@
 // documents are fetched from storage and read in the browser, nothing else.
 
 import { readPdf, describeDocuments } from './docReader'
+import { docBlob } from '../services/docFiles'
 
 // Which document wins when two say different things (Bill of Entry first)
 const PRIORITY = ['be', 'ooc', 'bl', 'awb', 'invoice', 'packing_list', 'stamp_duty', 'terminal_charges', 'insurance']
@@ -202,7 +203,7 @@ export function toExtractFields(readerFields, sources = {}) {
 
 const looksLikePdf = (bytes) => bytes.length > 4 && bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46 // %PDF
 
-// Fetch each stored document (by its file_url) and read it.
+// Load each stored document (private storage, by its path) and read it.
 // Returns { fields, sources, documents, files: [{ name, found, unreadable, notPdf, error }] }
 export async function readJobDocuments(pdfjs, docs, onProgress = () => {}) {
   const documents = []
@@ -214,9 +215,7 @@ export async function readJobDocuments(pdfjs, docs, onProgress = () => {}) {
     const file = { name, found: '', unreadable: [], notPdf: false, error: null }
     files.push(file)
     try {
-      const res = await fetch(doc.file_url)
-      if (!res.ok) throw new Error(`could not open the file (error ${res.status})`)
-      const bytes = new Uint8Array(await res.arrayBuffer())
+      const bytes = new Uint8Array(await (await docBlob(doc)).arrayBuffer())
       if (!looksLikePdf(bytes)) { file.notPdf = true; continue }
       const result = await readPdf(pdfjs, bytes)
       // picture pages get their own message, so leave them out of the list of what was found
