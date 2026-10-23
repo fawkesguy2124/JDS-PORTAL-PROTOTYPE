@@ -372,6 +372,17 @@ function AdminDashboardInner() {
   const [sortBy, setSortBy] = useState('number_desc')
   const [selectedJob, setSelectedJob] = useState(null)
   const [showCreateJob, setShowCreateJob] = useState(false)
+  // a file sent to the WhatsApp bot: its "create a new job" link opens Create job with it
+  const [createFromFile, setCreateFromFile] = useState(null)
+  useEffect(() => {
+    const params = new URLSearchParams(location.search)
+    const path = params.get('createFrom')
+    if (!path) return
+    setCreateFromFile(path)
+    setShowCreateJob(true)
+    params.delete('createFrom')
+    navigate(`/admin?${params.toString()}`, { replace: true })
+  }, [location.search]) // eslint-disable-line react-hooks/exhaustive-deps
   const [pendingNavAction, setPendingNavAction] = useState(null)
   const [documentExpandJobId, setDocumentExpandJobId] = useState(null)
   const [sidebarOpen, setSidebarOpen] = useState(false)
@@ -803,9 +814,11 @@ function AdminDashboardInner() {
           <div className="w-full max-w-5xl overflow-hidden rounded-xl bg-white shadow-2xl border border-[#e2e6ed]">
             <CreateJob
               isModal
-              onCancel={() => setShowCreateJob(false)}
+              initialFilePath={createFromFile}
+              onCancel={() => { setShowCreateJob(false); setCreateFromFile(null) }}
               onCreated={async () => {
                 setShowCreateJob(false)
+                setCreateFromFile(null)
                 await refreshJobs()
                 showToast('Job created.', 'success')
               }}

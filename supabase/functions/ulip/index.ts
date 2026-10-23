@@ -13,6 +13,10 @@ import { cleanParams, findApi } from './apis/index.ts'
 
 const MIN_MINUTES_BETWEEN_SAME_CHECK = 5
 const MIN_MINUTES_AFTER_FAILURE = 2
+// the WhatsApp bot may ask only these, when a person asks it to (Jose, 24 Oct 2026)
+const BOT_APIS = ['FASTAG/01', 'ICEGATE/01', 'ICEGATE/07']
+const MIN_MINUTES_BETWEEN_BOT_CHECKS = 30
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 // Answers that carry personal data (owner/driver names, addresses, dates of
 // birth) are not kept in raw form; the plain summary staff see is still saved.
@@ -31,11 +35,24 @@ Deno.serve(async (req) => {
   if (req.method !== 'POST') return json({ success: false, error: 'Use POST.' }, 405)
 
   const admin = adminClient()
-  const caller = await getCaller(req, admin)
-  if (!caller) return json({ success: false, error: 'Please sign in again.' }, 401)
-
   let input: any
   try { input = await req.json() } catch { return json({ success: false, error: 'Invalid request.' }, 400) }
+
+  // a signed-in staff member, or the WhatsApp bot asking for one person (with its
+  // database password; only the checks below, at most once every 30 minutes each)
+  let caller: any = await getCaller(req, admin)
+  let fromBot = false
+  const botSecret = req.headers.get('x-bot-secret')
+  if (!caller && botSecret) {
+    const { data: st } = await admin.from('bot_state').select('cron_token').eq('id', 1).maybeSingle()
+    const ok = [Deno.env.get('BOT_CRON_SECRET') || '', String(st?.cron_token || '')].map((v) => v.trim()).filter((v) => v.length >= 20)
+    if (!ok.includes(botSecret.trim())) return json({ success: false, error: 'Not allowed' }, 403)
+    if (!BOT_APIS.includes(String(input?.api || ''))) return json({ success: false, error: 'The bot cannot run this check.' }, 403)
+    const asId = String(input?.asId || '')
+    caller = { id: UUID.test(asId) ? asId : null, name: String(input?.asName || 'WhatsApp bot').slice(0, 80), role: null }
+    fromBot = true
+  }
+  if (!caller) return json({ success: false, error: 'Please sign in again.' }, 401)
 
   const api = findApi(String(input?.api || ''))
   if (!api) return json({ success: false, error: 'This check is not available.' }, 400)
@@ -54,7 +71,7 @@ Deno.serve(async (req) => {
   const { data: existing } = await admin.from('ulip_results').select('*').eq('query_key', key).maybeSingle()
 
   // Recent good answer: return it (and link it to this job if it had none)
-  if (existing?.checked_at && minutesSince(existing.checked_at) < MIN_MINUTES_BETWEEN_SAME_CHECK) {
+  if (existing?.checked_at && minutesSince(existing.checked_at) < (fromBot ? MIN_MINUTES_BETWEEN_BOT_CHECKS : MIN_MINUTES_BETWEEN_SAME_CHECK)) {
     if (jobId && !existing.job_id) {
       await admin.from('ulip_results').update({ job_id: jobId }).eq('query_key', key)
       existing.job_id = jobId

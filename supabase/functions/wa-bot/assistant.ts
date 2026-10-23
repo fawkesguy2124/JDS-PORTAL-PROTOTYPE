@@ -4,7 +4,7 @@
 //
 // Secrets: GEMINI_API_KEY (required); GEMINI_MODEL (optional, default below).
 import { TOOLS as READ_TOOLS, runTool, SYSTEM_PROMPT, TODAY_BRIEF } from '../_shared/portal/assistantTools.js'
-import { CHANGE_TOOL, prepareChange, type Pending } from './actions.ts'
+import { CHANGE_TOOL, prepareChange, type Pending, type ChangeContext } from './actions.ts'
 
 // read tools + the one tool that PROPOSES a change (saved only after a YES)
 // Asks Customs (ICEGATE) now for one job's OOC, when a person asks the bot to
@@ -15,7 +15,43 @@ export const CUSTOMS_TOOL = {
   description: "Ask Customs (ICEGATE) NOW for one import job's OOC, by its BE. Use ONLY when the person asks to check / refresh / check again / check live. If the job was checked in the last 30 minutes, that answer is given instead.",
   parameters: { type: 'OBJECT', properties: { job: { type: 'STRING', description: 'job no, e.g. J-677 or 677' } }, required: ['job'] },
 }
-const TOOLS = [...READ_TOOLS, CHANGE_TOOL, CUSTOMS_TOOL]
+// Tools that act on the server (24 Oct 2026): run by index.ts, which knows the
+// person, the WhatsApp number and the database. Checks keep the 30-minute rule.
+const S = { type: 'STRING' }
+export const SERVER_TOOLS = [
+  {
+    name: 'send_document',
+    description: 'Send the person a document of a job as a WhatsApp file (e.g. "send me J-652 BE"). doc_type: BE, BL, Invoice, Packing List, COO, Insurance, Examination Order, OOC, E-Way Bill, POD, Other; leave it empty to list what the job has.',
+    parameters: { type: 'OBJECT', properties: { job: S, doc_type: S }, required: ['job'] },
+  },
+  {
+    name: 'check_truck_now',
+    description: 'Where a truck is now: asks FASTag for its last toll crossing (truck_no, or a job whose truck it is). ONLY when the person asks where a truck is now / to check it. At most once every 30 minutes per truck; a newer check is answered from the saved one. The result follows in a separate message.',
+    parameters: { type: 'OBJECT', properties: { truck_no: S, job: S } },
+  },
+  {
+    name: 'find_ship_now',
+    description: 'Find a job\'s ship (IMO, arrival) from its IGM, by asking ICEGATE. ONLY when the person asks to find / check the ship. At most once every 30 minutes per IGM. The result follows in a separate message.',
+    parameters: { type: 'OBJECT', properties: { job: S }, required: ['job'] },
+  },
+  {
+    name: 'set_reminder',
+    description: 'Remind the person later on WhatsApp. when = date and time in India, YYYY-MM-DD HH:MM (24 h), worked out from today\'s date and time; text = what to remind; job optional.',
+    parameters: { type: 'OBJECT', properties: { when: S, text: S, job: S }, required: ['when', 'text'] },
+  },
+  {
+    name: 'list_reminders',
+    description: 'The person\'s reminders that have not gone out yet.',
+    parameters: { type: 'OBJECT', properties: {} },
+  },
+  {
+    name: 'cancel_reminder',
+    description: 'Cancel one of the person\'s reminders, by the number list_reminders gives.',
+    parameters: { type: 'OBJECT', properties: { id: { type: 'NUMBER' } }, required: ['id'] },
+  },
+]
+export type ServerTools = Record<string, (args: any) => Promise<any>>
+const TOOLS = [...READ_TOOLS, CHANGE_TOOL, CUSTOMS_TOOL, ...SERVER_TOOLS]
 
 const API = 'https://generativelanguage.googleapis.com/v1beta/models'
 // tried in order; a model Google has retired (404) is skipped
@@ -55,9 +91,9 @@ async function callGemini(model: string, body: unknown, key: string, signal: Abo
 // `checked` lists the portal checks behind the answer; the bot keeps it with the
 // chat history, so a follow-up ("what about CFS OUT", "are you sure?") knows
 // exactly what was looked at last time
-export async function askAssistant(question: string, history: Turn[], data: unknown, person: Person, opts: { checkCustoms?: Ctx['checkCustoms'] } = {}): Promise<{ text: string | null; note: string; checked: string[]; proposal: Pending | null }> {
+export async function askAssistant(question: string, history: Turn[], data: unknown, person: Person, opts: { checkCustoms?: Ctx['checkCustoms']; server?: ServerTools; change?: ChangeContext } = {}): Promise<{ text: string | null; note: string; checked: string[]; proposal: Pending | null }> {
   const used: string[] = []
-  const ctx: Ctx = { used, proposal: null, checkCustoms: opts.checkCustoms }
+  const ctx: Ctx = { used, proposal: null, checkCustoms: opts.checkCustoms, server: opts.server, change: opts.change }
   const notes: string[] = []
   // BOT_AI_FIRST=nvidia puts NVIDIA before Groq (to compare the two)
   const first = (Deno.env.get('BOT_AI_FIRST') || 'groq').trim()
@@ -78,12 +114,20 @@ export const needsData = (q: string) => {
   // whole words only ("port" must not match "portal")
   return /\b[A-Z]{4}\d{7}\b|\bJ-?\s?\d+|\bcontainers?\b|\bbox(es)?\b|\bjobs?\b|\bbe\b|\bbl\b|\booc\b|\btrucks?\b|\brail\b|\bclients?\b|\bdetention\b|\bfree ?days?\b|\bports?\b|\bcfs\b|\bicd\b|\bgate\b|\bwhere\b|\bwhich\b|\bhow many\b|\bkitne\b|\bkaha\b|\bany\b|\blist\b|\bstatus\b|\btoday\b|\byesterday\b|\bweek\b|\bmonth\b|\bsure\b|\bagain\b|\bupdates?\b|\bpending\b|\burgent\b|\barriv|\bvessels?\b|\bships?\b/i.test(t)
 }
-type Ctx = { used: string[]; proposal: Pending | null; checkCustoms?: (job: string) => Promise<unknown> }
+type Ctx = { used: string[]; proposal: Pending | null; checkCustoms?: (job: string) => Promise<unknown>; server?: ServerTools; change?: ChangeContext; done?: Map<string, unknown> }
 // the last reply came from a change request (it may have asked for a missing detail)
 // (not after the bot already asked YES/NO: then the next message is a new question)
 const afterChangeTry = (history: Turn[]) => {
   const last = String([...history].reverse().find((t) => t.role === 'model')?.text || '')
   return /\[checked:[^\]]*propose_change/.test(last) && !/^Please confirm:/.test(last)
+}
+// the rules, today's basics, and the file the person sent last (if any)
+function systemText(person: Person, data: unknown, ctx: Ctx) {
+  const f = ctx.change?.lastFile
+  const file = f && Date.now() - new Date(f.at).getTime() < 24 * 60 * 60 * 1000
+    ? `\n\nThe person's last file (waiting to be attached): "${f.file_name}"${f.doc_type ? `, which looks like a ${f.doc_type} from its name` : ''}. To attach it: propose_change attach_document with the job and doc_type (use ${f.doc_type || 'the type the person says'} unless the person says otherwise).`
+    : ''
+  return `${SYSTEM_PROMPT(person)}\n\n${TODAY_BRIEF(data, person)}${file}`
 }
 // runs one tool call: notes it for the chat history; a change is only PREPARED
 // (checked and kept for the person's YES), never saved here
@@ -91,15 +135,34 @@ async function useTool(ctx: Ctx, name: string, args: any, data: any, person: Per
   ctx.used.push(`${name} ${JSON.stringify(args || {})}`)
   if (name === CUSTOMS_TOOL.name) {
     if (!ctx.checkCustoms) return { not_available: 'Checking Customs is not possible here.' }
+    // asked twice in one reply: Customs is asked once only
+    const once = `customs ${String(args?.job || '').replace(/\D/g, '')}`
+    ctx.done ||= new Map()
+    if (ctx.done.has(once)) { ctx.used.pop(); return { already_done: true, result: ctx.done.get(once) } }
     const r: any = await ctx.checkCustoms(String(args?.job || ''))
+    ctx.done.set(once, r)
     // what really happened goes into the chat history, so "did you really check?" is answered truthfully
     ctx.used[ctx.used.length - 1] += r?.started ? ' → Customs asked now, result to follow in a separate message'
       : r?.checked_recently ? ` → Customs NOT asked again (checked ${r.minutes_ago} min earlier, at ${r.last_checked}); answer from that check`
       : ` → not done (${r?.not_found ? 'job not found' : r?.not_possible || 'unknown'})`
     return r
   }
+  if (SERVER_TOOLS.some((t) => t.name === name)) {
+    const run = ctx.server?.[name]
+    if (!run) return { not_available: 'This is not possible here.' }
+    // the same action twice in one reply (a model repeating itself): done once only,
+    // so a check never asks ULIP twice and a file is never sent twice
+    const key = `${name} ${JSON.stringify(args || {})}`
+    ctx.done ||= new Map()
+    if (ctx.done.has(key)) { ctx.used.pop(); return { already_done: true, result: ctx.done.get(key) } }
+    const r = await run(args || {})
+    ctx.done.set(key, r)
+    // what really happened, for the chat history ("did you really check?")
+    if (r?.note) ctx.used[ctx.used.length - 1] += ` → ${r.note}`
+    return r
+  }
   if (name !== CHANGE_TOOL.name) return runTool(name, args || {}, data, person)
-  const res = prepareChange(args, data, person)
+  const res = prepareChange(args, data, person, ctx.change || {})
   if (!res.ok) return { not_done: res.error }
   ctx.proposal = res.pending
   return { waiting_for_yes: res.pending.summary, tell_the_person: 'The bot is now asking them to reply YES. Do not say it is done.' }
@@ -183,7 +246,7 @@ async function askCompat(p: Provider, question: string, history: Turn[], data: u
   // refused us recently (wrong key, not allowed, no credits): don't ask again for a while
   if ((refusedUntil[p.label] || 0) > Date.now()) return { text: null, note: `${p.label} skipped (${refusedWhy[p.label]})` }
   const messages: any[] = [
-    { role: 'system', content: `${SYSTEM_PROMPT(person)}\n\n${TODAY_BRIEF(data, person)}` },
+    { role: 'system', content: systemText(person, data, ctx) },
     ...history.slice(-8).map((t) => ({ role: t.role === 'model' ? 'assistant' : 'user', content: t.text })),
     { role: 'user', content: question },
   ]
@@ -273,7 +336,7 @@ async function askGemini(question: string, history: Turn[], data: unknown, perso
   ]
   const base = {
     // today's basics up front, so simple questions need no tool round trip
-    systemInstruction: { parts: [{ text: `${SYSTEM_PROMPT(person)}\n\n${TODAY_BRIEF(data, person)}` }] },
+    systemInstruction: { parts: [{ text: systemText(person, data, ctx) }] },
     tools: [{ functionDeclarations: TOOLS }],
     // thinking off: much faster, and the tools give it the facts anyway
     generationConfig: { temperature: 0.2, maxOutputTokens: 900, thinkingConfig: { thinkingBudget: 0 } },

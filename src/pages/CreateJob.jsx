@@ -139,7 +139,7 @@ function Field({ label, required, children }) {
   )
 }
 
-export default function CreateJob({ isModal = false, onCancel, onCreated }) {
+export default function CreateJob({ isModal = false, onCancel, onCreated, initialFilePath = null }) {
   const navigate = useNavigate()
   const { user, profile } = useAuth()
   const [form, setForm] = useState(INITIAL_FORM)
@@ -417,6 +417,28 @@ if (parsed.client && shouldFill('client')) {
       }, 800)
     }
   }
+
+  // A file sent to the WhatsApp bot ("create a new job from it"): loaded from the
+  // private storage and read here, exactly like a file chosen with Upload
+  const fileFromBotDone = useRef(false)
+  useEffect(() => {
+    if (!initialFilePath || fileFromBotDone.current) return
+    fileFromBotDone.current = true
+    ;(async () => {
+      const { data: blob, error } = await supabase.storage.from('job-documents').download(initialFilePath)
+      if (error || !blob) { setAddDocError(`Could not open the file sent on WhatsApp: ${error?.message || 'not found'}`); return }
+      const name = initialFilePath.split('/').pop().replace(/^\d+_/, '')
+      const file = new File([blob], name, { type: blob.type || 'application/pdf' })
+      const lower = name.toLowerCase()
+      const docType = /out.?of.?charge|ooc/.test(lower) ? 'OOC'
+        : /bill.?of.?entry|processed.?be|\bbe\b|be_\d/.test(lower) ? 'BE'
+        : /lading|\bh?m?bl\b|bldraft|waybill|awb/.test(lower) ? 'BL'
+        : /invoice/.test(lower) ? 'Invoice' : /packing/.test(lower) ? 'Packing List' : 'Other'
+      const docId = Date.now()
+      setStagedDocs((prev) => [...prev, { file, docType, id: docId, extracted: false, irrelevant: false }])
+      await handleQuickExtract(file, docType, docId)
+    })()
+  }, [initialFilePath]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSubmit = async (e) => {
     e.preventDefault()

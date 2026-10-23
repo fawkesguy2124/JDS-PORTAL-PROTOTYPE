@@ -18,7 +18,11 @@ import { adminClient, json } from '../_shared/ulip.ts'
 import { buildJourneyData } from '../_shared/portal/journeyCore.js'
 import { morningSummary, instantAlerts, answer, teamFromProfiles, BOT_NUMBERS } from '../_shared/portal/botMessages.js'
 import { askAssistant, groqInfo } from './assistant.ts'
-import { applyChange, confirmText, isNo, isYes, PENDING_MINUTES, type Pending } from './actions.ts'
+import { applyChange, confirmText, isNo, isYes, PENDING_MINUTES, prepareChange, type Pending } from './actions.ts'
+import { downloadMedia, transcribe, docTypeFromName, jobFromText, safeName, MAX_FILE_BYTES } from './media.ts'
+import { makeServerTools, sendDueReminders } from './servertools.ts'
+
+const PORTAL = 'https://jds-portal-prototype.vercel.app'
 
 const GRAPH = 'https://graph.facebook.com/v21.0'
 const DAY = 24 * 60 * 60 * 1000
@@ -292,6 +296,45 @@ async function runCustomsCheck(admin: Admin, person: Person, job: any, deliver: 
   return text
 }
 
+// A file sent to the bot (Jose, 24 Oct 2026): kept in the PRIVATE document
+// storage (never given to any AI), then attached to a job after a YES. A new job
+// is made from it in the portal's Create job, where the PDF reader fills the form.
+async function handleFile(admin: Admin, person: Person, m: any, data: any) {
+  const media = m.document || m.image
+  const name = m.document?.filename || `photo_${new Date().toISOString().slice(0, 10)}.jpg`
+  const caption = String(media?.caption || '')
+  const reply = async (text: string, userText: string) => {
+    await send(person.phone, { text })
+    const { data: inbox } = await admin.from('bot_inbox').select('history').eq('phone', person.phone).maybeSingle()
+    const history = Array.isArray(inbox?.history) ? inbox.history : []
+    const next = [...history, { role: 'user', text: userText }, { role: 'model', text: text.slice(0, 1500) }].slice(-10)
+    await admin.from('bot_inbox').update({ history: next }).eq('phone', person.phone)
+  }
+  const userText = `[sent a file: ${name}${caption ? ` — "${caption}"` : ''}]`
+  let file: { bytes: Uint8Array; mime: string }
+  try { file = await downloadMedia(media.id) } catch (e) { await reply(`📎 Sorry, I could not get that file (${(e as Error).message}).`, userText); return }
+  if (file.bytes.length > MAX_FILE_BYTES) { await reply('📎 That file is over 10 MB. Please upload it in the portal.', userText); return }
+  const path = `whatsapp/${person.phone}/${Date.now()}_${safeName(name)}`
+  const { error: upErr } = await admin.storage.from('job-documents').upload(path, file.bytes, { contentType: file.mime || 'application/octet-stream', upsert: false })
+  if (upErr) { await reply(`📎 Sorry, I could not keep that file (${upErr.message}).`, userText); return }
+  const docType = docTypeFromName(`${caption} ${name}`)
+  const lastFile = { path, file_name: name, mime: file.mime, size: file.bytes.length, doc_type: docType, at: new Date().toISOString() }
+  await admin.from('bot_inbox').upsert({ phone: person.phone, last_file: lastFile, pending: null, last_inbound_at: new Date().toISOString() })
+  const createLink = `${PORTAL}/admin?tab=jobs&createFrom=${encodeURIComponent(path)}`
+  const job = jobFromText(`${caption} ${name}`, data?.jobs || [])
+  if (job && docType) {
+    const res = prepareChange({ action: 'attach_document', job: job.job_no, doc_type: docType }, data, person, { lastFile })
+    if (res.ok) {
+      await admin.from('bot_inbox').update({ pending: res.pending }).eq('phone', person.phone)
+      await reply(`📎 Got *${name}*.\n\n${confirmText(res.pending)}\n\nWrong job or type? Just say it, e.g. "J-652 as BL".\nA new job instead? Open: ${createLink}`, userText)
+      return
+    }
+    await reply(`📎 Got *${name}* and kept it safely. ${res.error}`, userText)
+    return
+  }
+  await reply(`📎 Got *${name}* and kept it safely.\n\nWhich job is it for, and what is it? For example: "J-652, BE".\nOr create a new job from it: ${createLink}`, userText)
+}
+
 async function handleInbound(admin: Admin, payload: any) {
   const messages = (payload?.entry || []).flatMap((e: any) => (e.changes || []).flatMap((c: any) => c.value?.messages || []))
   if (!messages.length) return // delivery receipts etc.
@@ -310,10 +353,28 @@ async function handleInbound(admin: Admin, payload: any) {
     }
     const started = Date.now()
     const typing = typingNow.get(m.id) || showTyping(m.id) // already started above
-    const text = m.type === 'text' ? m.text?.body : m.type === 'button' ? m.button?.text : ''
+    let text = m.type === 'text' ? m.text?.body : m.type === 'button' ? m.button?.text : ''
+    // a voice note: Groq's Whisper writes it out, then it is answered like a typed message
+    let heard: string | null = null
+    if (m.type === 'audio' && m.audio?.id) {
+      try {
+        const a = await downloadMedia(m.audio.id)
+        heard = await transcribe(a.bytes, a.mime)
+        text = heard
+      } catch (e) {
+        await send(person.phone, { text: `🎤 Sorry, I could not hear that voice note (${(e as Error).message}). Please try again, or type it.` })
+        continue
+      }
+      if (!text) { await send(person.phone, { text: '🎤 The voice note was empty. Please try again.' }); continue }
+    }
+    // a file (PDF or photo): kept privately, then attached to a job after a YES
+    if ((m.type === 'document' || m.type === 'image') && (m.document?.id || m.image?.id)) {
+      await handleFile(admin, person, m, data || await loadDataCached(admin))
+      continue
+    }
     // the last few messages (so follow-ups make sense) and the portal data, loaded together
     const [inboxRes, loaded] = await Promise.all([
-      admin.from('bot_inbox').select('history, pending').eq('phone', person.phone).maybeSingle(),
+      admin.from('bot_inbox').select('history, pending, last_file').eq('phone', person.phone).maybeSingle(),
       data ? Promise.resolve(data) : loadDataCached(admin),
       admin.from('bot_inbox').upsert({ phone: person.phone, last_inbound_at: new Date().toISOString() }),
       typing,
@@ -347,7 +408,11 @@ async function handleInbound(admin: Admin, payload: any) {
     if (!reply) reply = honestCheckReply(text, history)
     if (!reply) {
       const aiStart = Date.now()
-      const ai = await askAssistant(text, history, data, person, { checkCustoms: customsChecker(admin, person, data) })
+      const ai = await askAssistant(text, history, data, person, {
+        checkCustoms: customsChecker(admin, person, data),
+        server: makeServerTools({ admin, person, data, send: (t) => send(person.phone, { text: t }), dataChanged: () => { dataCache = null } }),
+        change: { lastFile: inboxRes?.data?.last_file || null },
+      })
       checked = ai.checked
       ask = ai.proposal
       console.log(`[wa-bot] assistant: ${ai.note} | data ${aiStart - started} ms, AI ${Date.now() - aiStart} ms`)
@@ -358,6 +423,8 @@ async function handleInbound(admin: Admin, payload: any) {
     }
     if (pending && live && !isYes(text) && !isNo(text) && !ask) reply = `(The earlier change was not made: ${pending.summary.replace(/\*/g, '')}.)\n\n${reply}`
     if (ask) await admin.from('bot_inbox').update({ pending: ask }).eq('phone', person.phone)
+    // a voice note: show what was heard, so a wrong hearing is seen at once
+    if (heard) reply = `🎤 _"${heard.length > 300 ? `${heard.slice(0, 297)}…` : heard}"_\n\n${reply}`
     await send(person.phone, { text: reply })
     const note = checked.length ? `\n[checked: ${checked.join('; ').slice(0, 400)}]` : ''
     const next = [...history, { role: 'user', text: String(text).slice(0, 500) }, { role: 'model', text: `${String(reply).slice(0, 1500)}${note}` }].slice(-10)
@@ -419,7 +486,14 @@ Deno.serve(async (req) => {
       if (run === 'morning') return json({ success: true, sending: sendingOn(), sent: await runMorning(admin) })
       if (run === 'alerts') return json({ success: true, sending: sendingOn(), sent: await runAlerts(admin) })
       // keep the bot started, with the team list and portal data already loaded
-      if (run === 'warm') { dataCache = null; await Promise.all([loadTeam(admin), loadDataCached(admin)]); return json({ success: true, warm: true }) }
+      if (run === 'warm') {
+        dataCache = null
+        const [team] = await Promise.all([loadTeam(admin), loadDataCached(admin)])
+        // reminders that are due (this run comes every 5 minutes)
+        const reminders = await sendDueReminders(admin, team, (key, person, text, jobNo) =>
+          sendOnce(admin, key, person, 'reminder', { text, template: { name: 'jds_alert', values: [jobNo || 'reminder', text.replace(/\*/g, ''), jobNo || 'SUMMARY'] } }))
+        return json({ success: true, warm: true, reminders: reminders.length })
+      }
       // test questions: answered as the first team member, nothing sent on WhatsApp
       // speed check of one AI service, tiny question, no portal data (test only)
       if (run === 'probe') {
@@ -439,6 +513,18 @@ Deno.serve(async (req) => {
           } catch (e) { return { model: extra.model || body.model, ms: Date.now() - t0, error: (e as Error).name } }
         }))
         return json({ success: true, probe: out })
+      }
+      // test: a voice note (base64 audio, or a file in private storage) → the text Whisper hears
+      if (run === 'voice-test') {
+        const b = JSON.parse(raw)
+        let bytes = Uint8Array.from(atob(String(b.audio || '')), (c) => c.charCodeAt(0))
+        if (b.path) {
+          const { data: blob, error } = await admin.storage.from('job-documents').download(String(b.path))
+          if (error || !blob) return json({ success: false, error: error?.message || 'no file' })
+          bytes = new Uint8Array(await blob.arrayBuffer())
+        }
+        const t0 = Date.now()
+        try { return json({ success: true, heard: await transcribe(bytes, String(b.mime || 'audio/wav')), ms: Date.now() - t0 }) } catch (e) { return json({ success: false, error: (e as Error).message }) }
       }
       // test: the "check customs now" path for one job, as the first team member;
       // the reply is returned here, not sent on WhatsApp
@@ -483,7 +569,11 @@ Deno.serve(async (req) => {
           }
           proposed = null
           const fixed = answer(data, q, person, new Date(), { fallback: false }) || (chat ? honestCheckReply(q, convo) : null)
-          const ai = fixed ? null : await askAssistant(q, chat ? convo : [], data, person, { checkCustoms: customsChecker(admin, person, data, { test: true }) })
+          const ai = fixed ? null : await askAssistant(q, chat ? convo : [], data, person, {
+            checkCustoms: customsChecker(admin, person, data, { test: true }),
+            server: makeServerTools({ admin, person, data, test: true, send: async () => {}, dataChanged: () => {} }),
+            change: { lastFile: JSON.parse(raw).lastFile || null },
+          })
           if (ai?.proposal) proposed = ai.proposal
           const a = fixed || (ai?.proposal ? confirmText(ai.proposal) : ai?.text ? toWhatsApp(ai.text) : null)
           out.push({ q, a, how: fixed ? 'fixed' : ai?.note, checked: ai?.checked, ms: Date.now() - t0 })
