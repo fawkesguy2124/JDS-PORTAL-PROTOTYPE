@@ -2,7 +2,7 @@
 // data only: no ULIP calls, no documents. Each tool returns plain facts, small
 // enough to send to the AI model. The same file runs in the portal (for testing)
 // and on the server (wa-bot).
-import { journeyFor, isDelivered, isExportJob, effectiveStage, parseContainerNos, containerTrip, containerFinishedOn, deliveryBy, truckNos } from './journeyCore.js'
+import { journeyFor, isDelivered, isExportJob, effectiveStage, PHASES, EXPORT_PHASES, parseContainerNos, containerTrip, containerFinishedOn, deliveryBy, truckNos } from './journeyCore.js'
 import { jobsFor } from './botMessages.js'
 import { lineName } from './shippingLines.js'
 import { vesselsOf, shipIdOf, seaArea, cargoOnShip } from './ships.js'
@@ -58,17 +58,39 @@ const placeType = (where, ev) => {
 const PORT_ALIAS = { JNPT: 'INNSA', NHAVASHEVA: 'INNSA', NSA: 'INNSA', JNPA: 'INNSA', MUMBAI: 'INBOM1', MUMBAIPORT: 'INBOM1', MBPT: 'INBOM1', AIR: 'INBOM4', MUMBAIAIR: 'INBOM4', SAHAR: 'INBOM4' }
 const STAGE = ['Job created', 'Docs received', 'Verification', 'BE filing', 'Customs review', 'Assessment', 'Duty paid', 'OOC', 'Out of port', 'In transit', 'Delivered']
 
+// date + time in India, for "when was it last checked"
+const when = (iso) => {
+  if (!iso) return null
+  const d = new Date(iso)
+  return isNaN(d) ? String(iso) : `${day(iso)}, ${d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: TZ })}`
+}
+const phaseLabel = (id) => [...PHASES, ...EXPORT_PHASES].find((p) => p.id === id)?.label || id
+// When customs (ICEGATE) was last asked about this job's BE, as the portal saved it
+function customsCheck(job, data, j) {
+  if (isExportJob(job) || !job.be_no) return {}
+  const raw = data.customsByJob?.[job.id]
+  const forThisBe = raw && String(raw.be_no || '') === String(job.be_no)
+  const lastOk = forThisBe ? raw.checked_at : null
+  const lastErr = forThisBe && raw.last_error_at && (!lastOk || raw.last_error_at > lastOk) ? raw.last_error : null
+  return {
+    customs_last_checked: lastOk ? when(lastOk) : 'never checked for this BE',
+    customs_last_answer: j.oocDone ? 'OOC granted' : lastOk ? 'OOC not granted yet' : null,
+    customs_check_problem: lastErr || null,
+  }
+}
+
 // One job as facts
 function jobFacts(job, data, detail = false) {
   const j = journeyFor(job, data)
   const cur = j.steps.find((s) => s.current)
   const facts = {
     job_no: job.job_no, client: job.client || null, mode: job.mode || null, port: job.port_code || null,
-    eta: day(job.eta), stage: STAGE[effectiveStage(job, j)] || null, status: j.phase,
+    eta: day(job.eta), stage: STAGE[effectiveStage(job, j)] || null, status: phaseLabel(j.phase),
     next_step: cur?.nextText || (j.phase === 'delivered' ? 'Finished' : null),
     be_no: job.be_no || null, be_date: day(job.be_date), ooc_date: day(j.oocDate) || (j.oocDone && !j.oocDate ? 'recorded by staff' : null),
     free_days_left: j.freeDaysLeft, problems: j.attention.map((a) => `${a.level === 'red' ? 'URGENT' : a.level === 'amber' ? 'TO DO' : 'NOTE'}: ${a.text}`),
     leaves_by: j.onwardMode || 'not decided', trucks: (j.trucks || []).map((t) => `${t.no}${t.container ? ` (${t.container})` : ''}`),
+    ...customsCheck(job, data, j),
   }
   if (!detail) return { ...facts, containers: parseContainerNos(job.containers).length }
   const docs = (data.documents || []).filter((d) => d.job_id === job.id)
@@ -356,7 +378,7 @@ function runToolRaw(name, args, data, person) {
     const limit = Math.min(Math.max(Number(a.limit) || 12, 1), 40)
     return {
       filters, ...stats, shown: Math.min(limit, hits.length),
-      jobs: hits.slice(0, limit).map((h) => ({ ...jobFacts(h.job, data), ...(h.full.phase === 'delivered' ? { next_step: 'Finished', problems: [] } : {}), status: h.full.phase, created: day(h.job.created_at), arrived: day(h.full.arrivedAt), shipping_line: lineName(h.job.shipping_line) || h.job.shipping_line || null, cfs: h.job.cfs_name || null, rms: h.job.rms_status || null })),
+      jobs: hits.slice(0, limit).map((h) => ({ ...jobFacts(h.job, data), ...(h.full.phase === 'delivered' ? { next_step: 'Finished', problems: [] } : {}), status: phaseLabel(h.full.phase), created: day(h.job.created_at), arrived: day(h.full.arrivedAt), shipping_line: lineName(h.job.shipping_line) || h.job.shipping_line || null, cfs: h.job.cfs_name || null, rms: h.job.rms_status || null })),
     }
   }
   if (name === 'container_history') {
@@ -481,6 +503,8 @@ ${dateRanges(now)}
 
 Rules:
 - JDS job facts (jobs, containers, clients, customs, detention, trucks, rail) come ONLY from "Today's basics" below or the tools. Never invent numbers, dates or statuses; if not found, say so.
+- You only READ what the portal has saved (at most a few minutes old). You cannot refresh, re-check customs/ICEGATE, run any check, or press any portal button. Never say you refreshed, re-pulled, re-checked or that the portal "auto-updates". When asked to refresh, check again or "did you actually check": say plainly that you read the portal's saved data, give customs_last_checked (and customs_check_problem if any), and say a fresh customs check is done in the portal: open the BE & OOC page (it re-checks open BEs by itself when opened, at most once every 30 minutes per job) or press Check on that job there.
+- Never give a reason the data does not state (e.g. do not say OOC is waiting because the cargo has not arrived). Only offer actions you can do (propose_change); never offer to file a BE, an OOC or anything in ICEGATE/LiveImpex.
 - General customs/logistics questions (what an IGM, BE, OOC or DO is, how detention works, documents, HS codes) may be answered from your own knowledge; say when rules vary, and never present it as a fact about a JDS job.
 - For counting or comparing jobs, check with the tools, then give only the answer.
 - Changes: you can mark a job delivered, add or remove a truck (with the container it carries if said), record a BE number and date, set truck or rail, set who delivers (JDS or the client) and add a note, by calling propose_change ONCE with the details. The bot then asks the person to reply YES; never say a change is done. If a detail is missing (e.g. the BE date), still call propose_change with what you have: it says what is missing, then ask for it. Never write a confirmation or "reply YES" yourself: only propose_change does that. Anything else (new jobs, documents, stages, deleting): say to use the portal.
