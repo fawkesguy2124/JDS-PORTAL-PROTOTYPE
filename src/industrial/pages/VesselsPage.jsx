@@ -4,7 +4,7 @@ import { isDelivered, isExportJob } from '../../services/journey'
 import { useJourney, useFreshOnOpen } from '../JourneyContext'
 import ShipMap, { vesselsOf, shipIdOf } from '../ShipMap'
 import { cargoOnShip } from '../../../supabase/functions/_shared/portal/ships.js'
-import { lineName, isLineNotShip } from '../../../supabase/functions/_shared/portal/shippingLines.js'
+import { lineName } from '../../../supabase/functions/_shared/portal/shippingLines.js'
 import { Icon, Chip, Skeleton, fmtDate } from '../ui'
 
 // Vessels: every ship that still carries our cargo, live on VesselFinder's free
@@ -17,7 +17,6 @@ export default function VesselsPage({ onOpenJob, showToast, onGo }) {
   useFreshOnOpen()
   const [selected, setSelected] = useState(null) // ship row key
   const [typing, setTyping] = useState({}) // row key -> IMO being typed
-  const [naming, setNaming] = useState({}) // job id -> ship name being typed
   const [saving, setSaving] = useState(null)
 
   const igmOf = (job) => { const n = String(job.ulip_refs?.igm_no || '').replace(/\D/g, ''); return n.length >= 5 && !/^0+$/.test(n) ? n : null }
@@ -59,32 +58,16 @@ export default function VesselsPage({ onOpenJob, showToast, onGo }) {
   }, [active, data])
 
   const shown = (s) => !!(s.imo || s.mmsi)
-  // what the portal already knows about a job whose ship is not known yet
-  const unknownHint = (job) => {
-    const known = [job.shipping_line && `${lineName(job.shipping_line) || job.shipping_line} is the shipping line`, igmOf(job) && `IGM ${igmOf(job)}${job.ulip_refs?.igm_date ? ` (${fmtDate(job.ulip_refs.igm_date)})` : ''}`].filter(Boolean)
-    return `Ship name not known yet${known.length ? ` · ${known.join(' · ')}` : ''}. Check the IGM, upload the BL, or type the ship name.`
+  // the shipping line of a ship's jobs ("MSC", "HUNGA A LINE"): with the IMO that is
+  // all JDS needs; the ship's own name is not asked for (Jose, 24 Oct 2026)
+  const lineOf = (s) => { const j = s.jobs.find((x) => x.job.shipping_line)?.job; return j ? lineName(j.shipping_line) || j.shipping_line : null }
+  // a ship the map cannot show yet: what is known, and how to get the IMO
+  const unknownHint = (s) => {
+    const job = s.jobs[0].job
+    const known = [igmOf(job) && `IGM ${igmOf(job)}${job.ulip_refs?.igm_date ? ` (${fmtDate(job.ulip_refs.igm_date)})` : ''}`].filter(Boolean)
+    return `IMO not known yet${known.length ? ` · ${known.join(' · ')}` : ''}. Check the IGM or type the IMO.`
   }
   const sel = ships.find((s) => s.key === selected) || ships.find((s) => shown(s) && !s.arrived) || ships.find(shown) || null
-
-  const saveShip = async (s) => {
-    const name = String(naming[s.key] || '').trim().toUpperCase()
-    if (name.length < 3) { showToast?.('Type the ship name, for example CSCL MARS.', 'error'); return }
-    if (s.jobs.some(({ job }) => isLineNotShip(name, job.shipping_line))) {
-      showToast?.(`${name} is a shipping line, not a ship. Type the ship's own name (it is on the BL, e.g. EVER LENIENT).`, 'error')
-      return
-    }
-    setSaving(s.key)
-    let failed = null
-    for (const { job } of s.jobs) {
-      const { data: rows, error } = await supabase.from('jobs').update({ vessel: name, updated_at: new Date().toISOString() }).eq('id', job.id).select()
-      if (error || !rows?.length) { failed = error?.message || 'no permission'; continue }
-      patchJob(rows[0])
-    }
-    setSaving(null)
-    if (failed) { showToast?.(`Could not save on every job: ${failed}`, 'error'); return }
-    setNaming((p) => ({ ...p, [s.key]: undefined }))
-    showToast?.(`Ship ${name} saved on ${s.jobs.map((x) => x.job.job_no).join(', ')}`, 'success')
-  }
 
   // one IMO for the ship, saved on every job on it
   const saveImo = async (s) => {
@@ -103,13 +86,13 @@ export default function VesselsPage({ onOpenJob, showToast, onGo }) {
     if (failed) { showToast?.(`Could not save on every job: ${failed}`, 'error'); return }
     setTyping((p) => ({ ...p, [s.key]: undefined }))
     setSelected(`imo:${no}`)
-    showToast?.(`IMO ${no} saved for ${s.name} (${s.jobs.map((x) => x.job.job_no).join(', ')})`, 'success')
+    showToast?.(`IMO ${no} saved on ${s.jobs.map((x) => x.job.job_no).join(', ')}`, 'success')
   }
 
   // the map shows the ship has left India (our cargo is off): take it off this list
   // on all its jobs, after a yes (Jose, 24 Oct 2026)
   const markLeft = async (s) => {
-    const label = s.name || (s.imo ? `IMO ${s.imo}` : 'This ship')
+    const label = s.imo ? `IMO ${s.imo}` : s.name || 'This ship'
     const nos = s.jobs.map((x) => x.job.job_no).join(', ')
     if (!window.confirm(`${label} has left and our cargo is off it?
 
@@ -141,7 +124,7 @@ It will be removed from this list for ${nos}.`)) return
       <div className="ix-card" style={{ marginBottom: 16, overflow: 'hidden' }}>
         <div className="ix-card-head">
           <Icon name="ship" style={{ color: 'var(--navy)' }} />
-          <h2>{sel && shown(sel) ? `${sel.name || `IMO ${sel.imo}`} · ${sel.jobs.map((x) => x.job.job_no).join(', ')}` : 'Ships near Nhava Sheva'}</h2>
+          <h2>{sel && shown(sel) ? `${sel.imo ? `IMO ${sel.imo}` : sel.name} · ${sel.jobs.map((x) => x.job.job_no).join(', ')}` : 'Ships near Nhava Sheva'}</h2>
         </div>
         <ShipMap imo={sel?.imo} mmsi={sel?.mmsi} height={typeof window !== 'undefined' && window.innerWidth < 760 ? 320 : 440} />
       </div>
@@ -163,7 +146,7 @@ It will be removed from this list for ${nos}.`)) return
             title={shown(s) ? 'Show this ship on the map' : undefined}
             style={{ cursor: shown(s) ? 'pointer' : 'default' }}>
             <div className="who">
-              <span className="ix-plate" style={{ whiteSpace: 'nowrap' }}>{s.name || (s.imo ? `IMO ${s.imo}` : 'Ship ?')}</span>
+              <span className="ix-plate" style={{ whiteSpace: 'nowrap' }}>{s.imo ? `IMO ${s.imo}` : s.name || 'IMO ?'}</span>
               <div style={{ minWidth: 0 }}>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2px 12px' }}>
                   {s.jobs.map(({ job }) => (
@@ -174,9 +157,7 @@ It will be removed from this list for ${nos}.`)) return
                   ))}
                 </div>
                 <div style={{ fontSize: 12, color: 'var(--muted)' }}>
-                  {s.name ? (s.imo ? `IMO ${s.imo}` : s.mmsi ? 'Live position available' : 'IMO not added yet')
-                    : s.imo ? 'Ship name not known yet; the map finds it by its IMO'
-                    : unknownHint(s.jobs[0].job)}
+                  {[lineOf(s), shown(s) ? (s.imo ? null : 'Live position available') : unknownHint(s)].filter(Boolean).join(' · ')}
                   {s.jobs.length === 1 && s.jobs[0].job.eta ? ` · ETA ${fmtDate(s.jobs[0].job.eta)}` : ''}
                 </div>
               </div>
@@ -188,24 +169,17 @@ It will be removed from this list for ${nos}.`)) return
                   <Icon name="check" />Ship has left
                 </button>
               )}
-              {/* no ship yet: the IGM check finds its IMO (one check, by a person), or type its name */}
-              {!s.name && !s.imo && igmOf(s.jobs[0].job) && (
+              {/* no IMO yet: the IGM check finds it (one check, by a person), or type it */}
+              {!s.imo && igmOf(s.jobs[0].job) && (
                 <button type="button" className="ix-btn sm" onClick={() => onGo?.(`customs&job=${s.jobs[0].job.id}`)} title="Opens this job's IGM check on the BE & OOC page">
                   <Icon name="search" />Check IGM
                 </button>
               )}
-              {!s.name && (
-                <>
-                  <input value={naming[s.key] || ''} onChange={(e) => setNaming((p) => ({ ...p, [s.key]: e.target.value.toUpperCase().slice(0, 40) }))}
-                    placeholder="Ship name (from the BL)" aria-label={`Ship name for ${s.jobs.map((x) => x.job.job_no).join(', ')}`} style={{ width: 180, fontFamily: 'Inter, sans-serif' }} />
-                  <button type="button" className="ix-btn sm primary" disabled={saving === s.key || String(naming[s.key] || '').trim().length < 3} onClick={() => saveShip(s)}>{saving === s.key ? 'Saving…' : 'Save'}</button>
-                </>
-              )}
               {/* the IMO box, until the ship can be shown (saved on all its jobs) */}
-              {s.name && !shown(s) && (
+              {!shown(s) && (
                 <>
                   <input value={typing[s.key] || ''} onChange={(e) => setTyping((p) => ({ ...p, [s.key]: e.target.value.replace(/\D/g, '').slice(0, 7) }))}
-                    placeholder="IMO (7 digits)" inputMode="numeric" aria-label={`IMO number for ${s.name}`} />
+                    placeholder="IMO (7 digits)" inputMode="numeric" aria-label={`IMO number for ${s.jobs.map((x) => x.job.job_no).join(', ')}`} />
                   <button type="button" className="ix-btn sm primary" disabled={saving === s.key || String(typing[s.key] || '').length !== 7} onClick={() => saveImo(s)}>{saving === s.key ? 'Saving…' : 'Save'}</button>
                 </>
               )}
