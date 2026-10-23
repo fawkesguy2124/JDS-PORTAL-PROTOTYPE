@@ -86,7 +86,8 @@ function jobFacts(job, data, detail = false) {
   const facts = {
     job_no: job.job_no, client: job.client || null, mode: job.mode || null, port: job.port_code || null,
     eta: day(job.eta), stage: STAGE[effectiveStage(job, j)] || null, status: phaseLabel(j.phase),
-    next_step: cur?.nextText || (j.phase === 'delivered' ? 'Finished' : null),
+    // a finished job has no next step (a delivered job without a recorded truck still showed "arrange truck")
+    next_step: j.phase === 'delivered' || isDelivered(job) ? 'Finished' : cur?.nextText || null,
     be_no: job.be_no || null, be_date: day(job.be_date), ooc_date: day(j.oocDate) || (j.oocDone && !j.oocDate ? 'recorded by staff' : null),
     free_days_left: j.freeDaysLeft, problems: j.attention.map((a) => `${a.level === 'red' ? 'URGENT' : a.level === 'amber' ? 'TO DO' : 'NOTE'}: ${a.text}`),
     leaves_by: j.onwardMode || 'not decided', trucks: (j.trucks || []).map((t) => `${t.no}${t.container ? ` (${t.container})` : ''}`),
@@ -128,7 +129,7 @@ const FILTERS = {
   detention: (r) => r.j.freeDaysLeft !== null && r.j.freeDaysLeft < 0,
   free_days_low: (r) => r.j.freeDaysLeft !== null && r.j.freeDaysLeft >= 0 && r.j.freeDaysLeft <= 3,
   be_not_filed: (r) => r.j.phase !== 'delivered' && !r.j.beFiled,
-  waiting_ooc: (r) => r.j.phase === 'ooc',
+  waiting_ooc: (r) => r.j.phase === 'ooc' || (r.j.phase === 'arrival' && r.j.beFiled),
   ooc_done_not_moved: (r) => r.j.phase === 'release',
   on_the_move: (r) => r.j.phase === 'truck',
   arriving_soon: (r) => r.j.phase === 'arrival',

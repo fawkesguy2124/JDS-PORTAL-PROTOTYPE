@@ -94,7 +94,8 @@ export default function CustomsPage({ currentUserName, onOpenJob, showToast, can
 
   // jobs waiting for OOC whose last customs answer is older than the cool-down
   const toCheck = active
-    .filter(({ job, j }) => !isExportJob(job) && j.phase === 'ooc' && /^\d{7}$/.test(String(job.be_no || '').trim()) && job.be_date)
+    // (a BE filed before the ship came in is checked too: an OOC must never be missed)
+    .filter(({ job, j }) => !isExportJob(job) && (j.phase === 'ooc' || (j.phase === 'arrival' && j.beFiled)) && /^\d{7}$/.test(String(job.be_no || '').trim()) && job.be_date)
     .filter(({ job }) => { const cs = data?.customsByJob?.[job.id]; return isDue(cs?.checked_at, cs?.last_error_at) })
     .map(({ job }) => ({
       key: job.id, label: job.job_no,
@@ -121,6 +122,8 @@ export default function CustomsPage({ currentUserName, onOpenJob, showToast, can
 
   const mine = view.filter((r) => (kind === 'export' ? isExportJob(r.job) : !isExportJob(r.job)))
   const inPhase = (...ids) => mine.filter((r) => ids.includes(r.j.phase))
+  // waiting for OOC, including BEs filed before the ship came in (listed last)
+  const waitingList = [...inPhase('ooc'), ...mine.filter((r) => r.j.phase === 'arrival' && r.j.beFiled)]
 
   // ── actions ──
   const saveFiled = async (job, which, values) => {
@@ -241,8 +244,8 @@ export default function CustomsPage({ currentUserName, onOpenJob, showToast, can
             onSelect={select}
             placeholder="Any import job: job no, client, BE, container…"
             lists={[
-              { title: 'Waiting for OOC', icon: 'hourglass', color: 'var(--amber)', rows: inPhase('ooc'), empty: 'No jobs waiting for OOC.',
-                sub: ({ job, j }) => `BE ${job.be_no} · ${filedText(job.be_date)} · checked ${j.customs?.checked_at ? timeAgo(j.customs.checked_at) : 'never'}` },
+              { title: 'Waiting for OOC', icon: 'hourglass', color: 'var(--amber)', rows: waitingList, empty: 'No jobs waiting for OOC.',
+                sub: ({ job, j }) => `BE ${job.be_no} · ${filedText(job.be_date)}${j.phase === 'arrival' ? ' · ship not in yet' : ''} · checked ${j.customs?.checked_at ? timeAgo(j.customs.checked_at) : 'never'}` },
               { title: 'OOC granted — next steps', icon: 'circle-check', color: 'var(--green)', rows: inPhase('release'), empty: 'No jobs with OOC granted right now.',
                 sub: ({ j }) => `OOC ${j.oocDate ? fmtDate(j.oocDate) : 'recorded by staff'} · truck or rail not arranged` },
             ]}

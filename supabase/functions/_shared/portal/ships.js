@@ -116,11 +116,17 @@ const boxWhen = (m) => (m?.date ? new Date(m.date).getTime() : NaN)
 export function cargoOnShip(job, name, data, j) {
   const arrivedAt = j?.arrivedAt || null
   if (isDelivered(job) || Number(job?.stage) >= 7) return { onBoard: false, unloadedOn: null, arrivedAt }
+  // staff saw on the map that the ship has left (Jose, 24 Oct 2026: EVER LEARNED
+  // had called Mundra and sailed on to Port Klang, still listed "At sea")
+  const left = job?.field_meta?.ship_left
+  if (left) return { onBoard: false, unloadedOn: typeof left === 'string' ? left : null, arrivedAt }
   const ships = vesselsOf(job, data)
-  // the job's containers on this ship (a box with no ship of its own is on the job's ship)
+  // the job's containers on this ship (a box with no ship of its own, or only a
+  // shipping line's name as its ship, is on the job's ship)
   const boxes = parseContainerNos(job?.containers).filter((no) => {
-    const own = shipKey(data?.containersByNo?.[no]?.vessel)
-    return own.length >= 3 ? own === name : name === ships[0]
+    const t = data?.containersByNo?.[no]
+    const own = shipKey(t?.vessel)
+    return own.length >= 3 && !isLineNotShip(own, t?.shipping_line_ldb) ? own === name : (name || null) === (ships[0] || null)
   })
   let last = null
   const off = boxes.length > 0 && boxes.every((no) => {

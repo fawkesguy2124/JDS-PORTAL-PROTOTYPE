@@ -44,6 +44,8 @@ const dayLabel = (iso) => {
   const d = new Date(String(iso).length <= 10 ? `${iso}T00:00:00` : iso)
   return isNaN(d) ? String(iso) : d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })
 }
+// days after which a BE filed before arrival is taken as "the ship is in by now"
+const ADVANCE_BE_DAYS = 10
 const sameNo = (a, b) => !!a && !!b && String(a).toUpperCase().replace(/\s+/g, '') === String(b).toUpperCase().replace(/\s+/g, '')
 
 export const isExportJob = (job) => job?.job_type === 'export'
@@ -313,8 +315,10 @@ export function journeyFor(job, data) {
   const steps = [
     arrived
       ? { id: 'arrival', label: isAirJob(job) ? 'Flight arrived' : 'Ship arrived', done: true, when: dayLabel(ata || c.portIn), sub: null }
-      : { id: 'arrival', label: isAirJob(job) ? 'Flight due' : 'Ship due', done: false, when: null, sub: job.eta ? `ETA ${dayLabel(job.eta)}` : null },
-    { id: 'be', label: 'BE filed', done: beFiled, when: dayLabel(job.be_date), sub: beFiled ? `BE ${job.be_no}` : 'In LiveImpex' },
+      : { id: 'arrival', label: isAirJob(job) ? 'Flight due' : 'Ship due', done: false, when: null, sub: job.eta ? `ETA ${dayLabel(job.eta)}` : beFiled ? 'Not arrived yet' : null },
+    // a BE is often filed before the ship comes in (advance BE): say so, so the strip
+    // does not look like it contradicts itself (Jose, 24 Oct 2026: J-689)
+    { id: 'be', label: 'BE filed', done: beFiled, when: dayLabel(job.be_date), sub: beFiled ? (arrived ? `BE ${job.be_no}` : 'Before arrival') : 'In LiveImpex' },
     { id: 'ooc', label: 'OOC', done: oocDone, when: dayLabel(oocDate), sub: oocDate ? (cs.ooc_no ? `OOC ${cs.ooc_no}` : null) : oocDone ? 'Recorded by staff' : beFiled ? 'Waiting' : null },
     { id: 'out', label: isAirJob(job) ? 'Cargo out' : 'Container out', done: c.anyOut || stage >= 9, when: null, sub: c.tracked[0]?.status_text || null },
     { id: 'truck', label: mode === 'rail' ? 'Rail' : mode === 'truck' ? 'Truck' : 'Truck / rail', done: oocDone && (!!truck || railMoving), when: null,
@@ -329,7 +333,10 @@ export function journeyFor(job, data) {
   if (delivered) phase = 'delivered'
   else if ((truck && oocDone) || (railMoving && oocDone) || stage >= 9) phase = 'truck'
   else if (oocDone) phase = 'release'
-  else if (beFiled) phase = 'ooc'
+  // a BE filed before the ship came in waits for the ship first, not for OOC.
+  // LCL boxes are often not tracked, so a BE filed 10+ days ago counts as arrived.
+  else if (beFiled && (arrived || daysSince(job.be_date) >= ADVANCE_BE_DAYS)) phase = 'ooc'
+  else if (beFiled) phase = 'arrival'
   else if (arrived || stage >= 1) phase = 'docs'
 
   // OOC done and the onward move not arranged yet (rail jobs don't wait for a truck)
@@ -352,7 +359,7 @@ export function journeyFor(job, data) {
     else if (c.minFree !== null && c.minFree <= 5) add('amber', `${c.minFree} free days left`, 'containers')
     // (no "move the job to the OOC stage" reminder: the customs check moves it by itself)
     if (readyForTruck) add('amber', mode === 'truck' ? 'OOC done — no truck assigned yet' : 'OOC done — arrange truck or rail', 'truck')
-    if (beFiled && !oocDone) {
+    if (beFiled && !oocDone && phase === 'ooc') {
       const filedDays = daysSince(job.be_date)
       if (filedDays !== null && filedDays >= 3) add('amber', `BE filed ${filedDays} days ago — OOC not yet`, 'customs')
     }

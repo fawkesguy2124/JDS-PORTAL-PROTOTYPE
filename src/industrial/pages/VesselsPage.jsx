@@ -106,6 +106,29 @@ export default function VesselsPage({ onOpenJob, showToast, onGo }) {
     showToast?.(`IMO ${no} saved for ${s.name} (${s.jobs.map((x) => x.job.job_no).join(', ')})`, 'success')
   }
 
+  // the map shows the ship has left India (our cargo is off): take it off this list
+  // on all its jobs, after a yes (Jose, 24 Oct 2026)
+  const markLeft = async (s) => {
+    const label = s.name || (s.imo ? `IMO ${s.imo}` : 'This ship')
+    const nos = s.jobs.map((x) => x.job.job_no).join(', ')
+    if (!window.confirm(`${label} has left and our cargo is off it?
+
+It will be removed from this list for ${nos}.`)) return
+    setSaving(s.key)
+    let failed = null
+    const today = new Date().toISOString().slice(0, 10)
+    for (const { job } of s.jobs) {
+      const field_meta = { ...(job.field_meta && typeof job.field_meta === 'object' ? job.field_meta : {}), ship_left: today }
+      const { data: rows, error } = await supabase.from('jobs').update({ field_meta, updated_at: new Date().toISOString() }).eq('id', job.id).select()
+      if (error || !rows?.length) { failed = error?.message || 'no permission'; continue }
+      patchJob(rows[0])
+    }
+    setSaving(null)
+    if (failed) { showToast?.(`Could not save on every job: ${failed}`, 'error'); return }
+    if (selected === s.key) setSelected(null)
+    showToast?.(`${label} removed from Vessels (${nos})`, 'success')
+  }
+
   return (
     <div className="ix-page">
       <div className="ix-page-head">
@@ -127,7 +150,7 @@ export default function VesselsPage({ onOpenJob, showToast, onGo }) {
         <div className="ix-card-head">
           <Icon name="list-details" style={{ color: 'var(--navy)' }} />
           <h2>Ships with our cargo on board</h2><span className="ix-chip grey">{ships.length}</span>
-          <span className="sub hide-m">Click a ship to see it on the map. A ship leaves this list once our cargo is unloaded.</span>
+          <span className="sub hide-m">Click a ship to see it on the map. A ship leaves this list once our cargo is unloaded, or when you tap Ship has left.</span>
         </div>
         {loading && !data && <Skeleton rows={4} />}
         {data && ships.length === 0 && <div className="ix-empty">No ship is carrying our cargo right now.</div>}
@@ -160,6 +183,11 @@ export default function VesselsPage({ onOpenJob, showToast, onGo }) {
             </div>
             <div className="act" onClick={(e) => e.stopPropagation()}>
               {(s.name || s.imo) && (s.arrived ? <Chip tone="amber" icon="anchor">At port, unloading</Chip> : <Chip tone="blue" icon="ship">At sea</Chip>)}
+              {shown(s) && (
+                <button type="button" className="ix-btn sm" disabled={saving === s.key} onClick={() => markLeft(s)} title="The map shows this ship has already left: remove it from this list">
+                  <Icon name="check" />Ship has left
+                </button>
+              )}
               {/* no ship yet: the IGM check finds its IMO (one check, by a person), or type its name */}
               {!s.name && !s.imo && igmOf(s.jobs[0].job) && (
                 <button type="button" className="ix-btn sm" onClick={() => onGo?.(`customs&job=${s.jobs[0].job.id}`)} title="Opens this job's IGM check on the BE & OOC page">
