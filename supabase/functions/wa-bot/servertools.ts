@@ -75,11 +75,11 @@ export function makeServerTools(d: Deps) {
         if (list.length > 1) rows.push({ id: `send ${job.job_no} document pack`, title: 'All as one PDF', description: 'BE, BL, Invoice … joined in one file' })
         const menu = !d.test && d.after && rows.length > 0
         if (menu) d.after!.push({ text: `Documents of ${job.job_no}:`, list: { button: 'Choose', rows } })
-        return { job: job.job_no, documents: list.map((x: any) => `${x.doc_type}: ${x.file_name}`), menu_sent: menu, tell_the_person: menu ? 'Say in one line which documents the job has and that they can tap one in the list below.' : 'List these and ask which one to send.' }
+        return { say: menu ? `📂 *${job.job_no}* has: ${[...new Set(list.map((x: any) => x.doc_type))].join(', ')}. Tap one in the list below to get it.` : undefined, job: job.job_no, documents: list.map((x: any) => `${x.doc_type}: ${x.file_name}`), menu_sent: menu, tell_the_person: menu ? 'Say in one line which documents the job has and that they can tap one in the list below.' : 'List these and ask which one to send.' }
       }
       const doc = list.find((x: any) => String(x.doc_type || '').toLowerCase() === want) || list.find((x: any) => String(x.file_name || '').toLowerCase().includes(want))
       if (!doc) return { job: job.job_no, not_found: `no ${args.doc_type}`, documents: list.map((x: any) => `${x.doc_type}: ${x.file_name}`) }
-      if (d.test) return { sent: false, test_mode: `would send ${doc.file_name}`, note: `test mode: ${doc.file_name} not sent` }
+      if (d.test) return { say: `(test) Would send *${doc.file_name}* (${job.job_no} · ${doc.doc_type}).`, sent: false, test_mode: `would send ${doc.file_name}`, note: `test mode: ${doc.file_name} not sent` }
       const path = doc.file_path || (String(doc.file_url || '').match(/\/object\/(?:public|sign)\/job-documents\/([^?]+)/) || [])[1]
       if (!path) return { error: 'The file is missing in storage.' }
       const { data: blob, error } = await admin.storage.from('job-documents').download(decodeURIComponent(path))
@@ -88,7 +88,7 @@ export function makeServerTools(d: Deps) {
       try {
         await sendDocument(person.phone, new Uint8Array(await blob.arrayBuffer()), blob.type || 'application/pdf', doc.file_name || 'document.pdf', `${job.job_no} · ${doc.doc_type}`)
       } catch (e) { return { error: `WhatsApp did not take the file: ${(e as Error).message}` } }
-      return { sent: true, file: doc.file_name, note: `sent ${doc.file_name}`, tell_the_person: 'The file has been sent as a separate message. Say so in one short line.' }
+      return { say: `📎 Sent *${doc.file_name}* (${job.job_no} · ${doc.doc_type}) as a separate message.`, sent: true, file: doc.file_name, note: `sent ${doc.file_name}`, tell_the_person: 'The file has been sent as a separate message. Say so in one short line.' }
     },
 
     // ── truck: last FASTag toll crossing ──
@@ -104,8 +104,8 @@ export function makeServerTools(d: Deps) {
       if (!/^[A-Z]{2}\d{1,2}[A-Z]{0,3}\d{3,4}$|^\d{2}BH\d{4}[A-Z]{1,2}$/.test(truck)) return { not_possible: 'Give the truck number, for example MH04AB1234.' }
       if (!job) job = (data.jobs || []).find((j: any) => jobTrucks(j).some((t: any) => t.no === truck)) || null
       const saved = await recent(admin, `FASTAG/01?vehiclenumber=${truck}`)
-      if (saved) return { checked_recently: true, last_checked: when(saved.checked_at), answer: saved.summary, note: `FASTag NOT asked again (checked ${Math.round(minutesAgo(saved.checked_at))} min earlier)` }
-      if (d.test) return { started: true, test_mode: 'FASTag was NOT asked', note: 'test mode' }
+      if (saved) return { say: `🚚 *${truck}* was checked at ${when(saved.checked_at)} (under 30 minutes ago), so FASTag was not asked again:\n${saved.summary}`, checked_recently: true, last_checked: when(saved.checked_at), answer: saved.summary, note: `FASTag NOT asked again (checked ${Math.round(minutesAgo(saved.checked_at))} min earlier)` }
+      if (d.test) return { say: `(test) Would ask FASTag for *${truck}* now.`, started: true, test_mode: 'FASTag was NOT asked', note: 'test mode' }
       later((async () => {
         const out = await botUlip(admin, person, 'FASTAG/01', { vehiclenumber: truck }, job?.id || null).catch((e) => ({ success: false, error: (e as Error).message }))
         const x = out?.data?.parsed?.extra || {}
@@ -115,7 +115,7 @@ export function makeServerTools(d: Deps) {
         d.dataChanged()
         await d.send(text)
       })())
-      return { started: true, note: 'FASTag asked now, result to follow in a separate message', tell_the_person: 'Say only that you are checking the truck now and the result follows in a separate message.' }
+      return { say: `🚚 Checking *${truck}* with FASTag now. The result follows in a separate message.`, started: true, note: 'FASTag asked now, result to follow in a separate message', tell_the_person: 'Say only that you are checking the truck now and the result follows in a separate message.' }
     },
 
     // ── ship: IMO and arrival from the IGM ──
@@ -128,8 +128,8 @@ export function makeServerTools(d: Deps) {
       const [y, m, dd] = date.split('-')
       const params = { igmNo: igm, igmDt: `${dd}${m}${y}` }
       const saved = await recent(admin, `ICEGATE/01?igmDt=${params.igmDt}&igmNo=${igm}`)
-      if (saved) return { checked_recently: true, last_checked: when(saved.checked_at), answer: saved.summary, imo: saved.parsed?.extra?.imoCode || null, note: 'ICEGATE NOT asked again (checked within 30 min)' }
-      if (d.test) return { started: true, test_mode: 'ICEGATE was NOT asked', note: 'test mode' }
+      if (saved) return { say: `🚢 *${job.job_no}*: the IGM was checked at ${when(saved.checked_at)} (under 30 minutes ago), so ICEGATE was not asked again:\n${saved.summary}`, checked_recently: true, last_checked: when(saved.checked_at), answer: saved.summary, imo: saved.parsed?.extra?.imoCode || null, note: 'ICEGATE NOT asked again (checked within 30 min)' }
+      if (d.test) return { say: `(test) Would ask ICEGATE for the ship of *${job.job_no}* now.`, started: true, test_mode: 'ICEGATE was NOT asked', note: 'test mode' }
       later((async () => {
         let text = ''
         try {
@@ -153,7 +153,7 @@ export function makeServerTools(d: Deps) {
         d.dataChanged()
         await d.send(text)
       })())
-      return { started: true, note: 'ICEGATE asked now, result to follow in a separate message', tell_the_person: 'Say only that you are looking up the ship now and the result follows in a separate message.' }
+      return { say: `🚢 Looking up the ship of *${job.job_no}* with ICEGATE now. The result follows in a separate message.`, started: true, note: 'ICEGATE asked now, result to follow in a separate message', tell_the_person: 'Say only that you are looking up the ship now and the result follows in a separate message.' }
     },
 
     // ── reminders ──
@@ -166,10 +166,10 @@ export function makeServerTools(d: Deps) {
       const text = String(args?.text || '').trim().slice(0, 300)
       if (!text) return { not_done: 'What should the reminder say?' }
       const job = args?.job ? findJob(data, person, args.job) : null
-      if (d.test) return { set: false, test_mode: `would remind at ${when(due.toISOString())}: ${text}`, note: 'test mode' }
+      if (d.test) return { say: `(test) Would remind you at *${when(due.toISOString())}*: ${text}`, set: false, test_mode: `would remind at ${when(due.toISOString())}: ${text}`, note: 'test mode' }
       const { data: row, error } = await admin.from('bot_reminders').insert({ phone: person.phone, person_name: person.name, job_no: job?.job_no || null, text, due_at: due.toISOString() }).select('id').single()
       if (error) return { not_done: `Could not save: ${error.message}` }
-      return { set: true, id: row.id, at: when(due.toISOString()), note: `reminder ${row.id} set`, tell_the_person: 'Confirm the reminder with its time (India). It comes within 5 minutes of that time.' }
+      return { say: `⏰ Reminder #${row.id} set for *${when(due.toISOString())}*: ${text}`, set: true, id: row.id, at: when(due.toISOString()), note: `reminder ${row.id} set`, tell_the_person: 'Confirm the reminder with its time (India). It comes within 5 minutes of that time.' }
     },
     async list_reminders() {
       const { data: rows } = await admin.from('bot_reminders').select('id, due_at, text, job_no').eq('phone', person.phone).is('sent_at', null).eq('cancelled', false).order('due_at').limit(20)
@@ -180,7 +180,7 @@ export function makeServerTools(d: Deps) {
       if (!id) return { not_done: 'Which reminder? Give its number.' }
       if (d.test) return { cancelled: false, test_mode: `would cancel #${id}` }
       const { data: rows } = await admin.from('bot_reminders').update({ cancelled: true }).eq('id', id).eq('phone', person.phone).is('sent_at', null).select('id')
-      return rows?.length ? { cancelled: true, id } : { not_found: `reminder #${id}` }
+      return rows?.length ? { cancelled: true, id, say: `Cancelled reminder #${id}.` } : { not_found: `reminder #${id}` }
     },
 
     // ── watches: "tell me when …" (checked by the 5-minute warm run) ──
@@ -192,13 +192,13 @@ export function makeServerTools(d: Deps) {
       const box = String(args?.container || '').toUpperCase().replace(/[^A-Z0-9]/g, '')
       if (box && !parseContainerNos(job.containers).includes(box)) return { not_done: `${box} is not on ${job.job_no}.` }
       const j = journeyFor(job, data)
-      if (WATCH[kind].done(job, j, box)) return { already: `${job.job_no}: ${WATCH[kind].label(job, box)} has already happened.`, tell_the_person: 'Say it has already happened, no watch was set.' }
-      if (d.test) return { set: false, test_mode: `would watch ${job.job_no} for ${kind}`, how_it_fires: WATCH[kind].how }
+      if (WATCH[kind].done(job, j, box)) return { say: `${job.job_no}: ${WATCH[kind].label(job, box)} has already happened, so no watch was set.`, already: `${job.job_no}: ${WATCH[kind].label(job, box)} has already happened.`, tell_the_person: 'Say it has already happened, no watch was set.' }
+      if (d.test) return { say: `(test) Would watch for *${WATCH[kind].label(job, box)}*. Note: ${WATCH[kind].how}.`, set: false, test_mode: `would watch ${job.job_no} for ${kind}`, how_it_fires: WATCH[kind].how }
       const { data: same } = await admin.from('bot_watches').select('id').eq('phone', person.phone).eq('job_id', job.id).eq('kind', kind).eq('target', box || '').is('done_at', null).eq('cancelled', false).limit(1)
-      if (same?.length) return { already_watching: `#${same[0].id}`, how_it_fires: WATCH[kind].how }
+      if (same?.length) return { say: `🔔 I am already watching for *${WATCH[kind].label(job, box)}* (#${same[0].id}).`, already_watching: `#${same[0].id}`, how_it_fires: WATCH[kind].how }
       const { data: row, error } = await admin.from('bot_watches').insert({ phone: person.phone, person_name: person.name, kind, job_id: job.id, job_no: job.job_no, target: box || '', event: WATCH[kind].label(job, box) }).select('id').single()
       if (error) return { not_done: `Could not save: ${error.message}` }
-      return { set: true, id: row.id, watching: WATCH[kind].label(job, box), how_it_fires: WATCH[kind].how, note: `watch ${row.id} set`, tell_the_person: 'Confirm in one line, and say honestly how it is noticed (how_it_fires).' }
+      return { say: `🔔 I'll tell you when *${WATCH[kind].label(job, box)}*. Note: ${WATCH[kind].how}.`, set: true, id: row.id, watching: WATCH[kind].label(job, box), how_it_fires: WATCH[kind].how, note: `watch ${row.id} set`, tell_the_person: 'Confirm in one line, and say honestly how it is noticed (how_it_fires).' }
     },
     async list_watches() {
       const { data: rows } = await admin.from('bot_watches').select('id, event, created_at').eq('phone', person.phone).is('done_at', null).eq('cancelled', false).order('created_at').limit(20)
@@ -209,7 +209,7 @@ export function makeServerTools(d: Deps) {
       if (!id) return { not_done: 'Which watch? Give its number.' }
       if (d.test) return { cancelled: false, test_mode: `would cancel #${id}` }
       const { data: rows } = await admin.from('bot_watches').update({ cancelled: true }).eq('id', id).eq('phone', person.phone).is('done_at', null).select('id')
-      return rows?.length ? { cancelled: true, id } : { not_found: `watch #${id}` }
+      return rows?.length ? { cancelled: true, id, say: `Stopped watch #${id}.` } : { not_found: `watch #${id}` }
     },
 
     // ── Customs for several jobs: one by one, a few seconds apart, one message at the end ──
@@ -238,8 +238,8 @@ export function makeServerTools(d: Deps) {
       }
       const take = ask.slice(0, MANY_MAX)
       const left = ask.slice(MANY_MAX).map((x) => x.job_no)
-      if (!take.length) return { checked_recently: recentOnes, asked_customs_now: false, note: 'Customs NOT asked: all checked within 30 min' }
-      if (d.test || !d.customsOne) return { started: true, test_mode: `would ask Customs for ${take.map((x) => x.job_no).join(', ')}`, checked_recently: recentOnes, not_checked_more_than_8: left }
+      if (!take.length) return { say: `🛃 All of these were checked with Customs in the last 30 minutes, so Customs was not asked again:\n${recentOnes.map((x) => `• ${x}`).join('\n')}`, checked_recently: recentOnes, asked_customs_now: false, note: 'Customs NOT asked: all checked within 30 min' }
+      if (d.test || !d.customsOne) return { say: `(test) Would ask Customs now for ${take.map((x) => x.job_no).join(', ')}.${recentOnes.length ? `\nChecked shortly before:\n${recentOnes.map((x) => `• ${x}`).join('\n')}` : ''}`, started: true, test_mode: `would ask Customs for ${take.map((x) => x.job_no).join(', ')}`, checked_recently: recentOnes, not_checked_more_than_8: left }
       later((async () => {
         const lines: string[] = []
         for (let i = 0; i < take.length; i++) {
@@ -249,7 +249,7 @@ export function makeServerTools(d: Deps) {
         d.dataChanged()
         await d.send(`🛃 *Customs, ${take.length} job${take.length === 1 ? '' : 's'}*\n\n${lines.join('\n')}${recentOnes.length ? `\n\nChecked shortly before (not asked again):\n${recentOnes.join('\n')}` : ''}${left.length ? `\n\nNot checked (8 at a time): ${left.join(', ')}` : ''}`)
       })())
-      return { started: true, asking_customs_for: take.map((x) => x.job_no), checked_recently: recentOnes, not_checked_more_than_8: left, no_be: noBe, note: `Customs asked now for ${take.map((x) => x.job_no).join(', ')}, one message with all results to follow`, tell_the_person: 'Say you are checking these jobs with Customs one by one now and all results come together in one message in a minute or two. Give the recently checked answers now.' }
+      return { say: `🛃 Asking Customs now for ${take.map((x) => `*${x.job_no}*`).join(', ')}, one by one. All results come together in one message in a minute or two.${recentOnes.length ? `\n\nChecked shortly before (not asked again):\n${recentOnes.map((x) => `• ${x}`).join('\n')}` : ''}${left.length ? `\n\nNot checked now (8 at a time): ${left.join(', ')}` : ''}${noBe.length ? `\nNo BE yet: ${noBe.join(', ')}` : ''}`, started: true, asking_customs_for: take.map((x) => x.job_no), checked_recently: recentOnes, not_checked_more_than_8: left, no_be: noBe, note: `Customs asked now for ${take.map((x) => x.job_no).join(', ')}, one message with all results to follow`, tell_the_person: 'Say you are checking these jobs with Customs one by one now and all results come together in one message in a minute or two. Give the recently checked answers now.' }
     },
 
     // ── plan my day: what to do first, with a tap-to-act menu ──
@@ -318,9 +318,9 @@ export function makeServerTools(d: Deps) {
       XLSX.utils.book_append_sheet(book, s2, 'Jobs')
       const bytes = new Uint8Array(XLSX.write(book, { type: 'array', bookType: 'xlsx' }))
       const name = `JDS_${period === 'open' ? 'open_jobs' : period}_${new Date(Date.now() + 5.5 * 3600_000).toISOString().slice(0, 10)}.xlsx`
-      if (d.test) return { sent: false, test_mode: `built ${name}: ${rows.length} jobs, ${bytes.length} bytes, not sent`, note: `test: built ${name} ${bytes.length} bytes` }
+      if (d.test) return { say: `(test) Built *${name}* (${rows.length} jobs).`, sent: false, test_mode: `built ${name}: ${rows.length} jobs, ${bytes.length} bytes, not sent`, note: `test: built ${name} ${bytes.length} bytes` }
       try { await sendDocument(person.phone, bytes, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', name, `JDS report · ${rows.length} jobs`) } catch (e) { return { error: `WhatsApp did not take the file: ${(e as Error).message}` } }
-      return { sent: true, file: name, jobs: rows.length, note: `sent ${name}`, tell_the_person: 'Say the Excel has been sent as a separate message, in one line.' }
+      return { say: `📊 Sent *${name}* (${rows.length} jobs) as a separate message.`, sent: true, file: name, jobs: rows.length, note: `sent ${name}`, tell_the_person: 'Say the Excel has been sent as a separate message, in one line.' }
     },
 
     // ── one PDF with a job's papers (BE, BL, Invoice, Packing List, OOC …) ──
@@ -357,9 +357,9 @@ export function makeServerTools(d: Deps) {
       const out = await pack.save()
       if (out.length > 15 * 1024 * 1024) return { error: 'The pack is over 15 MB, too big for WhatsApp. Ask for the papers one by one.' }
       const name = `${job.job_no}_documents.pdf`
-      if (d.test) return { sent: false, test_mode: `built ${name}: ${pack.getPageCount()} pages (${used.join(', ')}), ${out.length} bytes, not sent`, could_not_open: skipped, note: `test: built ${name} ${pack.getPageCount()} pages ${out.length} bytes` }
+      if (d.test) return { say: `(test) Built *${name}*: ${used.join(', ')}.`, sent: false, test_mode: `built ${name}: ${pack.getPageCount()} pages (${used.join(', ')}), ${out.length} bytes, not sent`, could_not_open: skipped, note: `test: built ${name} ${pack.getPageCount()} pages ${out.length} bytes` }
       try { await sendDocument(person.phone, out, 'application/pdf', name, `${job.job_no} · ${used.join(', ')}`) } catch (e) { return { error: `WhatsApp did not take the file: ${(e as Error).message}` } }
-      return { sent: true, file: name, contains: used, could_not_open: skipped, note: `sent pack ${used.join(', ')}`, tell_the_person: 'Say the PDF has been sent as a separate message and what is in it, in one line.' }
+      return { say: `📎 Sent *${name}* with ${used.join(', ')} as a separate message.${skipped.length ? ` Could not open: ${skipped.join(', ')}.` : ''}`, sent: true, file: name, contains: used, could_not_open: skipped, note: `sent pack ${used.join(', ')}`, tell_the_person: 'Say the PDF has been sent as a separate message and what is in it, in one line.' }
     },
   }
 }

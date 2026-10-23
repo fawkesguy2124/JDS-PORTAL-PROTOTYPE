@@ -16,11 +16,12 @@
 //   WHATSAPP_TEMPLATE_LANG optional, default "en"
 import { adminClient, json } from '../_shared/ulip.ts'
 import { buildJourneyData } from '../_shared/portal/journeyCore.js'
-import { morningSummary, instantAlerts, answer, teamFromProfiles, BOT_NUMBERS } from '../_shared/portal/botMessages.js'
+import { morningSummary, instantAlerts, answer, teamFromProfiles, BOT_NUMBERS, missingDetails } from '../_shared/portal/botMessages.js'
 import { askAssistant, groqInfo } from './assistant.ts'
 import { applyChange, confirmText, isNo, isYes, PENDING_MINUTES, prepareChange, type Pending } from './actions.ts'
 import { downloadMedia, transcribe, normalizeSpoken, docTypeFromName, jobFromText, safeName, MAX_FILE_BYTES } from './media.ts'
 import { makeServerTools, sendDueReminders, checkWatches, checkTasks } from './servertools.ts'
+import { readBeFile, jobForBe, beLine } from './bereader.ts'
 
 const PORTAL = 'https://jds-portal-prototype.vercel.app'
 
@@ -210,6 +211,15 @@ async function runMorning(admin: Admin) {
   const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' })
   const out = []
   for (const person of team) out.push(await sendOnce(admin, `morning:${today}`, person, 'morning', morningSummary(data, person)))
+  // then the details missing on their jobs, with a tap list (the list only goes
+  // inside WhatsApp's 24-hour window; outside it the alert template carries the text)
+  for (const person of team) {
+    const miss = missingDetails(data, person)
+    if (!miss.text) continue
+    const r: any = await sendOnce(admin, `missing:${today}`, person, 'missing', { text: miss.text, template: { name: 'jds_alert', values: ['details', miss.text.replace(/\*/g, '').replace(/\n+/g, ' ').slice(0, 900), 'SUMMARY'] } })
+    out.push(r)
+    if (r?.as === 'text' && !r?.skipped && miss.rows.length) await send(person.phone, { text: 'Add a missing detail:', list: { button: 'Choose', rows: miss.rows } })
+  }
   return out
 }
 
@@ -382,6 +392,39 @@ async function handleFile(admin: Admin, person: Person, m: any, data: any) {
   const lastFile = { path, file_name: name, mime: file.mime, size: file.bytes.length, doc_type: docType, at: new Date().toISOString() }
   await admin.from('bot_inbox').upsert({ phone: person.phone, last_file: lastFile, pending: null, last_inbound_at: new Date().toISOString() })
   const createLink = `${PORTAL}/admin?tab=jobs&createFrom=${encodeURIComponent(path)}`
+  // a BE / OOC PDF: read by the portal's own BE reader (no AI), then one Yes / No
+  // for everything it shows (attach, record the BE and IGM, the OOC)
+  const be = /pdf/i.test(file.mime) || /\.pdf$/i.test(name) ? await readBeFile(file.bytes).catch((e) => { console.warn(`[wa-bot] BE reader: ${(e as Error).message}`); return null }) : null
+  if (be) {
+    lastFile.doc_type = be.copy_type === 'OOC' ? 'OOC' : 'BE'
+    await admin.from('bot_inbox').update({ last_file: lastFile }).eq('phone', person.phone)
+    const named = jobFromText(`${caption} ${name}`, data?.jobs || [])
+    const match = named ? { job: named, how: 'the file name' } : jobForBe(be, data?.jobs || [])
+    if (!match) {
+      await reply(`📎 Got *${name}*: ${beLine(be)}.\n\nNo open job has this BE, BL or container. Which job is it for (e.g. "J-652")?\nOr create a new job from it: ${createLink}`, userText)
+      return
+    }
+    const j = match.job
+    const items: Pending[] = []
+    const att = prepareChange({ action: 'attach_document', job: j.job_no, doc_type: lastFile.doc_type }, data, person, { lastFile })
+    if (att.ok) items.push(att.pending)
+    if (String(j.be_no || '') !== String(be.be_no) || !j.be_date) {
+      const r = prepareChange({ action: 'record_be', job: j.job_no, be_no: be.be_no, be_date: be.be_date }, data, person)
+      if (r.ok) items.push({ ...r.pending, args: { ...r.pending.args, igm_no: be.igm_no || null, igm_date: be.igm_date || null, from_file: true } })
+    }
+    if (be.copy_type === 'OOC' && be.ooc_no && be.ooc_date && Number(j.stage) < 7) {
+      const r = prepareChange({ action: 'record_ooc', job: j.job_no, ooc_no: be.ooc_no, ooc_date: be.ooc_date }, data, person)
+      if (r.ok) items.push(r.pending)
+    }
+    if (!items.length) { await reply(`📎 Got *${name}*: ${beLine(be)}. ${j.job_no} already has this BE and this file, so nothing needs changing.`, userText); return }
+    const pending: Pending = items.length === 1 ? items[0] : {
+      action: 'batch', job_id: j.id, job_no: j.job_no, args: { items },
+      summary: `${items.length} changes:\n${items.map((x) => `• ${x.summary}`).join('\n')}`, at: new Date().toISOString(),
+    }
+    await admin.from('bot_inbox').update({ pending }).eq('phone', person.phone)
+    await reply(`📎 Got *${name}*: ${beLine(be)}.\nIt matches *${j.job_no}* (${j.client || 'no client'}) by ${match.how}.\n\n${confirmText(pending)}\n\nWrong job? Just say it, e.g. "it is J-652".`, userText, YES_NO)
+    return
+  }
   const job = jobFromText(`${caption} ${name}`, data?.jobs || [])
   if (job && docType) {
     const res = prepareChange({ action: 'attach_document', job: job.job_no, doc_type: docType }, data, person, { lastFile })
@@ -597,6 +640,23 @@ Deno.serve(async (req) => {
         }
         const t0 = Date.now()
         try { return json({ success: true, heard: await transcribe(bytes, String(b.mime || 'audio/wav')), ms: Date.now() - t0 }) } catch (e) { return json({ success: false, error: (e as Error).message }) }
+      }
+      // test: the 8:00 missing-details message for each person (nothing sent)
+      if (run === 'missing-test') {
+        const [data, team] = await Promise.all([loadData(admin), loadTeam(admin)])
+        return json({ success: true, people: team.map((p) => { const m = missingDetails(data, p); return { name: p.name, text: m.text, rows: m.rows.map((r: any) => r.id) } }) })
+      }
+      // test: a stored PDF through the BE reader, and the job it matches (nothing changed)
+      if (run === 'be-test') {
+        const b = JSON.parse(raw)
+        const { data: blob, error } = await admin.storage.from('job-documents').download(String(b.path || ''))
+        if (error || !blob) return json({ success: false, error: error?.message || 'no file' })
+        const t0 = Date.now()
+        try {
+          const be = await readBeFile(new Uint8Array(await blob.arrayBuffer()))
+          const m = be ? jobForBe(be, (await loadDataCached(admin)).jobs) : null
+          return json({ success: true, ms: Date.now() - t0, be: be ? { be_no: be.be_no, be_date: be.be_date, igm_no: be.igm_no, igm_date: be.igm_date, bl_no: be.bl_no, copy: be.copy_type, containers: be.containers } : null, line: be ? beLine(be) : null, job: m ? `${m.job.job_no} by ${m.how}` : null })
+        } catch (e) { return json({ success: false, error: (e as Error).message }) }
       }
       // test: the "check customs now" path for one job, as the first team member;
       // the reply is returned here, not sent on WhatsApp

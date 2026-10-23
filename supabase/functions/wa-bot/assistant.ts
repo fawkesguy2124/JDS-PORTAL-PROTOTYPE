@@ -134,11 +134,55 @@ export async function askAssistant(question: string, history: Turn[], data: unkn
   const first = (Deno.env.get('BOT_AI_FIRST') || 'groq').trim()
   for (const p of [...(first === 'nvidia' ? [NVIDIA, GROQ] : [GROQ, NVIDIA]), ...(Deno.env.get('OPENCODE_MODEL') ? [OPENCODE] : [])]) {
     const r = await askCompat(p, question, history, data, person, ctx)
-    if (r.text || ctx.proposal) return { ...r, note: `${r.note}${notes.length ? ` (${notes.join('; ')})` : ''}`, checked: used, proposal: ctx.proposal }
+    if (r.text || ctx.proposal || ctx.say?.length) return { ...r, text: finishReply(r.text, ctx, question, history, data, person), note: `${r.note}${notes.length ? ` (${notes.join('; ')})` : ''}`, checked: used, proposal: ctx.proposal }
     notes.push(`${p.label}: ${r.note}`)
   }
   const g = await askGemini(question, history, data, person, ctx)
-  return g.text || ctx.proposal ? { text: g.text, note: `${g.note} (${notes.join('; ')})`, checked: used, proposal: ctx.proposal } : { text: null, note: `${notes.join(' | ')} | Gemini: ${g.note}`, checked: used, proposal: null }
+  return g.text || ctx.proposal || ctx.say?.length ? { text: finishReply(g.text, ctx, question, history, data, person), note: `${g.note} (${notes.join('; ')})`, checked: used, proposal: ctx.proposal } : { text: null, note: `${notes.join(' | ')} | Gemini: ${g.note}`, checked: used, proposal: null }
+}
+
+// ── The reply that goes out (Jose, 24 Oct 2026: "more accurate") ──
+// 1. What an action did is said in the bot's own fixed words (the AI once said a
+//    PDF pack held "BE, BL, Invoice…" when the job only had a BE). The AI's text is
+//    added only when the question also asked for information.
+// 2. Every job, BE / IGM / IMO number, container and truck number in the AI's text
+//    must appear in what the portal gave it (tool answers, today's basics, the
+//    question, the chat). A line with one that doesn't is left out.
+function finishReply(text: string | null, ctx: Ctx, question: string, history: Turn[], data: any, person: Person): string | null {
+  const say = ctx.say || []
+  if (say.length && !ctx.readTools) return say.join('\n\n')
+  const checked = text ? factCheck(text, ctx, question, history, data, person) : null
+  return [...say, checked].filter(Boolean).join('\n\n') || null
+}
+const squash = (s: string) => s.toUpperCase().replace(/[^A-Z0-9]/g, '')
+// what to look for: job refs, 7-digit numbers (BE, IGM, IMO), containers, trucks
+const CLAIMS: [RegExp, (m: RegExpMatchArray) => string][] = [
+  [/\bJ\s?[-‐‑–]?\s?0*(\d{1,5})\b/g, (m) => `J${m[1]}`],
+  [/\b\d{7}\b/g, (m) => m[0]],
+  [/\b[A-Z]{4}\s?\d{7}\b/g, (m) => squash(m[0])],
+  [/\b[A-Z]{2}\s?\d{1,2}\s?[A-Z]{0,3}\s?\d{4}\b/g, (m) => squash(m[0])],
+]
+export function factCheck(text: string, ctx: Pick<Ctx, 'facts' | 'used'>, question: string, history: Turn[], data: any, person: Person): string {
+  const known = squash([question, ...history.map((t) => t.text), TODAY_BRIEF(data, person), ...(ctx.facts || [])].join(' ')).replace(/J0+(\d)/g, 'J$1')
+  const unknown = (line: string) => {
+    const bad: string[] = []
+    for (const [re, key] of CLAIMS) for (const m of line.matchAll(re)) { const k = key(m); if (!known.includes(k)) bad.push(m[0]) }
+    return bad
+  }
+  const kept: string[] = []
+  const removed: string[] = []
+  for (const line of text.split('\n')) {
+    const bad = unknown(line)
+    if (bad.length) removed.push(...bad)
+    else kept.push(line)
+  }
+  if (!removed.length) return text
+  ctx.used.push(`fact check left out: ${[...new Set(removed)].join(', ')}`)
+  console.warn(`[wa-bot] fact check left out: ${[...new Set(removed)].join(', ')}`)
+  const rest = kept.join('\n').replace(/\n{3,}/g, '\n\n').trim()
+  return rest && /[A-Za-z0-9]/.test(rest)
+    ? `${rest}\n\n_(I left out a detail I could not confirm from the portal.)_`
+    : "I couldn't confirm that from the portal data, so I won't guess. Please ask again, or open the job in the portal."
 }
 // Questions about JDS's own jobs/containers MUST be checked in the portal first:
 // small models otherwise answer from memory and make things up. Pure "what is
@@ -149,7 +193,9 @@ export const needsData = (q: string) => {
   // whole words only ("port" must not match "portal")
   return /\b[A-Z]{4}\d{7}\b|\bJ-?\s?\d+|\bcontainers?\b|\bbox(es)?\b|\bjobs?\b|\bbe\b|\bbl\b|\booc\b|\btrucks?\b|\brail\b|\bclients?\b|\bdetention\b|\bfree ?days?\b|\bports?\b|\bcfs\b|\bicd\b|\bgate\b|\bwhere\b|\bwhich\b|\bhow many\b|\bkitne\b|\bkaha\b|\bany\b|\blist\b|\bstatus\b|\btoday\b|\byesterday\b|\bweek\b|\bmonth\b|\bsure\b|\bagain\b|\bupdates?\b|\bpending\b|\burgent\b|\barriv|\bvessels?\b|\bships?\b/i.test(t)
 }
-type Ctx = { used: string[]; proposal: Pending | null; checkCustoms?: (job: string) => Promise<unknown>; server?: ServerTools; change?: ChangeContext; done?: Map<string, unknown> }
+// say: the bot's own fixed sentences for what an action did (never the AI's wording);
+// facts: every tool answer, for checking the reply before it goes out
+type Ctx = { used: string[]; proposal: Pending | null; checkCustoms?: (job: string) => Promise<unknown>; server?: ServerTools; change?: ChangeContext; done?: Map<string, unknown>; say?: string[]; facts?: string[]; readTools?: boolean }
 // the last reply came from a change request (it may have asked for a missing detail)
 // (not after the bot already asked YES/NO: then the next message is a new question)
 const afterChangeTry = (history: Turn[]) => {
@@ -167,6 +213,11 @@ function systemText(person: Person, data: unknown, ctx: Ctx) {
 // runs one tool call: notes it for the chat history; a change is only PREPARED
 // (checked and kept for the person's YES), never saved here
 async function useTool(ctx: Ctx, name: string, args: any, data: any, person: Person): Promise<unknown> {
+  const r = await runOneTool(ctx, name, args, data, person)
+  try { (ctx.facts ||= []).push(JSON.stringify(r)) } catch { /* not text */ }
+  return r
+}
+async function runOneTool(ctx: Ctx, name: string, args: any, data: any, person: Person): Promise<unknown> {
   ctx.used.push(`${name} ${JSON.stringify(args || {})}`)
   if (name === CUSTOMS_TOOL.name) {
     if (!ctx.checkCustoms) return { not_available: 'Checking Customs is not possible here.' }
@@ -180,6 +231,11 @@ async function useTool(ctx: Ctx, name: string, args: any, data: any, person: Per
     ctx.used[ctx.used.length - 1] += r?.started ? ' → Customs asked now, result to follow in a separate message'
       : r?.checked_recently ? ` → Customs NOT asked again (checked ${r.minutes_ago} min earlier, at ${r.last_checked}); answer from that check`
       : ` → not done (${r?.not_found ? 'job not found' : r?.not_possible || 'unknown'})`
+    // the bot's own words for what happened
+    const jobNo = `J-${String(args?.job || '').replace(/\D/g, '')}`
+    if (r?.test_mode) (ctx.say ||= []).push(`(test) Would ask Customs now for *${jobNo}*.`)
+    else if (r?.started) (ctx.say ||= []).push(`🛃 Checking *${jobNo}* with Customs now. The result follows in a separate message, in about a minute.`)
+    else if (r?.checked_recently) (ctx.say ||= []).push(`🛃 *${jobNo}* was checked with Customs at ${r.last_checked} (under 30 minutes ago), so Customs was not asked again: *${r.answer}*.`)
     return r
   }
   if (SERVER_TOOLS.some((t) => t.name === name)) {
@@ -194,9 +250,12 @@ async function useTool(ctx: Ctx, name: string, args: any, data: any, person: Per
     ctx.done.set(key, r)
     // what really happened, for the chat history ("did you really check?")
     if (r?.note) ctx.used[ctx.used.length - 1] += ` → ${r.note}`
+    // the bot's own words for what the action did; a failure is said as it is
+    const said = r?.say || (r?.error ? `⚠️ ${r.error}` : null)
+    if (said && !(ctx.say ||= []).includes(said)) ctx.say.push(said)
     return r
   }
-  if (name !== CHANGE_TOOL.name) return runTool(name, args || {}, data, person)
+  if (name !== CHANGE_TOOL.name) { ctx.readTools = true; return runTool(name, args || {}, data, person) }
   const res = prepareChange(args, data, person, ctx.change || {})
   if (!res.ok) return { not_done: res.error }
   ctx.proposal = res.pending

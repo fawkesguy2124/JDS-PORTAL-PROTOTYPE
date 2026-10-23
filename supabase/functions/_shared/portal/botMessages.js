@@ -10,7 +10,7 @@
 //    person has written to the bot in the last 24 hours.
 //  - Replies to a person's question are normal messages (no template).
 import { journeyFor, isDelivered, isExportJob, parseContainerNos, containerFinishedOn } from './journeyCore.js'
-import { vesselsOf, cargoOnShip } from './ships.js'
+import { vesselsOf, cargoOnShip, jobImo, igmSiblings } from './ships.js'
 
 const DAY = 24 * 60 * 60 * 1000
 const TZ = 'Asia/Kolkata'
@@ -365,4 +365,43 @@ export function teamFromProfiles(profiles = []) {
     const p = logins[phone]
     return p ? { id: p.id, name: p.name || name, role: p.role, phone } : { id: `wa:${phone}`, name, role: 'admin', phone }
   })
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Missing details (8:00, after the summary; Jose, 24 Oct 2026): open sea imports
+// that lack what the portal needs to follow them by itself (a ship with no ETA,
+// containers or IMO can't leave the Vessels list on its own, e.g. J-584).
+// Returns { items: [{ job, missing: [...] }], text, rows } — rows for a tap list.
+// ─────────────────────────────────────────────────────────────────────────────
+export function missingDetails(data, person) {
+  const items = []
+  for (const job of jobsFor(person, data.jobs || [])) {
+    if (isDelivered(job) || isExportJob(job) || !/sea/i.test(job.mode || '')) continue
+    const j = journeyFor(job, data)
+    if (j.phase === 'delivered') continue
+    const arrived = !!j.steps?.[0]?.done
+    const boxes = parseContainerNos(job.containers)
+    const missing = []
+    if (!boxes.length && !/lcl/i.test(job.mode || '')) missing.push('containers')
+    if (!job.shipping_line) missing.push('shipping line')
+    if (!arrived) {
+      if (!job.eta && !boxes.some((no) => data.containersByNo?.[no]?.eta)) missing.push('ETA')
+      const igm = String(job.ulip_refs?.igm_no || '').replace(/\D/g, '')
+      if (!jobImo(job, data) && !igmSiblings(job, data).some((o) => jobImo(o, data)) && igm.length < 5) missing.push('IMO')
+    }
+    if (missing.length) items.push({ job, missing })
+  }
+  items.sort((a, b) => b.missing.length - a.missing.length || String(a.job.job_no).localeCompare(String(b.job.job_no), undefined, { numeric: true }))
+  const ask = { containers: (no) => `add container to ${no}`, 'shipping line': (no) => `set shipping line of ${no}`, ETA: (no) => `set ETA of ${no}`, IMO: (no) => `set IMO of ${no}` }
+  const rows = items.flatMap(({ job, missing }) => missing.map((m) => ({ id: ask[m](job.job_no), title: `${m === 'containers' ? 'Containers' : m === 'shipping line' ? 'Line' : m} · ${job.job_no}`.slice(0, 24), description: `${job.client || 'No client'}`.slice(0, 72) }))).slice(0, 10)
+  const text = items.length
+    ? [
+        `🧩 *Details missing* (${items.length} job${items.length === 1 ? '' : 's'}). With these filled, the portal follows the job by itself:`,
+        ...items.slice(0, 12).map(({ job, missing }) => `• *${job.job_no}* (${job.client || 'no client'}): ${missing.join(', ')}`),
+        ...(items.length > 12 ? [`…and ${items.length - 12} more`] : []),
+        '',
+        `Tap one below, or just reply, e.g. "ETA of ${items[0].job.job_no} is 28 Oct".`,
+      ].join('\n')
+    : null
+  return { items, text, rows }
 }

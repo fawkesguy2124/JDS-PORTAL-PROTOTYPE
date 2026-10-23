@@ -19,7 +19,7 @@ const nice = (iso: string) => new Date(`${iso}T12:00:00+05:30`).toLocaleDateStri
 
 export const ACTIONS = ['mark_delivered', 'add_truck', 'remove_truck', 'record_be', 'set_leaves_by', 'set_delivery_by', 'add_note',
   // added 24 Oct 2026
-  'attach_document', 'set_eta', 'set_vessel', 'set_shipping_line', 'set_cfs', 'set_free_days', 'set_priority', 'set_owner',
+  'attach_document', 'set_eta', 'set_imo', 'set_vessel', 'set_shipping_line', 'set_cfs', 'set_free_days', 'set_priority', 'set_owner',
   'add_container', 'remove_container', 'record_ooc',
   // added 24 Oct 2026 (2): a new job by chat, the CFS payment, a task for a teammate
   'create_job', 'record_payment', 'assign_task']
@@ -29,7 +29,7 @@ const DOC_TYPES = ['BE', 'BL', 'Invoice', 'Packing List', 'COO', 'Insurance', 'E
 
 export const CHANGE_TOOL = {
   name: 'propose_change',
-  description: 'Make a change in the portal for the person: mark_delivered, add_truck (truck_no, optional container), remove_truck (truck_no), record_be (be_no 7 digits, be_date YYYY-MM-DD), set_leaves_by (mode truck/rail), set_delivery_by (by jds/client), add_note (note), attach_document (the file the person just sent; doc_type), set_eta (date YYYY-MM-DD), set_vessel (vessel = the SHIP\'s name, never the shipping line), set_shipping_line (line), set_cfs (cfs), set_free_days (days), set_priority (priority normal/high/urgent), set_owner (owner = staff name), add_container (container, size), remove_container (container), record_ooc (ooc_no, ooc_date YYYY-MM-DD; OOC seen in LiveImpex), create_job (job = the NEW job no; client, job_mode, port, bl_no, containers, size, vessel, eta, line, be_no, be_date, days), record_payment (amount in rupees = the CFS amount), assign_task (to = teammate name, task, due = YYYY-MM-DD HH:MM India time). The SAME change on several jobs: give them all in jobs (e.g. ["J-519","J-633"]) in ONE call. Call it ONCE; the bot then asks the person to confirm. Nothing changes until they do.',
+  description: 'Make a change in the portal for the person: mark_delivered, add_truck (truck_no, optional container), remove_truck (truck_no), record_be (be_no 7 digits, be_date YYYY-MM-DD), set_leaves_by (mode truck/rail), set_delivery_by (by jds/client), add_note (note), attach_document (the file the person just sent; doc_type), set_eta (date YYYY-MM-DD), set_imo (imo = the 7-digit IMO number of the ship), set_vessel (vessel = the SHIP\'s name, never the shipping line), set_shipping_line (line), set_cfs (cfs), set_free_days (days), set_priority (priority normal/high/urgent), set_owner (owner = staff name), add_container (container, size), remove_container (container), record_ooc (ooc_no, ooc_date YYYY-MM-DD; OOC seen in LiveImpex), create_job (job = the NEW job no; client, job_mode, port, bl_no, containers, size, vessel, eta, line, be_no, be_date, days), record_payment (amount in rupees = the CFS amount), assign_task (to = teammate name, task, due = YYYY-MM-DD HH:MM India time). The SAME change on several jobs: give them all in jobs (e.g. ["J-519","J-633"]) in ONE call. Call it ONCE; the bot then asks the person to confirm. Nothing changes until they do.',
   parameters: {
     type: 'OBJECT',
     properties: {
@@ -43,7 +43,7 @@ export const CHANGE_TOOL = {
       mode: { type: 'STRING', enum: ['truck', 'rail'] },
       by: { type: 'STRING', enum: ['jds', 'client'] },
       note: { type: 'STRING' },
-      doc_type: { type: 'STRING', enum: DOC_TYPES }, date: { type: 'STRING' }, vessel: { type: 'STRING' }, line: { type: 'STRING' },
+      doc_type: { type: 'STRING', enum: DOC_TYPES }, date: { type: 'STRING' }, vessel: { type: 'STRING' }, imo: { type: 'STRING' }, line: { type: 'STRING' },
       cfs: { type: 'STRING' }, days: { type: 'NUMBER' }, priority: { type: 'STRING', enum: ['normal', 'high', 'urgent'] },
       owner: { type: 'STRING' }, size: { type: 'STRING' }, ooc_no: { type: 'STRING' }, ooc_date: { type: 'STRING' },
     },
@@ -189,6 +189,13 @@ function prepareOne(args: any, data: any, person: Person, extra: ChangeContext =
     const no = String(args?.ooc_no || '').replace(/\D/g, '')
     if (no && no.length < 6) return { ok: false, error: 'The OOC number looks too short. Check it, or leave it out.' }
     return p(`Record *OOC${no ? ` ${no}` : ''}* dated *${nice(date)}* on ${who} (as seen in LiveImpex)`, { ooc_no: no || null, ooc_date: date })
+  }
+  if (action === 'set_imo') {
+    const imo = String(args?.imo || args?.note || '').replace(/\D/g, '')
+    if (imo.length !== 7) return { ok: false, error: 'The IMO number has 7 digits, for example 9467287 (it is on the BL or the IGM).' }
+    const was = String(job.ulip_refs?.imo_code || '')
+    if (was === imo) return { ok: false, error: `${job.job_no} already has IMO ${imo}.` }
+    return p(`Set the ship's IMO of ${who} to *${imo}*${was ? ` (was ${was})` : ''}`, { imo })
   }
   if (action === 'set_vessel') {
     const vessel = String(args?.vessel || '').trim().toUpperCase().replace(/\s+/g, ' ').slice(0, 60)
@@ -338,7 +345,11 @@ export async function applyChange(admin: Admin, pending: Pending, person: Person
     const update: Record<string, unknown> = { be_no: a.be_no, be_date: a.be_date }
     if ((Number(job.stage) || 0) < 4) update.stage = 4
     const err = await save(update); if (err) return err
-    await log('be_filed', `${job.job_no} — BE ${a.be_no} filed`, `BE ${a.be_no} dated ${a.be_date} filed in LiveImpex (recorded by ${by})`, { be_no: a.be_no, be_date: a.be_date })
+    // read from the BE file itself: its IGM goes on the job too (finds the ship)
+    if (a.igm_no && /^\d{4}-\d{2}-\d{2}$/.test(String(a.igm_date || ''))) {
+      await admin.rpc('merge_job_refs', { p_job: job.id, p_found: { igm_no: String(a.igm_no), igm_date: a.igm_date }, p_typed: {}, p_truck: null })
+    }
+    await log('be_filed', `${job.job_no} — BE ${a.be_no} filed`, `BE ${a.be_no} dated ${a.be_date} filed in LiveImpex (recorded by ${by}${a.from_file ? ', read from the BE file' : ''})`, { be_no: a.be_no, be_date: a.be_date })
     return `✅ Done: BE *${a.be_no}* (${nice(a.be_date)}) recorded on ${job.job_no}. Customs will be checked when the BE & OOC page is opened.`
   }
   if (pending.action === 'set_leaves_by' || pending.action === 'set_delivery_by') {
@@ -367,6 +378,13 @@ export async function applyChange(admin: Admin, pending: Pending, person: Person
     await admin.from('bot_inbox').update({ last_file: null }).eq('phone', person.phone)
     await log('document_upload', `${a.doc_type} uploaded — ${job.job_no}`, `${a.file_name} (sent on WhatsApp by ${person.name})`, { doc_type: a.doc_type, file_name: a.file_name })
     return `✅ Done: *${a.file_name}* attached to ${job.job_no} as *${a.doc_type}*.`
+  }
+  if (pending.action === 'set_imo') {
+    // the same save as the Vessels page's IMO box (typed by staff wins over found)
+    const { error } = await admin.rpc('merge_job_refs', { p_job: job.id, p_found: {}, p_typed: { imo_code: a.imo }, p_truck: null })
+    if (error) return `❌ Could not save the IMO: ${error.message}. Nothing was changed.`
+    await log('note', `${job.job_no} — ship IMO set to ${a.imo}`, `Changed by ${by}`, { imo_code: a.imo })
+    return `✅ Done: ${job.job_no} — ship IMO set to ${a.imo}. It now shows on the Vessels page map.`
   }
   const simple: Record<string, [Record<string, unknown>, string]> = {
     set_eta: [{ eta: a.date }, `ETA set to ${a.date ? nice(a.date) : ''}`],
