@@ -6,6 +6,7 @@ import { useJourney } from './JourneyContext'
 import { containerFinishedOn, deliveryBy, effectiveStage } from '../services/journey'
 import { Chip, FreeDays, Icon, PhaseChip, fmtDate, initials, jobOwnerName, timeAgo } from './ui'
 import ShipMap, { vesselOf, shipIdOf } from './ShipMap'
+import { isLineNotShip } from '../../supabase/functions/_shared/portal/shippingLines.js'
 import { openDoc, downloadDoc } from '../services/docFiles'
 import PdfPreview from '../components/PdfPreview'
 
@@ -161,7 +162,9 @@ export default function JobDrawer({ jobId, initialTab = 'overview', onClose, onO
   const kv = [
     [isExport ? 'Shipping bill' : 'BE number', isExport ? (j.sbNo || '—') : (job.be_no || '—'), true],
     [isExport ? 'LEO' : 'BE date', isExport ? fmtDate(j.leoDate) : fmtDate(job.be_date)],
-    ['Vessel / flight', job.vessel || '—'],
+    // the job's own ship, else its containers' (LDB) or another job's on the same IGM
+    // (a shipping line's name saved as the ship, e.g. EVERGREEN, is not shown as the ship)
+    ['Vessel / flight', (job.vessel && !isLineNotShip(job.vessel, job.shipping_line) ? job.vessel : vesselOf(job, data)) || '—'],
     ['Port', portLabel?.(job.port_code) || job.port_code || '—'],
     ['BL / AWB', job.bl_no || '—', true],
     ['IGM', job.ulip_refs?.igm_no ? `${job.ulip_refs.igm_no}${job.ulip_refs.igm_date ? ` · ${fmtDate(job.ulip_refs.igm_date)}` : ''}` : '—', true],

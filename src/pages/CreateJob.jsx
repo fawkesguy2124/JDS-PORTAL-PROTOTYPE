@@ -9,6 +9,7 @@ import { CLIENT_NAMES, matchClient } from '../utils/clients'
 import { readPdf, describeDocuments } from '../utils/docReader'
 import { boxOwnerHint } from '../../supabase/functions/_shared/portal/shippingLines.js'
 import { availableTypes, typesFoundInside, docTypeLabel } from '../utils/docTypes'
+import { isLineNotShip } from '../../supabase/functions/_shared/portal/shippingLines.js'
 
 const MODES = ['Sea FCL', 'Sea LCL', 'Air', 'BPT/MBPT']
 // sea jobs carry containers (LCL: the shared consolidation box, which LDB tracks to the CFS)
@@ -443,6 +444,14 @@ if (parsed.client && shouldFill('client')) {
 
     if (!form.mode) {
       setError('Please select the mode (Sea FCL, Sea LCL, Air or BPT/MBPT).')
+      setSaving(false)
+      return
+    }
+
+    // the ship's own name, not the shipping line's (Jose, 23 Oct 2026: EVERGREEN typed as the ship)
+    const lineChosen = form.carrier === '__other__' ? form.carrierOther : form.carrier
+    if (form.vessel.trim() && isLineNotShip(form.vessel.split('/')[0], lineChosen)) {
+      setError(`"${form.vessel.trim()}" is a shipping line, not a ship. Type the ship's own name from the BL (for example EVER LENIENT), or leave Vessel empty.`)
       setSaving(false)
       return
     }

@@ -2,6 +2,7 @@
 // portal (Vessels page, job drawer) and the WhatsApp bot, so both say the same.
 // Not ULIP: saved job data, the saved IGM check and the vessel-track finder only.
 import { parseContainerNos, containerTrip, isDelivered } from './journeyCore.js'
+import { isLineNotShip } from './shippingLines.js'
 
 const digits = (v) => String(v || '').replace(/\D/g, '')
 
@@ -18,15 +19,32 @@ export function shipKey(raw) {
 // can have two when its containers sail on different ships.
 export function vesselsOf(job, data) {
   const names = []
-  const add = (v) => { const k = shipKey(v); if (k.length >= 3 && !names.includes(k)) names.push(k) }
-  if (job?.vessel) add(job.vessel)
-  for (const no of parseContainerNos(job?.containers)) add(data?.containersByNo?.[no]?.vessel)
+  // a shipping line's name saved as the ship ("EVERGREEN") is not a ship
+  const add = (v, line) => { const k = shipKey(v); if (k.length >= 3 && !isLineNotShip(k, line) && !names.includes(k)) names.push(k) }
+  const own = (x) => {
+    if (x?.vessel) add(x.vessel, x.shipping_line)
+    for (const no of parseContainerNos(x?.containers)) add(data?.containersByNo?.[no]?.vessel)
+  }
+  own(job)
+  // nothing on the job itself: another job on the same IGM (same port) is on the
+  // same ship, so its ship name counts too (Jose, 23 Oct 2026: J-667)
+  if (!names.length) for (const other of igmSiblings(job, data)) own(other)
   return names
 }
 export const vesselOf = (job, data) => vesselsOf(job, data)[0] || null
 
+// Other jobs filed on the same IGM at the same port (one IGM = one ship's voyage)
+export function igmSiblings(job, data) {
+  const igm = digits(job?.ulip_refs?.igm_no)
+  if (igm.length < 5 || /^0+$/.test(igm)) return []
+  const date = String(job?.ulip_refs?.igm_date || '').slice(0, 10)
+  return (data?.jobs || []).filter((o) => o.id !== job.id && o.port_code === job.port_code
+    && digits(o.ulip_refs?.igm_no) === igm
+    && (!date || !o.ulip_refs?.igm_date || String(o.ulip_refs.igm_date).slice(0, 10) === date))
+}
+
 // IMO from the job: typed by JDS first, then the job's IGM / vessel-arrival check
-function jobImo(job, data) {
+export function jobImo(job, data) {
   let igm = null
   const results = data?.resultsByJob?.[job?.id] || {}
   for (const api of ['ICEGATE/07', 'ICEGATE/01']) {
@@ -50,6 +68,11 @@ export function shipIdOf(job, name, data) {
   if (!name || name === first) {
     const own = jobImo(job, data)
     if (own) return { ...own, mmsi: null }
+    // a job on the same IGM already knows the ship's IMO
+    for (const o of igmSiblings(job, data)) {
+      const sib = jobImo(o, data)
+      if (sib) return { ...sib, mmsi: null }
+    }
   }
   const f = data?.shipIds?.[shipKey(name)]
   if (f?.imo || f?.mmsi) return { imo: digits(f.imo).length === 7 ? digits(f.imo) : null, mmsi: f.mmsi || null, from: 'found', seenAt: f.seen_at }

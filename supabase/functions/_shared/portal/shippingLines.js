@@ -47,3 +47,22 @@ export function boxOwnerHint(containers = []) {
   const top = Object.entries(votes).sort((a, b) => b[1] - a[1])[0]?.[0]
   return top ? GROUP[top] || top : null
 }
+
+// A shipping line's name typed where a SHIP's name belongs ("EVERGREEN",
+// "MSC LINE", or the job's own line): not a ship (Jose, 23 Oct 2026). Ship names
+// that start with a line's name ("MSC SILVANA VIII", "EVER LENIENT") pass.
+const tidy = (x) => String(x || '').toUpperCase().replace(/[^A-Z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim()
+const TAIL = /\s+(LINES?|SHIPPING|CONTAINERS?|MARINE|CO|CORP|CORPORATION|LTD|LIMITED|AGENCY|AGENCIES|INDIA|PVT)$/
+const LINE_NAMES = new Set([
+  ...LINES.map(([, n]) => tidy(n)),
+  'MEDITERRANEAN SHIPPING COMPANY', 'OCEAN NETWORK EXPRESS', 'ORIENT OVERSEAS', 'HAPAG LLOYD', 'HYUNDAI MERCHANT', 'EVERGREEN MARINE',
+  'COSCO SHIPPING', 'EMIRATES SHIPPING', 'PACIFIC INTERNATIONAL', 'REGIONAL CONTAINER', 'KOREA MARINE TRANSPORT', 'HEUNG A', 'SINOKOR', 'TS',
+].map(tidy))
+export function isLineNotShip(raw, jobLine) {
+  const s = tidy(raw)
+  if (!s) return false
+  if (jobLine && tidy(jobLine) === s) return true
+  let core = s
+  for (let i = 0; i < 4; i++) core = core.replace(TAIL, '')
+  return LINE_NAMES.has(s) || LINE_NAMES.has(core)
+}
