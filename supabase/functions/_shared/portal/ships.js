@@ -145,5 +145,20 @@ export function cargoOnShip(job, name, data, j) {
   if (off) return { onBoard: false, unloadedOn: last, arrivedAt }
   // no container news: go by the ship's arrival (only for a job on one ship)
   if (ships.length <= 1 && arrivedAt && Date.now() - new Date(arrivedAt).getTime() > UNLOAD_DAYS * 86400000) return { onBoard: false, unloadedOn: null, arrivedAt }
+  // Nothing says the ship came in, but by now it surely has and sailed on (Jose,
+  // 24 Oct 2026: no manual "Ship has left" taps). The free ship feed hears too few
+  // ships near India to tell, so this goes by dates JDS already has:
+  if (ships.length <= 1 && !arrivedAt) {
+    const ageDays = (iso) => (Date.now() - new Date(String(iso).length <= 10 ? `${iso}T12:00:00+05:30` : iso).getTime()) / 86400000
+    // the ship's ETA (typed on the job, or from container tracking) is 3+ days past
+    const etas = [job?.eta, ...parseContainerNos(job?.containers).map((no) => data?.containersByNo?.[no]?.eta)].filter((d) => d && !isNaN(new Date(d)))
+    if (etas.length && etas.every((d) => ageDays(d) > UNLOAD_DAYS + 1)) return { onBoard: false, unloadedOn: null, arrivedAt, why: 'eta' }
+    // a BE filed 10+ days ago (the same rule the job page uses for "ship in")
+    if (job?.be_date && ageDays(job.be_date) >= ADVANCE_BE_DAYS) return { onBoard: false, unloadedOn: null, arrivedAt, why: 'be' }
+    // no ETA and no news of the ship three weeks after the job was opened
+    if (!etas.length && job?.created_at && ageDays(job.created_at) >= STALE_SHIP_DAYS) return { onBoard: false, unloadedOn: null, arrivedAt, why: 'old' }
+  }
   return { onBoard: true, unloadedOn: null, arrivedAt }
 }
+const ADVANCE_BE_DAYS = 10
+const STALE_SHIP_DAYS = 21

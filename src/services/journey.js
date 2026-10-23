@@ -40,7 +40,7 @@ export async function loadJourneyData() {
       .gte('checked_at', since)
       .order('checked_at', { ascending: false, nullsFirst: false })),
     readAll(() => supabase.from('container_tracking')
-      .select('container_no, job_id, job_no, status, status_text, current_location, free_days, port_in, port_out, cfs_gate_in, milestones, last_refreshed_at, vessel, shipping_line_ldb')
+      .select('container_no, job_id, job_no, status, status_text, current_location, free_days, port_in, port_out, cfs_gate_in, milestones, last_refreshed_at, vessel, shipping_line_ldb, eta')
       .order('container_no')),
   ])
   const firstError = [jobsRes, csRes, resultsRes, ctRes].find((r) => r.error)?.error

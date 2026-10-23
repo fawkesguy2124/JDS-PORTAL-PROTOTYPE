@@ -62,7 +62,7 @@ async function loadData(admin: Admin) {
       .not('job_id', 'is', null).gte('checked_at', since)
       .order('checked_at', { ascending: false, nullsFirst: false })),
     readAll(() => admin.from('container_tracking')
-      .select('container_no, job_id, job_no, status, status_text, current_location, free_days, port_in, port_out, cfs_gate_in, milestones, last_refreshed_at, shipping_line_ldb, container_size, vessel, terminal')
+      .select('container_no, job_id, job_no, status, status_text, current_location, free_days, port_in, port_out, cfs_gate_in, milestones, last_refreshed_at, shipping_line_ldb, container_size, vessel, terminal, eta')
       .order('container_no')),
   ])
   const data: any = buildJourneyData({ jobs, customs, results, containers })
