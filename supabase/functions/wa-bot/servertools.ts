@@ -1,18 +1,24 @@
 // The bot's tools that act (Jose, 24 Oct 2026): send a job's document, check a
-// truck or find a ship when a person asks, and reminders. ULIP is asked only
+// truck or find a ship when a person asks, reminders, watches ("tell me when"),
+// Customs for several jobs, plan my day, an Excel report and a document pack. ULIP is asked only
 // through the portal's own "ulip" function (same rules, logged under the person's
 // name), only when a person asks, at most once every 30 minutes per item; the
 // result follows as a separate WhatsApp message.
-import { jobTrucks, plateNo } from '../_shared/portal/journeyCore.js'
+import { jobTrucks, plateNo, journeyFor, isDelivered, parseContainerNos } from '../_shared/portal/journeyCore.js'
 import { jobsFor } from '../_shared/portal/botMessages.js'
 import { sendDocument } from './media.ts'
 
 type Admin = any
 type Person = { id: string; name: string; role: string; phone: string }
+type Row = { id: string; title: string; description?: string }
 type Deps = {
   admin: Admin; person: Person; data: any; test?: boolean
   send: (text: string) => Promise<unknown>
   dataChanged: () => void
+  team?: Person[]
+  after?: any[] // messages (e.g. a tap-to-act list) sent after the reply
+  sendFile?: boolean
+  customsOne?: (job: any) => Promise<string> // one Customs check, returns the message
 }
 
 const env = (k: string) => (Deno.env.get(k) || '').trim()
@@ -62,7 +68,15 @@ export function makeServerTools(d: Deps) {
       const list = docs || []
       if (!list.length) return { job: job.job_no, documents: 'none uploaded yet', note: 'no documents on the job' }
       const want = String(args?.doc_type || '').trim().toLowerCase()
-      if (!want) return { job: job.job_no, documents: list.map((x: any) => `${x.doc_type}: ${x.file_name}`), tell_the_person: 'List these and ask which one to send.' }
+      if (!want) {
+        // a tap-to-send list follows the reply
+        const types = [...new Set(list.map((x: any) => String(x.doc_type || 'Other')))].slice(0, 9)
+        const rows: Row[] = types.map((t) => ({ id: `send ${job.job_no} ${t}`, title: t.slice(0, 24), description: (list.find((x: any) => x.doc_type === t)?.file_name || '').slice(0, 72) }))
+        if (list.length > 1) rows.push({ id: `send ${job.job_no} document pack`, title: 'All as one PDF', description: 'BE, BL, Invoice … joined in one file' })
+        const menu = !d.test && d.after && rows.length > 0
+        if (menu) d.after!.push({ text: `Documents of ${job.job_no}:`, list: { button: 'Choose', rows } })
+        return { job: job.job_no, documents: list.map((x: any) => `${x.doc_type}: ${x.file_name}`), menu_sent: menu, tell_the_person: menu ? 'Say in one line which documents the job has and that they can tap one in the list below.' : 'List these and ask which one to send.' }
+      }
       const doc = list.find((x: any) => String(x.doc_type || '').toLowerCase() === want) || list.find((x: any) => String(x.file_name || '').toLowerCase().includes(want))
       if (!doc) return { job: job.job_no, not_found: `no ${args.doc_type}`, documents: list.map((x: any) => `${x.doc_type}: ${x.file_name}`) }
       if (d.test) return { sent: false, test_mode: `would send ${doc.file_name}`, note: `test mode: ${doc.file_name} not sent` }
@@ -168,7 +182,250 @@ export function makeServerTools(d: Deps) {
       const { data: rows } = await admin.from('bot_reminders').update({ cancelled: true }).eq('id', id).eq('phone', person.phone).is('sent_at', null).select('id')
       return rows?.length ? { cancelled: true, id } : { not_found: `reminder #${id}` }
     },
+
+    // ── watches: "tell me when …" (checked by the 5-minute warm run) ──
+    async watch(args: any) {
+      const kind = String(args?.event || '').toLowerCase()
+      if (!WATCH[kind]) return { not_done: `I can watch for: ${Object.keys(WATCH).join(', ')}.` }
+      const job = findJob(data, person, args?.job)
+      if (!job) return { not_found: args?.job || 'no job given' }
+      const box = String(args?.container || '').toUpperCase().replace(/[^A-Z0-9]/g, '')
+      if (box && !parseContainerNos(job.containers).includes(box)) return { not_done: `${box} is not on ${job.job_no}.` }
+      const j = journeyFor(job, data)
+      if (WATCH[kind].done(job, j, box)) return { already: `${job.job_no}: ${WATCH[kind].label(job, box)} has already happened.`, tell_the_person: 'Say it has already happened, no watch was set.' }
+      if (d.test) return { set: false, test_mode: `would watch ${job.job_no} for ${kind}`, how_it_fires: WATCH[kind].how }
+      const { data: same } = await admin.from('bot_watches').select('id').eq('phone', person.phone).eq('job_id', job.id).eq('kind', kind).eq('target', box || '').is('done_at', null).eq('cancelled', false).limit(1)
+      if (same?.length) return { already_watching: `#${same[0].id}`, how_it_fires: WATCH[kind].how }
+      const { data: row, error } = await admin.from('bot_watches').insert({ phone: person.phone, person_name: person.name, kind, job_id: job.id, job_no: job.job_no, target: box || '', event: WATCH[kind].label(job, box) }).select('id').single()
+      if (error) return { not_done: `Could not save: ${error.message}` }
+      return { set: true, id: row.id, watching: WATCH[kind].label(job, box), how_it_fires: WATCH[kind].how, note: `watch ${row.id} set`, tell_the_person: 'Confirm in one line, and say honestly how it is noticed (how_it_fires).' }
+    },
+    async list_watches() {
+      const { data: rows } = await admin.from('bot_watches').select('id, event, created_at').eq('phone', person.phone).is('done_at', null).eq('cancelled', false).order('created_at').limit(20)
+      return { watches: (rows || []).map((r: any) => `#${r.id} · ${r.event} (since ${when(r.created_at)})`) }
+    },
+    async cancel_watch(args: any) {
+      const id = Number(args?.id)
+      if (!id) return { not_done: 'Which watch? Give its number.' }
+      if (d.test) return { cancelled: false, test_mode: `would cancel #${id}` }
+      const { data: rows } = await admin.from('bot_watches').update({ cancelled: true }).eq('id', id).eq('phone', person.phone).is('done_at', null).select('id')
+      return rows?.length ? { cancelled: true, id } : { not_found: `watch #${id}` }
+    },
+
+    // ── Customs for several jobs: one by one, a few seconds apart, one message at the end ──
+    async check_customs_many(args: any) {
+      const all = jobsFor(person, data.jobs).filter((x: any) => x.job_type !== 'export')
+      let jobs: any[]
+      if (Array.isArray(args?.jobs) && args.jobs.length) {
+        jobs = []
+        for (const ref of args.jobs) { const x = findJob(data, person, ref); if (x && !jobs.includes(x)) jobs.push(x) }
+      } else {
+        // "check all waiting": BE filed, no OOC yet
+        jobs = all.filter((x: any) => { const p = journeyFor(x, data).phase; return p === 'ooc' || (p === 'arrival' && x.be_no) })
+      }
+      const ready = jobs.filter((x) => /^\d{7}$/.test(String(x.be_no || '').trim()) && x.be_date)
+      const noBe = jobs.filter((x) => !ready.includes(x)).map((x) => x.job_no)
+      if (!ready.length) return { not_possible: noBe.length ? `No BE number and date on ${noBe.join(', ')}.` : 'No job is waiting for OOC.' }
+      // checked in the last 30 minutes: answered from that check
+      const { data: rows } = await admin.from('customs_status').select('job_id, be_no, checked_at, ooc_no, ooc_date').in('job_id', ready.map((x) => x.id))
+      const saved = new Map((rows || []).map((r: any) => [r.job_id, r]))
+      const recentOnes: string[] = []
+      const ask: any[] = []
+      for (const x of ready) {
+        const cs: any = saved.get(x.id)
+        if (cs && String(cs.be_no) === String(x.be_no) && minutesAgo(cs.checked_at) < GAP_MIN) recentOnes.push(`${x.job_no}: ${cs.ooc_date ? `OOC granted${cs.ooc_no ? ` (${cs.ooc_no})` : ''}` : 'OOC not yet'} (checked ${when(cs.checked_at)})`)
+        else ask.push(x)
+      }
+      const take = ask.slice(0, MANY_MAX)
+      const left = ask.slice(MANY_MAX).map((x) => x.job_no)
+      if (!take.length) return { checked_recently: recentOnes, asked_customs_now: false, note: 'Customs NOT asked: all checked within 30 min' }
+      if (d.test || !d.customsOne) return { started: true, test_mode: `would ask Customs for ${take.map((x) => x.job_no).join(', ')}`, checked_recently: recentOnes, not_checked_more_than_8: left }
+      later((async () => {
+        const lines: string[] = []
+        for (let i = 0; i < take.length; i++) {
+          if (i) await new Promise((r) => setTimeout(r, MANY_GAP_MS))
+          lines.push(await d.customsOne!(take[i]).catch((e) => `*${take[i].job_no}*: the check did not finish (${(e as Error).message})`))
+        }
+        d.dataChanged()
+        await d.send(`🛃 *Customs, ${take.length} job${take.length === 1 ? '' : 's'}*\n\n${lines.join('\n')}${recentOnes.length ? `\n\nChecked shortly before (not asked again):\n${recentOnes.join('\n')}` : ''}${left.length ? `\n\nNot checked (8 at a time): ${left.join(', ')}` : ''}`)
+      })())
+      return { started: true, asking_customs_for: take.map((x) => x.job_no), checked_recently: recentOnes, not_checked_more_than_8: left, no_be: noBe, note: `Customs asked now for ${take.map((x) => x.job_no).join(', ')}, one message with all results to follow`, tell_the_person: 'Say you are checking these jobs with Customs one by one now and all results come together in one message in a minute or two. Give the recently checked answers now.' }
+    },
+
+    // ── plan my day: what to do first, with a tap-to-act menu ──
+    async plan_my_day() {
+      const mine = jobsFor(person, data.jobs).filter((x: any) => !isDelivered(x))
+      const rows = mine.map((job: any) => ({ job, j: journeyFor(job, data) })).filter(({ j }) => j.phase !== 'delivered')
+      const urgent: string[] = [], todo: string[] = []
+      const menu: Row[] = []
+      const addMenu = (id: string, title: string, description: string) => { if (menu.length < 10 && !menu.some((m) => m.id === id)) menu.push({ id: id.slice(0, 200), title: title.slice(0, 24), description: description.slice(0, 72) }) }
+      for (const { job, j } of rows) {
+        for (const a of j.attention) {
+          if (a.level === 'red') { urgent.push(`${job.job_no} (${job.client || '—'}): ${a.text}`); addMenu(`show ${job.job_no}`, `${job.job_no} ⚠`, a.text) }
+        }
+      }
+      for (const { job, j } of rows) {
+        if (j.phase === 'ooc') { todo.push(`${job.job_no}: BE ${job.be_no} waiting for OOC`); addMenu(`check customs ${job.job_no}`, `Check OOC ${job.job_no}`, `BE ${job.be_no} · ${job.client || ''}`) }
+        else if (j.readyForTruck) { todo.push(`${job.job_no}: OOC done, ${j.onwardMode === 'truck' ? 'assign a truck' : 'arrange truck or rail'}`); addMenu(`add truck to ${job.job_no}`, `Truck for ${job.job_no}`, `OOC done · ${job.client || ''}`) }
+        else if ((j.phase === 'docs' || j.phase === 'arrival') && !job.be_no && j.steps?.[0]?.done) { todo.push(`${job.job_no}: ship in, BE not filed`); addMenu(`show ${job.job_no}`, `${job.job_no} file BE`, `Ship arrived · ${job.client || ''}`) }
+      }
+      const { data: tasks } = await admin.from('bot_tasks').select('id, job_no, text, from_name, due_at').eq('to_phone', person.phone).eq('status', 'open').order('created_at').limit(10)
+      const dayEnd = new Date(); dayEnd.setUTCHours(18, 29, 59, 0) // end of today in India
+      const { data: rem } = await admin.from('bot_reminders').select('due_at, text, job_no').eq('phone', person.phone).is('sent_at', null).eq('cancelled', false).lte('due_at', dayEnd.toISOString()).order('due_at').limit(10)
+      if (menu.length && d.after && !d.test) d.after.push({ text: 'Tap to act on one:', list: { button: 'Choose', rows: menu } })
+      return {
+        urgent, to_do: todo.slice(0, 15),
+        tasks_given_to_you: (tasks || []).map((t: any) => `${t.job_no ? `${t.job_no}: ` : ''}${t.text} (from ${t.from_name}${t.due_at ? `, by ${when(t.due_at)}` : ''})`),
+        reminders_today: (rem || []).map((r: any) => `${when(r.due_at)}: ${r.text}`),
+        open_jobs: rows.length,
+        menu_sent: menu.length > 0 && !d.test,
+        tell_the_person: 'Give a short plan in order: urgent first, then to-dos, tasks and reminders. Keep it short. If menu_sent, say they can tap the list below.',
+      }
+    },
+
+    // ── Excel report sent as a WhatsApp file ──
+    async send_report(args: any) {
+      const period = ['today', 'week', 'month', 'open'].includes(String(args?.period)) ? String(args.period) : 'open'
+      const from = period === 'today' ? startOfDayIst(0) : period === 'week' ? startOfDayIst(6) : period === 'month' ? startOfDayIst(29) : null
+      const all = jobsFor(person, data.jobs).map((job: any) => ({ job, j: journeyFor(job, data) }))
+      const inPeriod = ({ job, j }: any) => !from || [job.created_at, job.be_date, j.oocDate, job.updated_at].some((v) => v && new Date(v).getTime() >= from.getTime())
+      const rows = all.filter((r: any) => (period === 'open' ? r.j.phase !== 'delivered' : inPeriod(r)))
+      if (!rows.length) return { not_done: `No jobs for ${period === 'open' ? 'open jobs' : `this ${period}`}.` }
+      const XLSX: any = await import('https://esm.sh/xlsx@0.18.5')
+      const label = (p: string) => ({ arrival: 'Awaiting arrival', docs: 'Docs & BE filing', ooc: 'Waiting for OOC', release: 'OOC — to be moved', truck: 'On the move', delivered: 'Delivered', sb: 'Shipping bill', leo: 'Waiting for LEO', sail: 'LEO — to sail' } as any)[p] || p
+      const day = (v: any) => (v ? new Date(v).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', timeZone: TZ }) : '')
+      const jobsSheet = rows.map(({ job, j }: any) => ({
+        'Job': job.job_no, 'Client': job.client || '', 'Mode': job.mode || '', 'Import/Export': job.job_type === 'export' ? 'Export' : 'Import',
+        'Status': label(j.phase), 'BE / SB no': job.be_no || j.sbNo || '', 'BE date': day(job.be_date), 'OOC date': day(j.oocDate),
+        'Containers': parseContainerNos(job.containers).join(', '), 'Free days left': j.freeDaysLeft ?? '', 'Truck': (j.trucks || []).map((t: any) => t.no).join(', '),
+        'Shipping line': job.shipping_line || '', 'CFS': job.cfs_name || '', 'Opened': day(job.created_at),
+      }))
+      const count = (p: string) => rows.filter((r: any) => r.j.phase === p).length
+      const summary = [
+        { 'Item': 'Report', 'Value': period === 'open' ? 'All open jobs' : `Last ${period === 'today' ? 'day' : period}` },
+        { 'Item': 'Made on', 'Value': when(new Date().toISOString()) },
+        { 'Item': 'Jobs in this report', 'Value': rows.length },
+        { 'Item': 'Waiting for OOC', 'Value': count('ooc') },
+        { 'Item': 'OOC done, to be moved', 'Value': count('release') },
+        { 'Item': 'On the move', 'Value': count('truck') },
+        { 'Item': 'Delivered', 'Value': count('delivered') },
+        { 'Item': 'Detention running', 'Value': rows.filter((r: any) => r.j.freeDaysLeft !== null && r.j.freeDaysLeft < 0).length },
+      ]
+      const book = XLSX.utils.book_new()
+      const s1 = XLSX.utils.json_to_sheet(summary); s1['!cols'] = [{ wch: 26 }, { wch: 22 }]
+      const s2 = XLSX.utils.json_to_sheet(jobsSheet); s2['!cols'] = Object.keys(jobsSheet[0]).map((k) => ({ wch: Math.max(10, Math.min(40, k.length + 4, ...jobsSheet.map((r: any) => String(r[k]).length + 2))) }))
+      XLSX.utils.book_append_sheet(book, s1, 'Summary')
+      XLSX.utils.book_append_sheet(book, s2, 'Jobs')
+      const bytes = new Uint8Array(XLSX.write(book, { type: 'array', bookType: 'xlsx' }))
+      const name = `JDS_${period === 'open' ? 'open_jobs' : period}_${new Date(Date.now() + 5.5 * 3600_000).toISOString().slice(0, 10)}.xlsx`
+      if (d.test) return { sent: false, test_mode: `built ${name}: ${rows.length} jobs, ${bytes.length} bytes, not sent`, note: `test: built ${name} ${bytes.length} bytes` }
+      try { await sendDocument(person.phone, bytes, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', name, `JDS report · ${rows.length} jobs`) } catch (e) { return { error: `WhatsApp did not take the file: ${(e as Error).message}` } }
+      return { sent: true, file: name, jobs: rows.length, note: `sent ${name}`, tell_the_person: 'Say the Excel has been sent as a separate message, in one line.' }
+    },
+
+    // ── one PDF with a job's papers (BE, BL, Invoice, Packing List, OOC …) ──
+    async send_pack(args: any) {
+      const job = findJob(data, person, args?.job)
+      if (!job) return { not_found: args?.job }
+      const { data: docs } = await admin.from('documents').select('doc_type, file_name, file_path, file_url, created_at').eq('job_id', job.id).order('created_at')
+      const order = ['BE', 'BL', 'Invoice', 'Packing List', 'OOC', 'COO', 'Insurance', 'Examination Order', 'E-Way Bill', 'POD']
+      const want = Array.isArray(args?.doc_types) && args.doc_types.length ? args.doc_types.map((x: any) => String(x).toLowerCase()) : null
+      const list = (docs || []).filter((x: any) => /\.(pdf|jpe?g|png)$/i.test(x.file_name || '') && (!want || want.includes(String(x.doc_type).toLowerCase())))
+        .sort((a: any, b: any) => (order.indexOf(a.doc_type) + 1 || 99) - (order.indexOf(b.doc_type) + 1 || 99))
+      if (!list.length) return { not_done: `${job.job_no} has no PDF or photo documents${want ? ' of those types' : ''}.`, documents: (docs || []).map((x: any) => `${x.doc_type}: ${x.file_name}`) }
+      const { PDFDocument }: any = await import('https://esm.sh/pdf-lib@1.17.1')
+      const pack = await PDFDocument.create()
+      const used: string[] = [], skipped: string[] = []
+      for (const doc of list) {
+        try {
+          const path = doc.file_path || (String(doc.file_url || '').match(/\/object\/(?:public|sign)\/job-documents\/([^?]+)/) || [])[1]
+          const { data: blob } = await admin.storage.from('job-documents').download(decodeURIComponent(path || ''))
+          if (!blob) { skipped.push(doc.doc_type); continue }
+          const bytes = new Uint8Array(await blob.arrayBuffer())
+          if (/\.pdf$/i.test(doc.file_name)) {
+            const src = await PDFDocument.load(bytes, { ignoreEncryption: true })
+            for (const p of await pack.copyPages(src, src.getPageIndices())) pack.addPage(p)
+          } else {
+            const img = /\.png$/i.test(doc.file_name) ? await pack.embedPng(bytes) : await pack.embedJpg(bytes)
+            const w = 595, h = 842, s = Math.min((w - 40) / img.width, (h - 40) / img.height)
+            pack.addPage([w, h]).drawImage(img, { x: (w - img.width * s) / 2, y: (h - img.height * s) / 2, width: img.width * s, height: img.height * s })
+          }
+          used.push(doc.doc_type)
+        } catch { skipped.push(doc.doc_type) }
+      }
+      if (!used.length) return { error: 'None of the files could be opened.' }
+      const out = await pack.save()
+      if (out.length > 15 * 1024 * 1024) return { error: 'The pack is over 15 MB, too big for WhatsApp. Ask for the papers one by one.' }
+      const name = `${job.job_no}_documents.pdf`
+      if (d.test) return { sent: false, test_mode: `built ${name}: ${pack.getPageCount()} pages (${used.join(', ')}), ${out.length} bytes, not sent`, could_not_open: skipped, note: `test: built ${name} ${pack.getPageCount()} pages ${out.length} bytes` }
+      try { await sendDocument(person.phone, out, 'application/pdf', name, `${job.job_no} · ${used.join(', ')}`) } catch (e) { return { error: `WhatsApp did not take the file: ${(e as Error).message}` } }
+      return { sent: true, file: name, contains: used, could_not_open: skipped, note: `sent pack ${used.join(', ')}`, tell_the_person: 'Say the PDF has been sent as a separate message and what is in it, in one line.' }
+    },
   }
+}
+
+const MANY_MAX = 8
+const MANY_GAP_MS = 4000
+// midnight in India, `back` days ago
+function startOfDayIst(back: number) {
+  const ist = new Date(Date.now() + 5.5 * 3600_000)
+  return new Date(Date.UTC(ist.getUTCFullYear(), ist.getUTCMonth(), ist.getUTCDate() - back) - 5.5 * 3600_000)
+}
+
+// What a watch waits for. Container news (LDB) comes in by itself every 30 minutes;
+// OOC only when Customs is checked (BE & OOC page, or asking the bot) — said honestly.
+const BY_ITSELF = 'container tracking updates by itself every 30 minutes, so this comes on its own'
+const BY_CHECK = 'Customs is only asked when someone checks (BE & OOC page or asking me), so this comes after the next check'
+const boxOut = (j: any, box: string) => (j.containers?.tracked || []).some((t: any) => (!box || t.container_no === box) && t.outWithCargo)
+const WATCH: Record<string, { label: (job: any, box: string) => string; done: (job: any, j: any, box: string) => boolean; how: string }> = {
+  ooc: { label: (job) => `${job.job_no} OOC granted`, done: (_job, j) => !!j.oocDone, how: BY_CHECK },
+  ship_arrived: { label: (job) => `${job.job_no} ship arrived`, done: (_job, j) => !!j.steps?.[0]?.done, how: BY_ITSELF },
+  container_out: { label: (job, box) => `${box || job.job_no} out of port / CFS`, done: (_job, j, box) => boxOut(j, box), how: BY_ITSELF },
+  delivered: { label: (job) => `${job.job_no} delivered`, done: (job, j) => isDelivered(job) || j.phase === 'delivered', how: 'comes when the job is marked delivered or the empty is back' },
+  be_filed: { label: (job) => `${job.job_no} BE filed`, done: (_job, j) => !!j.beFiled, how: 'comes when the BE number is recorded' },
+}
+
+// Watches that came true (run by the 5-minute "warm" schedule); a watch lasts 30 days
+export async function checkWatches(admin: Admin, data: any, team: Person[], sendOnce: (key: string, person: Person, text: string, jobNo: string | null) => Promise<unknown>) {
+  const { data: rows } = await admin.from('bot_watches').select('*').is('done_at', null).eq('cancelled', false).limit(200)
+  let fired = 0
+  for (const w of rows || []) {
+    if (minutesAgo(w.created_at) > 30 * 1440) { await admin.from('bot_watches').update({ cancelled: true }).eq('id', w.id); continue }
+    const job = (data.jobs || []).find((x: any) => x.id === w.job_id)
+    const rule = WATCH[w.kind]
+    if (!job || !rule) continue
+    if (!rule.done(job, journeyFor(job, data), w.target || '')) continue
+    const person = team.find((t) => t.phone === w.phone)
+    if (person) await sendOnce(`watch:${w.id}`, person, `🔔 *${w.event}*${job.client ? ` (${job.client})` : ''}. You asked me to tell you.`, job.job_no)
+    await admin.from('bot_watches').update({ done_at: new Date().toISOString() }).eq('id', w.id)
+    fired++
+  }
+  return fired
+}
+
+// Tasks given on WhatsApp: a "file the BE" task closes itself when the BE number
+// appears; an overdue task reminds the person once and tells whoever gave it
+export async function checkTasks(admin: Admin, data: any, team: Person[], sendOnce: (key: string, person: Person, text: string, jobNo: string | null) => Promise<unknown>) {
+  const { data: rows } = await admin.from('bot_tasks').select('*').eq('status', 'open').limit(200)
+  let n = 0
+  for (const t of rows || []) {
+    const job = t.job_id ? (data.jobs || []).find((x: any) => x.id === t.job_id) : null
+    const from = team.find((p) => p.phone === t.from_phone)
+    const to = team.find((p) => p.phone === t.to_phone)
+    if (job && /\b(BE|bill of entry)\b/i.test(t.text) && /\bfile|filing|record\b/i.test(t.text) && job.be_no && job.be_date && new Date(job.updated_at || 0) >= new Date(t.created_at)) {
+      await admin.from('bot_tasks').update({ status: 'done', done_at: new Date().toISOString() }).eq('id', t.id)
+      if (from) await sendOnce(`taskdone:${t.id}`, from, `✅ Task done: ${t.to_name} — ${t.text} (${job.job_no}: BE ${job.be_no} recorded).`, job.job_no)
+      n++
+      continue
+    }
+    if (t.due_at && !t.reminded_at && new Date(t.due_at).getTime() < Date.now()) {
+      if (to) await sendOnce(`taskdue:${t.id}`, to, `⏰ *Task overdue*${t.job_no ? ` (${t.job_no})` : ''}: ${t.text} — from ${t.from_name}. Reply DONE when finished.`, t.job_no)
+      if (from) await sendOnce(`taskdue-from:${t.id}`, from, `⏰ ${t.to_name} has not finished yet: ${t.text}${t.job_no ? ` (${t.job_no})` : ''}. It was due ${when(t.due_at)}.`, t.job_no)
+      await admin.from('bot_tasks').update({ reminded_at: new Date().toISOString() }).eq('id', t.id)
+      n++
+    }
+  }
+  return n
 }
 
 // Sends the reminders that are due (run by the 5-minute "warm" schedule)

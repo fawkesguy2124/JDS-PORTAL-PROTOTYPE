@@ -19,8 +19,8 @@ import { buildJourneyData } from '../_shared/portal/journeyCore.js'
 import { morningSummary, instantAlerts, answer, teamFromProfiles, BOT_NUMBERS } from '../_shared/portal/botMessages.js'
 import { askAssistant, groqInfo } from './assistant.ts'
 import { applyChange, confirmText, isNo, isYes, PENDING_MINUTES, prepareChange, type Pending } from './actions.ts'
-import { downloadMedia, transcribe, docTypeFromName, jobFromText, safeName, MAX_FILE_BYTES } from './media.ts'
-import { makeServerTools, sendDueReminders } from './servertools.ts'
+import { downloadMedia, transcribe, normalizeSpoken, docTypeFromName, jobFromText, safeName, MAX_FILE_BYTES } from './media.ts'
+import { makeServerTools, sendDueReminders, checkWatches, checkTasks } from './servertools.ts'
 
 const PORTAL = 'https://jds-portal-prototype.vercel.app'
 
@@ -133,8 +133,33 @@ async function loadTeam(admin: Admin): Promise<Person[]> {
 }
 
 // ── sending ──
-async function send(to: string, message: { text?: string; template?: Template }) {
-  const body = message.text
+// buttons: up to 3 tap buttons under the text (e.g. Yes / No). list: a menu to pick
+// from (up to 10 rows). A tap comes back as its id, handled like a typed message.
+type Button = { id: string; title: string }
+type ListRow = { id: string; title: string; description?: string }
+type Message = { text?: string; template?: Template; buttons?: Button[]; list?: { button: string; rows: ListRow[] } }
+async function send(to: string, message: Message) {
+  const cut = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1)}…` : s)
+  const interactive = message.text && message.buttons?.length
+    ? {
+        type: 'button', body: { text: cut(message.text, 1024) },
+        action: { buttons: message.buttons.slice(0, 3).map((b) => ({ type: 'reply', reply: { id: cut(b.id, 256), title: cut(b.title, 20) } })) },
+      }
+    : message.text && message.list?.rows.length
+      ? {
+          type: 'list', body: { text: cut(message.text, 1024) },
+          action: { button: cut(message.list.button, 20), sections: [{ title: 'Choose', rows: message.list.rows.slice(0, 10).map((r) => ({ id: cut(r.id, 200), title: cut(r.title, 24), ...(r.description ? { description: cut(r.description, 72) } : {}) })) }] },
+        }
+      : null
+  // text longer than an interactive message allows: send it as plain text
+  if (interactive && message.text!.length > 1024) {
+    const first = await send(to, { text: message.text })
+    if (!first.ok) return first
+    return await send(to, { ...message, text: message.buttons ? 'Tap one:' : 'Pick one:' })
+  }
+  const body = interactive
+    ? { messaging_product: 'whatsapp', to, type: 'interactive', interactive }
+    : message.text
     ? { messaging_product: 'whatsapp', to, type: 'text', text: { body: message.text.slice(0, 4000), preview_url: false } }
     : {
         messaging_product: 'whatsapp', to, type: 'template',
@@ -151,8 +176,14 @@ async function send(to: string, message: { text?: string; template?: Template })
     body: JSON.stringify(body),
   })
   const out = await res.json().catch(() => ({}))
+  // buttons refused for any reason: the same message as plain text (the person can type YES / NO)
+  if (!res.ok && interactive) {
+    console.warn(`[wa-bot] interactive message refused (${out?.error?.message || res.status}); sending text`)
+    return await send(to, { text: message.text })
+  }
   return { ok: res.ok, dryRun: false, id: out?.messages?.[0]?.id || null, error: res.ok ? null : (out?.error?.message || `HTTP ${res.status}`) }
 }
+const YES_NO: Button[] = [{ id: 'YES', title: '✅ Yes' }, { id: 'NO', title: '❌ No' }]
 
 // Has this person written to the bot in the last 24 hours? Then a normal
 // message is allowed; otherwise WhatsApp only allows an approved template.
@@ -296,6 +327,36 @@ async function runCustomsCheck(admin: Admin, person: Person, job: any, deliver: 
   return text
 }
 
+// A message to a teammate (a task): a normal message inside WhatsApp's 24-hour
+// window, else the approved alert template
+async function tellTeammate(admin: Admin, team: Person[], phone: string, text: string, jobNo: string | null) {
+  const mate = team.find((t) => t.phone === phone)
+  if (!mate) return
+  await sendOnce(admin, `task:${Date.now()}:${phone}`, mate, 'task', { text, template: { name: 'jds_alert', values: [jobNo || 'task', text.replace(/\*/g, '').replace(/\n+/g, ' '), jobNo || 'SUMMARY'] } })
+}
+
+// "Done" from the person a task was given to: closes it and tells whoever asked
+const SAYS_DONE = /^\s*(done|completed|finished|filed|ho\s*gaya|hogaya|kar\s*diya|kardiya|ho\s*gya)\b/i
+async function taskDoneReply(admin: Admin, team: Person[], person: Person, text: string): Promise<string | null> {
+  if (!SAYS_DONE.test(text)) return null
+  const { data: open } = await admin.from('bot_tasks').select('*').eq('to_phone', person.phone).eq('status', 'open').order('created_at', { ascending: false })
+  if (!open?.length) return null
+  const no = (text.match(/\bJ-?\s?(\d{1,5})\b/i) || [])[1]
+  const task = no ? open.find((t: any) => String(t.job_no || '').replace(/\D/g, '') === no) : open[0]
+  if (!task) return `Which task? Open ones: ${open.map((t: any) => `${t.job_no}: ${t.text}`).join('; ')}`
+  await admin.from('bot_tasks').update({ status: 'done', done_at: new Date().toISOString() }).eq('id', task.id)
+  await tellTeammate(admin, team, task.from_phone, `✅ *${person.name}* says done (${task.job_no}): ${task.text}`, task.job_no)
+  return `👍 Marked done: ${task.text} (${task.job_no}). ${task.from_name || 'They'} ${task.from_name ? 'has' : 'have'} been told.${open.length > 1 ? `\nStill open: ${open.filter((t: any) => t.id !== task.id).map((t: any) => `${t.job_no}: ${t.text}`).join('; ')}` : ''}`
+}
+
+// The words Whisper should expect: open job numbers and client names
+function voiceWords(data: any): string {
+  const open = (data?.jobs || []).filter((j: any) => Number(j.stage) < 10)
+  const nos = open.map((j: any) => j.job_no).filter(Boolean).slice(0, 40)
+  const clients = [...new Set(open.map((j: any) => String(j.client || '').trim()).filter(Boolean))].slice(0, 25)
+  return `Jobs: ${nos.join(', ')}. Clients: ${clients.join(', ')}.`
+}
+
 // A file sent to the bot (Jose, 24 Oct 2026): kept in the PRIVATE document
 // storage (never given to any AI), then attached to a job after a YES. A new job
 // is made from it in the portal's Create job, where the PDF reader fills the form.
@@ -303,8 +364,8 @@ async function handleFile(admin: Admin, person: Person, m: any, data: any) {
   const media = m.document || m.image
   const name = m.document?.filename || `photo_${new Date().toISOString().slice(0, 10)}.jpg`
   const caption = String(media?.caption || '')
-  const reply = async (text: string, userText: string) => {
-    await send(person.phone, { text })
+  const reply = async (text: string, userText: string, buttons?: Button[]) => {
+    await send(person.phone, buttons ? { text, buttons } : { text })
     const { data: inbox } = await admin.from('bot_inbox').select('history').eq('phone', person.phone).maybeSingle()
     const history = Array.isArray(inbox?.history) ? inbox.history : []
     const next = [...history, { role: 'user', text: userText }, { role: 'model', text: text.slice(0, 1500) }].slice(-10)
@@ -326,7 +387,7 @@ async function handleFile(admin: Admin, person: Person, m: any, data: any) {
     const res = prepareChange({ action: 'attach_document', job: job.job_no, doc_type: docType }, data, person, { lastFile })
     if (res.ok) {
       await admin.from('bot_inbox').update({ pending: res.pending }).eq('phone', person.phone)
-      await reply(`📎 Got *${name}*.\n\n${confirmText(res.pending)}\n\nWrong job or type? Just say it, e.g. "J-652 as BL".\nA new job instead? Open: ${createLink}`, userText)
+      await reply(`📎 Got *${name}*.\n\n${confirmText(res.pending)}\n\nWrong job or type? Just say it, e.g. "J-652 as BL".\nA new job instead? Open: ${createLink}`, userText, YES_NO)
       return
     }
     await reply(`📎 Got *${name}* and kept it safely. ${res.error}`, userText)
@@ -353,14 +414,18 @@ async function handleInbound(admin: Admin, payload: any) {
     }
     const started = Date.now()
     const typing = typingNow.get(m.id) || showTyping(m.id) // already started above
-    let text = m.type === 'text' ? m.text?.body : m.type === 'button' ? m.button?.text : ''
+    let text = m.type === 'text' ? m.text?.body : m.type === 'button' ? m.button?.text
+      // a tapped button or a picked menu row comes back as its id ("YES", "check customs J-652" …)
+      : m.type === 'interactive' ? (m.interactive?.button_reply?.id || m.interactive?.list_reply?.id || '') : ''
     // a voice note: Groq's Whisper writes it out, then it is answered like a typed message
     let heard: string | null = null
     if (m.type === 'audio' && m.audio?.id) {
       try {
-        const a = await downloadMedia(m.audio.id)
-        heard = await transcribe(a.bytes, a.mime)
-        text = heard
+        const [a, d0] = await Promise.all([downloadMedia(m.audio.id), data ? Promise.resolve(data) : loadDataCached(admin)])
+        data = d0
+        heard = await transcribe(a.bytes, a.mime, voiceWords(d0))
+        // spoken numbers as the team writes them ("job six five two" → J-652)
+        text = normalizeSpoken(heard)
       } catch (e) {
         await send(person.phone, { text: `🎤 Sorry, I could not hear that voice note (${(e as Error).message}). Please try again, or type it.` })
         continue
@@ -386,11 +451,12 @@ async function handleInbound(admin: Admin, payload: any) {
     const pending: Pending | null = inboxRes?.data?.pending || null
     const live = pending && Date.now() - new Date(pending.at).getTime() < PENDING_MINUTES * 60_000
     let reply: string | null = null
+    const after: Message[] = [] // menus a tool asks to send after the reply
     let checked: string[] = []
     let ask: Pending | null = null
     if (pending) await admin.from('bot_inbox').update({ pending: null }).eq('phone', person.phone) // a proposal is answered once
     if (live && isYes(text)) {
-      reply = await applyChange(admin, pending, person)
+      reply = await applyChange(admin, pending, person, { tell: (phone, t, jobNo) => tellTeammate(admin, team, phone, t, jobNo) })
       dataCache = null // the next answer shows the change
       checked = [`made the change: ${pending.summary}`]
     } else if (pending && isNo(text)) {
@@ -406,12 +472,14 @@ async function handleInbound(admin: Admin, payload: any) {
     // fixed commands are instant and free; anything else goes to the assistant
     if (!reply) reply = answer(data, text, person, new Date(), { fallback: false })
     if (!reply) reply = honestCheckReply(text, history)
+    // a teammate saying a task is done
+    if (!reply) reply = await taskDoneReply(admin, team, person, text)
     if (!reply) {
       const aiStart = Date.now()
       const ai = await askAssistant(text, history, data, person, {
         checkCustoms: customsChecker(admin, person, data),
-        server: makeServerTools({ admin, person, data, send: (t) => send(person.phone, { text: t }), dataChanged: () => { dataCache = null } }),
-        change: { lastFile: inboxRes?.data?.last_file || null },
+        server: makeServerTools({ admin, person, data, team, send: (t) => send(person.phone, { text: t }), sendFile: true, after, dataChanged: () => { dataCache = null }, customsOne: (job) => runCustomsCheck(admin, person, job, false) }),
+        change: { lastFile: inboxRes?.data?.last_file || null, team },
       })
       checked = ai.checked
       ask = ai.proposal
@@ -423,9 +491,10 @@ async function handleInbound(admin: Admin, payload: any) {
     }
     if (pending && live && !isYes(text) && !isNo(text) && !ask) reply = `(The earlier change was not made: ${pending.summary.replace(/\*/g, '')}.)\n\n${reply}`
     if (ask) await admin.from('bot_inbox').update({ pending: ask }).eq('phone', person.phone)
-    // a voice note: show what was heard, so a wrong hearing is seen at once
-    if (heard) reply = `🎤 _"${heard.length > 300 ? `${heard.slice(0, 297)}…` : heard}"_\n\n${reply}`
-    await send(person.phone, { text: reply })
+    // (a voice note is answered directly; what was heard is not repeated — Jose, 24 Oct 2026)
+    // a change waiting for a YES gets Yes / No buttons; a menu from a tool comes after the reply
+    await send(person.phone, ask ? { text: reply, buttons: YES_NO } : { text: reply })
+    for (const extra of after) await send(person.phone, extra)
     const note = checked.length ? `\n[checked: ${checked.join('; ').slice(0, 400)}]` : ''
     const next = [...history, { role: 'user', text: String(text).slice(0, 500) }, { role: 'model', text: `${String(reply).slice(0, 1500)}${note}` }].slice(-10)
     await admin.from('bot_inbox').update({ history: next }).eq('phone', person.phone)
@@ -488,11 +557,14 @@ Deno.serve(async (req) => {
       // keep the bot started, with the team list and portal data already loaded
       if (run === 'warm') {
         dataCache = null
-        const [team] = await Promise.all([loadTeam(admin), loadDataCached(admin)])
-        // reminders that are due (this run comes every 5 minutes)
-        const reminders = await sendDueReminders(admin, team, (key, person, text, jobNo) =>
-          sendOnce(admin, key, person, 'reminder', { text, template: { name: 'jds_alert', values: [jobNo || 'reminder', text.replace(/\*/g, ''), jobNo || 'SUMMARY'] } }))
-        return json({ success: true, warm: true, reminders: reminders.length })
+        const [team, data] = await Promise.all([loadTeam(admin), loadDataCached(admin)])
+        // reminders, watches ("tell me when") and tasks that are due (this run comes every 5 minutes)
+        const viaAlert = (kind: string) => (key: string, person: Person, text: string, jobNo: string | null) =>
+          sendOnce(admin, key, person, kind, { text, template: { name: 'jds_alert', values: [jobNo || kind, text.replace(/\*/g, '').replace(/\n+/g, ' '), jobNo || 'SUMMARY'] } })
+        const reminders = await sendDueReminders(admin, team, viaAlert('reminder'))
+        const watches = await checkWatches(admin, data, team, viaAlert('watch')).catch((e) => { console.warn(`[wa-bot] watches: ${(e as Error).message}`); return 0 })
+        const tasks = await checkTasks(admin, data, team, viaAlert('task')).catch((e) => { console.warn(`[wa-bot] tasks: ${(e as Error).message}`); return 0 })
+        return json({ success: true, warm: true, reminders: reminders.length, watches, tasks })
       }
       // test questions: answered as the first team member, nothing sent on WhatsApp
       // speed check of one AI service, tiny question, no portal data (test only)

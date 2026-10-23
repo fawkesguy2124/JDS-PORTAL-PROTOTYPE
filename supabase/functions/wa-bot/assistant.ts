@@ -49,6 +49,41 @@ export const SERVER_TOOLS = [
     description: 'Cancel one of the person\'s reminders, by the number list_reminders gives.',
     parameters: { type: 'OBJECT', properties: { id: { type: 'NUMBER' } }, required: ['id'] },
   },
+  {
+    name: 'watch',
+    description: 'Tell the person when something happens on a job ("tell me when J-652 gets OOC", "let me know when the container is out"). event: ooc, ship_arrived, container_out, delivered, be_filed; container optional (for container_out). Say honestly how it is noticed (the result says).',
+    parameters: { type: 'OBJECT', properties: { job: S, event: { type: 'STRING', enum: ['ooc', 'ship_arrived', 'container_out', 'delivered', 'be_filed'] }, container: S }, required: ['job', 'event'] },
+  },
+  {
+    name: 'list_watches',
+    description: 'What the person asked to be told about that has not happened yet.',
+    parameters: { type: 'OBJECT', properties: {} },
+  },
+  {
+    name: 'cancel_watch',
+    description: 'Stop one watch, by the number list_watches gives.',
+    parameters: { type: 'OBJECT', properties: { id: { type: 'NUMBER' } }, required: ['id'] },
+  },
+  {
+    name: 'check_customs_many',
+    description: 'Ask Customs about OOC for SEVERAL jobs at once ("check OOC for 652, 667 and 690", "check all waiting for OOC"). jobs = list of job numbers; leave it empty for all jobs waiting for OOC. Up to 8, one by one; jobs checked in the last 30 minutes are not asked again. All results follow in one message. For ONE job use check_customs_now.',
+    parameters: { type: 'OBJECT', properties: { jobs: { type: 'ARRAY', items: S } } },
+  },
+  {
+    name: 'plan_my_day',
+    description: 'The person\'s plan for today: urgent things first, then jobs to act on, tasks given to them and today\'s reminders; a tap-to-act list follows. For "plan my day", "what should I do today", "what first".',
+    parameters: { type: 'OBJECT', properties: {} },
+  },
+  {
+    name: 'send_report',
+    description: 'Send an Excel report as a WhatsApp file. period: open (all open jobs, default), today, week, month.',
+    parameters: { type: 'OBJECT', properties: { period: { type: 'STRING', enum: ['open', 'today', 'week', 'month'] } } },
+  },
+  {
+    name: 'send_pack',
+    description: 'Send ONE PDF with a job\'s papers joined in order (BE, BL, Invoice, Packing List, OOC …): "send me the document pack / all papers of J-652". doc_types optional, to pick only some.',
+    parameters: { type: 'OBJECT', properties: { job: S, doc_types: { type: 'ARRAY', items: S } }, required: ['job'] },
+  },
 ]
 export type ServerTools = Record<string, (args: any) => Promise<any>>
 const TOOLS = [...READ_TOOLS, CHANGE_TOOL, CUSTOMS_TOOL, ...SERVER_TOOLS]

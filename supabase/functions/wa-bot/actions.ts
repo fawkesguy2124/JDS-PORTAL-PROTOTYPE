@@ -20,18 +20,24 @@ const nice = (iso: string) => new Date(`${iso}T12:00:00+05:30`).toLocaleDateStri
 export const ACTIONS = ['mark_delivered', 'add_truck', 'remove_truck', 'record_be', 'set_leaves_by', 'set_delivery_by', 'add_note',
   // added 24 Oct 2026
   'attach_document', 'set_eta', 'set_vessel', 'set_shipping_line', 'set_cfs', 'set_free_days', 'set_priority', 'set_owner',
-  'add_container', 'remove_container', 'record_ooc']
+  'add_container', 'remove_container', 'record_ooc',
+  // added 24 Oct 2026 (2): a new job by chat, the CFS payment, a task for a teammate
+  'create_job', 'record_payment', 'assign_task']
+const MODES = ['Sea FCL', 'Sea LCL', 'Air', 'BPT/MBPT']
 const SIZES = ['20GP', '40GP', '40HC', '45HC', '20RF', '40RF', '40RFHC', '20OT', '40OT', '20FR', '40FR', '20TK', 'LCL']
 const DOC_TYPES = ['BE', 'BL', 'Invoice', 'Packing List', 'COO', 'Insurance', 'Examination Order', 'OOC', 'E-Way Bill', 'POD', 'Other']
 
 export const CHANGE_TOOL = {
   name: 'propose_change',
-  description: 'Make a change in the portal for the person: mark_delivered, add_truck (truck_no, optional container), remove_truck (truck_no), record_be (be_no 7 digits, be_date YYYY-MM-DD), set_leaves_by (mode truck/rail), set_delivery_by (by jds/client), add_note (note), attach_document (the file the person just sent; doc_type), set_eta (date YYYY-MM-DD), set_vessel (vessel = the SHIP\'s name, never the shipping line), set_shipping_line (line), set_cfs (cfs), set_free_days (days), set_priority (priority normal/high/urgent), set_owner (owner = staff name), add_container (container, size), remove_container (container), record_ooc (ooc_no, ooc_date YYYY-MM-DD; OOC seen in LiveImpex). Call it ONCE; the bot then asks the person to reply YES. Nothing changes until they do.',
+  description: 'Make a change in the portal for the person: mark_delivered, add_truck (truck_no, optional container), remove_truck (truck_no), record_be (be_no 7 digits, be_date YYYY-MM-DD), set_leaves_by (mode truck/rail), set_delivery_by (by jds/client), add_note (note), attach_document (the file the person just sent; doc_type), set_eta (date YYYY-MM-DD), set_vessel (vessel = the SHIP\'s name, never the shipping line), set_shipping_line (line), set_cfs (cfs), set_free_days (days), set_priority (priority normal/high/urgent), set_owner (owner = staff name), add_container (container, size), remove_container (container), record_ooc (ooc_no, ooc_date YYYY-MM-DD; OOC seen in LiveImpex), create_job (job = the NEW job no; client, job_mode, port, bl_no, containers, size, vessel, eta, line, be_no, be_date, days), record_payment (amount in rupees = the CFS amount), assign_task (to = teammate name, task, due = YYYY-MM-DD HH:MM India time). The SAME change on several jobs: give them all in jobs (e.g. ["J-519","J-633"]) in ONE call. Call it ONCE; the bot then asks the person to confirm. Nothing changes until they do.',
   parameters: {
     type: 'OBJECT',
     properties: {
       action: { type: 'STRING', enum: ACTIONS },
       job: { type: 'STRING', description: 'Job number, e.g. J-638' },
+      jobs: { type: 'ARRAY', items: { type: 'STRING' }, description: 'several job numbers for the same change' },
+      client: { type: 'STRING' }, job_mode: { type: 'STRING', enum: MODES }, port: { type: 'STRING' }, bl_no: { type: 'STRING' }, containers: { type: 'STRING' },
+      eta: { type: 'STRING' }, amount: { type: 'NUMBER' }, to: { type: 'STRING' }, task: { type: 'STRING' }, due: { type: 'STRING' },
       truck_no: { type: 'STRING' }, container: { type: 'STRING' },
       be_no: { type: 'STRING' }, be_date: { type: 'STRING' },
       mode: { type: 'STRING', enum: ['truck', 'rail'] },
@@ -41,16 +47,87 @@ export const CHANGE_TOOL = {
       cfs: { type: 'STRING' }, days: { type: 'NUMBER' }, priority: { type: 'STRING', enum: ['normal', 'high', 'urgent'] },
       owner: { type: 'STRING' }, size: { type: 'STRING' }, ooc_no: { type: 'STRING' }, ooc_date: { type: 'STRING' },
     },
-    required: ['action', 'job'],
+    required: ['action'],
   },
 }
 
-// What else a proposal may need: the file the person sent last, staff names
-export type ChangeContext = { lastFile?: { path: string; file_name: string; mime: string; size: number; doc_type?: string | null; at: string } | null }
+// What else a proposal may need: the file the person sent last, the team
+export type ChangeContext = {
+  lastFile?: { path: string; file_name: string; mime: string; size: number; doc_type?: string | null; at: string } | null
+  team?: Person[]
+}
+type Prepared = { ok: true; pending: Pending } | { ok: false; error: string }
 
 // Checks a proposal against the loaded data. Returns the pending change (with the
 // sentence the person confirms) or a plain error for the AI to pass on.
-export function prepareChange(args: any, data: any, person: Person, extra: ChangeContext = {}): { ok: true; pending: Pending } | { ok: false; error: string } {
+// Several jobs (jobs: [...]) become ONE confirmation listing each of them.
+export function prepareChange(args: any, data: any, person: Person, extra: ChangeContext = {}): Prepared {
+  const action = String(args?.action || '')
+  if (action === 'create_job') return prepareCreate(args, data, person)
+  const list = [...new Set((Array.isArray(args?.jobs) ? args.jobs : []).map((x: unknown) => String(x)).filter(Boolean))]
+  if (list.length > 1) {
+    if (['attach_document', 'assign_task'].includes(action)) return { ok: false, error: 'Please do this one job at a time.' }
+    if (list.length > 15) return { ok: false, error: 'At most 15 jobs in one go.' }
+    const items: Pending[] = []
+    const problems: string[] = []
+    for (const j of list) {
+      const r = prepareOne({ ...args, job: j }, data, person, extra)
+      if (r.ok) items.push(r.pending)
+      else problems.push(`${j}: ${r.error}`)
+    }
+    if (!items.length) return { ok: false, error: problems.join(' ') }
+    return {
+      ok: true,
+      pending: {
+        action: 'batch', job_id: items[0].job_id, job_no: items.map((x) => x.job_no).join(', '), args: { items },
+        summary: `${items.length} changes:\n${items.map((x) => `• ${x.summary}`).join('\n')}${problems.length ? `\n(Left out: ${problems.join('; ')})` : ''}`,
+        at: new Date().toISOString(),
+      },
+    }
+  }
+  return prepareOne({ ...args, job: args?.job || list[0] }, data, person, extra)
+}
+
+// A new job typed on WhatsApp: the same checks as Create job
+function prepareCreate(args: any, data: any, person: Person): Prepared {
+  const num = String(args?.job || '').replace(/\D/g, '')
+  if (!num) return { ok: false, error: 'What is the new job number?' }
+  const jobNo = `J-${num}`
+  if ((data.jobs || []).some((j: any) => norm(j.job_no).replace(/^J0*/, '') === num.replace(/^0+/, ''))) return { ok: false, error: `${jobNo} already exists.` }
+  // the client as already spelled on earlier jobs, when it matches
+  const want = String(args?.client || '').trim()
+  if (!want) return { ok: false, error: 'Which client?' }
+  const known = [...new Set((data.jobs || []).map((j: any) => String(j.client || '').trim()).filter(Boolean))] as string[]
+  const client = known.find((c) => norm(c) === norm(want)) || known.find((c) => norm(c).startsWith(norm(want)) || norm(want).startsWith(norm(c))) || want
+  const mode = MODES.find((m) => norm(m) === norm(args?.job_mode)) || null
+  if (!mode) return { ok: false, error: 'Which mode: Sea FCL, Sea LCL, Air or BPT/MBPT?' }
+  const port = String(args?.port || '').toUpperCase().match(/INNSA1|INBOM1|INBOM4/)?.[0] || (mode === 'Air' ? 'INBOM4' : mode === 'BPT/MBPT' ? 'INBOM1' : 'INNSA1')
+  const boxes = [...new Set(String(args?.containers || '').toUpperCase().split(/[\s,;/]+/).filter((b) => /^[A-Z]{4}\d{7}$/.test(b)))]
+  if ((mode === 'Sea FCL' || mode === 'Sea LCL') && !boxes.length) return { ok: false, error: 'A sea job needs its container number(s).' }
+  const vessel = String(args?.vessel || '').trim().toUpperCase()
+  if (vessel && isLineNotShip(vessel, args?.line)) return { ok: false, error: `${vessel} is a shipping line, not a ship. Give the ship's own name from the BL, or leave it out.` }
+  const eta = String(args?.eta || args?.date || '').slice(0, 10)
+  if (eta && !/^\d{4}-\d{2}-\d{2}$/.test(eta)) return { ok: false, error: 'Give the ETA as a date.' }
+  const be = String(args?.be_no || '').replace(/\D/g, '')
+  if (be && !/^\d{7}$/.test(be)) return { ok: false, error: 'The BE number must be 7 digits.' }
+  const days = args?.days == null ? 14 : Number(args.days)
+  if (!Number.isInteger(days) || days < 0) return { ok: false, error: 'Free days must be a whole number.' }
+  const size = mode === 'Sea LCL' ? 'LCL' : SIZES.includes(String(args?.size || '').toUpperCase()) ? String(args.size).toUpperCase() : null
+  const fields = {
+    job_no: jobNo, client, mode, port_code: port, bl_no: String(args?.bl_no || '').trim().toUpperCase() || null,
+    containers: boxes.join(' ') || null, container_sizes: size && boxes.length ? Object.fromEntries(boxes.map((b) => [b, size])) : null,
+    vessel: vessel || null, eta: eta || null, shipping_line: lineName(args?.line) || null,
+    be_no: be || null, be_date: be ? String(args?.be_date || '').slice(0, 10) || null : null, free_days: days,
+  }
+  const lines = [
+    `Create *${jobNo}* for *${client}*${known.includes(client) ? '' : ' (new client name)'}`,
+    `${mode} · ${port}${boxes.length ? ` · ${boxes.length} container${boxes.length > 1 ? 's' : ''}: ${boxes.join(', ')}${size ? ` (${size})` : ''}` : ''}`,
+    [fields.bl_no && `BL ${fields.bl_no}`, fields.vessel && `ship ${fields.vessel}`, fields.shipping_line && `line ${fields.shipping_line}`, fields.eta && `ETA ${nice(fields.eta)}`, be && `BE ${be}`, `${days} free days`].filter(Boolean).join(' · '),
+  ]
+  return { ok: true, pending: { action: 'create_job', job_id: '', job_no: jobNo, args: fields, summary: lines.join('\n'), at: new Date().toISOString() } }
+}
+
+function prepareOne(args: any, data: any, person: Person, extra: ChangeContext = {}): Prepared {
   const action = String(args?.action || '')
   if (!ACTIONS.includes(action)) return { ok: false, error: 'This change cannot be made by WhatsApp yet. Please use the portal.' }
   const ref = norm(args?.job)
@@ -160,6 +237,28 @@ export function prepareChange(args: any, data: any, person: Person, extra: Chang
     if (size && !SIZES.includes(size)) return { ok: false, error: `Size ${args?.size} is not one the portal knows (e.g. 20GP, 40HC).` }
     return p(`Add container *${box}*${size ? ` (${size})` : ''} to ${who}`, { container: box, size: size || null })
   }
+  if (action === 'record_payment') {
+    // the portal keeps one money figure per job: the CFS amount
+    const amount = Math.round(Number(String(args?.amount ?? '').replace(/[^\d.]/g, '')))
+    if (!amount || amount < 1 || amount > 10_000_000) return { ok: false, error: 'How much (in rupees)? The portal records the CFS amount.' }
+    return p(`Record the CFS amount of ${who} as *₹${amount.toLocaleString('en-IN')}*${job.cfs_amount ? ` (was ₹${Number(job.cfs_amount).toLocaleString('en-IN')})` : ''}`, { amount })
+  }
+  if (action === 'assign_task') {
+    const want = norm(args?.to)
+    const team = (extra.team || []).filter((t) => t.phone !== person.phone)
+    const hits = team.filter((t) => want && norm(t.name).includes(want))
+    if (hits.length !== 1) return { ok: false, error: hits.length ? `More than one teammate matches "${args?.to}".` : `"${args?.to || ''}" is not on the WhatsApp bot. Only team numbers on the bot can get tasks: ${team.map((t) => t.name).join(', ') || 'none yet'}.` }
+    const task = String(args?.task || '').trim().slice(0, 300)
+    if (!task) return { ok: false, error: 'What should they do?' }
+    let due: string | null = null
+    if (args?.due) {
+      const m = String(args.due).match(/^(\d{4}-\d{2}-\d{2})[ T](\d{1,2}):(\d{2})/)
+      if (!m) return { ok: false, error: 'Give the deadline as date and time.' }
+      due = new Date(`${m[1]}T${m[2].padStart(2, '0')}:${m[3]}:00+05:30`).toISOString()
+    }
+    const by = due ? ` by ${new Date(due).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' })}` : ''
+    return p(`Ask *${hits[0].name}* on WhatsApp: "${task}" (${job.job_no})${by}`, { to_phone: hits[0].phone, to_name: hits[0].name, task, due })
+  }
   // add_note
   const note = String(args?.note || '').trim().slice(0, 1000)
   if (!note) return { ok: false, error: 'What should the note say?' }
@@ -167,10 +266,37 @@ export function prepareChange(args: any, data: any, person: Person, extra: Chang
 }
 
 export const confirmText = (pending: Pending) =>
-  `Please confirm:\n${pending.summary}\n\nReply *YES* to do it, or *NO* to cancel.`
+  `Please confirm:\n${pending.summary}\n\nTap *Yes* or *No* (or reply YES / NO).`
+
+// What a confirmed change may need besides the database: messaging a teammate
+export type ApplyDeps = { tell?: (phone: string, text: string, jobNo: string | null) => Promise<unknown> }
 
 // Makes the confirmed change. Returns the reply to send.
-export async function applyChange(admin: Admin, pending: Pending, person: Person): Promise<string> {
+export async function applyChange(admin: Admin, pending: Pending, person: Person, deps: ApplyDeps = {}): Promise<string> {
+  // several jobs: each change made on its own, one line per job
+  if (pending.action === 'batch') {
+    const out: string[] = []
+    for (const item of (pending.args?.items || []) as Pending[]) out.push(await applyChange(admin, item, person, deps))
+    return out.join('\n')
+  }
+  // a new job typed on WhatsApp
+  if (pending.action === 'create_job') {
+    const f = pending.args || {}
+    const { data: clash } = await admin.from('jobs').select('id').eq('job_no', f.job_no).maybeSingle()
+    if (clash) return `❌ ${f.job_no} already exists. Nothing was created.`
+    const uuid = /^[0-9a-f-]{36}$/i.test(String(person.id || '')) ? person.id : null
+    const { data: made, error } = await admin.from('jobs').insert({
+      ...f, job_type: 'import', stage: f.be_no ? 4 : 0, priority: 'normal', created_by: uuid,
+      field_meta: { created_via: 'whatsapp' },
+    }).select('id, job_no').single()
+    if (error || !made) return `❌ Could not create ${f.job_no}: ${error?.message || 'unknown error'}.`
+    await admin.from('activity_log').insert({
+      type: 'job_created', action: 'job_created', title: `${made.job_no} — Job created`,
+      note: `${f.client} · ${f.mode} · ${String(f.containers || '').split(' ').filter(Boolean).length} containers (via WhatsApp)`,
+      job_id: made.id, job_no: made.job_no, done_by_name: `${person.name} via WhatsApp`, meta: { job_id: made.id, job_no: made.job_no, via: 'whatsapp' },
+    })
+    return `✅ Done: *${made.job_no}* created for ${f.client}. Upload its BE / BL in the portal or send them here.`
+  }
   const { data: job, error: readErr } = await admin.from('jobs').select('*').eq('id', pending.job_id).maybeSingle()
   if (readErr || !job) return `❌ Could not find ${pending.job_no} any more. Nothing was changed.`
   const by = `${person.name} via WhatsApp`
@@ -274,6 +400,22 @@ export async function applyChange(admin: Admin, pending: Pending, person: Person
     const what = pending.action === 'add_container' ? `container ${a.container}${a.size ? ` (${a.size})` : ''} added` : `container ${a.container} taken off`
     await log('note', `${job.job_no} — ${what}`, `Changed by ${by}`, { container: a.container })
     return `✅ Done: ${job.job_no} — ${what}.`
+  }
+  if (pending.action === 'record_payment') {
+    const err = await save({ cfs_amount: a.amount }); if (err) return err
+    await log('note', `${job.job_no} — CFS amount ₹${Number(a.amount).toLocaleString('en-IN')}`, `Recorded by ${by}`, { cfs_amount: a.amount })
+    return `✅ Done: CFS amount of ${job.job_no} is now ₹${Number(a.amount).toLocaleString('en-IN')}.`
+  }
+  if (pending.action === 'assign_task') {
+    const { data: task, error } = await admin.from('bot_tasks').insert({
+      from_phone: person.phone, from_name: person.name, to_phone: a.to_phone, to_name: a.to_name,
+      job_id: job.id, job_no: job.job_no, text: a.task, due_at: a.due || null,
+    }).select('id').single()
+    if (error || !task) return `❌ Could not save the task: ${error?.message || 'unknown error'}.`
+    const due = a.due ? ` by ${new Date(a.due).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' })}` : ''
+    await deps.tell?.(a.to_phone, `📌 *Task from ${person.name}* (${job.job_no})${due}:\n${a.task}\n\nReply *DONE* when it is done.`, job.job_no)
+    await log('note', `${job.job_no} — task for ${a.to_name}: ${a.task.slice(0, 60)}`, `Asked by ${by}${due}`, { task_id: task.id })
+    return `✅ Done: ${a.to_name} has the task${due}. I'll tell you when it's done${a.due ? ', or remind them if it is late' : ''}.`
   }
   if (pending.action === 'record_ooc') {
     const update: Record<string, unknown> = {}
