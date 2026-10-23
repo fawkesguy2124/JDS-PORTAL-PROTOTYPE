@@ -232,7 +232,8 @@ function customsChecker(admin: Admin, person: Person, data: any, opts: { test?: 
       return {
         checked_recently: true, last_checked: istWhen(cs.checked_at), minutes_ago: Math.round(mins),
         answer: cs.ooc_date ? `OOC granted${cs.ooc_no ? `, OOC ${cs.ooc_no}` : ''} dated ${istDay(cs.ooc_date)}` : 'OOC not granted yet',
-        tell_the_person: 'Customs was checked less than 30 minutes ago, so it was not asked again. Give this answer and when it was checked.',
+        asked_customs_now: false,
+        tell_the_person: 'Customs was NOT asked again now: it was checked less than 30 minutes ago. Give this answer, say when it was checked, and do not call it a fresh or live check.',
       }
     }
     if (opts.test) return { started: true, test_mode: 'test mode: Customs was NOT asked', tell_the_person: 'Say you are checking with Customs now and the result will follow in a separate message.' }
@@ -241,6 +242,24 @@ function customsChecker(admin: Admin, person: Person, data: any, opts: { test?: 
     try { (globalThis as any).EdgeRuntime?.waitUntil?.(work) } catch { /* it still runs */ }
     return { started: true, tell_the_person: 'Say only that you are checking with Customs now and the result will follow in a separate message in about a minute. Do not guess the result.' }
   }
+}
+
+// "Did you actually refresh / check?": answered from the record of the bot's
+// last reply (its [checked: …] note), never by the AI, so it is always true
+const ASKS_IF_CHECKED = /\b(did|have|had)\s+(you|u)\b[^?]{0,30}\b(refresh|re-?check|check|pull)|\b(actually|really|truly)\s+(refresh|re-?check|check)/i
+function honestCheckReply(text: string, history: { role: string; text: string }[]): string | null {
+  // (a question naming a job, "did you check 509?", is a request: the AI handles it)
+  if (!ASKS_IF_CHECKED.test(String(text || '')) || /\bJ-?\s?\d+|\b\d{3,7}\b/i.test(String(text || ''))) return null
+  const last = [...history].reverse().find((t) => t.role === 'model')?.text || ''
+  const note = (last.match(/\[checked:([^\]]*)\]/) || [])[1] || ''
+  const m = note.match(/check_customs_now\s*(\{[^}]*\})\s*→\s*([^;]*)/)
+  const job = m ? (String(m[1]).match(/"job"\s*:\s*"([^"]+)"/) || [])[1] || 'that job' : null
+  if (m && /Customs asked now/.test(m[2])) return `Yes. I asked Customs for ${job} just then; the answer comes (or came) as a separate message.`
+  if (m && /NOT asked again/.test(m[2])) {
+    const at = (m[2].match(/at ([^)]+)\)/) || [])[1]
+    return `No, Customs was not asked again just then: ${job} had already been checked${at ? ` at ${at}` : ''}, and Customs is asked at most once every 30 minutes per job. My answer was from that check.`
+  }
+  return 'No. That answer was from the data the portal had already saved; I did not ask Customs. Say "check J-… again" and I will ask Customs (at most once every 30 minutes per job).'
 }
 
 // One check through the portal's customs-status function; returns the message
@@ -325,6 +344,7 @@ async function handleInbound(admin: Admin, payload: any) {
     }
     // fixed commands are instant and free; anything else goes to the assistant
     if (!reply) reply = answer(data, text, person, new Date(), { fallback: false })
+    if (!reply) reply = honestCheckReply(text, history)
     if (!reply) {
       const aiStart = Date.now()
       const ai = await askAssistant(text, history, data, person, { checkCustoms: customsChecker(admin, person, data) })
@@ -462,7 +482,7 @@ Deno.serve(async (req) => {
             continue
           }
           proposed = null
-          const fixed = answer(data, q, person, new Date(), { fallback: false })
+          const fixed = answer(data, q, person, new Date(), { fallback: false }) || (chat ? honestCheckReply(q, convo) : null)
           const ai = fixed ? null : await askAssistant(q, chat ? convo : [], data, person, { checkCustoms: customsChecker(admin, person, data, { test: true }) })
           if (ai?.proposal) proposed = ai.proposal
           const a = fixed || (ai?.proposal ? confirmText(ai.proposal) : ai?.text ? toWhatsApp(ai.text) : null)

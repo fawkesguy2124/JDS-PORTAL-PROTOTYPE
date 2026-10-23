@@ -89,7 +89,15 @@ const afterChangeTry = (history: Turn[]) => {
 // (checked and kept for the person's YES), never saved here
 async function useTool(ctx: Ctx, name: string, args: any, data: any, person: Person): Promise<unknown> {
   ctx.used.push(`${name} ${JSON.stringify(args || {})}`)
-  if (name === CUSTOMS_TOOL.name) return ctx.checkCustoms ? await ctx.checkCustoms(String(args?.job || '')) : { not_available: 'Checking Customs is not possible here.' }
+  if (name === CUSTOMS_TOOL.name) {
+    if (!ctx.checkCustoms) return { not_available: 'Checking Customs is not possible here.' }
+    const r: any = await ctx.checkCustoms(String(args?.job || ''))
+    // what really happened goes into the chat history, so "did you really check?" is answered truthfully
+    ctx.used[ctx.used.length - 1] += r?.started ? ' → Customs asked now, result to follow in a separate message'
+      : r?.checked_recently ? ` → Customs NOT asked again (checked ${r.minutes_ago} min earlier, at ${r.last_checked}); answer from that check`
+      : ` → not done (${r?.not_found ? 'job not found' : r?.not_possible || 'unknown'})`
+    return r
+  }
   if (name !== CHANGE_TOOL.name) return runTool(name, args || {}, data, person)
   const res = prepareChange(args, data, person)
   if (!res.ok) return { not_done: res.error }
