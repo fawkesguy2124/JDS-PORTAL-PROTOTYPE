@@ -7,7 +7,15 @@ import { TOOLS as READ_TOOLS, runTool, SYSTEM_PROMPT, TODAY_BRIEF } from '../_sh
 import { CHANGE_TOOL, prepareChange, type Pending } from './actions.ts'
 
 // read tools + the one tool that PROPOSES a change (saved only after a YES)
-const TOOLS = [...READ_TOOLS, CHANGE_TOOL]
+// Asks Customs (ICEGATE) now for one job's OOC, when a person asks the bot to
+// check / refresh (Jose, 23 Oct 2026). The bot answers at once; the result comes
+// as a second message. At most once every 30 minutes per job.
+export const CUSTOMS_TOOL = {
+  name: 'check_customs_now',
+  description: "Ask Customs (ICEGATE) NOW for one import job's OOC, by its BE. Use ONLY when the person asks to check / refresh / check again / check live. If the job was checked in the last 30 minutes, that answer is given instead.",
+  parameters: { type: 'OBJECT', properties: { job: { type: 'STRING', description: 'job no, e.g. J-677 or 677' } }, required: ['job'] },
+}
+const TOOLS = [...READ_TOOLS, CHANGE_TOOL, CUSTOMS_TOOL]
 
 const API = 'https://generativelanguage.googleapis.com/v1beta/models'
 // tried in order; a model Google has retired (404) is skipped
@@ -47,9 +55,9 @@ async function callGemini(model: string, body: unknown, key: string, signal: Abo
 // `checked` lists the portal checks behind the answer; the bot keeps it with the
 // chat history, so a follow-up ("what about CFS OUT", "are you sure?") knows
 // exactly what was looked at last time
-export async function askAssistant(question: string, history: Turn[], data: unknown, person: Person): Promise<{ text: string | null; note: string; checked: string[]; proposal: Pending | null }> {
+export async function askAssistant(question: string, history: Turn[], data: unknown, person: Person, opts: { checkCustoms?: Ctx['checkCustoms'] } = {}): Promise<{ text: string | null; note: string; checked: string[]; proposal: Pending | null }> {
   const used: string[] = []
-  const ctx: Ctx = { used, proposal: null }
+  const ctx: Ctx = { used, proposal: null, checkCustoms: opts.checkCustoms }
   const notes: string[] = []
   // BOT_AI_FIRST=nvidia puts NVIDIA before Groq (to compare the two)
   const first = (Deno.env.get('BOT_AI_FIRST') || 'groq').trim()
@@ -70,7 +78,7 @@ export const needsData = (q: string) => {
   // whole words only ("port" must not match "portal")
   return /\b[A-Z]{4}\d{7}\b|\bJ-?\s?\d+|\bcontainers?\b|\bbox(es)?\b|\bjobs?\b|\bbe\b|\bbl\b|\booc\b|\btrucks?\b|\brail\b|\bclients?\b|\bdetention\b|\bfree ?days?\b|\bports?\b|\bcfs\b|\bicd\b|\bgate\b|\bwhere\b|\bwhich\b|\bhow many\b|\bkitne\b|\bkaha\b|\bany\b|\blist\b|\bstatus\b|\btoday\b|\byesterday\b|\bweek\b|\bmonth\b|\bsure\b|\bagain\b|\bupdates?\b|\bpending\b|\burgent\b|\barriv|\bvessels?\b|\bships?\b/i.test(t)
 }
-type Ctx = { used: string[]; proposal: Pending | null }
+type Ctx = { used: string[]; proposal: Pending | null; checkCustoms?: (job: string) => Promise<unknown> }
 // the last reply came from a change request (it may have asked for a missing detail)
 // (not after the bot already asked YES/NO: then the next message is a new question)
 const afterChangeTry = (history: Turn[]) => {
@@ -79,8 +87,9 @@ const afterChangeTry = (history: Turn[]) => {
 }
 // runs one tool call: notes it for the chat history; a change is only PREPARED
 // (checked and kept for the person's YES), never saved here
-function useTool(ctx: Ctx, name: string, args: any, data: any, person: Person): unknown {
+async function useTool(ctx: Ctx, name: string, args: any, data: any, person: Person): Promise<unknown> {
   ctx.used.push(`${name} ${JSON.stringify(args || {})}`)
+  if (name === CUSTOMS_TOOL.name) return ctx.checkCustoms ? await ctx.checkCustoms(String(args?.job || '')) : { not_available: 'Checking Customs is not possible here.' }
   if (name !== CHANGE_TOOL.name) return runTool(name, args || {}, data, person)
   const res = prepareChange(args, data, person)
   if (!res.ok) return { not_done: res.error }
@@ -230,7 +239,7 @@ async function askCompat(p: Provider, question: string, history: Turn[], data: u
         convo.push({ role: 'assistant', content: stripThinking(String(msg.content || '')), tool_calls: calls })
         for (const c of calls) {
           let result: unknown
-          try { result = useTool(ctx, c.function?.name, JSON.parse(c.function?.arguments || '{}'), data, person) } catch (e) { result = { error: (e as Error).message } }
+          try { result = await useTool(ctx, c.function?.name, JSON.parse(c.function?.arguments || '{}'), data, person) } catch (e) { result = { error: (e as Error).message } }
           convo.push({ role: 'tool', tool_call_id: c.id, content: JSON.stringify(result).slice(0, 9000) })
         }
         rounds++
@@ -316,11 +325,11 @@ async function askGemini(question: string, history: Turn[], data: unknown, perso
         convo.push({ role: 'model', parts })
         convo.push({
           role: 'user',
-          parts: calls.map((p) => {
+          parts: await Promise.all(calls.map(async (p) => {
             let result: unknown
-            try { result = useTool(ctx, p.functionCall.name, p.functionCall.args || {}, data, person) } catch (e) { result = { error: (e as Error).message } }
+            try { result = await useTool(ctx, p.functionCall.name, p.functionCall.args || {}, data, person) } catch (e) { result = { error: (e as Error).message } }
             return { functionResponse: { name: p.functionCall.name, response: { result } } }
-          }),
+          })),
         })
         rounds++
       }

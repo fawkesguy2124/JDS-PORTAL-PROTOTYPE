@@ -209,6 +209,70 @@ async function validSignature(req: Request, raw: string) {
   return diff === 0
 }
 
+// ── "check customs now", asked by a person (Jose, 23 Oct 2026) ──
+// If the job was checked in the last 30 minutes, that answer is given and Customs
+// is not asked again. Otherwise ONE check runs through the portal's own
+// customs-status function (same traffic rules) and the result goes to the person
+// as a second message.
+const BOT_CHECK_GAP_MIN = 30
+const istWhen = (iso: string) => new Date(iso).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' })
+const istDay = (iso: string) => new Date(String(iso).length <= 10 ? `${iso}T12:00:00+05:30` : iso).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' })
+
+function customsChecker(admin: Admin, person: Person, data: any, opts: { test?: boolean } = {}) {
+  return async (ref: string) => {
+    const want = String(ref || '').replace(/\D/g, '')
+    const job = (data?.jobs || []).find((j: any) => String(j.job_no || '').replace(/\D/g, '') === want)
+    if (!want || !job) return { not_found: ref }
+    if (job.job_type === 'export') return { not_possible: `${job.job_no} is an export job; this check is for import BEs.` }
+    if (!/^\d{7}$/.test(String(job.be_no || '').trim()) || !job.be_date) return { not_possible: `${job.job_no} has no BE number and date yet, so Customs cannot be asked.` }
+    const { data: cs } = await admin.from('customs_status').select('be_no, checked_at, ooc_no, ooc_date').eq('job_id', job.id).maybeSingle()
+    const sameBe = !!cs && String(cs.be_no) === String(job.be_no)
+    const mins = sameBe && cs.checked_at ? (Date.now() - new Date(cs.checked_at).getTime()) / 60000 : Infinity
+    if (mins < BOT_CHECK_GAP_MIN) {
+      return {
+        checked_recently: true, last_checked: istWhen(cs.checked_at), minutes_ago: Math.round(mins),
+        answer: cs.ooc_date ? `OOC granted${cs.ooc_no ? `, OOC ${cs.ooc_no}` : ''} dated ${istDay(cs.ooc_date)}` : 'OOC not granted yet',
+        tell_the_person: 'Customs was checked less than 30 minutes ago, so it was not asked again. Give this answer and when it was checked.',
+      }
+    }
+    if (opts.test) return { started: true, test_mode: 'test mode: Customs was NOT asked', tell_the_person: 'Say you are checking with Customs now and the result will follow in a separate message.' }
+    const work = runCustomsCheck(admin, person, job, true)
+    // keep working after this reply has been sent
+    try { (globalThis as any).EdgeRuntime?.waitUntil?.(work) } catch { /* it still runs */ }
+    return { started: true, tell_the_person: 'Say only that you are checking with Customs now and the result will follow in a separate message in about a minute. Do not guess the result.' }
+  }
+}
+
+// One check through the portal's customs-status function; returns the message
+async function runCustomsCheck(admin: Admin, person: Person, job: any, deliver: boolean): Promise<string> {
+  let text: string
+  try {
+    const { data: st } = await admin.from('bot_state').select('cron_token').eq('id', 1).maybeSingle()
+    const anon = env('SUPABASE_ANON_KEY')
+    const res = await fetch(`${env('SUPABASE_URL')}/functions/v1/customs-status`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${anon}`, apikey: anon, 'x-bot-secret': String(st?.cron_token || '') },
+      body: JSON.stringify({ jobId: job.id, asId: person.id || null, asName: `${person.name} via WhatsApp` }),
+      signal: AbortSignal.timeout(110_000),
+    })
+    const out = await res.json().catch(() => ({}))
+    const row = out?.data
+    if (out?.success && row) {
+      const when = out.cached && row.checked_at ? `checked ${istWhen(row.checked_at)}` : 'checked just now'
+      text = row.ooc_date
+        ? `✅ *${job.job_no}*: Customs says *OOC granted*${row.ooc_no ? `, OOC ${row.ooc_no}` : ''} dated ${istDay(row.ooc_date)} (${when}).`
+        : `*${job.job_no}*: ${when} with Customs: *OOC not granted yet* (BE ${job.be_no}).`
+    } else {
+      text = `*${job.job_no}*: the Customs check did not work (${String(out?.error || `error ${res.status}`).slice(0, 160)}). Try again in a few minutes, or press Check on the BE & OOC page.`
+    }
+  } catch (e) {
+    text = `*${job.job_no}*: the Customs check did not finish (${(e as Error).message}). Try again in a few minutes, or press Check on the BE & OOC page.`
+  }
+  dataCache = null // the next answers read the fresh result
+  if (deliver) await send(person.phone, { text })
+  return text
+}
+
 async function handleInbound(admin: Admin, payload: any) {
   const messages = (payload?.entry || []).flatMap((e: any) => (e.changes || []).flatMap((c: any) => c.value?.messages || []))
   if (!messages.length) return // delivery receipts etc.
@@ -263,7 +327,7 @@ async function handleInbound(admin: Admin, payload: any) {
     if (!reply) reply = answer(data, text, person, new Date(), { fallback: false })
     if (!reply) {
       const aiStart = Date.now()
-      const ai = await askAssistant(text, history, data, person)
+      const ai = await askAssistant(text, history, data, person, { checkCustoms: customsChecker(admin, person, data) })
       checked = ai.checked
       ask = ai.proposal
       console.log(`[wa-bot] assistant: ${ai.note} | data ${aiStart - started} ms, AI ${Date.now() - aiStart} ms`)
@@ -356,6 +420,17 @@ Deno.serve(async (req) => {
         }))
         return json({ success: true, probe: out })
       }
+      // test: the "check customs now" path for one job, as the first team member;
+      // the reply is returned here, not sent on WhatsApp
+      if (run === 'customs-test') {
+        const [team, data] = await Promise.all([loadTeam(admin), loadData(admin)])
+        const person = team[0]
+        const ref = String(JSON.parse(raw).job || '')
+        const quick: any = await customsChecker(admin, person, data, { test: true })(ref)
+        if (!quick?.started || !JSON.parse(raw).live) return json({ success: true, quick })
+        const job = data.jobs.find((j: any) => String(j.job_no || '').replace(/\D/g, '') === ref.replace(/\D/g, ''))
+        return json({ success: true, quick, message: await runCustomsCheck(admin, person, job, false) })
+      }
       if (run === 'ask') {
         const questions: string[] = (JSON.parse(raw).questions || []).slice(0, 8)
         const [team, data] = await Promise.all([loadTeam(admin), loadDataCached(admin)])
@@ -388,7 +463,7 @@ Deno.serve(async (req) => {
           }
           proposed = null
           const fixed = answer(data, q, person, new Date(), { fallback: false })
-          const ai = fixed ? null : await askAssistant(q, chat ? convo : [], data, person)
+          const ai = fixed ? null : await askAssistant(q, chat ? convo : [], data, person, { checkCustoms: customsChecker(admin, person, data, { test: true }) })
           if (ai?.proposal) proposed = ai.proposal
           const a = fixed || (ai?.proposal ? confirmText(ai.proposal) : ai?.text ? toWhatsApp(ai.text) : null)
           out.push({ q, a, how: fixed ? 'fixed' : ai?.note, checked: ai?.checked, ms: Date.now() - t0 })

@@ -8,9 +8,14 @@
 // - after a failure → wait 2 minutes before asking ULIP again
 // - two presses at once → the second is refused
 // - JNPT is asked only for JNPT jobs (no pointless calls for other ports)
+// - the WhatsApp bot may ask too, when a person asks it to check (Jose, 23 Oct
+//   2026): with the bot's database password, at most once every 30 minutes per
+//   job; a newer check is answered from the saved one
 import { adminClient, callUlip, claimKey, corsHeaders, getCaller, json, releaseKey, toIsoDate } from '../_shared/ulip.ts'
 
 const MIN_MINUTES_BETWEEN_CHECKS = 5
+const MIN_MINUTES_BETWEEN_BOT_CHECKS = 30
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const MIN_MINUTES_AFTER_FAILURE = 2
 const SKIP_SECOND_CALL_AFTER_MS = 60_000
 
@@ -22,11 +27,24 @@ Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
   const admin = adminClient()
-  const caller = await getCaller(req, admin)
+  let body: any = {}
+  try { body = await req.json() } catch { /* handled below */ }
+
+  // a signed-in staff member, or the WhatsApp bot asking for one (with its password)
+  let caller = await getCaller(req, admin)
+  let fromBot = false
+  const botSecret = req.headers.get('x-bot-secret')
+  if (!caller && botSecret) {
+    const { data: st } = await admin.from('bot_state').select('cron_token').eq('id', 1).maybeSingle()
+    const ok = [Deno.env.get('BOT_CRON_SECRET') || '', String(st?.cron_token || '')].map((v) => v.trim()).filter((v) => v.length >= 20)
+    if (!ok.includes(botSecret.trim())) return json({ success: false, error: 'Not allowed' }, 403)
+    const asId = String(body?.asId || '')
+    caller = { id: UUID.test(asId) ? asId : null, name: String(body?.asName || 'WhatsApp bot').slice(0, 80), role: null } as any
+    fromBot = true
+  }
   if (!caller) return json({ success: false, error: 'Please sign in again.' }, 401)
 
-  let jobId = ''
-  try { jobId = String((await req.json())?.jobId || '') } catch { /* handled below */ }
+  const jobId = String(body?.jobId || '')
   if (!jobId) return json({ success: false, error: 'No job given.' }, 400)
 
   const { data: job, error: jobErr } = await admin
@@ -43,7 +61,7 @@ Deno.serve(async (req) => {
   const { data: existing } = await admin.from('customs_status').select('*').eq('job_id', job.id).maybeSingle()
   const sameBe = !!existing && existing.be_no === beNo && String(existing.be_date || '').slice(0, 10) === beDate
 
-  if (sameBe && existing.checked_at && minutesSince(existing.checked_at) < MIN_MINUTES_BETWEEN_CHECKS) {
+  if (sameBe && existing.checked_at && minutesSince(existing.checked_at) < (fromBot ? MIN_MINUTES_BETWEEN_BOT_CHECKS : MIN_MINUTES_BETWEEN_CHECKS)) {
     return json({ success: true, cached: true, data: existing })
   }
   if (sameBe && minutesSince(existing.last_error_at) < MIN_MINUTES_AFTER_FAILURE) {
