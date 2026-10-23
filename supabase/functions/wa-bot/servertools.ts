@@ -9,7 +9,7 @@ import { jobsFor } from '../_shared/portal/botMessages.js'
 import { sendDocument } from './media.ts'
 
 type Admin = any
-type Person = { id: string; name: string; role: string; phone: string }
+type Person = { id: string; name: string; role: string; phone: string; level?: string }
 type Row = { id: string; title: string; description?: string }
 type Deps = {
   admin: Admin; person: Person; data: any; test?: boolean
@@ -321,6 +321,14 @@ export function makeServerTools(d: Deps) {
       if (d.test) return { say: `(test) Built *${name}* (${rows.length} jobs).`, sent: false, test_mode: `built ${name}: ${rows.length} jobs, ${bytes.length} bytes, not sent`, note: `test: built ${name} ${bytes.length} bytes` }
       try { await sendDocument(person.phone, bytes, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', name, `JDS report · ${rows.length} jobs`) } catch (e) { return { error: `WhatsApp did not take the file: ${(e as Error).message}` } }
       return { say: `📊 Sent *${name}* (${rows.length} jobs) as a separate message.`, sent: true, file: name, jobs: rows.length, note: `sent ${name}`, tell_the_person: 'Say the Excel has been sent as a separate message, in one line.' }
+    },
+
+    // ── who can use the bot (admins only; checked before this runs) ──
+    async list_access() {
+      const label: Record<string, string> = { view: 'view only', staff: 'staff', admin: 'full admin' }
+      const team = d.team || []
+      const lines = team.map((p) => `• *${p.name}* (+91 ${p.phone.slice(2)}): ${label[p.level || 'view']}`)
+      return { people: lines, say: `👥 *WhatsApp bot access* (${team.length}):\n${lines.join('\n')}\n\nTo add someone: "give 98XXXXXXXX view only, name Ravi". To remove: "remove 98XXXXXXXX from the bot".` }
     },
 
     // ── one PDF with a job's papers (BE, BL, Invoice, Packing List, OOC …) ──

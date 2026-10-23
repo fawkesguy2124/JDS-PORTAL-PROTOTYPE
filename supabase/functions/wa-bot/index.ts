@@ -16,7 +16,7 @@
 //   WHATSAPP_TEMPLATE_LANG optional, default "en"
 import { adminClient, json } from '../_shared/ulip.ts'
 import { buildJourneyData } from '../_shared/portal/journeyCore.js'
-import { morningSummary, instantAlerts, answer, teamFromProfiles, BOT_NUMBERS, missingDetails } from '../_shared/portal/botMessages.js'
+import { morningSummary, instantAlerts, answer, teamFromProfiles, BOT_NUMBERS, missingDetails, allowed, LEVELS, LEVEL_LABEL } from '../_shared/portal/botMessages.js'
 import { askAssistant, groqInfo } from './assistant.ts'
 import { applyChange, confirmText, isNo, isYes, PENDING_MINUTES, prepareChange, type Pending } from './actions.ts'
 import { downloadMedia, transcribe, normalizeSpoken, docTypeFromName, jobFromText, safeName, MAX_FILE_BYTES } from './media.ts'
@@ -32,7 +32,7 @@ const env = (k: string) => (Deno.env.get(k) || '').trim() // pasted values often
 const sendingOn = () => env('BOT_SENDING') === 'on'
 
 type Admin = ReturnType<typeof adminClient>
-type Person = { id: string; name: string; role: string; phone: string }
+type Person = { id: string; name: string; role: string; phone: string; level?: string }
 type Template = { name: string; values: string[] }
 
 // ── data (same rows the portal loads) ──
@@ -127,9 +127,13 @@ function toWhatsApp(s: string) {
 let teamCache: { at: number; team: Person[] } | null = null
 async function loadTeam(admin: Admin): Promise<Person[]> {
   if (teamCache && Date.now() - teamCache.at < 5 * 60_000) return teamCache.team
-  const { data, error } = await admin.from('profiles').select('id, name, email, role')
+  const [{ data, error }, extra] = await Promise.all([
+    admin.from('profiles').select('id, name, email, role'),
+    // numbers an admin added from WhatsApp, with their access level
+    admin.from('bot_people').select('phone, name, level').then((r: any) => r.data || []),
+  ])
   if (error) throw new Error(error.message)
-  teamCache = { at: Date.now(), team: teamFromProfiles(data || []) }
+  teamCache = { at: Date.now(), team: teamFromProfiles(data || [], extra) }
   return teamCache.team
 }
 
@@ -214,6 +218,7 @@ async function runMorning(admin: Admin) {
   // then the details missing on their jobs, with a tap list (the list only goes
   // inside WhatsApp's 24-hour window; outside it the alert template carries the text)
   for (const person of team) {
+    if (!allowed(person, 'change')) continue // view only: nothing they could fill in
     const miss = missingDetails(data, person)
     if (!miss.text) continue
     const r: any = await sendOnce(admin, `missing:${today}`, person, 'missing', { text: miss.text, template: { name: 'jds_alert', values: ['details', miss.text.replace(/\*/g, '').replace(/\n+/g, ' ').slice(0, 900), 'SUMMARY'] } })
@@ -444,7 +449,8 @@ async function handleInbound(admin: Admin, payload: any) {
   if (!messages.length) return // delivery receipts etc.
   // "typing…" first, before any database step (only for the bot's own numbers)
   const typingNow = new Map<string, Promise<void>>()
-  for (const m of messages) if (m.id && BOT_NUMBERS.includes(String(m.from))) typingNow.set(m.id, showTyping(m.id))
+  const known = new Set([...BOT_NUMBERS, ...(teamCache?.team || []).map((p) => p.phone)])
+  for (const m of messages) if (m.id && known.has(String(m.from))) typingNow.set(m.id, showTyping(m.id))
   const team = await loadTeam(admin)
   let data: any = null
   for (const m of messages) {
@@ -477,6 +483,7 @@ async function handleInbound(admin: Admin, payload: any) {
     }
     // a file (PDF or photo): kept privately, then attached to a job after a YES
     if ((m.type === 'document' || m.type === 'image') && (m.document?.id || m.image?.id)) {
+      if (!allowed(person, 'files')) { await send(person.phone, { text: `🔒 Your WhatsApp access is *${LEVEL_LABEL[person.level || 'view']}*, so files can't be added to jobs from your number. Please send it to Jose.` }); continue }
       await handleFile(admin, person, m, data || await loadDataCached(admin))
       continue
     }
@@ -500,6 +507,7 @@ async function handleInbound(admin: Admin, payload: any) {
     if (pending) await admin.from('bot_inbox').update({ pending: null }).eq('phone', person.phone) // a proposal is answered once
     if (live && isYes(text)) {
       reply = await applyChange(admin, pending, person, { tell: (phone, t, jobNo) => tellTeammate(admin, team, phone, t, jobNo) })
+      if (pending.action === 'set_access') teamCache = null // the new access counts from the next message
       dataCache = null // the next answer shows the change
       checked = [`made the change: ${pending.summary}`]
     } else if (pending && isNo(text)) {
@@ -672,7 +680,8 @@ Deno.serve(async (req) => {
       if (run === 'ask') {
         const questions: string[] = (JSON.parse(raw).questions || []).slice(0, 8)
         const [team, data] = await Promise.all([loadTeam(admin), loadDataCached(admin)])
-        const person = team[0]
+        // as the first team member, or with another access level to test it ("level": "view")
+        const person = { ...team[0], ...(LEVELS.includes(JSON.parse(raw).level) ? { level: JSON.parse(raw).level } : {}) }
         const out = []
         const chat = !!JSON.parse(raw).conversation
         const convo: any[] = []
@@ -703,8 +712,8 @@ Deno.serve(async (req) => {
           const fixed = answer(data, q, person, new Date(), { fallback: false }) || (chat ? honestCheckReply(q, convo) : null)
           const ai = fixed ? null : await askAssistant(q, chat ? convo : [], data, person, {
             checkCustoms: customsChecker(admin, person, data, { test: true }),
-            server: makeServerTools({ admin, person, data, test: true, send: async () => {}, dataChanged: () => {} }),
-            change: { lastFile: JSON.parse(raw).lastFile || null },
+            server: makeServerTools({ admin, person, data, team, test: true, send: async () => {}, dataChanged: () => {} }),
+            change: { lastFile: JSON.parse(raw).lastFile || null, team },
           })
           if (ai?.proposal) proposed = ai.proposal
           const a = fixed || (ai?.proposal ? confirmText(ai.proposal) : ai?.text ? toWhatsApp(ai.text) : null)

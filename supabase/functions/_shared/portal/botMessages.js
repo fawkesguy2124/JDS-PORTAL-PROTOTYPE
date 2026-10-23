@@ -342,8 +342,9 @@ export function answer(data, message, person, now = new Date(), { fallback = tru
   return `Sorry, I did not understand "${oneLine(message).slice(0, 40)}".\n\n${HELP}`
 }
 
-// The ONLY numbers the bot sends to or answers (Jose's decisions, 18 Oct 2026:
-// "only Jose for now", then also +91 99202 51089). To add someone, add a line.
+// The owners: always admins of the bot, and can't be changed from WhatsApp (Jose's
+// decisions, 18 Oct 2026: "only Jose for now", then also +91 99202 51089; 24 Oct:
+// both full admin). Everyone else is in the bot_people table, added by an admin.
 // `name` is used when the number has no portal login.
 export const BOT_PEOPLE = [
   { phone: '919920276224', name: 'Jose' },
@@ -351,19 +352,34 @@ export const BOT_PEOPLE = [
 ]
 export const BOT_NUMBERS = BOT_PEOPLE.map((p) => p.phone)
 
-// Team members the bot talks to, in BOT_PEOPLE order. A number with a staff
-// login ("<10-digit mobile>@jds.local") uses that login's name and role;
-// one without a login is still included, with the name above.
-// Returns [{ id, name, role, phone }].
-export function teamFromProfiles(profiles = []) {
+// What each access level may do on WhatsApp (Jose, 24 Oct 2026):
+//   view  = ask, summaries and alerts only
+//   staff = + everyday changes (after Yes), checks, files, watches, reminders
+//   admin = everything: new jobs, CFS payments, tasks, reports, who has access
+export const LEVELS = ['view', 'staff', 'admin']
+export const LEVEL_LABEL = { view: 'view only', staff: 'staff', admin: 'full admin' }
+const NEEDS = {
+  send_document: 'staff', send_pack: 'staff', check_truck_now: 'staff', find_ship_now: 'staff', check_customs_now: 'staff', check_customs_many: 'staff',
+  set_reminder: 'staff', cancel_reminder: 'staff', watch: 'staff', cancel_watch: 'staff', change: 'staff', files: 'staff',
+  send_report: 'admin', create_job: 'admin', record_payment: 'admin', assign_task: 'admin', set_access: 'admin', list_access: 'admin',
+}
+export const levelNeeded = (what) => NEEDS[what] || 'view'
+export const allowed = (person, what) => LEVELS.indexOf(person?.level || 'view') >= LEVELS.indexOf(levelNeeded(what))
+
+// Team members the bot talks to: the owners, then bot_people rows ({ phone, name,
+// level }). A number with a staff login ("<10-digit mobile>@jds.local") uses that
+// login's name and role; one without a login is still included, with its own name.
+// Returns [{ id, name, role, phone, level }].
+export function teamFromProfiles(profiles = [], extra = []) {
   const logins = {}
   for (const p of profiles) {
     const digits = String(p.phone || p.email || '').match(/^(?:\+?91)?([6-9]\d{9})(?:@jds\.local)?$/)
     if (digits && !logins[`91${digits[1]}`]) logins[`91${digits[1]}`] = p
   }
-  return BOT_PEOPLE.map(({ phone, name }) => {
+  const people = [...BOT_PEOPLE.map((x) => ({ ...x, level: 'admin' })), ...extra.filter((x) => !BOT_NUMBERS.includes(x.phone) && LEVELS.includes(x.level))]
+  return people.map(({ phone, name, level }) => {
     const p = logins[phone]
-    return p ? { id: p.id, name: p.name || name, role: p.role, phone } : { id: `wa:${phone}`, name, role: 'admin', phone }
+    return p ? { id: p.id, name: p.name || name, role: p.role, phone, level } : { id: `wa:${phone}`, name, role: level === 'admin' ? 'admin' : 'staff', phone, level }
   })
 }
 

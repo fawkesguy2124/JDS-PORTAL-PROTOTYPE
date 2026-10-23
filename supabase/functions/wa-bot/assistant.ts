@@ -5,6 +5,7 @@
 // Secrets: GEMINI_API_KEY (required); GEMINI_MODEL (optional, default below).
 import { TOOLS as READ_TOOLS, runTool, SYSTEM_PROMPT, TODAY_BRIEF } from '../_shared/portal/assistantTools.js'
 import { CHANGE_TOOL, prepareChange, type Pending, type ChangeContext } from './actions.ts'
+import { allowed, levelNeeded, LEVEL_LABEL } from '../_shared/portal/botMessages.js'
 
 // read tools + the one tool that PROPOSES a change (saved only after a YES)
 // Asks Customs (ICEGATE) now for one job's OOC, when a person asks the bot to
@@ -80,6 +81,11 @@ export const SERVER_TOOLS = [
     parameters: { type: 'OBJECT', properties: { period: { type: 'STRING', enum: ['open', 'today', 'week', 'month'] } } },
   },
   {
+    name: 'list_access',
+    description: 'Who can use the WhatsApp bot and with what access (view only, staff, full admin). Admins only.',
+    parameters: { type: 'OBJECT', properties: {} },
+  },
+  {
     name: 'send_pack',
     description: 'Send ONE PDF with a job\'s papers joined in order (BE, BL, Invoice, Packing List, OOC …): "send me the document pack / all papers of J-652". doc_types optional, to pick only some.',
     parameters: { type: 'OBJECT', properties: { job: S, doc_types: { type: 'ARRAY', items: S } }, required: ['job'] },
@@ -103,7 +109,7 @@ const TIME_LIMIT_MS = 25_000 // Gemini's share; Groq gets its own time after it
 const PER_MODEL_MS = 12_000 // one Gemini model's turn (one round of talk)
 
 type Turn = { role: 'user' | 'model'; text: string }
-type Person = { id: string; name: string; role: string; phone: string }
+type Person = { id: string; name: string; role: string; phone: string; level?: string }
 
 async function callGemini(model: string, body: unknown, key: string, signal: AbortSignal) {
   const res = await fetch(`${API}/${model}:generateContent`, {
@@ -208,7 +214,10 @@ function systemText(person: Person, data: unknown, ctx: Ctx) {
   const file = f && Date.now() - new Date(f.at).getTime() < 24 * 60 * 60 * 1000
     ? `\n\nThe person's last file (waiting to be attached): "${f.file_name}"${f.doc_type ? `, which looks like a ${f.doc_type} from its name` : ''}. To attach it: propose_change attach_document with the job and doc_type (use ${f.doc_type || 'the type the person says'} unless the person says otherwise).`
     : ''
-  return `${SYSTEM_PROMPT(person)}\n\n${TODAY_BRIEF(data, person)}${file}`
+  const access = person.level && person.level !== 'admin'
+    ? `\n\nThis person's WhatsApp access is ${LEVEL_LABEL[person.level]}${person.level === 'view' ? ': they may only ask and read; do not offer changes, checks, files, reminders or watches' : ': no new jobs, payments, tasks, reports or access changes'}.`
+    : ''
+  return `${SYSTEM_PROMPT(person)}\n\n${TODAY_BRIEF(data, person)}${file}${access}`
 }
 // runs one tool call: notes it for the chat history; a change is only PREPARED
 // (checked and kept for the person's YES), never saved here
@@ -219,6 +228,16 @@ async function useTool(ctx: Ctx, name: string, args: any, data: any, person: Per
 }
 async function runOneTool(ctx: Ctx, name: string, args: any, data: any, person: Person): Promise<unknown> {
   ctx.used.push(`${name} ${JSON.stringify(args || {})}`)
+  // the person's access level decides what may run (checked here, whatever the AI asks for)
+  const gates = name === CHANGE_TOOL.name ? ['change', String(args?.action || '')] : [name]
+  const blocked = gates.find((g) => g && !allowed(person, g))
+  if (blocked) {
+    const need = levelNeeded(blocked)
+    ctx.used[ctx.used.length - 1] += ` → not allowed (${person.level || 'view'} access)`
+    const said = `🔒 Your WhatsApp access is *${LEVEL_LABEL[person.level || 'view']}*, so I can't do that (it needs ${LEVEL_LABEL[need]} access). Ask Jose if you need it.`
+    if (!(ctx.say ||= []).includes(said)) ctx.say.push(said)
+    return { not_allowed: true, tell_the_person: 'This person may not do this. Say nothing about it; the bot adds its own line.' }
+  }
   if (name === CUSTOMS_TOOL.name) {
     if (!ctx.checkCustoms) return { not_available: 'Checking Customs is not possible here.' }
     // asked twice in one reply: Customs is asked once only

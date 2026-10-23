@@ -4,10 +4,10 @@
 // made here by plain code (never by the AI), on a fresh copy of the job, with
 // the same checks as the portal, logged as done by that person via WhatsApp.
 import { jobTrucks, plateNo, parseContainerNos } from '../_shared/portal/journeyCore.js'
-import { jobsFor } from '../_shared/portal/botMessages.js'
+import { jobsFor, BOT_NUMBERS, LEVEL_LABEL } from '../_shared/portal/botMessages.js'
 import { isLineNotShip, lineName } from '../_shared/portal/shippingLines.js'
 
-type Person = { id: string; name: string; role: string; phone: string }
+type Person = { id: string; name: string; role: string; phone: string; level?: string }
 type Admin = any
 export type Pending = { action: string; job_id: string; job_no: string; args: Record<string, any>; summary: string; at: string }
 
@@ -22,14 +22,16 @@ export const ACTIONS = ['mark_delivered', 'add_truck', 'remove_truck', 'record_b
   'attach_document', 'set_eta', 'set_imo', 'set_vessel', 'set_shipping_line', 'set_cfs', 'set_free_days', 'set_priority', 'set_owner',
   'add_container', 'remove_container', 'record_ooc',
   // added 24 Oct 2026 (2): a new job by chat, the CFS payment, a task for a teammate
-  'create_job', 'record_payment', 'assign_task']
+  'create_job', 'record_payment', 'assign_task',
+  // who may use the bot (admins only)
+  'set_access']
 const MODES = ['Sea FCL', 'Sea LCL', 'Air', 'BPT/MBPT']
 const SIZES = ['20GP', '40GP', '40HC', '45HC', '20RF', '40RF', '40RFHC', '20OT', '40OT', '20FR', '40FR', '20TK', 'LCL']
 const DOC_TYPES = ['BE', 'BL', 'Invoice', 'Packing List', 'COO', 'Insurance', 'Examination Order', 'OOC', 'E-Way Bill', 'POD', 'Other']
 
 export const CHANGE_TOOL = {
   name: 'propose_change',
-  description: 'Make a change in the portal for the person: mark_delivered, add_truck (truck_no, optional container), remove_truck (truck_no), record_be (be_no 7 digits, be_date YYYY-MM-DD), set_leaves_by (mode truck/rail), set_delivery_by (by jds/client), add_note (note), attach_document (the file the person just sent; doc_type), set_eta (date YYYY-MM-DD), set_imo (imo = the 7-digit IMO number of the ship), set_vessel (vessel = the SHIP\'s name, never the shipping line), set_shipping_line (line), set_cfs (cfs), set_free_days (days), set_priority (priority normal/high/urgent), set_owner (owner = staff name), add_container (container, size), remove_container (container), record_ooc (ooc_no, ooc_date YYYY-MM-DD; OOC seen in LiveImpex), create_job (job = the NEW job no; client, job_mode, port, bl_no, containers, size, vessel, eta, line, be_no, be_date, days), record_payment (amount in rupees = the CFS amount), assign_task (to = teammate name, task, due = YYYY-MM-DD HH:MM India time). The SAME change on several jobs: give them all in jobs (e.g. ["J-519","J-633"]) in ONE call. Call it ONCE; the bot then asks the person to confirm. Nothing changes until they do.',
+  description: 'Make a change in the portal for the person: mark_delivered, add_truck (truck_no, optional container), remove_truck (truck_no), record_be (be_no 7 digits, be_date YYYY-MM-DD), set_leaves_by (mode truck/rail), set_delivery_by (by jds/client), add_note (note), attach_document (the file the person just sent; doc_type), set_eta (date YYYY-MM-DD), set_imo (imo = the 7-digit IMO number of the ship), set_vessel (vessel = the SHIP\'s name, never the shipping line), set_shipping_line (line), set_cfs (cfs), set_free_days (days), set_priority (priority normal/high/urgent), set_owner (owner = staff name), add_container (container, size), remove_container (container), record_ooc (ooc_no, ooc_date YYYY-MM-DD; OOC seen in LiveImpex), create_job (job = the NEW job no; client, job_mode, port, bl_no, containers, size, vessel, eta, line, be_no, be_date, days), record_payment (amount in rupees = the CFS amount), assign_task (to = teammate name, task, due = YYYY-MM-DD HH:MM India time), set_access (admins only; gives, changes or removes WhatsApp bot access: phone = 10-digit mobile, to = the name of the person, level = view / staff / admin / remove). The SAME change on several jobs: give them all in jobs (e.g. ["J-519","J-633"]) in ONE call. Call it ONCE; the bot then asks the person to confirm. Nothing changes until they do.',
   parameters: {
     type: 'OBJECT',
     properties: {
@@ -46,6 +48,7 @@ export const CHANGE_TOOL = {
       doc_type: { type: 'STRING', enum: DOC_TYPES }, date: { type: 'STRING' }, vessel: { type: 'STRING' }, imo: { type: 'STRING' }, line: { type: 'STRING' },
       cfs: { type: 'STRING' }, days: { type: 'NUMBER' }, priority: { type: 'STRING', enum: ['normal', 'high', 'urgent'] },
       owner: { type: 'STRING' }, size: { type: 'STRING' }, ooc_no: { type: 'STRING' }, ooc_date: { type: 'STRING' },
+      phone: { type: 'STRING' }, level: { type: 'STRING', enum: ['view', 'staff', 'admin', 'remove'] },
     },
     required: ['action'],
   },
@@ -64,6 +67,7 @@ type Prepared = { ok: true; pending: Pending } | { ok: false; error: string }
 export function prepareChange(args: any, data: any, person: Person, extra: ChangeContext = {}): Prepared {
   const action = String(args?.action || '')
   if (action === 'create_job') return prepareCreate(args, data, person)
+  if (action === 'set_access') return prepareAccess(args, extra.team || [])
   const list = [...new Set((Array.isArray(args?.jobs) ? args.jobs : []).map((x: unknown) => String(x)).filter(Boolean))]
   if (list.length > 1) {
     if (['attach_document', 'assign_task'].includes(action)) return { ok: false, error: 'Please do this one job at a time.' }
@@ -86,6 +90,26 @@ export function prepareChange(args: any, data: any, person: Person, extra: Chang
     }
   }
   return prepareOne({ ...args, job: args?.job || list[0] }, data, person, extra)
+}
+
+// Who may use the bot: an admin gives, changes or removes a number's access.
+// Jose's own two numbers (BOT_NUMBERS) are always admins and can't be changed here.
+function prepareAccess(args: any, team: Person[]): Prepared {
+  const digits = String(args?.phone || '').replace(/\D/g, '').replace(/^(?:91|0)(?=[6-9]\d{9}$)/, '')
+  if (!/^[6-9]\d{9}$/.test(digits)) return { ok: false, error: 'Give the 10-digit mobile number, for example 9876543210.' }
+  const phone = `91${digits}`
+  if (BOT_NUMBERS.includes(phone)) return { ok: false, error: "That is one of Jose's own numbers: it is always a full admin and cannot be changed here." }
+  const level = String(args?.level || '').toLowerCase()
+  if (!['view', 'staff', 'admin', 'remove'].includes(level)) return { ok: false, error: 'Which access: view only, staff, full admin, or remove?' }
+  const now = team.find((t) => t.phone === phone)
+  const name = String(args?.to || args?.owner || now?.name || '').trim().slice(0, 40)
+  if (level === 'remove') {
+    if (!now) return { ok: false, error: `+91 ${digits} has no access to the bot.` }
+    return { ok: true, pending: { action: 'set_access', job_id: '', job_no: '', args: { phone, name: now.name, level }, summary: `Remove *${now.name}* (+91 ${digits}) from the WhatsApp bot`, at: new Date().toISOString() } }
+  }
+  if (!name) return { ok: false, error: `What is the name of the person with +91 ${digits}?` }
+  if (now?.level === level) return { ok: false, error: `${now.name} already has ${LEVEL_LABEL[level]} access.` }
+  return { ok: true, pending: { action: 'set_access', job_id: '', job_no: '', args: { phone, name, level }, summary: `${now ? 'Change' : 'Give'} *${name}* (+91 ${digits}) *${LEVEL_LABEL[level]}* access to the WhatsApp bot${now ? ` (now ${LEVEL_LABEL[now.level || 'view']})` : ''}`, at: new Date().toISOString() } }
 }
 
 // A new job typed on WhatsApp: the same checks as Create job
@@ -285,6 +309,24 @@ export async function applyChange(admin: Admin, pending: Pending, person: Person
     const out: string[] = []
     for (const item of (pending.args?.items || []) as Pending[]) out.push(await applyChange(admin, item, person, deps))
     return out.join('\n')
+  }
+  // who may use the bot (an admin's decision)
+  if (pending.action === 'set_access') {
+    const a = pending.args || {}
+    const shown = `+91 ${String(a.phone).slice(2)}`
+    if (a.level === 'remove') {
+      const { error } = await admin.from('bot_people').delete().eq('phone', a.phone)
+      if (error) return `❌ Could not remove: ${error.message}. Nothing was changed.`
+    } else {
+      const { error } = await admin.from('bot_people').upsert({ phone: a.phone, name: a.name, level: a.level, added_by: person.name, added_at: new Date().toISOString() })
+      if (error) return `❌ Could not save: ${error.message}. Nothing was changed.`
+    }
+    await admin.from('activity_log').insert({ type: 'note', action: 'note', title: `WhatsApp bot access: ${a.name} ${a.level === 'remove' ? 'removed' : `→ ${LEVEL_LABEL[a.level]}`}`, note: `${shown}, by ${person.name} via WhatsApp`, done_by_name: `${person.name} via WhatsApp`, meta: { phone: a.phone, level: a.level } })
+    return a.level === 'remove'
+      ? `✅ Done: *${a.name}* (${shown}) can no longer use the bot. Their messages are now ignored.`
+      : `✅ Done: *${a.name}* (${shown}) now has *${LEVEL_LABEL[a.level]}* access.
+
+They should send any message (e.g. "hi") to the bot to start. While the bot uses Meta's test number, the number must also be on Meta's test recipient list, or the bot's replies will not reach them.`
   }
   // a new job typed on WhatsApp
   if (pending.action === 'create_job') {
