@@ -188,13 +188,14 @@ export default function ShipMap({ ships = [], selectedKey, onSelect, height = 42
       const t = trips[s.key]
       const isSel = sel?.key === s.key
       const stale = s.at && Date.now() - new Date(s.at).getTime() > STALE_HOURS * 3600e3
-      const color = stale ? '#94a3b8' : s.arrived ? '#b45309' : '#15803d'
+      const color = stale || s.waiting ? '#94a3b8' : s.arrived ? '#b45309' : '#15803d'
       const pos = t?.pos || s.pos
-      const shape = t?.heading != null
+      // not sailed yet: a dot at the port, not a ship with a heading
+      const shape = t?.heading != null && !s.waiting
         ? `<span class="hull" style="transform:translate(-50%,-50%) rotate(${Math.round(t.heading)}deg)">${hull(color)}</span>`
         : `<span class="dot" style="background:${color}"></span>`
       // JDS knows ships by their jobs: the pin shows the job numbers, not the IMO (Jose, 24 Oct 2026)
-      const tone = stale ? 'old' : s.arrived ? 'port' : 'sea'
+      const tone = s.waiting ? 'old' : stale ? 'old' : s.arrived ? 'port' : 'sea'
       const html = `<div class="ix-ship ${isSel ? 'sel' : ''}">${shape}<div class="ix-smark ${tone} ${isSel ? 'sel' : ''}"><span class="ic"><i class="ti ti-ship"></i></span>${esc(s.jobs)}${s.clients ? `<span class="cl">${esc(s.clients)}</span>` : ''}</div></div>`
       // no hover box: the voyage card on the right says it all (Jose, 24 Oct 2026)
       L.marker(pos, { icon: L.divIcon({ className: 'ix-tpin', iconSize: [0, 0], html }), zIndexOffset: isSel ? 1000 : 0 })
@@ -247,24 +248,24 @@ export default function ShipMap({ ships = [], selectedKey, onSelect, height = 42
             </div>
             {(sel.polName || sel.podName) && (
               <div className="legs">
-                <div><div className="k">From</div><div className="v">{sel.polName || '—'}</div>{sel.polDate && <div className="d">Left {sel.polDate}</div>}</div>
+                <div><div className="k">From</div><div className="v">{sel.polName || '—'}</div>{sel.polDate && <div className="d">{sel.polDate}</div>}</div>
                 <Icon name="arrow-right" />
                 <div style={{ textAlign: 'right' }}><div className="k">To</div><div className="v">{sel.podName || '—'}</div>{sel.eta && <div className="d">{sel.eta}</div>}</div>
               </div>
             )}
             {v?.pct != null && (
               <>
-                <div className="bar"><span style={{ width: `${sel.arrived ? 100 : v.pct}%` }} /></div>
+                <div className="bar"><span style={{ width: `${sel.arrived ? 100 : sel.waiting ? 0 : v.pct}%` }} /></div>
                 <div className="prog">
-                  <span>{sel.arrived ? 'Arrived' : `${v.pct}% of the way`}</span>
-                  {!sel.arrived && v.left != null && <span>{Math.round(v.left * 1.852).toLocaleString('en-IN')} km to go</span>}
+                  <span>{sel.arrived ? 'Arrived' : sel.waiting ? 'Not sailed yet' : `${v.pct}% of the way`}</span>
+                  {!sel.arrived && v.left != null && <span>{Math.round(v.left * 1.852).toLocaleString('en-IN')} km {sel.waiting ? 'voyage' : 'to go'}</span>}
                 </div>
               </>
             )}
             <div className="foot">
               {sel.where && <span>{sel.where}</span>}
-              {sel.at && <span>Position {ago(sel.at)}</span>}
-              {v?.heading != null && <span>Heading {Math.round(v.heading)}°</span>}            </div>
+              {sel.at && !sel.waiting && <span>Position {ago(sel.at)}</span>}
+              {v?.heading != null && !sel.waiting && <span>Heading {Math.round(v.heading)}°</span>}            </div>
           </div>
         )}
         <div className="ix-realmap-legend">

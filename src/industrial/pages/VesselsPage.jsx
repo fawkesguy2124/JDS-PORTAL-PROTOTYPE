@@ -6,7 +6,7 @@ import ShipMap, { vesselsOf, shipIdOf, shipPosition } from '../ShipMap'
 import { cargoOnShip } from '../../../supabase/functions/_shared/portal/ships.js'
 import { lineName } from '../../../supabase/functions/_shared/portal/shippingLines.js'
 import { Icon, Chip, Skeleton, fmtDate } from '../ui'
-import { portTime, seaWhere, portName } from '../SeaTracking'
+import { portTime, seaWhere, portName, notSailed, polText } from '../SeaTracking'
 
 // Vessels: every ship that still carries our cargo, on the portal's own map with
 // Safecube's positions (VesselFinder removed 24 Oct 2026), one row per ship with
@@ -88,7 +88,7 @@ export default function VesselsPage({ onOpenJob, showToast, onGo }) {
       pos: p?.pos || null, at: p?.at || null, from: p?.from || null, track: ok ? sea.track : null,
       eta: ok && sea.pod_date ? `${sea.pod_actual ? 'Arrived' : 'ETA'} ${portTime(sea.pod_date)}` : null, arrived: !!s.arrived || !!(ok && sea.pod_actual),
       where: ok ? seaWhere(sea) : null, route: ok ? sea.route : null,
-      polName: ok ? portName(sea.pol) : null, polDate: ok && sea.pol_date ? portTime(sea.pol_date, false) : null, podName: ok ? portName(sea.pod) : null,
+      polName: ok ? portName(sea.pol) : null, polDate: ok ? polText(sea) : null, waiting: notSailed(sea), podName: ok ? portName(sea.pod) : null,
     }
   })
 
@@ -172,7 +172,7 @@ export default function VesselsPage({ onOpenJob, showToast, onGo }) {
               </div>
             </div>
             <div className="act" onClick={(e) => e.stopPropagation()}>
-              {(s.name || s.imo) && (s.arrived ? <Chip tone="amber" icon="anchor">At port, unloading</Chip> : <Chip tone="blue" icon="ship">At sea</Chip>)}
+              {(s.name || s.imo) && (s.arrived ? <Chip tone="amber" icon="anchor">At port, unloading</Chip> : notSailed(seaOfShip(s)) ? <Chip tone="grey" icon="clock">Not sailed yet</Chip> : <Chip tone="blue" icon="ship">At sea</Chip>)}
               {/* no IMO yet: the IGM check finds it (one check, by a person), or type it */}
               {!s.imo && igmOf(s.jobs[0].job) && (
                 <button type="button" className="ix-btn sm" onClick={() => onGo?.(`customs&job=${s.jobs[0].job.id}`)} title="Opens this job's IGM check on the BE & OOC page">
