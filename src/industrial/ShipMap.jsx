@@ -223,8 +223,6 @@ export default function ShipMap({ ships = [], selectedKey, onSelect, height = 42
     return () => { window.removeEventListener('keydown', onKey); document.body.style.overflow = overflow }
   }, [big])
 
-  const zoomTo = () => { const m = map.current; if (m && v) m.setView(v.pos, 9) }
-
   return (
     <>
       {big && <div className="ix-realmap-backdrop" onClick={() => setBig(false)} />}
@@ -266,9 +264,7 @@ export default function ShipMap({ ships = [], selectedKey, onSelect, height = 42
             <div className="foot">
               {sel.where && <span>{sel.where}</span>}
               {sel.at && <span>Position {ago(sel.at)}{sel.from ? ` · ${sel.from}` : ''}</span>}
-              {v?.heading != null && <span>Heading {Math.round(v.heading)}°</span>}
-              <button type="button" className="ix-link" style={{ margin: 0 }} onClick={zoomTo}>Zoom to ship →</button>
-            </div>
+              {v?.heading != null && <span>Heading {Math.round(v.heading)}°</span>}            </div>
           </div>
         )}
         <div className="ix-realmap-legend">
