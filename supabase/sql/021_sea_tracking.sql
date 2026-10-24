@@ -26,6 +26,7 @@ create table if not exists public.sea_tracking (
   ais_status     text,
   last_event     jsonb,                  -- { what, where, when, box, vessel }
   containers     jsonb,                  -- [{ no, status, last }]
+  track          jsonb,                  -- [[lat, lng, at]…] positions seen, for the map's track
   route          jsonb,                  -- { segments: [[[lat,lng]…]], pol: [lat,lng], pod: [lat,lng] } for the map
   warnings       text[],
   error          text,                   -- the last error, if the look-up failed

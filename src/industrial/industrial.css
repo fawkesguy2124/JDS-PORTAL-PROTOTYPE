@@ -338,6 +338,41 @@
 /* the ship map: the Trucks map, as a whole card (VesselFinder removed 24 Oct 2026) */
 .ix-shipmap2 { border-radius: 10px; border-bottom: 0; background: #e8eef5 }
 .ix-card > .ix-shipmap2 { border-radius: 0 }
+.ix-shipmap2 .leaflet-container { background: #a9cdee }
+/* a ship seen from above, turned to its heading, with its job numbers */
+.ix-ship { position: absolute; left: 0; top: 0; cursor: pointer }
+.ix-ship .hull { position: absolute; left: 0; top: 0; display: block; line-height: 0; filter: drop-shadow(0 1px 2px rgba(0,0,0,.45)) }
+.ix-ship .dot { position: absolute; left: -7px; top: -7px; width: 14px; height: 14px; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 1px 3px rgba(0,0,0,.4) }
+.ix-ship.sel .hull { filter: drop-shadow(0 0 2px #fff) drop-shadow(0 0 4px #f59e0b) }
+/* the job card above the ship (like the Trucks map's pins) */
+.ix-smark { position: absolute; left: 0; top: 0; transform: translate(-50%, -100%) translateY(-24px); width: max-content; display: flex; align-items: center; gap: 7px; background: #fff; color: #0f2a52; font: 700 12.5px Inter, sans-serif; padding: 3px 11px 3px 3px; border-radius: 999px; border: 2px solid #15803d; box-shadow: 0 3px 10px rgba(0,0,0,.25) }
+.ix-smark .ic { width: 26px; height: 26px; border-radius: 50%; background: #15803d; color: #fff; display: grid; place-items: center; font-size: 16px }
+.ix-smark::after { content: ''; position: absolute; left: 50%; bottom: -9px; margin-left: -7px; border: 7px solid transparent; border-bottom: 0; border-top-color: #15803d }
+.ix-smark.port { border-color: #b45309 } .ix-smark.port .ic { background: #b45309 } .ix-smark.port::after { border-top-color: #b45309 }
+.ix-smark.old { border-color: #94a3b8 } .ix-smark.old .ic { background: #94a3b8 } .ix-smark.old::after { border-top-color: #94a3b8 }
+.ix-smark.sel { outline: 3px solid #f59e0b; outline-offset: 1px }
+.ix-port { position: absolute; left: -13px; top: -13px; width: 26px; height: 26px; border-radius: 50%; background: #fff; border: 2px solid #1a4fa0; color: #1a4fa0; display: grid; place-items: center; font-size: 15px; box-shadow: 0 2px 6px rgba(0,0,0,.25) }
+/* the voyage card on the ship map */
+.ix-voyage { position: absolute; top: 12px; right: 12px; z-index: 700; width: 300px; max-width: calc(100% - 70px); background: #fff; border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 8px 24px rgba(15,23,42,.18); padding: 12px 14px; font-size: 12.5px }
+.ix-voyage .hd { display: flex; gap: 10px; align-items: center }
+.ix-voyage .hd .ic { width: 34px; height: 34px; border-radius: 9px; background: #e7f6ec; color: #15803d; display: grid; place-items: center; font-size: 19px; flex-shrink: 0 }
+.ix-voyage .hd .t { font-weight: 700; font-size: 15px; color: var(--text) }
+.ix-voyage .hd .s { color: var(--text-2); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.ix-voyage .hd .x { margin-left: auto; border: 0; background: none; color: var(--muted); font-size: 16px; cursor: pointer; padding: 2px; align-self: flex-start }
+.ix-voyage .legs { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line) }
+.ix-voyage .legs > i { color: var(--muted); margin-top: 14px }
+.ix-voyage .legs .k { font-size: 10.5px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; font-weight: 600 }
+.ix-voyage .legs .v { font-weight: 600 }
+.ix-voyage .legs .d { color: var(--text-2); font-size: 11.5px }
+.ix-voyage .bar { height: 6px; border-radius: 99px; background: #e5eaf2; margin-top: 10px; overflow: hidden }
+.ix-voyage .bar span { display: block; height: 100%; background: linear-gradient(90deg, #16a34a, #1a4fa0); border-radius: 99px }
+.ix-voyage .prog { display: flex; justify-content: space-between; margin-top: 4px; font-size: 11.5px; color: var(--text-2) }
+.ix-voyage .foot { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line); color: var(--text-2); font-size: 11.5px }
+@media (max-width: 760px) { .ix-voyage { top: auto; bottom: 60px; left: 8px; right: 8px; width: auto; max-width: none } }
+/* the ship row's icon (the job number is the row's name) */
+.ix-ship-ic { width: 36px; height: 36px; border-radius: 10px; display: grid; place-items: center; font-size: 19px; background: #eef1f5; color: var(--muted); flex-shrink: 0 }
+.ix-ship-ic.sea { background: #e7f6ec; color: #15803d }
+.ix-ship-ic.port { background: #fef3e2; color: #b45309 }
 
 /* ── Phones (iPhone + Android), Jose 22 Oct 2026: easy to tap, no zoom jumps ── */
 /* crisp taps everywhere: no grey flash, no double-tap zoom delay */

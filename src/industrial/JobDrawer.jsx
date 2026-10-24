@@ -169,9 +169,11 @@ export default function JobDrawer({ jobId, initialTab = 'overview', onClose, onO
     const ok = sea && !sea.error
     const imo = name ? shipIdOf(job, name, data).imo : sea?.vessel_imo
     return {
-      key: job.id, label: imo ? `IMO ${imo}` : name || 'Ship', jobs: job.job_no, pos: p.pos, at: p.at, from: p.from,
-      eta: ok && sea.pod_date ? `${sea.pod_actual ? 'Arrived' : 'ETA'} ${portTime(sea.pod_date)}` : null,
-      where: ok ? seaWhere(sea) : null, podName: ok ? sea.pod : null, route: ok ? sea.route : null,
+      key: job.id, label: imo ? `IMO ${imo}` : null, jobs: job.job_no, clients: job.client || null, line: job.shipping_line || null,
+      pos: p.pos, at: p.at, from: p.from, track: ok ? sea.track : null,
+      eta: ok && sea.pod_date ? `${sea.pod_actual ? 'Arrived' : 'ETA'} ${portTime(sea.pod_date)}` : null, arrived: !!(ok && sea.pod_actual),
+      where: ok ? seaWhere(sea) : null, route: ok ? sea.route : null,
+      polName: ok ? sea.pol : null, polDate: ok && sea.pol_date ? portTime(sea.pol_date, false) : null, podName: ok ? sea.pod : null,
     }
   })()
 

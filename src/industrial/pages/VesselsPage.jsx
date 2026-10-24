@@ -83,10 +83,12 @@ export default function VesselsPage({ onOpenJob, showToast, onGo }) {
     const p = positionOf(s)
     const ok = sea && !sea.error
     return {
-      key: s.key, label: s.imo ? `IMO ${s.imo}` : s.name || 'Ship', jobs: s.jobs.map((x) => x.job.job_no).join(', '),
-      pos: p?.pos || null, at: p?.at || null, from: p?.from || null,
-      eta: ok && sea.pod_date ? `${sea.pod_actual ? 'Arrived' : 'ETA'} ${portTime(sea.pod_date)}` : null,
-      where: ok ? seaWhere(sea) : null, podName: ok ? sea.pod : null, route: ok ? sea.route : null,
+      key: s.key, label: s.imo ? `IMO ${s.imo}` : null, jobs: s.jobs.map((x) => x.job.job_no).join(', '),
+      clients: [...new Set(s.jobs.map((x) => x.job.client).filter(Boolean))].join(', '), line: lineOf(s),
+      pos: p?.pos || null, at: p?.at || null, from: p?.from || null, track: ok ? sea.track : null,
+      eta: ok && sea.pod_date ? `${sea.pod_actual ? 'Arrived' : 'ETA'} ${portTime(sea.pod_date)}` : null, arrived: !!s.arrived || !!(ok && sea.pod_actual),
+      where: ok ? seaWhere(sea) : null, route: ok ? sea.route : null,
+      polName: ok ? sea.pol : null, polDate: ok && sea.pol_date ? portTime(sea.pol_date, false) : null, podName: ok ? sea.pod : null,
     }
   })
 
@@ -110,28 +112,8 @@ export default function VesselsPage({ onOpenJob, showToast, onGo }) {
     showToast?.(`IMO ${no} saved on ${s.jobs.map((x) => x.job.job_no).join(', ')}`, 'success')
   }
 
-  // the map shows the ship has left India (our cargo is off): take it off this list
-  // on all its jobs, after a yes (Jose, 24 Oct 2026)
-  const markLeft = async (s) => {
-    const label = s.imo ? `IMO ${s.imo}` : s.name || 'This ship'
-    const nos = s.jobs.map((x) => x.job.job_no).join(', ')
-    if (!window.confirm(`${label} has left and our cargo is off it?
-
-It will be removed from this list for ${nos}.`)) return
-    setSaving(s.key)
-    let failed = null
-    const today = new Date().toISOString().slice(0, 10)
-    for (const { job } of s.jobs) {
-      const field_meta = { ...(job.field_meta && typeof job.field_meta === 'object' ? job.field_meta : {}), ship_left: today }
-      const { data: rows, error } = await supabase.from('jobs').update({ field_meta, updated_at: new Date().toISOString() }).eq('id', job.id).select()
-      if (error || !rows?.length) { failed = error?.message || 'no permission'; continue }
-      patchJob(rows[0])
-    }
-    setSaving(null)
-    if (failed) { showToast?.(`Could not save on every job: ${failed}`, 'error'); return }
-    if (selected === s.key) setSelected(null)
-    showToast?.(`${label} removed from Vessels (${nos})`, 'success')
-  }
+  // (no "Ship has left" button any more: Safecube says when the ship arrives and the
+  // ship leaves this list by itself two days later; Jose, 24 Oct 2026)
 
   return (
     <div className="ix-page">
@@ -145,16 +127,16 @@ It will be removed from this list for ${nos}.`)) return
       <div className="ix-card" style={{ marginBottom: 16, overflow: 'hidden' }}>
         <div className="ix-card-head">
           <Icon name="ship" style={{ color: 'var(--navy)' }} />
-          <h2>{sel && shown(sel) ? `${sel.imo ? `IMO ${sel.imo}` : sel.name} · ${sel.jobs.map((x) => x.job.job_no).join(', ')}` : 'Ships with our cargo'}</h2>
+          <h2>{sel && shown(sel) ? sel.jobs.map((x) => x.job.job_no).join(', ') : 'Ships with our cargo'}</h2>
         </div>
-        <ShipMap ships={mapShips} selectedKey={sel?.key} onSelect={setSelected} height={typeof window !== 'undefined' && window.innerWidth < 760 ? 320 : 440} />
+        <ShipMap ships={mapShips} selectedKey={sel?.key} onSelect={setSelected} height={typeof window !== 'undefined' && window.innerWidth < 760 ? 380 : 540} />
       </div>
 
       <div className="ix-card">
         <div className="ix-card-head">
           <Icon name="list-details" style={{ color: 'var(--navy)' }} />
           <h2>Ships with our cargo on board</h2><span className="ix-chip grey">{ships.length}</span>
-          <span className="sub hide-m">Click a ship to see it on the map. A ship leaves this list once our cargo is unloaded, or when you tap Ship has left.</span>
+          <span className="sub hide-m">Click a ship to see it on the map. A ship leaves this list by itself once it has arrived and our cargo is unloaded.</span>
         </div>
         {loading && !data && <Skeleton rows={4} />}
         {data && ships.length === 0 && <div className="ix-empty">No ship is carrying our cargo right now.</div>}
@@ -167,7 +149,8 @@ It will be removed from this list for ${nos}.`)) return
             title={shown(s) ? 'Show this ship on the map' : undefined}
             style={{ cursor: shown(s) ? 'pointer' : 'default' }}>
             <div className="who">
-              <span className="ix-plate" style={{ whiteSpace: 'nowrap' }}>{s.imo ? `IMO ${s.imo}` : s.name || 'IMO ?'}</span>
+              {/* the job is what JDS knows a ship by; its IMO shows in the map's card (Jose, 24 Oct 2026) */}
+              <span className={`ix-ship-ic ${s.arrived ? 'port' : shown(s) ? 'sea' : ''}`}><Icon name="ship" /></span>
               <div style={{ minWidth: 0 }}>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2px 12px' }}>
                   {s.jobs.map(({ job }) => (
@@ -190,11 +173,6 @@ It will be removed from this list for ${nos}.`)) return
             </div>
             <div className="act" onClick={(e) => e.stopPropagation()}>
               {(s.name || s.imo) && (s.arrived ? <Chip tone="amber" icon="anchor">At port, unloading</Chip> : <Chip tone="blue" icon="ship">At sea</Chip>)}
-              {(s.imo || shown(s)) && (
-                <button type="button" className="ix-btn sm" disabled={saving === s.key} onClick={() => markLeft(s)} title="The map shows this ship has already left: remove it from this list">
-                  <Icon name="check" />Ship has left
-                </button>
-              )}
               {/* no IMO yet: the IGM check finds it (one check, by a person), or type it */}
               {!s.imo && igmOf(s.jobs[0].job) && (
                 <button type="button" className="ix-btn sm" onClick={() => onGo?.(`customs&job=${s.jobs[0].job.id}`)} title="Opens this job's IGM check on the BE & OOC page">

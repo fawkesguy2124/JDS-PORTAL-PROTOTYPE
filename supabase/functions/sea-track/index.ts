@@ -164,7 +164,11 @@ async function track(admin: any, job: any, lines: any[], opts: { start?: boolean
     await admin.from('sea_tracking').upsert({ ...base, error: r.error, done: prev?.done || (!r.retry && !!opts.auto && !prev) }, { onConflict: 'job_id' })
     return { job: job.job_no, number: n.number, error: r.error }
   }
-  const row = { ...base, ...r.row, error: null, done: arrived(r.row) }
+  // the ship's position history for the map's track (one point per new position, last 300)
+  const track: any[] = Array.isArray(prev?.track) ? prev.track : []
+  const lastPt = track[track.length - 1]
+  if (typeof r.row.lat === 'number' && (!lastPt || lastPt[0] !== r.row.lat || lastPt[1] !== r.row.lng)) track.push([r.row.lat, r.row.lng, r.row.position_at || now])
+  const row = { ...base, ...r.row, track: track.slice(-300), error: null, done: arrived(r.row) }
   delete (row as any).next_event
   const { error } = await admin.from('sea_tracking').upsert({ ...row, last_event: { ...(r.row.last_event || {}), next: r.row.next_event } }, { onConflict: 'job_id' })
   if (error) return { job: job.job_no, error: `save: ${error.message}` }
