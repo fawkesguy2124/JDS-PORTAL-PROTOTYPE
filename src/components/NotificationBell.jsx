@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { supabase } from '../supabase'
+import DesktopAlerts from './DesktopAlerts'
 
 const getStorageKey = (userId) => `jds_notif_last_seen_${userId || 'unknown'}`
 
@@ -327,6 +328,7 @@ if (filter === 'container') return t.includes('container') || t === 'detention_a
             )}
           </div>
 
+          <DesktopAlerts profile={profile} />
         </div>
       )}
     </div>

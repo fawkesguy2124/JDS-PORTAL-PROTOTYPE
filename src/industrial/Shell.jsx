@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import NotificationBell from '../components/NotificationBell'
 import CommandPalette from './CommandPalette'
 import { Icon, initials } from './ui'
+import { useInstallApp } from '../services/desktopApp'
 
 // The frame around every page: top bar (search, create, bell, user),
 // the left menu (collapsible), and a bottom tab bar on phones.
@@ -10,6 +11,7 @@ export default function Shell({ sections, active, counts = {}, onGo, onOpenJob, 
   const [compact, setCompact] = useState(() => { try { return localStorage.getItem('ix_compact') === '1' } catch { return false } })
   const [palette, setPalette] = useState(false)
   const [mnav, setMnav] = useState(false)
+  const app = useInstallApp() // the portal as a desktop app
 
   useEffect(() => {
     const onKey = (e) => {
@@ -55,6 +57,11 @@ export default function Shell({ sections, active, counts = {}, onGo, onOpenJob, 
             <Icon name="search" /><span>Search jobs, BE, container, truck, client…</span><kbd>Ctrl K</kbd>
           </div>
           <div className="ix-top-actions">
+            {app.canInstall && (
+              <button type="button" className="ix-btn hide-m" onClick={app.install} title="Install the JDS Portal as an app on this computer (own window, Start menu and taskbar icon)">
+                <Icon name="download" />Install app
+              </button>
+            )}
             <button type="button" className="ix-btn primary hide-m" onClick={onCreateJob}><Icon name="plus" />Create job</button>
             <NotificationBell onNavigate={onBellNavigate} profile={profile} />
             <button type="button" className="ix-icon-btn hide-m" onClick={() => toggle(setCompact, 'ix_compact')} title={compact ? 'Comfortable rows' : 'Compact rows'}>

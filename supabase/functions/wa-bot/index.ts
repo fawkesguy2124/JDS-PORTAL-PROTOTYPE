@@ -22,6 +22,7 @@ import { applyChange, confirmText, isNo, isYes, PENDING_MINUTES, prepareChange, 
 import { downloadMedia, transcribe, normalizeSpoken, docTypeFromName, jobFromText, safeName, MAX_FILE_BYTES } from './media.ts'
 import { makeServerTools, sendDueReminders, checkWatches, checkTasks } from './servertools.ts'
 import { readBeFile, jobForBe, beLine } from './bereader.ts'
+import { pushAlerts, pushTest } from './push.ts'
 
 const PORTAL = 'https://jds-portal-prototype.vercel.app'
 
@@ -268,7 +269,11 @@ async function runAlerts(admin: Admin) {
     readAll(() => admin.from('activity_log').select('*').gt('created_at', since).lte('created_at', now).order('created_at')),
   ])
   const out = []
-  for (const alert of instantAlerts(data, events)) {
+  const alerts = instantAlerts(data, events)
+  // desktop notifications first (they don't depend on WhatsApp working)
+  const pushed = await pushAlerts(admin, alerts).catch((e) => ({ error: (e as Error).message }))
+  console.log(`[wa-bot] desktop alerts: ${JSON.stringify(pushed)}`)
+  for (const alert of alerts) {
     for (const person of team) out.push(await sendOnce(admin, alert.key, person, alert.kind, alert))
   }
   if (sendingOn()) await admin.from('bot_state').upsert({ id: 1, alerts_checked_at: now })
@@ -695,6 +700,8 @@ Deno.serve(async (req) => {
         ])
         return json({ success: true, phone, account, numbers })
       }
+      // test: one desktop notification to every computer that switched them on
+      if (run === 'push-test') return json({ success: true, ...(await pushTest(admin, String(JSON.parse(raw).text || 'Test: desktop alerts work.'))) })
       // test: the 8:00 missing-details message for each person (nothing sent)
       if (run === 'missing-test') {
         const [data, team] = await Promise.all([loadData(admin), loadTeam(admin)])

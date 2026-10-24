@@ -1,0 +1,25 @@
+{
+  "id": "/",
+  "name": "JDS Logistics Portal",
+  "short_name": "JDS Portal",
+  "description": "JDS Logistics operations: jobs, BE & OOC, containers, trucks and vessels.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f4f6fa",
+  "theme_color": "#1a4fa0",
+  "orientation": "any",
+  "lang": "en-IN",
+  "categories": ["business", "productivity"],
+  "icons": [
+    { "src": "/app/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/app/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/app/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Today", "url": "/admin?tab=today", "icons": [{ "src": "/app/icon-192.png", "sizes": "192x192" }] },
+    { "name": "BE & OOC", "url": "/admin?tab=customs", "icons": [{ "src": "/app/icon-192.png", "sizes": "192x192" }] },
+    { "name": "All jobs", "url": "/admin?tab=jobs", "icons": [{ "src": "/app/icon-192.png", "sizes": "192x192" }] },
+    { "name": "Vessels", "url": "/admin?tab=vessels", "icons": [{ "src": "/app/icon-192.png", "sizes": "192x192" }] }
+  ]
+}
