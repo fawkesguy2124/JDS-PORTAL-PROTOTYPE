@@ -9,7 +9,7 @@ import ShipMap, { vesselOf, shipIdOf, shipPosition } from './ShipMap'
 import { isLineNotShip } from '../../supabase/functions/_shared/portal/shippingLines.js'
 import { openDoc, downloadDoc } from '../services/docFiles'
 import PdfPreview from '../components/PdfPreview'
-import SeaTracking, { portTime, seaWhere } from './SeaTracking'
+import SeaTracking, { portTime, seaWhere, portName } from './SeaTracking'
 
 // The side panel that opens when a job is clicked: what it is, where it is,
 // what is next, its containers, timeline, documents and team notes. Editing
@@ -173,7 +173,7 @@ export default function JobDrawer({ jobId, initialTab = 'overview', onClose, onO
       pos: p.pos, at: p.at, from: p.from, track: ok ? sea.track : null,
       eta: ok && sea.pod_date ? `${sea.pod_actual ? 'Arrived' : 'ETA'} ${portTime(sea.pod_date)}` : null, arrived: !!(ok && sea.pod_actual),
       where: ok ? seaWhere(sea) : null, route: ok ? sea.route : null,
-      polName: ok ? sea.pol : null, polDate: ok && sea.pol_date ? portTime(sea.pol_date, false) : null, podName: ok ? sea.pod : null,
+      polName: ok ? portName(sea.pol) : null, polDate: ok && sea.pol_date ? portTime(sea.pol_date, false) : null, podName: ok ? portName(sea.pod) : null,
     }
   })()
 

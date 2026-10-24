@@ -84,7 +84,7 @@ function routeLine(route) {
   return out
 }
 // The voyage around the ship: the route split where the ship is, its heading and progress
-function voyage(s) {
+export function voyage(s) {
   const line = routeLine(s.route)
   const pos = s.pos
   if (!pos) return null
