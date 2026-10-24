@@ -18,6 +18,10 @@ export function shipKey(raw) {
 // Every ship of a job: typed on the job, and each container's ship (LDB). A job
 // can have two when its containers sail on different ships.
 export function vesselsOf(job, data) {
+  // the ship tracking says the cargo is on now beats what was typed (Jose, 24 Oct
+  // 2026: J-584 said EVER LEARNED; its container is on ONE THESEUS)
+  const sea = seaOf(job, data)
+  if (sea && !sea.error && shipKey(sea.vessel_name).length >= 3) return [shipKey(sea.vessel_name)]
   const names = []
   // a shipping line's name saved as the ship ("EVERGREEN") is not a ship
   const add = (v, line) => { const k = shipKey(v); if (k.length >= 3 && !isLineNotShip(k, line) && !names.includes(k)) names.push(k) }
@@ -26,8 +30,6 @@ export function vesselsOf(job, data) {
     for (const no of parseContainerNos(x?.containers)) add(data?.containersByNo?.[no]?.vessel)
   }
   own(job)
-  // the ship Safecube's tracking says the cargo is on (Jose, 24 Oct 2026)
-  if (!names.length) add(seaOf(job, data)?.vessel_name)
   // nothing on the job itself: another job on the same IGM (same port) is on the
   // same ship, so its ship name counts too (Jose, 23 Oct 2026: J-667)
   if (!names.length) for (const other of igmSiblings(job, data)) own(other)
