@@ -2,13 +2,15 @@ import { useMemo, useState } from 'react'
 import { supabase } from '../../supabase'
 import { isDelivered, isExportJob } from '../../services/journey'
 import { useJourney, useFreshOnOpen } from '../JourneyContext'
-import ShipMap, { vesselsOf, shipIdOf } from '../ShipMap'
+import ShipMap, { vesselsOf, shipIdOf, shipPosition } from '../ShipMap'
 import { cargoOnShip } from '../../../supabase/functions/_shared/portal/ships.js'
 import { lineName } from '../../../supabase/functions/_shared/portal/shippingLines.js'
 import { Icon, Chip, Skeleton, fmtDate } from '../ui'
+import { portTime, seaWhere } from '../SeaTracking'
 
-// Vessels: every ship that still carries our cargo, live on VesselFinder's free
-// map, one row per ship with all its jobs (Jose, 22 Oct 2026). Once the cargo is
+// Vessels: every ship that still carries our cargo, on the portal's own map with
+// Safecube's positions (VesselFinder removed 24 Oct 2026), one row per ship with
+// all its jobs (Jose, 22 Oct 2026). Once the cargo is
 // unloaded (cargoOnShip) the ship leaves this page. Staff type the IMO once
 // (saved on every job of that ship); behind the scenes the IGM check and the
 // vessel-track finder may also supply it (never shown on screen). Not ULIP.
@@ -57,7 +59,9 @@ export default function VesselsPage({ onOpenJob, showToast, onGo }) {
     }).sort((a, b) => (!!a.arrived - !!b.arrived) || String(b.arrived || '').localeCompare(String(a.arrived || '')))
   }, [active, data])
 
-  const shown = (s) => !!(s.imo || s.mmsi)
+  // a ship is on the map once its position is known (Safecube, else the finder)
+  const positionOf = (s) => shipPosition(seaOfShip(s), s.name ? data?.shipIds?.[s.name] : null)
+  const shown = (s) => !!positionOf(s)
   // the shipping line of a ship's jobs ("MSC", "HUNGA A LINE"): with the IMO that is
   // all JDS needs; the ship's own name is not asked for (Jose, 24 Oct 2026)
   const lineOf = (s) => { const j = s.jobs.find((x) => x.job.shipping_line)?.job; return j ? lineName(j.shipping_line) || j.shipping_line : null }
@@ -67,7 +71,24 @@ export default function VesselsPage({ onOpenJob, showToast, onGo }) {
     const known = [igmOf(job) && `IGM ${igmOf(job)}${job.ulip_refs?.igm_date ? ` (${fmtDate(job.ulip_refs.igm_date)})` : ''}`].filter(Boolean)
     return `IMO not known yet${known.length ? ` · ${known.join(' · ')}` : ''}. Check the IGM or type the IMO.`
   }
+  // the Safecube tracking of one of the ship's jobs (the one on this IMO first)
+  const seaOfShip = (s) => {
+    const rows = s.jobs.map((x) => data?.seaByJob?.[x.job.id]).filter(Boolean)
+    return rows.find((r) => s.imo && r.vessel_imo === s.imo) || rows[0] || null
+  }
   const sel = ships.find((s) => s.key === selected) || ships.find((s) => shown(s) && !s.arrived) || ships.find(shown) || null
+  // the map's pins: one per ship with a known position
+  const mapShips = ships.map((s) => {
+    const sea = seaOfShip(s)
+    const p = positionOf(s)
+    const ok = sea && !sea.error
+    return {
+      key: s.key, label: s.imo ? `IMO ${s.imo}` : s.name || 'Ship', jobs: s.jobs.map((x) => x.job.job_no).join(', '),
+      pos: p?.pos || null, at: p?.at || null, from: p?.from || null,
+      eta: ok && sea.pod_date ? `${sea.pod_actual ? 'Arrived' : 'ETA'} ${portTime(sea.pod_date)}` : null,
+      where: ok ? seaWhere(sea) : null, podName: ok ? sea.pod : null, route: ok ? sea.route : null,
+    }
+  })
 
   // one IMO for the ship, saved on every job on it
   const saveImo = async (s) => {
@@ -117,16 +138,16 @@ It will be removed from this list for ${nos}.`)) return
       <div className="ix-page-head">
         <div>
           <h1>Vessels</h1>
-          <p>Where the ship of each open job is, live from VesselFinder</p>
+          <p>Where the ship of each open job is, from Safecube tracking</p>
         </div>
       </div>
 
       <div className="ix-card" style={{ marginBottom: 16, overflow: 'hidden' }}>
         <div className="ix-card-head">
           <Icon name="ship" style={{ color: 'var(--navy)' }} />
-          <h2>{sel && shown(sel) ? `${sel.imo ? `IMO ${sel.imo}` : sel.name} · ${sel.jobs.map((x) => x.job.job_no).join(', ')}` : 'Ships near Nhava Sheva'}</h2>
+          <h2>{sel && shown(sel) ? `${sel.imo ? `IMO ${sel.imo}` : sel.name} · ${sel.jobs.map((x) => x.job.job_no).join(', ')}` : 'Ships with our cargo'}</h2>
         </div>
-        <ShipMap imo={sel?.imo} mmsi={sel?.mmsi} height={typeof window !== 'undefined' && window.innerWidth < 760 ? 320 : 440} />
+        <ShipMap ships={mapShips} selectedKey={sel?.key} onSelect={setSelected} height={typeof window !== 'undefined' && window.innerWidth < 760 ? 320 : 440} />
       </div>
 
       <div className="ix-card">
@@ -157,14 +178,19 @@ It will be removed from this list for ${nos}.`)) return
                   ))}
                 </div>
                 <div style={{ fontSize: 12, color: 'var(--muted)' }}>
-                  {[lineOf(s), shown(s) ? (s.imo ? null : 'Live position available') : unknownHint(s)].filter(Boolean).join(' · ')}
-                  {s.jobs.length === 1 && s.jobs[0].job.eta ? ` · ETA ${fmtDate(s.jobs[0].job.eta)}` : ''}
+                  {(() => {
+                    // Safecube's ETA and position, when one of the ship's jobs is tracked
+                    const sea = seaOfShip(s)
+                    const eta = sea && !sea.error ? (sea.pod_actual ? `Arrived ${portTime(sea.pod_date)}` : `ETA ${portTime(sea.pod_date)}`) : s.jobs.length === 1 && s.jobs[0].job.eta ? `ETA ${fmtDate(s.jobs[0].job.eta)}` : null
+                    return [lineOf(s), s.imo ? null : unknownHint(s), eta, sea && !sea.error ? seaWhere(sea) : null,
+                      !shown(s) && !sea ? 'No position yet: open the job and tap Track this ship' : null].filter(Boolean).join(' · ')
+                  })()}
                 </div>
               </div>
             </div>
             <div className="act" onClick={(e) => e.stopPropagation()}>
               {(s.name || s.imo) && (s.arrived ? <Chip tone="amber" icon="anchor">At port, unloading</Chip> : <Chip tone="blue" icon="ship">At sea</Chip>)}
-              {shown(s) && (
+              {(s.imo || shown(s)) && (
                 <button type="button" className="ix-btn sm" disabled={saving === s.key} onClick={() => markLeft(s)} title="The map shows this ship has already left: remove it from this list">
                   <Icon name="check" />Ship has left
                 </button>
@@ -175,8 +201,8 @@ It will be removed from this list for ${nos}.`)) return
                   <Icon name="search" />Check IGM
                 </button>
               )}
-              {/* the IMO box, until the ship can be shown (saved on all its jobs) */}
-              {!shown(s) && (
+              {/* the IMO box, until the ship's IMO is known (saved on all its jobs) */}
+              {!s.imo && (
                 <>
                   <input value={typing[s.key] || ''} onChange={(e) => setTyping((p) => ({ ...p, [s.key]: e.target.value.replace(/\D/g, '').slice(0, 7) }))}
                     placeholder="IMO (7 digits)" inputMode="numeric" aria-label={`IMO number for ${s.jobs.map((x) => x.job.job_no).join(', ')}`} />

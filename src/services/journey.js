@@ -51,7 +51,10 @@ export async function loadJourneyData() {
     firstError ? (firstError.message || 'Could not load the latest data') : null,
   )
   // ship numbers found by the vessel-track finder (by ship name); optional
-  const ships = await supabase.from('vessel_positions').select('name, mmsi, imo, candidates, seen_at, destination')
+  const ships = await supabase.from('vessel_positions').select('name, mmsi, imo, candidates, seen_at, destination, lat, lon')
   built.shipIds = Object.fromEntries((ships.data || []).map((r) => [r.name, r]))
+  // ETA, ship and position from Safecube (sea-track function); optional
+  const sea = await supabase.from('sea_tracking').select('*')
+  built.seaByJob = Object.fromEntries((sea.data || []).map((r) => [r.job_id, r]))
   return built
 }

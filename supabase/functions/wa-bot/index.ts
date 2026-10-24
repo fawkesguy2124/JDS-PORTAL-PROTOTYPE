@@ -81,6 +81,9 @@ async function loadData(admin: Admin) {
     readAll(() => admin.from('vessel_positions').select('name, mmsi, imo, candidates, lat, lon, sog, nav_status, destination, seen_at').order('name')).catch(() => []),
   ])
   data.shipIds = Object.fromEntries(ships.map((r: any) => [r.name, r]))
+  // ETA, ship and position from Safecube (sea-track function)
+  const sea = await readAll(() => admin.from('sea_tracking').select('*').order('job_id')).catch(() => [])
+  data.seaByJob = Object.fromEntries(sea.map((r: any) => [r.job_id, r]))
   data.activity = activity
   data.documents = documents
   data.people = Object.fromEntries(people.map((p: any) => [p.id, p.name]))

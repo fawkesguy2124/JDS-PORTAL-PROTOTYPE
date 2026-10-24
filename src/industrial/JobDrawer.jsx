@@ -5,10 +5,11 @@ import { portLabel } from '../utils/ports'
 import { useJourney } from './JourneyContext'
 import { containerFinishedOn, deliveryBy, effectiveStage } from '../services/journey'
 import { Chip, FreeDays, Icon, PhaseChip, fmtDate, initials, jobOwnerName, timeAgo } from './ui'
-import ShipMap, { vesselOf, shipIdOf } from './ShipMap'
+import ShipMap, { vesselOf, shipIdOf, shipPosition } from './ShipMap'
 import { isLineNotShip } from '../../supabase/functions/_shared/portal/shippingLines.js'
 import { openDoc, downloadDoc } from '../services/docFiles'
 import PdfPreview from '../components/PdfPreview'
+import SeaTracking, { portTime, seaWhere } from './SeaTracking'
 
 // The side panel that opens when a job is clicked: what it is, where it is,
 // what is next, its containers, timeline, documents and team notes. Editing
@@ -159,6 +160,21 @@ export default function JobDrawer({ jobId, initialTab = 'overview', onClose, onO
   const ctrRows = containers.filter(cf[2]).filter((c) => !ctrQ || c.no.includes(ctrQ.trim().toUpperCase()))
   const statusTone = (s) => (s === 'Delivered' || s === 'Empty back' || s === 'Collected by client' ? ['grey', 'flag'] : s === 'Out of port' ? ['blue', 'truck'] : s === 'At CFS' ? ['grey', 'building-warehouse'] : s === 'At port' ? ['amber', 'anchor'] : ['grey', 'ship'])
 
+  // the job's ship for the map: Safecube's position, else the finder's last-heard one
+  const jobShip = (() => {
+    const sea = data?.seaByJob?.[job.id]
+    const name = vesselOf(job, data)
+    const p = shipPosition(sea, name ? data?.shipIds?.[name] : null)
+    if (!p) return null
+    const ok = sea && !sea.error
+    const imo = name ? shipIdOf(job, name, data).imo : sea?.vessel_imo
+    return {
+      key: job.id, label: imo ? `IMO ${imo}` : name || 'Ship', jobs: job.job_no, pos: p.pos, at: p.at, from: p.from,
+      eta: ok && sea.pod_date ? `${sea.pod_actual ? 'Arrived' : 'ETA'} ${portTime(sea.pod_date)}` : null,
+      where: ok ? seaWhere(sea) : null, podName: ok ? sea.pod : null, route: ok ? sea.route : null,
+    }
+  })()
+
   const kv = [
     [isExport ? 'Shipping bill' : 'BE number', isExport ? (j.sbNo || '—') : (job.be_no || '—'), true],
     [isExport ? 'LEO' : 'BE date', isExport ? fmtDate(j.leoDate) : fmtDate(job.be_date)],
@@ -197,7 +213,7 @@ export default function JobDrawer({ jobId, initialTab = 'overview', onClose, onO
           </div>
           <div style={{ color: 'var(--text-2)', marginTop: 2 }}>{job.client || '—'} · {job.mode || '—'} · {isExport ? 'Export' : 'Import'}</div>
           <div className="ix-facts">
-            <div className="ix-fact"><div className="k">ETA</div><div className="v">{fmtDate(job.eta)}</div></div>
+            <div className="ix-fact"><div className="k">ETA</div><div className="v" title={!job.eta && data?.seaByJob?.[job.id]?.pod_date ? 'From Safecube tracking' : undefined}>{job.eta || !data?.seaByJob?.[job.id]?.pod_date ? fmtDate(job.eta) : portTime(data.seaByJob[job.id].pod_date, false)}</div></div>
             <div className="ix-fact"><div className="k">Stage</div><div className="v" title={getStageName(effectiveStage(job, j))}>{getStageName(effectiveStage(job, j))}</div></div>
             <div className="ix-fact"><div className="k">Free days</div><div className="v"><FreeDays value={j.freeDaysLeft} /></div></div>
             <div className="ix-fact"><div className="k">Owner</div><div className="v">{ownerName || '—'}</div></div>
@@ -243,6 +259,10 @@ export default function JobDrawer({ jobId, initialTab = 'overview', onClose, onO
                   <div><b>Check the {m.field.toLowerCase()}:</b> this job says <b>{m.job}</b>, container tracking (LDB) says <b>{m.tracking}</b>. Correct it on the full job page if the job is wrong.</div>
                 </div>
               ))}
+              {/* ETA, ship and position from Safecube; offered only while the ship is still at sea */}
+              {!isExport && !/air/i.test(job.mode || '') && (data?.seaByJob?.[job.id] || (!j.arrivedAt && !containers.some((c) => c.raw?.port_in) && Number(job.stage || 0) < 7)) && (
+                <SeaTracking job={job} showToast={showToast} />
+              )}
               <div className="ix-kv">
                 {kv.map(([k, v, mono]) => <div key={k}><div className="k">{k}</div><div className={`v ${mono ? 'mono' : ''}`}>{v}</div></div>)}
                 <div>
@@ -255,18 +275,18 @@ export default function JobDrawer({ jobId, initialTab = 'overview', onClose, onO
                 </div>
                 <div><div className="k">Goods</div><div className="v">{job.goods || '—'}</div></div>
                 {(() => {
-                  // the ship, live on VesselFinder's free map (by IMO number)
+                  // the ship, on the portal's own map (position from Safecube tracking)
                   const ship = vesselOf(job, data)
                   if (!ship) return null
-                  const { imo, mmsi } = shipIdOf(job, ship, data)
+                  const { imo } = shipIdOf(job, ship, data)
                   return (
                     <div>
                       <div className="k">Ship</div>
                       <div className="v" style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
                         <span>{ship}{imo ? <span className="mono" style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 6 }}>IMO {imo}</span> : null}</span>
-                        {imo || mmsi
+                        {jobShip
                           ? <button type="button" className="ix-link" style={{ margin: 0 }} onClick={() => setShowShip((v) => !v)}>{showShip ? 'Hide map' : 'Where is it now? →'}</button>
-                          : <span style={{ fontSize: 12, color: 'var(--muted)' }}>IMO not added yet (Vessels page)</span>}
+                          : <span style={{ fontSize: 12, color: 'var(--muted)' }}>Position not known yet</span>}
                       </div>
                     </div>
                   )
@@ -311,9 +331,9 @@ export default function JobDrawer({ jobId, initialTab = 'overview', onClose, onO
                   </div>
                 )}
               </div>
-              {showShip && (() => { const id = shipIdOf(job, vesselOf(job, data), data); return id.imo || id.mmsi })() && (
+              {showShip && jobShip && (
                 <div style={{ margin: '4px 0 16px' }}>
-                  <ShipMap {...shipIdOf(job, vesselOf(job, data), data)} height={400} />
+                  <ShipMap ships={[jobShip]} selectedKey={jobShip.key} height={400} />
                 </div>
               )}
               <div className="ix-section-t">Latest events</div>

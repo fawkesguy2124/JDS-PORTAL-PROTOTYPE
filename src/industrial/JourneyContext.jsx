@@ -41,6 +41,12 @@ export function JourneyProvider({ children }) {
     setData((d) => d && ({ ...d, jobs: d.jobs.some((j) => j.id === job.id) ? d.jobs.map((j) => (j.id === job.id ? job : j)) : [job, ...d.jobs] }))
   }, [])
 
+  // Put one job's new Safecube tracking row into the loaded data
+  const patchSea = useCallback((row) => {
+    if (!row?.job_id) return
+    setData((d) => d && ({ ...d, seaByJob: { ...(d.seaByJob || {}), [row.job_id]: row } }))
+  }, [])
+
   const derived = useMemo(() => {
     if (!data) return { rows: [], byId: {} }
     const rows = data.jobs.map((job) => ({ job, j: journeyFor(job, data) }))
@@ -49,10 +55,10 @@ export function JourneyProvider({ children }) {
   }, [data])
 
   const value = useMemo(() => ({
-    data, profiles, loading, error, refresh, patchJob,
+    data, profiles, loading, error, refresh, patchJob, patchSea,
     rows: derived.rows, byId: derived.byId,
     active: derived.rows.filter((r) => !isDelivered(r.job) && r.j.phase !== 'delivered'),
-  }), [data, profiles, loading, error, refresh, patchJob, derived])
+  }), [data, profiles, loading, error, refresh, patchJob, patchSea, derived])
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }

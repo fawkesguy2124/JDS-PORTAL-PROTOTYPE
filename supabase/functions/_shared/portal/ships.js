@@ -26,12 +26,17 @@ export function vesselsOf(job, data) {
     for (const no of parseContainerNos(x?.containers)) add(data?.containersByNo?.[no]?.vessel)
   }
   own(job)
+  // the ship Safecube's tracking says the cargo is on (Jose, 24 Oct 2026)
+  if (!names.length) add(seaOf(job, data)?.vessel_name)
   // nothing on the job itself: another job on the same IGM (same port) is on the
   // same ship, so its ship name counts too (Jose, 23 Oct 2026: J-667)
   if (!names.length) for (const other of igmSiblings(job, data)) own(other)
   return names
 }
 export const vesselOf = (job, data) => vesselsOf(job, data)[0] || null
+
+// The job's Safecube tracking row (ETA, ship, position), or null
+export const seaOf = (job, data) => data?.seaByJob?.[job?.id] || null
 
 // Other jobs filed on the same IGM at the same port (one IGM = one ship's voyage)
 export function igmSiblings(job, data) {
@@ -74,6 +79,9 @@ export function shipIdOf(job, name, data) {
       if (sib) return { ...sib, mmsi: null }
     }
   }
+  // Safecube's tracking of this job's BL / container names the ship and its IMO
+  const sea = seaOf(job, data)
+  if (sea?.vessel_imo && digits(sea.vessel_imo).length === 7 && (!name || shipKey(sea.vessel_name) === name)) return { imo: digits(sea.vessel_imo), mmsi: sea.vessel_mmsi || null, from: 'tracking' }
   const f = data?.shipIds?.[shipKey(name)]
   if (f?.imo || f?.mmsi) return { imo: digits(f.imo).length === 7 ? digits(f.imo) : null, mmsi: f.mmsi || null, from: 'found', seenAt: f.seen_at }
   if (f?.candidates?.length > 1) return { imo: null, mmsi: null, from: 'unclear', candidates: f.candidates }
@@ -121,6 +129,10 @@ export function cargoOnShip(job, name, data, j) {
   const left = job?.field_meta?.ship_left
   if (left) return { onBoard: false, unloadedOn: typeof left === 'string' ? left : null, arrivedAt }
   const ships = vesselsOf(job, data)
+  // Safecube says the ship reached the port of discharge more than 2 days ago
+  const sea = seaOf(job, data)
+  const seaShip = sea && (!name || !sea.vessel_name || shipKey(sea.vessel_name) === name || ships.length <= 1)
+  if (seaShip && sea.pod_actual && sea.pod_date && Date.now() - new Date(sea.pod_date).getTime() > UNLOAD_DAYS * 86400000) return { onBoard: false, unloadedOn: null, arrivedAt: arrivedAt || sea.pod_date, why: 'tracking' }
   // the job's containers on this ship (a box with no ship of its own, or only a
   // shipping line's name as its ship, is on the job's ship)
   const boxes = parseContainerNos(job?.containers).filter((no) => {
@@ -150,8 +162,10 @@ export function cargoOnShip(job, name, data, j) {
   // ships near India to tell, so this goes by dates JDS already has:
   if (ships.length <= 1 && !arrivedAt) {
     const ageDays = (iso) => (Date.now() - new Date(String(iso).length <= 10 ? `${iso}T12:00:00+05:30` : iso).getTime()) / 86400000
+    // fresh Safecube tracking that says the ship hasn't arrived beats the date guesses below
+    if (seaShip && !sea.error && !sea.pod_actual && sea.status !== 'DELIVERED' && sea.fetched_at && ageDays(sea.fetched_at) < 2) return { onBoard: true, unloadedOn: null, arrivedAt }
     // the ship's ETA (typed on the job, or from container tracking) is 3+ days past
-    const etas = [job?.eta, ...parseContainerNos(job?.containers).map((no) => data?.containersByNo?.[no]?.eta)].filter((d) => d && !isNaN(new Date(d)))
+    const etas = [job?.eta, seaShip && !sea.pod_actual ? sea.pod_date : null, ...parseContainerNos(job?.containers).map((no) => data?.containersByNo?.[no]?.eta)].filter((d) => d && !isNaN(new Date(d)))
     if (etas.length && etas.every((d) => ageDays(d) > UNLOAD_DAYS + 1)) return { onBoard: false, unloadedOn: null, arrivedAt, why: 'eta' }
     // a BE filed 10+ days ago (the same rule the job page uses for "ship in")
     if (job?.be_date && ageDays(job.be_date) >= ADVANCE_BE_DAYS) return { onBoard: false, unloadedOn: null, arrivedAt, why: 'be' }

@@ -335,10 +335,9 @@
 .ix-ship-row .act { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; flex: 0 1 auto }
 .ix-ship-row .act input { width: 130px; height: 30px; border: 1px solid var(--line); border-radius: 8px; padding: 0 8px; font: 13px var(--mono) }
 
-/* VesselFinder ship map in a frame, with the same full-screen button as the Trucks map */
-.ix-shipmap { position: relative; overflow: hidden; border-radius: 10px; background: #e8eef5; isolation: isolate }
-.ix-shipmap.big { position: fixed; inset: 24px; z-index: 2000; border: 1px solid var(--line); box-shadow: 0 20px 50px rgba(15,23,42,.35); background: #fff }
-@media (max-width: 760px) { .ix-shipmap.big { inset: 8px } }
+/* the ship map: the Trucks map, as a whole card (VesselFinder removed 24 Oct 2026) */
+.ix-shipmap2 { border-radius: 10px; border-bottom: 0; background: #e8eef5 }
+.ix-card > .ix-shipmap2 { border-radius: 0 }
 
 /* ── Phones (iPhone + Android), Jose 22 Oct 2026: easy to tap, no zoom jumps ── */
 /* crisp taps everywhere: no grey flash, no double-tap zoom delay */
@@ -381,6 +380,16 @@
 /* a saved detail that container tracking contradicts ("check this") */
 .ix-check-note { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; margin: -6px 0 14px; border: 1px solid var(--amber-line); background: var(--amber-bg); color: #78350f; border-radius: var(--radius); font-size: 13px; line-height: 1.45 }
 .ix-check-note i { font-size: 18px; color: var(--amber); margin-top: 1px }
+
+/* ship tracking from Safecube on the job */
+.ix-sea { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; margin: 0 0 16px; border: 1px solid var(--navy-100); background: var(--navy-50); border-radius: var(--radius); font-size: 13px; line-height: 1.5 }
+.ix-sea > i { font-size: 20px; color: var(--navy); margin-top: 1px }
+.ix-sea .t { font-weight: 600 }
+.ix-sea .s { font-size: 12px; color: var(--text-2) }
+.ix-sea .rows { margin-top: 4px }
+.ix-sea .rows .k { display: inline-block; min-width: 72px; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; font-weight: 600 }
+.ix-sea .muted { color: var(--muted); font-size: 12px }
+.ix-sea .ix-btn { flex-shrink: 0 }
 
 /* phone-only bits: the client under the job no (Jobs), jump chips (Board) */
 .ix-sub-m, .ix .show-m { display: none }
