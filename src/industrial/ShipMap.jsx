@@ -257,7 +257,7 @@ export default function ShipMap({ ships = [], selectedKey, onSelect, height = 42
                 <div className="bar"><span style={{ width: `${sel.arrived ? 100 : v.pct}%` }} /></div>
                 <div className="prog">
                   <span>{sel.arrived ? 'Arrived' : `${v.pct}% of the way`}</span>
-                  {!sel.arrived && v.left != null && <span>{Math.round(v.left).toLocaleString('en-IN')} nm to go</span>}
+                  {!sel.arrived && v.left != null && <span>{Math.round(v.left * 1.852).toLocaleString('en-IN')} km to go</span>}
                 </div>
               </>
             )}
