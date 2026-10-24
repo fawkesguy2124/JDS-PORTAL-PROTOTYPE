@@ -440,6 +440,12 @@
 .ix-seacard .foot { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); font-size: 11.5px; color: var(--muted) }
 .ix-seacard .ix-icon-btn { flex-shrink: 0 }
 .ix-seacard .upd { font-size: 11.5px; color: var(--muted); white-space: nowrap }
+/* ports on the way (change ship / stops) */
+.ix-seacard .via, .ix-voyage .via { display: flex; gap: 6px; align-items: flex-start; margin-top: 8px; font-size: 12px; color: var(--text-2); line-height: 1.4 }
+.ix-seacard .via i, .ix-voyage .via i { color: #7c3aed; font-size: 14px; margin-top: 1px }
+.ix-via { position: absolute; left: 0; top: 0 }
+.ix-via .dot { position: absolute; left: -11px; top: -11px; width: 22px; height: 22px; border-radius: 50%; background: #7c3aed; color: #fff; border: 2px solid #fff; display: grid; place-items: center; font-size: 12px; box-shadow: 0 2px 6px rgba(0,0,0,.3) }
+.ix-via .lbl { position: absolute; left: 14px; top: -10px; white-space: nowrap; background: #fff; color: #5b21b6; font: 600 11.5px Inter, sans-serif; padding: 2px 8px; border-radius: 6px; border: 1px solid #ddd6fe; box-shadow: 0 2px 6px rgba(0,0,0,.15) }
 @media (max-width: 480px) { .ix-seacard .facts { grid-template-columns: 1fr } }
 /* (older ship tracking box) */
 .ix-sea { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; margin: 0 0 16px; border: 1px solid var(--navy-100); background: var(--navy-50); border-radius: var(--radius); font-size: 13px; line-height: 1.5 }

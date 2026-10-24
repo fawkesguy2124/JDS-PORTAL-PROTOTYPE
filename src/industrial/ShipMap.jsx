@@ -112,6 +112,22 @@ export function voyage(s) {
   return { pos: p, sailed: [], ahead: [], heading: s.heading ?? (a && b && nm(a, b) > 1 ? bearing(a, b) : null), done: null, left: null, pct: null }
 }
 
+// "Ningbo, CN" → "Ningbo"; the line's dates are port time (shown as given)
+export const shortPort = (n) => String(n || '').replace(/,\s*[A-Z]{2}$/, '').replace(/^Jawaharlal Nehru$/i, 'Nhava Sheva')
+const shortDate = (iso) => {
+  const d = new Date(iso)
+  if (isNaN(d)) return ''
+  return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', ...(d.getUTCFullYear() !== new Date().getFullYear() ? { year: 'numeric' } : {}), timeZone: 'UTC' })
+}
+// "Change ship at Ningbo · stops at Busan, Shekou, Singapore, Colombo"
+export function viaText(route) {
+  const via = route?.via || []
+  if (!via.length) return null
+  const change = via.filter((p) => p.change).map((p) => shortPort(p.name))
+  const stops = via.filter((p) => !p.change).map((p) => shortPort(p.name))
+  return [change.length && `Change ship at ${change.join(', ')}`, stops.length && `stops at ${stops.join(', ')}`].filter(Boolean).join(' · ').replace(/^stops/, 'Stops')
+}
+
 const STALE_HOURS = 24
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]))
 const ago = (v) => {
@@ -179,9 +195,22 @@ export default function ShipMap({ ships = [], selectedKey, onSelect, height = 42
         bounds.push(pod)
       }
       const pol = sel.route?.pol
-      if (pol && v.sailed.length > 1) {
+      if (pol) {
         L.circleMarker(pol, { radius: 5, color: '#0b6b3a', weight: 2, fillColor: '#fff', fillOpacity: 1 })
-          .bindTooltip(`<b>${esc(sel.polName || 'Port of loading')}</b>${sel.polDate ? `<br>Left ${esc(sel.polDate)}` : ''}`).addTo(layer.current)
+          .bindTooltip(`<b>${esc(sel.polName || 'Port of loading')}</b>${sel.polDate ? `<br>${esc(sel.polDate)}` : ''}`).addTo(layer.current)
+      }
+      // ports on the way: where the cargo changes ship (labelled), and where its ship just calls
+      for (const p of sel.route?.via || []) {
+        if (!Array.isArray(p.pos)) continue
+        const dates = [p.arrive && `${p.arrived ? 'Arrived' : 'Arrives'} ${shortDate(p.arrive)}`, p.leave && `${p.left ? 'Left' : 'Leaves'} ${shortDate(p.leave)}`].filter(Boolean).join(' · ')
+        if (p.change) {
+          const html = `<div class="ix-via"><span class="dot"><i class="ti ti-transfer"></i></span><span class="lbl">${esc(shortPort(p.name))} · change ship</span></div>`
+          L.marker(p.pos, { icon: L.divIcon({ className: 'ix-tpin', iconSize: [0, 0], html }), zIndexOffset: 500 })
+            .bindTooltip(`<b>${esc(p.name)}</b> · change ship${p.inShip ? `<br>${esc(p.inShip)} → ${esc(p.outShip)}` : ''}${dates ? `<br>${esc(dates)}` : ''}`, { direction: 'top', offset: [0, -14] }).addTo(layer.current)
+        } else {
+          L.circleMarker(p.pos, { radius: 4, color: '#1a4fa0', weight: 2, fillColor: '#fff', fillOpacity: 1 })
+            .bindTooltip(`<b>${esc(p.name)}</b> · stop${dates ? `<br>${esc(dates)}` : ''}`).addTo(layer.current)
+        }
       }
     }
     for (const s of placed) {
@@ -253,6 +282,7 @@ export default function ShipMap({ ships = [], selectedKey, onSelect, height = 42
                 <div style={{ textAlign: 'right' }}><div className="k">To</div><div className="v">{sel.podName || '—'}</div>{sel.eta && <div className="d">{sel.eta}</div>}</div>
               </div>
             )}
+            {viaText(sel.route) && <div className="via"><Icon name="transfer" />{viaText(sel.route)}</div>}
             {v?.pct != null && (
               <>
                 <div className="bar"><span style={{ width: `${sel.arrived ? 100 : sel.waiting ? 0 : v.pct}%` }} /></div>

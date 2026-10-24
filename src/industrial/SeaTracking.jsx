@@ -3,7 +3,7 @@ import { supabase } from '../supabase'
 import { useJourney } from './JourneyContext'
 import { seaArea } from '../../supabase/functions/_shared/portal/ships.js'
 import { Icon, timeAgo } from './ui'
-import { voyage } from './ShipMap'
+import { voyage, viaText } from './ShipMap'
 
 // Ship tracking from Safecube on the job (Jose, 24 Oct 2026): what JDS used to
 // look up on each shipping line's website by container number: ETA, the ship
@@ -118,6 +118,7 @@ export default function SeaTracking({ job, showToast }) {
           <div style={{ textAlign: 'right' }}><div className="k">To</div><div className="v">{portName(sea.pod) || '—'}</div>{sea.pod_date && <div className="d">{sea.pod_actual ? 'Arrived' : 'ETA'} {portTime(sea.pod_date, false)}</div>}</div>
         </div>
       )}
+      {viaText(sea.route) && <div className="via"><Icon name="transfer" />{viaText(sea.route)}</div>}
       {v?.pct != null && (
         <>
           <div className="bar"><span style={{ width: `${sea.pod_actual ? 100 : waiting ? 0 : v.pct}%` }} /></div>

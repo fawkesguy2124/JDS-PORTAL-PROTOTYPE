@@ -103,9 +103,27 @@ function summarize(d: any) {
   const total = segs.reduce((n: number, s: any[]) => n + s.length, 0)
   const step = Math.max(1, Math.ceil(total / 300))
   const locLL = (v: any) => { const l = byId(d?.locations, v); return ll(l?.coordinates) }
+  // ports where the cargo changes ship on the way (Jose, 24 Oct 2026: J-674 via Busan):
+  // sea events at a port that is neither the loading nor the discharge port, in order
+  const placeKey = (v: any) => { const l = byId(d?.locations, v); return l ? (l.locode || l.name) : null }
+  const polKey = placeKey(pol.location), podKey = placeKey(pod.location)
+  const via: any[] = []
+  for (const e of [...events].sort((a, b) => at(a) - at(b))) {
+    if (e.routeType === 'LAND') continue
+    const k = placeKey(e.location)
+    if (!k || k === polKey || k === podKey) continue
+    let v = via.find((x) => x.key === k)
+    if (!v) { v = { key: k, name: place(e.location), pos: locLL(e.location), arrive: null, leave: null, arrived: false, left: false, inShip: null, outShip: null }; via.push(v) }
+    const sh = ship(e.vessel)?.name || null
+    if (e.eventCode === 'ARRI' || e.eventCode === 'DISC') { v.arrive ||= when(e.date); v.arrived ||= !!e.isActual; v.inShip ||= sh }
+    if (e.eventCode === 'DEPA' || e.eventCode === 'LOAD') { v.leave = when(e.date) || v.leave; v.left ||= !!e.isActual; v.outShip = sh || v.outShip }
+  }
   const route = {
     segments: segs.map((s: any[]) => s.filter((_: any, i: number) => i % step === 0 || i === s.length - 1)).filter((s: any[]) => s.length > 1),
     pol: locLL(pol.location), pod: locLL(pod.location),
+    // change: the cargo comes in on one ship and leaves on another (transhipment); else
+    // the same ship just calls there
+    via: via.map(({ key, ...v }) => ({ ...v, change: !!(v.inShip && v.outShip && v.inShip !== v.outShip) })),
   }
   return {
     status: m.shippingStatus || null, sealine: m.sealine || null, sealine_name: m.sealineName || null,
