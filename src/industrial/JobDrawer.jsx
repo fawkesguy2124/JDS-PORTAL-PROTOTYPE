@@ -5,11 +5,11 @@ import { portLabel } from '../utils/ports'
 import { useJourney } from './JourneyContext'
 import { containerFinishedOn, deliveryBy, effectiveStage } from '../services/journey'
 import { Chip, FreeDays, Icon, PhaseChip, fmtDate, initials, jobOwnerName, timeAgo } from './ui'
-import ShipMap, { vesselOf, shipIdOf, shipPosition } from './ShipMap'
+import { vesselOf, shipIdOf } from './ShipMap'
 import { isLineNotShip } from '../../supabase/functions/_shared/portal/shippingLines.js'
 import { openDoc, downloadDoc } from '../services/docFiles'
 import PdfPreview from '../components/PdfPreview'
-import SeaTracking, { portTime, seaWhere, portName } from './SeaTracking'
+import SeaTracking, { portTime } from './SeaTracking'
 
 // The side panel that opens when a job is clicked: what it is, where it is,
 // what is next, its containers, timeline, documents and team notes. Editing
@@ -20,7 +20,6 @@ export default function JobDrawer({ jobId, initialTab = 'overview', onClose, onO
   const job = row?.job
   const j = row?.j
   const [tab, setTab] = useState(initialTab)
-  const [showShip, setShowShip] = useState(false)
   const [log, setLog] = useState([])
   const [docs, setDocs] = useState([])
   const [viewDoc, setViewDoc] = useState(null) // a PDF shown inside the portal
@@ -160,23 +159,6 @@ export default function JobDrawer({ jobId, initialTab = 'overview', onClose, onO
   const ctrRows = containers.filter(cf[2]).filter((c) => !ctrQ || c.no.includes(ctrQ.trim().toUpperCase()))
   const statusTone = (s) => (s === 'Delivered' || s === 'Empty back' || s === 'Collected by client' ? ['grey', 'flag'] : s === 'Out of port' ? ['blue', 'truck'] : s === 'At CFS' ? ['grey', 'building-warehouse'] : s === 'At port' ? ['amber', 'anchor'] : ['grey', 'ship'])
 
-  // the job's ship for the map: Safecube's position, else the finder's last-heard one
-  const jobShip = (() => {
-    const sea = data?.seaByJob?.[job.id]
-    const name = vesselOf(job, data)
-    const p = shipPosition(sea, name ? data?.shipIds?.[name] : null)
-    if (!p) return null
-    const ok = sea && !sea.error
-    const imo = name ? shipIdOf(job, name, data).imo : sea?.vessel_imo
-    return {
-      key: job.id, label: imo ? `IMO ${imo}` : null, jobs: job.job_no, clients: job.client || null, line: job.shipping_line || null,
-      pos: p.pos, at: p.at, from: p.from, track: ok ? sea.track : null,
-      eta: ok && sea.pod_date ? `${sea.pod_actual ? 'Arrived' : 'ETA'} ${portTime(sea.pod_date)}` : null, arrived: !!(ok && sea.pod_actual),
-      where: ok ? seaWhere(sea) : null, route: ok ? sea.route : null,
-      polName: ok ? portName(sea.pol) : null, polDate: ok && sea.pol_date ? portTime(sea.pol_date, false) : null, podName: ok ? portName(sea.pod) : null,
-    }
-  })()
-
   const kv = [
     [isExport ? 'Shipping bill' : 'BE number', isExport ? (j.sbNo || '—') : (job.be_no || '—'), true],
     [isExport ? 'LEO' : 'BE date', isExport ? fmtDate(j.leoDate) : fmtDate(job.be_date)],
@@ -277,19 +259,14 @@ export default function JobDrawer({ jobId, initialTab = 'overview', onClose, onO
                 </div>
                 <div><div className="k">Goods</div><div className="v">{job.goods || '—'}</div></div>
                 {(() => {
-                  // the ship, on the portal's own map (position from Safecube tracking)
+                  // the ship (its map is on the Vessels page; Jose, 24 Oct 2026)
                   const ship = vesselOf(job, data)
                   if (!ship) return null
                   const { imo } = shipIdOf(job, ship, data)
                   return (
                     <div>
                       <div className="k">Ship</div>
-                      <div className="v" style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-                        <span>{ship}{imo ? <span className="mono" style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 6 }}>IMO {imo}</span> : null}</span>
-                        {jobShip
-                          ? <button type="button" className="ix-link" style={{ margin: 0 }} onClick={() => setShowShip((v) => !v)}>{showShip ? 'Hide map' : 'Where is it now? →'}</button>
-                          : <span style={{ fontSize: 12, color: 'var(--muted)' }}>Position not known yet</span>}
-                      </div>
+                      <div className="v">{ship}{imo ? <span className="mono" style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 6 }}>IMO {imo}</span> : null}</div>
                     </div>
                   )
                 })()}
@@ -333,11 +310,6 @@ export default function JobDrawer({ jobId, initialTab = 'overview', onClose, onO
                   </div>
                 )}
               </div>
-              {showShip && jobShip && (
-                <div style={{ margin: '4px 0 16px' }}>
-                  <ShipMap ships={[jobShip]} selectedKey={jobShip.key} height={400} />
-                </div>
-              )}
               <div className="ix-section-t">Latest events</div>
               {shownEvents.length ? (
                 <div className="ix-timeline">
