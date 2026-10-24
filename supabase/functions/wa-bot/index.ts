@@ -649,6 +649,18 @@ Deno.serve(async (req) => {
         const t0 = Date.now()
         try { return json({ success: true, heard: await transcribe(bytes, String(b.mime || 'audio/wav')), ms: Date.now() - t0 }) } catch (e) { return json({ success: false, error: (e as Error).message }) }
       }
+      // check: what Meta says about the bot's number and account (read only, changes nothing;
+      // 24 Oct 2026: sends failed with #133010 "Account not registered")
+      if (run === 'wa-status') {
+        const auth = { Authorization: `Bearer ${env('WHATSAPP_TOKEN')}` }
+        const get = (path: string) => fetch(`${GRAPH}/${path}`, { headers: auth }).then((r) => r.json()).catch((e) => ({ error: String(e) }))
+        const [phone, account, numbers] = await Promise.all([
+          get(`${env('WHATSAPP_PHONE_ID')}?fields=display_phone_number,verified_name,status,platform_type,code_verification_status,name_status,quality_rating,account_mode,throughput,is_official_business_account`),
+          get(`${WABA_ID}?fields=name,account_review_status,business_verification_status,ownership_type,health_status`),
+          get(`${WABA_ID}/phone_numbers?fields=id,display_phone_number,status,platform_type,code_verification_status,quality_rating,account_mode`),
+        ])
+        return json({ success: true, phone, account, numbers })
+      }
       // test: the 8:00 missing-details message for each person (nothing sent)
       if (run === 'missing-test') {
         const [data, team] = await Promise.all([loadData(admin), loadTeam(admin)])
