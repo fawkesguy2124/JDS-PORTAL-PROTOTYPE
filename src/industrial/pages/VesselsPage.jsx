@@ -6,7 +6,7 @@ import ShipMap, { vesselsOf, shipIdOf, shipPosition } from '../ShipMap'
 import { cargoOnShip } from '../../../supabase/functions/_shared/portal/ships.js'
 import { lineName } from '../../../supabase/functions/_shared/portal/shippingLines.js'
 import { Icon, Chip, Skeleton, fmtDate } from '../ui'
-import { portTime, seaWhere, portName, notSailed, polText, moveText, nextStop } from '../SeaTracking'
+import { portTime, seaWhere, portName, notSailed, polText, moveText, nextStop, atPort } from '../SeaTracking'
 
 // Vessels: every ship that still carries our cargo, on the portal's own map with
 // Safecube's positions (VesselFinder removed 24 Oct 2026), one row per ship with
@@ -88,7 +88,7 @@ export default function VesselsPage({ onOpenJob, showToast, onGo }) {
       pos: p?.pos || null, at: p?.at || null, from: p?.from || null, track: ok ? sea.track : null,
       eta: ok && sea.pod_date ? `${sea.pod_actual ? 'Arrived' : 'ETA'} ${portTime(sea.pod_date)}` : null, arrived: !!s.arrived || !!(ok && sea.pod_actual),
       where: ok ? seaWhere(sea) : null, route: ok ? sea.route : null,
-      lastMove: ok ? moveText(sea.last_event, false) : null, nextStop: ok ? nextStop(sea) : null,
+      lastMove: ok && atPort(sea) ? moveText(sea.last_event, false) : null, nextStop: ok && atPort(sea) ? nextStop(sea) : null,
       polName: ok ? portName(sea.pol) : null, polDate: ok ? polText(sea) : null, waiting: notSailed(sea), podName: ok ? portName(sea.pod) : null,
     }
   })

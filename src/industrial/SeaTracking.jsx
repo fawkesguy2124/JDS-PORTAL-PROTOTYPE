@@ -32,6 +32,14 @@ export function notSailed(sea) {
   return ['GTIN', 'GTOT'].includes(sea.last_event?.code) && !!sea.pol && portName(sea.last_event?.where) === portName(sea.pol)
 }
 
+// The cargo is at a port right now: not sailed yet, sitting at a port on the way
+// (e.g. waiting to change ship), or arrived. Only then are "last move" and "next
+// stop" worth showing; at sea the route and progress say it (Jose, 24 Oct 2026)
+export function atPort(sea) {
+  if (!sea || sea.error) return false
+  return notSailed(sea) || !!sea.pod_actual || (sea.route?.via || []).some((p) => p.arrived && !p.left)
+}
+
 // "Left 4 Oct" or, for a planned sailing, "Sails 17 Dec"
 export const polText = (sea) => (sea?.pol_date ? `${new Date(sea.pol_date).getTime() > Date.now() ? 'Sails' : 'Left'} ${portTime(sea.pol_date, false)}` : null)
 
@@ -130,8 +138,8 @@ export default function SeaTracking({ job, showToast }) {
       <div className="facts">
         {sea.sealine_name && <div><div className="k">Line</div><div className="v">{sea.sealine_name}</div></div>}
         {seaWhere(sea) && <div><div className="k">Where now</div><div className="v">{seaWhere(sea)}{sea.position_at && !waiting && <span className="muted"> · {timeAgo(sea.position_at)}</span>}</div></div>}
-        {ev.what && <div><div className="k">Last move</div><div className="v">{moveText(ev, false)}</div></div>}
-        {nextStop(sea) && <div><div className="k">Next stop</div><div className="v">{nextStop(sea)}</div></div>}
+        {ev.what && atPort(sea) && <div><div className="k">Last move</div><div className="v">{moveText(ev, false)}</div></div>}
+        {nextStop(sea) && atPort(sea) && <div><div className="k">Next stop</div><div className="v">{nextStop(sea)}</div></div>}
       </div>
     </div>
   )
