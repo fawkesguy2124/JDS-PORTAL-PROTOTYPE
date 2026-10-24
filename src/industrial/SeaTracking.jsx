@@ -32,18 +32,18 @@ export default function SeaTracking({ job, showToast }) {
   const sea = data?.seaByJob?.[job.id] || null
 
   const run = async (start) => {
-    if (start && !window.confirm(`Track ${job.job_no} on Safecube?\n\nThis uses 1 of the 50 free trial shipments. Only do it for a ship that hasn't arrived yet.`)) return
+    if (start && !window.confirm(`Start tracking the ship of ${job.job_no}?\n\nThis uses 1 of the 50 free trial shipments. Only do it for a ship that hasn't arrived yet.`)) return
     setBusy(true)
     try {
       const { data: res, error } = await supabase.functions.invoke('sea-track', { body: { jobId: job.id, start } })
       if (error) throw new Error(error.message)
       if (res?.skipped) showToast?.(res.skipped === 'checked a few minutes ago' ? 'Checked a few minutes ago: no change yet' : `Not tracked: ${res.skipped}`, 'info')
-      else if (res?.error) showToast?.(`Safecube: ${res.error}`, 'error')
-      else showToast?.(`Updated from Safecube${res?.used ? ` · ${res.used} of ${res.cap} used this month` : ''}`, 'success')
+      else if (res?.error) showToast?.(`Ship tracking: ${res.error}`, 'error')
+      else showToast?.(`Ship tracking updated${res?.used ? ` · ${res.used} of ${res.cap} used this month` : ''}`, 'success')
       const { data: row } = await supabase.from('sea_tracking').select('*').eq('job_id', job.id).maybeSingle()
       if (row) patchSea(row)
     } catch (e) {
-      showToast?.(`Could not reach Safecube: ${e.message}`, 'error')
+      showToast?.(`Could not reach ship tracking: ${e.message}`, 'error')
     }
     setBusy(false)
   }
@@ -73,7 +73,7 @@ export default function SeaTracking({ job, showToast }) {
           {sea.error ? 'Ship tracking: not found' : sea.pod_actual ? `Arrived ${sea.pod || ''} · ${portTime(sea.pod_date)}` : `ETA ${sea.pod || 'port'} · ${portTime(sea.pod_date)}`}
         </div>
         {sea.error ? (
-          <div className="s">Safecube could not track {sea.number_type === 'BL' ? 'BL' : 'container'} {sea.number}: {sea.error}</div>
+          <div className="s">Could not track {sea.number_type === 'BL' ? 'BL' : 'container'} {sea.number}: {sea.error}</div>
         ) : (
           <div className="rows">
             <div><span className="k">Ship</span>{sea.vessel_imo ? <span className="mono">IMO {sea.vessel_imo}</span> : '—'}{sea.sealine_name ? ` · ${sea.sealine_name}` : ''}</div>
@@ -84,7 +84,7 @@ export default function SeaTracking({ job, showToast }) {
           </div>
         )}
         <div className="s" style={{ marginTop: 4 }}>
-          From Safecube by {sea.number_type === 'BL' ? 'BL' : 'container'} <span className="mono">{sea.number}</span> · updated {timeAgo(sea.fetched_at)}{sea.done ? ' · arrived, no more checks' : ' · checks every 3 hours'}
+          Tracked by {sea.number_type === 'BL' ? 'BL' : 'container'} <span className="mono">{sea.number}</span> · updated {timeAgo(sea.fetched_at)}{sea.done ? ' · arrived, no more checks' : ' · checks every 3 hours'}
         </div>
       </div>
       {!sea.done && <button type="button" className="ix-btn sm" disabled={busy} onClick={() => run(false)}>{busy ? 'Checking…' : 'Refresh'}</button>}

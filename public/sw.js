@@ -4,7 +4,11 @@
 //   job data is never stored here: every screen reads it live.
 // - Shows an "offline" page instead of a browser error when there is no internet.
 // - Shows desktop notifications sent by the portal (OOC granted, free days, …).
-const VERSION = 'jds-app-v1'
+// v2 (24 Oct 2026): during a release Vercel briefly answered a new script's name
+// with the page (HTML); v1 kept that and the portal stayed on its loading screen.
+// Now only real scripts / styles / fonts / images are kept, and v1's copies are dropped.
+const VERSION = 'jds-app-v2'
+const KEEPABLE = /javascript|css|font|image|wasm|json/
 const SHELL = ['/offline.html', '/app/icon-192.png', '/app/badge-96.png']
 
 self.addEventListener('install', (e) => {
@@ -31,9 +35,10 @@ self.addEventListener('fetch', (e) => {
   if (url.pathname.startsWith('/assets/')) {
     e.respondWith(caches.open(VERSION).then(async (c) => {
       const hit = await c.match(req)
-      if (hit) return hit
+      if (hit && KEEPABLE.test(hit.headers.get('content-type') || '')) return hit
+      if (hit) await c.delete(req) // a page kept under a script's name: never serve it
       const res = await fetch(req)
-      if (res.ok) c.put(req, res.clone())
+      if (res.ok && KEEPABLE.test(res.headers.get('content-type') || '')) c.put(req, res.clone())
       return res
     }))
   }

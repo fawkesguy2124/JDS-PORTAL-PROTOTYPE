@@ -26,7 +26,7 @@ export const imoOf = (job, data) => shipIdOf(job, vesselOf(job, data), data).imo
 // Where a ship is: Safecube's position (the job's tracking), else the finder's
 // last-heard position for that ship name. { pos, at, from } or null
 export function shipPosition(sea, found) {
-  if (sea && !sea.error && typeof sea.lat === 'number' && typeof sea.lng === 'number') return { pos: [sea.lat, sea.lng], at: sea.position_at || sea.fetched_at, from: 'Safecube' }
+  if (sea && !sea.error && typeof sea.lat === 'number' && typeof sea.lng === 'number') return { pos: [sea.lat, sea.lng], at: sea.position_at || sea.fetched_at, from: 'tracking' }
   if (found && typeof found.lat === 'number' && typeof found.lon === 'number') return { pos: [found.lat, found.lon], at: found.seen_at, from: 'ship radio (AIS)', heading: found.heading ?? found.cog ?? null }
   return null
 }
@@ -231,7 +231,7 @@ export default function ShipMap({ ships = [], selectedKey, onSelect, height = 42
         {!placed.length && (
           <div className="ix-realmap-msg">
             <Icon name="ship" /> {ships.length ? 'No ship position yet.' : 'No ship is carrying our cargo right now.'}
-            {ships.length > 0 && <div style={{ fontSize: 12, marginTop: 4 }}>Positions come with Safecube tracking (job → Ship tracking).</div>}
+            {ships.length > 0 && <div style={{ fontSize: 12, marginTop: 4 }}>Positions come with ship tracking (open the job → Track this ship).</div>}
           </div>
         )}
         {/* the voyage card, like a ship tracker's */}
@@ -263,7 +263,7 @@ export default function ShipMap({ ships = [], selectedKey, onSelect, height = 42
             )}
             <div className="foot">
               {sel.where && <span>{sel.where}</span>}
-              {sel.at && <span>Position {ago(sel.at)}{sel.from ? ` · ${sel.from}` : ''}</span>}
+              {sel.at && <span>Position {ago(sel.at)}</span>}
               {v?.heading != null && <span>Heading {Math.round(v.heading)}°</span>}            </div>
           </div>
         )}

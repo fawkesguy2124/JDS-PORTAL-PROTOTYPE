@@ -120,7 +120,7 @@ export default function VesselsPage({ onOpenJob, showToast, onGo }) {
       <div className="ix-page-head">
         <div>
           <h1>Vessels</h1>
-          <p>Where the ship of each open job is, from Safecube tracking</p>
+          <p>Where the ship of each open job is, live</p>
         </div>
       </div>
 

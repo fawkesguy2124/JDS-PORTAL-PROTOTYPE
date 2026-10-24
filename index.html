@@ -20,6 +20,24 @@
   </head>
   <body>
     <div id="root"><div id="boot"><div class="logo">JDS</div></div></div>
+    <script>
+      // Safety net (24 Oct 2026): if the portal hasn't started after 10 s (e.g. a broken
+      // saved copy of its files), clear the app's saved files and reload once.
+      (function () {
+        var KEY = 'jds-boot-retry'
+        setTimeout(function () {
+          var tried = null
+          try { tried = sessionStorage.getItem(KEY) } catch (e) {}
+          if (!document.getElementById('boot')) { try { sessionStorage.removeItem(KEY) } catch (e) {} return }
+          if (tried) return
+          try { sessionStorage.setItem(KEY, '1') } catch (e) {}
+          var work = []
+          if (window.caches) work.push(caches.keys().then(function (k) { return Promise.all(k.map(function (x) { return caches.delete(x) })) }))
+          if (navigator.serviceWorker) work.push(navigator.serviceWorker.getRegistrations().then(function (r) { return Promise.all(r.map(function (x) { return x.update().catch(function () {}) })) }))
+          Promise.all(work).catch(function () {}).then(function () { location.reload() })
+        }, 10000)
+      })()
+    </script>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>

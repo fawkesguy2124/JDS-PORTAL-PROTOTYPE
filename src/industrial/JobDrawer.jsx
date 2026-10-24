@@ -215,7 +215,7 @@ export default function JobDrawer({ jobId, initialTab = 'overview', onClose, onO
           </div>
           <div style={{ color: 'var(--text-2)', marginTop: 2 }}>{job.client || '—'} · {job.mode || '—'} · {isExport ? 'Export' : 'Import'}</div>
           <div className="ix-facts">
-            <div className="ix-fact"><div className="k">ETA</div><div className="v" title={!job.eta && data?.seaByJob?.[job.id]?.pod_date ? 'From Safecube tracking' : undefined}>{job.eta || !data?.seaByJob?.[job.id]?.pod_date ? fmtDate(job.eta) : portTime(data.seaByJob[job.id].pod_date, false)}</div></div>
+            <div className="ix-fact"><div className="k">ETA</div><div className="v" title={!job.eta && data?.seaByJob?.[job.id]?.pod_date ? 'From ship tracking' : undefined}>{job.eta || !data?.seaByJob?.[job.id]?.pod_date ? fmtDate(job.eta) : portTime(data.seaByJob[job.id].pod_date, false)}</div></div>
             <div className="ix-fact"><div className="k">Stage</div><div className="v" title={getStageName(effectiveStage(job, j))}>{getStageName(effectiveStage(job, j))}</div></div>
             <div className="ix-fact"><div className="k">Free days</div><div className="v"><FreeDays value={j.freeDaysLeft} /></div></div>
             <div className="ix-fact"><div className="k">Owner</div><div className="v">{ownerName || '—'}</div></div>

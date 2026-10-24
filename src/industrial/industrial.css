@@ -355,11 +355,11 @@
 .ix-smark .cl { font-weight: 500; color: var(--text-2); max-width: 190px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-left: 7px; border-left: 1px solid var(--line) }
 .ix-port { position: absolute; left: -13px; top: -13px; width: 26px; height: 26px; border-radius: 50%; background: #fff; border: 2px solid #1a4fa0; color: #1a4fa0; display: grid; place-items: center; font-size: 15px; box-shadow: 0 2px 6px rgba(0,0,0,.25) }
 /* the voyage card on the ship map */
-.ix-voyage { position: absolute; top: 12px; right: 12px; z-index: 700; width: 300px; max-width: calc(100% - 70px); background: #fff; border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 8px 24px rgba(15,23,42,.18); padding: 12px 14px; font-size: 12.5px }
+.ix-voyage { position: absolute; top: 12px; right: 12px; z-index: 700; width: 370px; max-width: calc(100% - 70px); background: #fff; border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 8px 24px rgba(15,23,42,.18); padding: 12px 14px; font-size: 12.5px }
 .ix-voyage .hd { display: flex; gap: 10px; align-items: center }
 .ix-voyage .hd .ic { width: 34px; height: 34px; border-radius: 9px; background: #e7f6ec; color: #15803d; display: grid; place-items: center; font-size: 19px; flex-shrink: 0 }
 .ix-voyage .hd .t { font-weight: 700; font-size: 15px; color: var(--text) }
-.ix-voyage .hd .s { color: var(--text-2); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.ix-voyage .hd .s { color: var(--text-2); font-size: 12.5px; line-height: 1.4 }
 .ix-voyage .hd .x { margin-left: auto; border: 0; background: none; color: var(--muted); font-size: 16px; cursor: pointer; padding: 2px; align-self: flex-start }
 .ix-voyage .legs { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line) }
 .ix-voyage .legs > i { color: var(--muted); margin-top: 14px }
