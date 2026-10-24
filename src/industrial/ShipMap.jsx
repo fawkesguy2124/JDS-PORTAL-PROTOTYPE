@@ -241,7 +241,7 @@ export default function ShipMap({ ships = [], selectedKey, onSelect, height = 42
               <span className="ic"><Icon name="ship" /></span>
               <div style={{ minWidth: 0 }}>
                 <div className="t">{sel.jobs}</div>
-                <div className="s">{[sel.clients, sel.line, sel.label].filter(Boolean).join(' · ')}</div>
+                <div className="s">{[sel.clients, sel.line].filter(Boolean).join(' · ')}</div>
               </div>
               <button type="button" className="x" onClick={() => setClosedFor(sel.key)} aria-label="Close the card"><Icon name="x" /></button>
             </div>
