@@ -195,7 +195,7 @@ export default function ShipMap({ ships = [], selectedKey, onSelect, height = 42
         : `<span class="dot" style="background:${color}"></span>`
       // JDS knows ships by their jobs: the pin shows the job numbers, not the IMO (Jose, 24 Oct 2026)
       const tone = stale ? 'old' : s.arrived ? 'port' : 'sea'
-      const html = `<div class="ix-ship ${isSel ? 'sel' : ''}">${shape}<div class="ix-smark ${tone} ${isSel ? 'sel' : ''}"><span class="ic"><i class="ti ti-ship"></i></span>${esc(s.jobs)}</div></div>`
+      const html = `<div class="ix-ship ${isSel ? 'sel' : ''}">${shape}<div class="ix-smark ${tone} ${isSel ? 'sel' : ''}"><span class="ic"><i class="ti ti-ship"></i></span>${esc(s.jobs)}${s.clients ? `<span class="cl">${esc(s.clients)}</span>` : ''}</div></div>`
       // no hover box: the voyage card on the right says it all (Jose, 24 Oct 2026)
       L.marker(pos, { icon: L.divIcon({ className: 'ix-tpin', iconSize: [0, 0], html }), zIndexOffset: isSel ? 1000 : 0 })
         .on('click', () => { onSelect?.(s.key); setClosedFor(null) })

@@ -351,6 +351,8 @@
 .ix-smark.port { border-color: #b45309 } .ix-smark.port .ic { background: #b45309 } .ix-smark.port::after { border-top-color: #b45309 }
 .ix-smark.old { border-color: #94a3b8 } .ix-smark.old .ic { background: #94a3b8 } .ix-smark.old::after { border-top-color: #94a3b8 }
 .ix-smark.sel { outline: 3px solid #f59e0b; outline-offset: 1px }
+/* the client next to the job number on the pin */
+.ix-smark .cl { font-weight: 500; color: var(--text-2); max-width: 190px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-left: 7px; border-left: 1px solid var(--line) }
 .ix-port { position: absolute; left: -13px; top: -13px; width: 26px; height: 26px; border-radius: 50%; background: #fff; border: 2px solid #1a4fa0; color: #1a4fa0; display: grid; place-items: center; font-size: 15px; box-shadow: 0 2px 6px rgba(0,0,0,.25) }
 /* the voyage card on the ship map */
 .ix-voyage { position: absolute; top: 12px; right: 12px; z-index: 700; width: 300px; max-width: calc(100% - 70px); background: #fff; border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 8px 24px rgba(15,23,42,.18); padding: 12px 14px; font-size: 12.5px }
