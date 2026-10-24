@@ -292,6 +292,12 @@ export default function ShipMap({ ships = [], selectedKey, onSelect, height = 42
                 </div>
               </>
             )}
+            {(sel.lastMove || sel.nextStop) && (
+              <div className="moves">
+                {sel.lastMove && <div><span className="k">Last move</span>{sel.lastMove}</div>}
+                {sel.nextStop && <div><span className="k">Next stop</span>{sel.nextStop}</div>}
+              </div>
+            )}
             <div className="foot">
               {sel.where && <span>{sel.where}</span>}
               {sel.at && !sel.waiting && <span>Position {ago(sel.at)}</span>}

@@ -81,7 +81,6 @@ export default function SeaTracking({ job, showToast }) {
   }
 
   const ev = sea.last_event || {}
-  const next = ev.next || null
   const refresh = !sea.done && (
     <button type="button" className="ix-icon-btn sm" disabled={busy} onClick={() => run(false)} title="Check again now" aria-label="Check the ship again now">
       <Icon name={busy ? 'loader-2' : 'refresh'} />
@@ -132,7 +131,7 @@ export default function SeaTracking({ job, showToast }) {
         {sea.sealine_name && <div><div className="k">Line</div><div className="v">{sea.sealine_name}</div></div>}
         {seaWhere(sea) && <div><div className="k">Where now</div><div className="v">{seaWhere(sea)}{sea.position_at && !waiting && <span className="muted"> · {timeAgo(sea.position_at)}</span>}</div></div>}
         {ev.what && <div><div className="k">Last move</div><div className="v">{moveText(ev, false)}</div></div>}
-        {next?.what && !sea.pod_actual && <div><div className="k">Next</div><div className="v">{moveText(next, true)}</div></div>}
+        {nextStop(sea) && <div><div className="k">Next stop</div><div className="v">{nextStop(sea)}</div></div>}
       </div>
     </div>
   )
@@ -143,9 +142,19 @@ export const portName = (p) => (p ? String(p).replace(/^Jawaharlal Nehru(, IN)?/
 
 // a carrier event in plain words: "Left Shanghai, CN · 4 Oct"
 const VERB = { DEPA: ['Left', 'Leaves'], ARRI: ['Arrived at', 'Arrives at'], LOAD: ['Loaded at', 'Loads at'], DISC: ['Unloaded at', 'Unloads at'], GTIN: ['Gate in at', 'Gate in at'], GTOT: ['Gate out at', 'Gate out at'] }
-function moveText(e, future) {
+export function moveText(e, future) {
+  if (!e?.what && !e?.code) return null
   const verb = VERB[e.code]?.[future ? 1 : 0]
   const where = portName(e.where)
   const what = verb ? `${verb} ${where || ''}`.trim() : [e.what, where].filter(Boolean).join(' · ')
   return `${what}${e.when ? ` · ${portTime(e.when, false)}` : ''}`
+}
+
+// The next port the cargo reaches, moving on by itself as it goes (Jose, 24 Oct
+// 2026: "Arrives at Busan · 28 Oct", then Ningbo, Shekou… then Nhava Sheva)
+export function nextStop(sea) {
+  if (!sea || sea.error || sea.pod_actual) return null
+  const p = (sea.route?.via || []).find((x) => !x.arrived && x.arrive)
+  if (p) return `Arrives at ${portName(p.name)}${p.change ? ' (change ship)' : ''} · ${portTime(p.arrive, false)}`
+  return sea.pod_date ? `Arrives at ${portName(sea.pod) || 'the port'} · ${portTime(sea.pod_date, false)}` : moveText(sea.last_event?.next, true)
 }

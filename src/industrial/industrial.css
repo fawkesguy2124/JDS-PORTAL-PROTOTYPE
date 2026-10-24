@@ -485,3 +485,6 @@
   /* narrow Android phones: all five job-panel tabs still fit */
   .ix-dr-tab { padding: 0 3px; font-size: 12px }
 }
+/* the voyage card's last move / next stop (they move on as the cargo goes) */
+.ix-voyage .moves { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line); display: grid; gap: 4px; font-size: 12.5px }
+.ix-voyage .moves .k { display: inline-block; min-width: 78px; font-size: 10.5px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; font-weight: 600 }
