@@ -71,6 +71,10 @@ export function jobImo(job, data) {
 // check (both apply to the job's first ship), else what the finder heard the
 // ship broadcast. { imo, mmsi, from: 'typed'|'igm'|'found'|'unclear'|null, candidates }
 export function shipIdOf(job, name, data) {
+  // the ship tracking follows the cargo, so its IMO beats one typed earlier (J-584:
+  // EVER LEARNED's IMO was typed; the box is on ONE THESEUS)
+  const sea = seaOf(job, data)
+  if (sea && !sea.error && digits(sea.vessel_imo).length === 7 && (!name || shipKey(sea.vessel_name) === name)) return { imo: digits(sea.vessel_imo), mmsi: sea.vessel_mmsi || null, from: 'tracking' }
   const first = vesselsOf(job, data)[0]
   if (!name || name === first) {
     const own = jobImo(job, data)
@@ -81,9 +85,6 @@ export function shipIdOf(job, name, data) {
       if (sib) return { ...sib, mmsi: null }
     }
   }
-  // Safecube's tracking of this job's BL / container names the ship and its IMO
-  const sea = seaOf(job, data)
-  if (sea?.vessel_imo && digits(sea.vessel_imo).length === 7 && (!name || shipKey(sea.vessel_name) === name)) return { imo: digits(sea.vessel_imo), mmsi: sea.vessel_mmsi || null, from: 'tracking' }
   const f = data?.shipIds?.[shipKey(name)]
   if (f?.imo || f?.mmsi) return { imo: digits(f.imo).length === 7 ? digits(f.imo) : null, mmsi: f.mmsi || null, from: 'found', seenAt: f.seen_at }
   if (f?.candidates?.length > 1) return { imo: null, mmsi: null, from: 'unclear', candidates: f.candidates }
