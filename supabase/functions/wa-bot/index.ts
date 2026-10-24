@@ -203,10 +203,36 @@ async function sendOnce(admin: Admin, key: string, person: Person, kind: string,
   if (claimErr?.code === '23505') return { key, to: person.name, skipped: 'already sent' }
   if (claimErr) throw new Error(`bot_sent: ${claimErr.message} (run supabase/sql/009_whatsapp_bot.sql)`)
   const open = await windowOpen(admin, person.phone)
+  // free only (Jose, 24 Oct 2026: no payment method): a paid template is never sent.
+  // Outside the 24-hour window the message waits and goes out with the person's next message.
+  if (!open && !PAID_TEMPLATES) {
+    await admin.from('bot_sent').update({ error: HELD }).eq('key', key).eq('phone', person.phone)
+    return { key, to: person.name, as: 'held', held: true }
+  }
   const r = await send(person.phone, open ? { text: message.text } : { template: message.template })
   if (r.dryRun) await admin.from('bot_sent').delete().eq('key', key).eq('phone', person.phone) // dry runs leave no trace
   else await admin.from('bot_sent').update({ wa_message_id: r.id, error: r.error }).eq('key', key).eq('phone', person.phone)
   return { key, to: person.name, as: open ? 'text' : 'template', ...r, preview: open ? message.text : message.template }
+}
+// paid templates only if the secret BOT_PAID_TEMPLATES=on (needs a payment method in Meta)
+const PAID_TEMPLATES = env('BOT_PAID_TEMPLATES') === 'on'
+const HELD = 'held: 24-hour window closed'
+
+// The messages held while the window was closed (last 2 days), sent as one message
+// right after the person writes again. Older ones are dropped as stale.
+async function sendHeld(admin: Admin, person: Person) {
+  const since = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString()
+  const { data: rows } = await admin.from('bot_sent').select('key, kind, text, sent_at').eq('phone', person.phone).eq('error', HELD).gte('sent_at', since).order('sent_at')
+  if (!rows?.length) return
+  const when = (iso: string) => new Date(iso).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' })
+  // the newest summary only; every alert, reminder and task in time order
+  const lastSummary = [...rows].reverse().find((r: any) => r.kind === 'morning')
+  const keep = rows.filter((r: any) => r.kind !== 'morning' || r === lastSummary)
+  const parts = keep.map((r: any) => `🕘 _${when(r.sent_at)}_\n${r.text}`)
+  let text = `📬 *While you were away* (${keep.length} message${keep.length === 1 ? '' : 's'}):\n\n${parts.join('\n\n')}`
+  if (text.length > 4000) text = `${text.slice(0, 3900)}\n\n…more in the portal.`
+  const r = await send(person.phone, { text })
+  if (!r.error) await admin.from('bot_sent').update({ error: 'held, then sent together', wa_message_id: r.id || null }).eq('phone', person.phone).eq('error', HELD)
 }
 
 // ── scheduled runs ──
@@ -214,7 +240,12 @@ async function runMorning(admin: Admin) {
   const [data, team] = await Promise.all([loadData(admin), loadTeam(admin)])
   const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' })
   const out = []
-  for (const person of team) out.push(await sendOnce(admin, `morning:${today}`, person, 'morning', morningSummary(data, person)))
+  for (const person of team) {
+    const summary = morningSummary(data, person)
+    // free only: tomorrow's summary can reach them only if they write within 24 hours
+    const text = PAID_TEMPLATES ? summary.text : `${summary.text}\n\n_Reply anything (even "ok") so tomorrow's 8 am summary can reach you._`
+    out.push(await sendOnce(admin, `morning:${today}`, person, 'morning', { ...summary, text }))
+  }
   // then the details missing on their jobs, with a tap list (the list only goes
   // inside WhatsApp's 24-hour window; outside it the alert template carries the text)
   for (const person of team) {
@@ -485,6 +516,7 @@ async function handleInbound(admin: Admin, payload: any) {
     if ((m.type === 'document' || m.type === 'image') && (m.document?.id || m.image?.id)) {
       if (!allowed(person, 'files')) { await send(person.phone, { text: `🔒 Your WhatsApp access is *${LEVEL_LABEL[person.level || 'view']}*, so files can't be added to jobs from your number. Please send it to Jose.` }); continue }
       await handleFile(admin, person, m, data || await loadDataCached(admin))
+      await sendHeld(admin, person).catch((e) => console.warn(`[wa-bot] held messages: ${(e as Error).message}`))
       continue
     }
     // the last few messages (so follow-ups make sense) and the portal data, loaded together
@@ -549,6 +581,8 @@ async function handleInbound(admin: Admin, payload: any) {
     const note = checked.length ? `\n[checked: ${checked.join('; ').slice(0, 400)}]` : ''
     const next = [...history, { role: 'user', text: String(text).slice(0, 500) }, { role: 'model', text: `${String(reply).slice(0, 1500)}${note}` }].slice(-10)
     await admin.from('bot_inbox').update({ history: next }).eq('phone', person.phone)
+    // the window is open again: what was held for this person goes out now
+    await sendHeld(admin, person).catch((e) => console.warn(`[wa-bot] held messages: ${(e as Error).message}`))
   }
 }
 
