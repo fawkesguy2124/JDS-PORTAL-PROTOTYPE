@@ -439,6 +439,7 @@
 .ix-seacard .muted { color: var(--muted); font-size: 12px }
 .ix-seacard .foot { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); font-size: 11.5px; color: var(--muted) }
 .ix-seacard .ix-icon-btn { flex-shrink: 0 }
+.ix-seacard .upd { font-size: 11.5px; color: var(--muted); white-space: nowrap }
 @media (max-width: 480px) { .ix-seacard .facts { grid-template-columns: 1fr } }
 /* (older ship tracking box) */
 .ix-sea { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; margin: 0 0 16px; border: 1px solid var(--navy-100); background: var(--navy-50); border-radius: var(--radius); font-size: 13px; line-height: 1.5 }

@@ -92,6 +92,7 @@ export default function SeaTracking({ job, showToast }) {
           <div className="eta">{portTime(sea.pod_date)}</div>
         </div>
         <span className={`ix-chip ${tone === 'sea' ? 'blue' : tone === 'port' ? 'amber' : 'grey'}`}>{sea.pod_actual ? 'At port' : SHIP_STATUS[sea.status] || 'At sea'}</span>
+        {sea.fetched_at && <span className="upd" title={new Date(sea.fetched_at).toLocaleString('en-IN')}>Updated {timeAgo(sea.fetched_at)}</span>}
         {refresh}
       </div>
       {sea.pol && (
@@ -112,9 +113,6 @@ export default function SeaTracking({ job, showToast }) {
         {seaWhere(sea) && <div><div className="k">Where now</div><div className="v">{seaWhere(sea)}{sea.position_at && <span className="muted"> · {timeAgo(sea.position_at)}</span>}</div></div>}
         {ev.what && <div><div className="k">Last move</div><div className="v">{moveText(ev, false)}</div></div>}
         {next?.what && !sea.pod_actual && <div><div className="k">Next</div><div className="v">{moveText(next, true)}</div></div>}
-      </div>
-      <div className="foot">
-        Tracked by {sea.number_type === 'BL' ? 'BL' : 'container'} <span className="mono">{sea.number}</span> · updated {timeAgo(sea.fetched_at)}{sea.done ? ' · arrived, no more checks' : ''}
       </div>
     </div>
   )
