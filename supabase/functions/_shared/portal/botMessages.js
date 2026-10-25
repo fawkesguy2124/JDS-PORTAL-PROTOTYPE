@@ -112,7 +112,7 @@ export function morningSummary(allData, person, now = new Date()) {
     section(`🚢 Arriving in the next 2 days (${soon.length})`, soon),
   ]
   if (!urgent.length && !todo.length) parts.push('✅ Nothing urgent today.')
-  parts.push('Ask me: a job no (J-193), a container no or a BE no.')
+  parts.push('Ask me anything about these jobs, or tell me what to do.')
 
   return {
     text: parts.filter(Boolean).join('\n\n'),
@@ -274,15 +274,20 @@ export function instantAlerts(data, events = [], now = new Date()) {
 // ─────────────────────────────────────────────────────────────────────────────
 // "Ask the bot": the answer to a message from the team
 // ─────────────────────────────────────────────────────────────────────────────
-const HELP = [
-  '*JDS AI Assistant* — send me:',
-  '• a job no, like J-193',
-  '• a container no, like MSKU1234567',
-  '• a BE no (7 digits)',
-  '• SUMMARY for today\'s list',
-  '• URGENT for urgent jobs only',
-  '• or just ask, e.g. "which PCM jobs are waiting for OOC?"',
-].join('\n')
+// The welcome (Jose, 25 Oct 2026): a personal assistant talking, not a command
+// menu. A view-only person is not told about changes they can't make.
+function hello(person) {
+  const first = String(person?.name || '').trim().split(/\s+/)[0]
+  const canChange = allowed(person, 'change')
+  return [
+    `Hi${first ? ` ${first}` : ''} 👋 I'm *JDS AI Assistant*, your personal assistant for JDS Logistics.`,
+    `I'm connected to the JDS portal, so just ask me anything about your jobs in plain words, typed or as a voice note: where a container or ship is, which jobs are waiting for OOC, what's due today, when free days run out.`,
+    canChange
+      ? `I can also do the work for you: update a job, record a BE or OOC, add a truck, save a document you send me, create a job from a BL, set reminders, or send you a job's papers or an Excel report. I always check with you before I change anything.`
+      : `You have view access, so I'll look things up for you; changes are made by the JDS team.`,
+    `What can I help you with?`,
+  ].join('\n\n')
+}
 
 function jobCard(job, data) {
   const j = journeyFor(job, data)
@@ -313,7 +318,7 @@ function jobCard(job, data) {
 // anything else, so the bot can pass the question to the assistant.
 export function answer(data, message, person, now = new Date(), { fallback = true } = {}) {
   const text = oneLine(message).toUpperCase()
-  if (!text || /^(HI|HELLO|HELP|MENU|\?)$/.test(text)) return HELP
+  if (!text || /^(HI|HII|HELLO|HEY|HELP|MENU|START|\?)$/.test(text)) return hello(person)
   if (/^(SUMMARY|TODAY|SUMMARY PLEASE)$/.test(text)) return morningSummary(data, person, now).text
   if (text === 'URGENT') {
     const lines = jobsFor(person, data.jobs).filter((job) => !isDelivered(job))
@@ -348,7 +353,7 @@ export function answer(data, message, person, now = new Date(), { fallback = tru
     if (hits.length > 1) return section(`Open jobs for "${oneLine(message)}" (${hits.length})`, hits.map((j) => `${j.job_no}: ${journeyFor(j, data).steps.find((s) => s.current)?.nextText || 'in progress'}`)) + '\n\nReply a job no for details.'
   }
   if (!fallback) return null
-  return `Sorry, I did not understand "${oneLine(message).slice(0, 40)}".\n\n${HELP}`
+  return `Sorry, I didn't quite get "${oneLine(message).slice(0, 40)}".\n\n${hello(person)}`
 }
 
 // The owners: always admins of the bot, and can't be changed from WhatsApp (Jose's
