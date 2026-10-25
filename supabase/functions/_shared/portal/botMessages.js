@@ -275,7 +275,7 @@ export function instantAlerts(data, events = [], now = new Date()) {
 // "Ask the bot": the answer to a message from the team
 // ─────────────────────────────────────────────────────────────────────────────
 const HELP = [
-  '*JDS bot* — send me:',
+  '*JDS AI Assistant* — send me:',
   '• a job no, like J-193',
   '• a container no, like MSKU1234567',
   '• a BE no (7 digits)',

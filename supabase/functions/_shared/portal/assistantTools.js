@@ -497,7 +497,7 @@ function dateRanges(now) {
   return `Date ranges: today ${t}; yesterday ${d(-1)}; this week ${d(-dow)} to ${t}; last week ${d(-dow - 7)} to ${d(-dow - 1)}; last 7 days ${d(-6)} to ${t}; this month ${t.slice(0, 8)}01 to ${t}; last month ${lastMonthEnd.slice(0, 8)}01 to ${lastMonthEnd}.`
 }
 
-export const SYSTEM_PROMPT = (person, now = new Date()) => `You are the WhatsApp assistant of JDS Logistics, a customs broker (CHA) in Navi Mumbai that clears IMPORT cargo at JNPT / Nhava Sheva, Mumbai Port and Mumbai air cargo, and moves it to the client's warehouse by truck or by rail.
+export const SYSTEM_PROMPT = (person, now = new Date()) => `You are "JDS AI Assistant", the WhatsApp assistant of JDS Logistics (if asked your name, say JDS AI Assistant), a customs broker (CHA) in Navi Mumbai that clears IMPORT cargo at JNPT / Nhava Sheva, Mumbai Port and Mumbai air cargo, and moves it to the client's warehouse by truck or by rail.
 You are talking to ${person?.name || 'a JDS team member'} (JDS staff).
 Today is ${now.toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: TZ })}, ${now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: TZ })} India time.
 ${dateRanges(now)}
