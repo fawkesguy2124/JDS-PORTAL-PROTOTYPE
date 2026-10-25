@@ -1127,14 +1127,59 @@ function fallbackCopy(text, showToast, carrierName) {
   }
 }
 
+// container_tracking rows → what this page shows, per container number
+function buildMap(rows) {
+  const map = {}
+  for (const row of (rows || [])) {
+    map[row.container_no] = {
+      status:          row.status || 'in_transit',
+      statusText:      row.status_text || 'In Transit',
+      currentLocation: row.current_location,
+      vessel:          row.vessel,
+      freeDays:        row.free_days,
+      notes:           row.notes,
+      lastUpdate:      row.last_update,
+      milestones:      row.milestones || [],
+      eta:             row.eta,
+      portIn:          row.port_in,
+      portOut:         row.port_out,
+      cfsGateIn:       row.cfs_gate_in || (() => {
+        const milestones = row.milestones || []
+        const cfsEvent = milestones.find(m =>
+          typeof m.description === 'string' &&
+          (m.description.toUpperCase().includes('CFS IN') ||
+           m.description.toUpperCase().includes('CFS GATE IN') ||
+           m.description.toUpperCase().includes('GATE IN'))
+        )
+        return cfsEvent?.date || null
+      })(),
+      terminal:        row.terminal        || null,
+      dpdFlag:         row.dpd_flag        || false,
+      isEmpty:         row.is_empty        || false,
+      vesselImo:        row.vessel_imo        || null,
+      shippingLineLdb:  row.shipping_line_ldb || null,
+      containerSize:    row.container_size    || null,
+      expectedPortOut:  row.expected_port_out || null,
+    }
+  }
+  return map
+}
+
+// the rows, kept for the whole visit: the page shows them at once and refreshes them
+// quietly (Jose, 25 Oct 2026: Containers took two seconds to open)
+let rowsCache = null
+export function warmContainers() {
+  return supabase.from('container_tracking').select('*').then(({ data }) => { if (data) rowsCache = data })
+}
+
 function ContainerTrackingSection({ showToast, jobs, pendingNavAction, onNavActionConsumed }) {
-  const [trackingData, setTrackingDataRaw]      = useState({})
+  const [trackingData, setTrackingDataRaw]      = useState(() => (rowsCache ? Object.fromEntries(Object.entries(buildMap(rowsCache)).map(([k, v]) => [k, correctTracking(v)])) : {}))
   // CFS IN / CFS OUT reported in reverse order are put right (clear-cut cases only)
   const setTrackingData = (next) => setTrackingDataRaw((prev) => {
     const value = typeof next === 'function' ? next(prev) : next
     return Object.fromEntries(Object.entries(value || {}).map(([k, v]) => [k, correctTracking(v)]))
   })
-  const [loadingTracking, setLoadingTracking]   = useState(true)
+  const [loadingTracking, setLoadingTracking]   = useState(() => !rowsCache)
   const [searchQuery, setSearchQuery]           = useState('')
   const [expandedContainers, setExpandedContainers] = useState({})
   const [detailJob, setDetailJob]               = useState(null)
@@ -1161,42 +1206,12 @@ function ContainerTrackingSection({ showToast, jobs, pendingNavAction, onNavActi
   useEffect(() => {
     let mounted = true
     const load = async () => {
-      setLoadingTracking(true)
+      if (rowsCache) setTrackingData(buildMap(rowsCache))
+      else setLoadingTracking(true)
       try {
         const { data } = await supabase.from('container_tracking').select('*')
-        const map = {}
-        for (const row of (data || [])) {
-          map[row.container_no] = {
-            status:          row.status || 'in_transit',
-            statusText:      row.status_text || 'In Transit',
-            currentLocation: row.current_location,
-            vessel:          row.vessel,
-            freeDays:        row.free_days,
-            notes:           row.notes,
-            lastUpdate:      row.last_update,
-            milestones:      row.milestones || [],
-            eta:             row.eta,
-            portIn:          row.port_in,
-            portOut:         row.port_out,
-            cfsGateIn:       row.cfs_gate_in || (() => {
-              const milestones = row.milestones || []
-              const cfsEvent = milestones.find(m =>
-                typeof m.description === 'string' &&
-                (m.description.toUpperCase().includes('CFS IN') ||
-                 m.description.toUpperCase().includes('CFS GATE IN') ||
-                 m.description.toUpperCase().includes('GATE IN'))
-              )
-              return cfsEvent?.date || null
-            })(),
-            terminal:        row.terminal        || null,
-            dpdFlag:         row.dpd_flag        || false,
-            isEmpty:         row.is_empty        || false,
-            vesselImo:        row.vessel_imo        || null,
-            shippingLineLdb:  row.shipping_line_ldb || null,
-            containerSize:    row.container_size    || null,
-            expectedPortOut:  row.expected_port_out || null,
-          }
-        }
+        if (data) rowsCache = data
+        const map = buildMap(data)
         if (mounted) setTrackingData(map)
       } catch (e) {
         console.warn('Could not load tracking data:', e)
@@ -1209,39 +1224,8 @@ function ContainerTrackingSection({ showToast, jobs, pendingNavAction, onNavActi
         try {
           await refreshAllContainers(jobs, {})
           const { data: fresh } = await supabase.from('container_tracking').select('*')
-          const map = {}
-          for (const row of (fresh || [])) {
-            map[row.container_no] = {
-              status:          row.status || 'in_transit',
-              statusText:      row.status_text || 'In Transit',
-              currentLocation: row.current_location,
-              vessel:          row.vessel,
-              freeDays:        row.free_days,
-              notes:           row.notes,
-              lastUpdate:      row.last_update,
-              milestones:      row.milestones || [],
-              eta:             row.eta,
-              portIn:          row.port_in,
-              portOut:         row.port_out,
-              cfsGateIn:       row.cfs_gate_in || (() => {
-                const milestones = row.milestones || []
-                const cfsEvent = milestones.find(m =>
-                  typeof m.description === 'string' &&
-                  (m.description.toUpperCase().includes('CFS IN') ||
-                   m.description.toUpperCase().includes('CFS GATE IN') ||
-                   m.description.toUpperCase().includes('GATE IN'))
-                )
-                return cfsEvent?.date || null
-              })(),
-              terminal:        row.terminal        || null,
-              dpdFlag:         row.dpd_flag        || false,
-              isEmpty:         row.is_empty        || false,
-              vesselImo:       row.vessel_imo      || null,
-              shippingLineLdb: row.shipping_line_ldb || null,
-              containerSize:   row.container_size  || null,
-              expectedPortOut: row.expected_port_out || null,
-            }
-          }
+          if (fresh) rowsCache = fresh
+          const map = buildMap(fresh)
           if (mounted) setTrackingData(map)
         } catch (e) {
           console.warn('Auto-refresh failed:', e)

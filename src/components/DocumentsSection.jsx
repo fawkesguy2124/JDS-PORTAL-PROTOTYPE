@@ -8,12 +8,14 @@ import { availableTypes } from '../utils/docTypes'
 import { vesselFromBl } from '../services/blVessel'
 import { downloadDoc, useDocUrl } from '../services/docFiles'
 import PdfPreview from './PdfPreview'
+import { cachedDocs, keepDocs, loadDocs } from '../services/docCache'
 
 function DocumentsSection({ jobs, profiles, currentUserName, showToast, initialExpandJobId, onExpandConsumed }) {
   const { user, profile } = useAuth()
   const isAdmin = profile?.role === 'admin'
-  const [documents, setDocuments] = useState([])
-  const [loadingDocs, setLoadingDocs] = useState(true)
+  // shown at once from the list loaded in the background (docCache), then refreshed
+  const [documents, setDocuments] = useState(() => cachedDocs() || [])
+  const [loadingDocs, setLoadingDocs] = useState(() => !cachedDocs())
   const [expandedJobId, setExpandedJobId] = useState(null)
   const [uploadModal, setUploadModal] = useState({ open: false, job: null })
   const [previewModal, setPreviewModal] = useState({ open: false, doc: null })
@@ -60,16 +62,15 @@ function DocumentsSection({ jobs, profiles, currentUserName, showToast, initialE
 
   useEffect(() => {
     let mounted = true
-    ;(async () => {
-      setLoadingDocs(true)
-      const { data, error } = await supabase.from('documents').select('*').order('created_at', { ascending: false }).limit(500)
-      if (mounted) {
-        if (!error) setDocuments(data ?? [])
-        setLoadingDocs(false)
-      }
-    })()
+    loadDocs().then(({ data }) => {
+      if (!mounted) return
+      if (data) setDocuments(data)
+      setLoadingDocs(false)
+    })
     return () => { mounted = false }
   }, [])
+  // uploads and deletes keep the shared list current too
+  useEffect(() => { if (!loadingDocs) keepDocs(documents) }, [documents, loadingDocs])
 
   const accordionItems = useMemo(() => {
     const docMap = {}

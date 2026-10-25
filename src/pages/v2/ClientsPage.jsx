@@ -18,11 +18,15 @@ function iecBadge(row) {
   return { text: `❌ ${text} (checked ${when})`, bg: '#fef2f2', border: '#fecaca', color: '#991b1b' }
 }
 
+// the last loaded lists, kept for the whole visit
+let kept = null
+
 export default function ClientsPage({ onOpenJob }) {
-  const [master, setMaster] = useState([])
-  const [jobs, setJobs] = useState([])
-  const [iecRows, setIecRows] = useState({})
-  const [loading, setLoading] = useState(true)
+  // shown at once from the last visit, then refreshed (Jose, 25 Oct 2026)
+  const [master, setMaster] = useState(() => kept?.master || [])
+  const [jobs, setJobs] = useState(() => kept?.jobs || [])
+  const [iecRows, setIecRows] = useState(() => kept?.iecRows || {})
+  const [loading, setLoading] = useState(() => !kept)
   const [loadError, setLoadError] = useState(null)
   const [search, setSearch] = useState('')
   const [expanded, setExpanded] = useState(null)
@@ -53,6 +57,7 @@ export default function ClientsPage({ onOpenJob }) {
       setMaster(mRes.data || [])
       setJobs(jRes.data || [])
       setIecRows(byIec)
+      if (!err) kept = { master: mRes.data || [], jobs: jRes.data || [], iecRows: byIec }
       setLoadError(err ? err.message : null)
       setLoading(false)
     }

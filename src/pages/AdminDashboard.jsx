@@ -4,6 +4,7 @@ import { supabase } from '../supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { getStageName, isEtaThisWeek } from '../utils/jobHelpers'
 import lazyPage from '../utils/lazyPage'
+import { loadDocs } from '../services/docCache'
 import '../industrial/industrial.css'
 import { JourneyProvider, useJourney } from '../industrial/JourneyContext'
 import { rememberJob } from '../industrial/recentJobs'
@@ -650,6 +651,22 @@ function AdminDashboardInner() {
     if (!journey?.byId?.[jobId]) return openFullJob(jobId, DRAWER_TABS.includes(tab) ? 'details' : tab)
     setDrawer({ id: jobId, tab: DRAWER_TABS.includes(tab) ? tab : 'overview' })
   }
+  // once the portal has its data: fetch the busy pages' code and the documents list in
+  // the background, so opening them later is instant (Jose, 25 Oct 2026)
+  const warmed = useRef(false)
+  useEffect(() => {
+    if (warmed.current || !journey?.data) return
+    warmed.current = true
+    const t = setTimeout(() => {
+      loadDocs()
+      import('../components/DocumentsSection')
+      import('../components/ContainerTrackingSection').then((m) => m.warmContainers?.())
+      import('../industrial/pages/VesselsPage')
+      import('../industrial/pages/TrucksPage')
+    }, 1500)
+    return () => clearTimeout(t)
+  }, [journey?.data])
+
   // links from alerts (bell and desktop; alertLinks.js): pick the alert's job on its page
   useEffect(() => {
     const params = new URLSearchParams(location.search)

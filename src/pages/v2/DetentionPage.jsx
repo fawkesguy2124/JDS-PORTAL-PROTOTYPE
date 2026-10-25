@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { loadJourneyData, isDelivered, freeDaysLeftFor, daysSinceLastMove, STALE_AFTER_DAYS } from '../../services/journey'
 import { parseContainerNos, getStageName } from '../../utils/jobHelpers'
+import { useJourney } from '../../industrial/JourneyContext'
 
 // Free days and detention risk, per container. Reads saved data only - no ULIP calls.
 const TONES = {
@@ -25,11 +26,16 @@ const shortDate = (v) => {
 }
 
 export default function DetentionPage({ onOpenJob }) {
-  const [data, setData] = useState(null)
-  const [loading, setLoading] = useState(true)
+  // the admin screens already have every job loaded: use that (opens at once)
+  const shared = useJourney()?.data
+  const [own, setData] = useState(null)
+  const data = shared || own
+  const [ownLoading, setLoading] = useState(!shared)
+  const loading = shared ? false : ownLoading
   const [loadError, setLoadError] = useState(null)
 
   useEffect(() => {
+    if (shared) return undefined
     let cancelled = false
     async function load() {
       let d = null
@@ -44,7 +50,7 @@ export default function DetentionPage({ onOpenJob }) {
     }
     load()
     return () => { cancelled = true }
-  }, [])
+  }, [shared])
 
   const rows = useMemo(() => {
     if (!data) return []
