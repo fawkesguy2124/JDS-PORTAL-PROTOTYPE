@@ -537,3 +537,70 @@
 .ix-table-plain td.ix-ellipsis { max-width: 260px; overflow: hidden; text-overflow: ellipsis }
 @media (max-width: 1180px) { .ix-health-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) } }
 @media (max-width: 640px) { .ix-health-grid { grid-template-columns: 1fr } }
+
+/* Vessels: tracking console (Jose, 25 Oct 2026: "a professional map tracking for vessels") */
+.ix-vt-stats { gap: 0 !important; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 6px 4px }
+.ix-vt-stats > div { display: flex; flex-direction: column; padding: 2px 16px; border-left: 1px solid var(--line); min-width: 74px }
+.ix-vt-stats > div:first-child { border-left: 0 }
+.ix-vt-stats b { font-size: 18px; font-weight: 700; line-height: 1.2; font-variant-numeric: tabular-nums }
+.ix-vt-stats > div.wide b { font-size: 14px; line-height: 1.55 }
+.ix-vt-stats span { font-size: 11.5px; color: var(--muted); white-space: nowrap }
+.ix-vt { display: grid; grid-template-columns: 340px minmax(0, 1fr); overflow: hidden }
+.ix-vt-list { display: flex; flex-direction: column; border-right: 1px solid var(--line); min-height: 0; max-height: var(--vt-h, calc(100vh - 190px)); background: var(--surface) }
+.ix-vt-tabs { display: flex; gap: 4px; padding: 10px; border-bottom: 1px solid var(--line) }
+.ix-vt-tabs button { flex: 1; height: 30px; border: 1px solid transparent; background: none; border-radius: 7px; font: 600 12.5px Inter, sans-serif; color: var(--text-2); display: flex; align-items: center; justify-content: center; gap: 6px; cursor: pointer }
+.ix-vt-tabs button span { font-size: 11px; background: var(--grey-bg); color: var(--text-2); border-radius: 9px; padding: 0 6px; line-height: 17px }
+.ix-vt-tabs button:hover { background: var(--surface-2) }
+.ix-vt-tabs button.on { background: var(--navy-50); color: var(--navy); border-color: #cddbf1 }
+.ix-vt-tabs button.on span { background: var(--navy); color: #fff }
+.ix-vt-rows { overflow-y: auto; flex: 1; min-height: 0 }
+.ix-vrow { padding: 11px 14px 11px 16px; border-bottom: 1px solid var(--line); cursor: pointer; position: relative; transition: background .12s }
+.ix-vrow:hover { background: var(--surface-2) }
+.ix-vrow.sel { background: #f1f6fd }
+.ix-vrow.sel::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--navy) }
+.ix-vrow .top { display: flex; align-items: center; gap: 8px }
+.ix-vrow .dot { width: 8px; height: 8px; border-radius: 50%; background: #15803d; flex-shrink: 0 }
+.ix-vrow.port .dot { background: #c2410c } .ix-vrow.old .dot { background: #94a3b8 }
+.ix-vrow .jobs { display: flex; gap: 6px; flex-wrap: wrap; min-width: 0 }
+.ix-vrow .job { border: 0; background: none; padding: 0; font: 700 13.5px Inter, sans-serif; color: var(--text); cursor: pointer }
+.ix-vrow .job:hover { color: var(--navy); text-decoration: underline }
+.ix-vrow .st { margin-left: auto; font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 5px; background: var(--green-bg); color: var(--green); white-space: nowrap }
+.ix-vrow .st.port { background: #fff3ea; color: #c2410c } .ix-vrow .st.old { background: var(--grey-bg); color: var(--text-2) }
+.ix-vrow .cl { font-size: 12.5px; color: var(--text-2); margin: 2px 0 0 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+.ix-vrow .cl span { color: var(--muted) }
+.ix-vrow .meta { display: flex; flex-direction: column; gap: 1px; margin: 5px 0 0 16px; font-size: 11.5px; color: var(--muted) }
+.ix-vrow .meta span { display: flex; align-items: center; gap: 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+.ix-vrow .meta i { font-size: 13px }
+.ix-vrow .prog { display: flex; align-items: center; gap: 8px; margin: 7px 0 0 16px }
+.ix-vrow .prog .bar { flex: 1; height: 4px; border-radius: 4px; background: #e6ebf2; overflow: hidden }
+.ix-vrow .prog .bar span { display: block; height: 100%; background: #15803d; border-radius: 4px }
+.ix-vrow.port .prog .bar span { background: #c2410c } .ix-vrow.old .prog .bar span { background: #94a3b8 }
+.ix-vrow .prog .n { font-size: 11px; color: var(--text-2); white-space: nowrap; font-variant-numeric: tabular-nums }
+.ix-vt-map { min-width: 0; position: relative }
+.ix-vt-map .ix-realmap { border-radius: 0; border-bottom: 0 }
+@media (max-width: 900px) {
+  .ix-vt { grid-template-columns: 1fr }
+  .ix-vt-list { max-height: 300px; border-right: 0; border-bottom: 1px solid var(--line) }
+  .ix-vt-stats { width: 100%; overflow-x: auto }
+}
+
+/* the map's marks */
+.ix-tag { position: absolute; display: flex; align-items: center; gap: 6px; height: 24px; padding: 0 8px 0 7px; width: max-content; background: rgba(255,255,255,.97); border: 1px solid #d7dde6; border-left: 3px solid #15803d; border-radius: 6px; box-shadow: 0 1px 4px rgba(15,23,42,.16); font: 500 11.5px Inter, sans-serif; color: var(--text-2); white-space: nowrap; pointer-events: auto; cursor: pointer }
+.ix-tag b { font-weight: 700; font-size: 12px; color: #0f2a52 }
+.ix-tag span { color: var(--text-2); padding-left: 6px; border-left: 1px solid #e3e7ee }
+.ix-tag.port { border-left-color: #c2410c } .ix-tag.old { border-left-color: #94a3b8 }
+.ix-tag.sel { border-color: #1a4fa0; border-left-color: #1a4fa0; box-shadow: 0 0 0 3px rgba(26,79,160,.18), 0 2px 8px rgba(15,23,42,.2) }
+.ix-tag.port-tag { border-left-color: #1a4fa0; background: #f5f8fd; cursor: default }
+.ix-tag.port-tag b { color: #1a4fa0 }
+.ix-cluster { position: absolute; left: -12px; top: -12px; width: 24px; height: 24px; border-radius: 50%; background: #15803d; color: #fff; display: grid; place-items: center; font: 700 12px Inter, sans-serif; border: 2px solid #fff; box-shadow: 0 0 0 4px rgba(21,128,61,.22), 0 1px 4px rgba(0,0,0,.35) }
+.ix-cluster.port { background: #c2410c; box-shadow: 0 0 0 4px rgba(194,65,12,.2), 0 1px 4px rgba(0,0,0,.35) }
+.ix-cluster.old { background: #94a3b8; box-shadow: 0 0 0 4px rgba(148,163,184,.25), 0 1px 4px rgba(0,0,0,.35) }
+.ix-portmk { position: absolute; left: -11px; top: -11px; width: 22px; height: 22px; border-radius: 6px; background: #1a4fa0; color: #fff; display: grid; place-items: center; font-size: 14px; border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,.3) }
+.ix-ship.sel .hull { filter: drop-shadow(0 0 2px #fff) drop-shadow(0 0 5px rgba(26,79,160,.9)) }
+.ix-map-all { position: absolute; left: 50px; top: 10px; z-index: 600; height: 30px; padding: 0 12px; border-radius: 8px; border: 1px solid var(--line); background: #fff; font: 600 12.5px Inter, sans-serif; color: var(--text); display: flex; align-items: center; gap: 6px; cursor: pointer; box-shadow: 0 2px 6px rgba(26,34,51,.12) }
+.ix-map-all:hover { color: var(--navy) }
+.ix-voyage .hd .ic.port { background: #fff3ea; color: #c2410c } .ix-voyage .hd .ic.old { background: var(--grey-bg); color: var(--text-2) }
+.ix-voyage .foot span { display: inline-flex; align-items: center; gap: 4px }
+.ix-realmap .leaflet-control-scale { margin-bottom: 26px !important; margin-right: 52px !important }
+.ix-realmap .leaflet-control-scale-line { border-color: #8a93a1; color: #5f6b7c; background: rgba(255,255,255,.8); font-size: 10.5px }
+.ix-realmap .leaflet-bar a { color: var(--text) }

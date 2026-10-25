@@ -2,11 +2,13 @@ import { useMemo, useState } from 'react'
 import { supabase } from '../../supabase'
 import { isDelivered, isExportJob } from '../../services/journey'
 import { useJourney, useFreshOnOpen } from '../JourneyContext'
-import ShipMap, { vesselsOf, shipIdOf, shipPosition } from '../ShipMap'
+import ShipMap, { vesselsOf, shipIdOf, shipPosition, voyage, toneOf, TONE_COLOR } from '../ShipMap'
 import { cargoOnShip } from '../../../supabase/functions/_shared/portal/ships.js'
 import { lineName } from '../../../supabase/functions/_shared/portal/shippingLines.js'
-import { Icon, Chip, Skeleton, fmtDate } from '../ui'
+import { Icon, Skeleton, fmtDate } from '../ui'
 import { portTime, seaWhere, portName, notSailed, polText, moveText, nextStop, atPort } from '../SeaTracking'
+
+const TONE_ORDER = { sea: 0, port: 1, old: 2 }
 
 // Vessels: every ship that still carries our cargo, on the portal's own map with
 // Safecube's positions (VesselFinder removed 24 Oct 2026), one row per ship with
@@ -20,6 +22,7 @@ export default function VesselsPage({ onOpenJob, showToast, onGo }) {
   const [selected, setSelected] = useState(null) // ship row key
   const [typing, setTyping] = useState({}) // row key -> IMO being typed
   const [saving, setSaving] = useState(null)
+  const [filter, setFilter] = useState('all') // ship list: all / at sea / at port
 
   const igmOf = (job) => { const n = String(job.ulip_refs?.igm_no || '').replace(/\D/g, ''); return n.length >= 5 && !/^0+$/.test(n) ? n : null }
 
@@ -76,7 +79,8 @@ export default function VesselsPage({ onOpenJob, showToast, onGo }) {
     const rows = s.jobs.map((x) => data?.seaByJob?.[x.job.id]).filter(Boolean)
     return rows.find((r) => s.imo && r.vessel_imo === s.imo) || rows[0] || null
   }
-  const sel = ships.find((s) => s.key === selected) || ships.find((s) => shown(s) && !s.arrived) || ships.find(shown) || null
+  // nothing chosen at first: the map opens on all the ships
+  const sel = ships.find((s) => s.key === selected && shown(s)) || null
   // the map's pins: one per ship with a known position
   const mapShips = ships.map((s) => {
     const sea = seaOfShip(s)
@@ -116,82 +120,130 @@ export default function VesselsPage({ onOpenJob, showToast, onGo }) {
   // (no "Ship has left" button any more: Safecube says when the ship arrives and the
   // ship leaves this list by itself two days later; Jose, 24 Oct 2026)
 
+  // the tracking console (Jose, 25 Oct 2026: "a professional map tracking for vessels"):
+  // the ship list on the left, the map beside it, a few figures on top
+  const rows = ships.filter(shown).map((s) => {
+    const m = mapShips.find((x) => x.key === s.key)
+    const sea = seaOfShip(s)
+    return { s, m, sea, tone: toneOf(m), trip: voyage(m), podAt: sea && !sea.error && !sea.pod_actual ? sea.pod_date : null }
+  }).sort((a, b) => (TONE_ORDER[a.tone] - TONE_ORDER[b.tone]) || String(a.podAt || '9').localeCompare(String(b.podAt || '9')))
+  const count = (t) => rows.filter((r) => (t === 'port' ? r.m.arrived : t === 'sea' ? r.tone === 'sea' : true)).length
+  const listed = rows.filter((r) => filter === 'all' || (filter === 'port' ? r.m.arrived : r.tone === 'sea'))
+  // the next ship due (port time, written as UTC; Nhava Sheva is India time)
+  const next = rows.filter((r) => r.podAt && r.tone === 'sea' && new Date(r.podAt).getTime() - 5.5 * 3600e3 > Date.now())
+    .sort((a, b) => String(a.podAt).localeCompare(String(b.podAt)))[0]
+  const noPosition = ships.filter((s) => !shown(s))
+  const mapH = typeof window !== 'undefined' ? (window.innerWidth < 900 ? 420 : Math.max(560, window.innerHeight - 190)) : 560
+  const statusText = (r) => (r.m.waiting ? 'Not sailed' : r.m.arrived ? 'At port' : r.tone === 'old' ? 'Old position' : 'At sea')
+
   return (
-    <div className="ix-page">
+    <div className="ix-page ix-page-wide">
       <div className="ix-page-head">
         <div>
           <h1>Vessels</h1>
-          <p>Where the ship of each open job is, live</p>
+          <p>Live position of every ship carrying our cargo · updated every hour</p>
+        </div>
+        <div className="right ix-vt-stats">
+          <div><b>{rows.length}</b><span>ships tracked</span></div>
+          <div><b style={{ color: TONE_COLOR.sea }}>{count('sea')}</b><span>at sea</span></div>
+          <div><b style={{ color: TONE_COLOR.port }}>{count('port')}</b><span>at port</span></div>
+          {next && <div className="wide"><b>{next.s.jobs.map((x) => x.job.job_no).join(', ')}</b><span>next arrival · {portTime(next.podAt)}</span></div>}
         </div>
       </div>
 
-      <div className="ix-card" style={{ marginBottom: 16, overflow: 'hidden' }}>
-        <div className="ix-card-head">
-          <Icon name="ship" style={{ color: 'var(--navy)' }} />
-          <h2>{sel && shown(sel) ? sel.jobs.map((x) => x.job.job_no).join(', ') : 'Ships with our cargo'}</h2>
-        </div>
-        <ShipMap ships={mapShips} selectedKey={sel?.key} onSelect={setSelected} height={typeof window !== 'undefined' && window.innerWidth < 760 ? 380 : 540} />
-      </div>
-
-      <div className="ix-card">
-        <div className="ix-card-head">
-          <Icon name="list-details" style={{ color: 'var(--navy)' }} />
-          <h2>Ships with our cargo on board</h2><span className="ix-chip grey">{ships.length}</span>
-          <span className="sub hide-m">Click a ship to see it on the map. A ship leaves this list by itself once it has arrived and our cargo is unloaded.</span>
-        </div>
-        {loading && !data && <Skeleton rows={4} />}
-        {data && ships.length === 0 && <div className="ix-empty">No ship is carrying our cargo right now.</div>}
-        {ships.map((s) => (
-          // the whole row shows the ship on the map (job numbers open the job instead)
-          <div key={s.key} className={`ix-ship-row ${sel?.key === s.key ? 'sel' : ''}`}
-            onClick={() => shown(s) && setSelected(s.key)}
-            role={shown(s) ? 'button' : undefined} tabIndex={shown(s) ? 0 : undefined}
-            onKeyDown={(e) => { if (shown(s) && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); setSelected(s.key) } }}
-            title={shown(s) ? 'Show this ship on the map' : undefined}
-            style={{ cursor: shown(s) ? 'pointer' : 'default' }}>
-            <div className="who">
-              {/* the job is what JDS knows a ship by; its IMO shows in the map's card (Jose, 24 Oct 2026) */}
-              <span className={`ix-ship-ic ${s.arrived ? 'port' : shown(s) ? 'sea' : ''}`}><Icon name="ship" /></span>
-              <div style={{ minWidth: 0 }}>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2px 12px' }}>
-                  {s.jobs.map(({ job }) => (
-                    <span key={job.id}>
-                      <button type="button" className="ix-link" style={{ margin: 0 }} onClick={(e) => { e.stopPropagation(); onOpenJob?.(job.id) }}><b className="mono">{job.job_no}</b></button>
-                      <span style={{ color: 'var(--text-2)' }}> · {job.client || 'No client'}</span>
+      <div className="ix-card ix-vt" style={{ "--vt-h": `${mapH}px` }}>
+        <aside className="ix-vt-list">
+          <div className="ix-vt-tabs" role="tablist">
+            {[['all', 'All'], ['sea', 'At sea'], ['port', 'At port']].map(([id, label]) => (
+              <button key={id} type="button" role="tab" aria-selected={filter === id} className={filter === id ? 'on' : ''} onClick={() => setFilter(id)}>
+                {label}<span>{count(id)}</span>
+              </button>
+            ))}
+          </div>
+          <div className="ix-vt-rows">
+            {loading && !data && <Skeleton rows={4} />}
+            {data && !listed.length && <div className="ix-empty">{rows.length ? 'No ship in this group.' : 'No ship is carrying our cargo right now.'}</div>}
+            {listed.map((r) => {
+              const { s, m, sea, trip } = r
+              const pct = m.arrived ? 100 : m.waiting ? 0 : trip?.pct
+              const kmLeft = !m.arrived && !m.waiting && trip?.left != null ? Math.round(trip.left * 1.852) : null
+              return (
+                <div key={s.key} className={`ix-vrow ${r.tone} ${sel?.key === s.key ? 'sel' : ''}`} role="button" tabIndex={0}
+                  onClick={() => setSelected(sel?.key === s.key ? null : s.key)}
+                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSelected(s.key) } }}>
+                  <div className="top">
+                    <span className="dot" />
+                    <span className="jobs">
+                      {s.jobs.map(({ job }) => (
+                        <button key={job.id} type="button" className="job" title="Open the job" onClick={(e) => { e.stopPropagation(); onOpenJob?.(job.id) }}>{job.job_no}</button>
+                      ))}
                     </span>
-                  ))}
+                    <span className={`st ${r.tone}`}>{statusText(r)}</span>
+                  </div>
+                  <div className="cl">{m.clients || 'No client'}{m.line ? <span> · {m.line}</span> : null}</div>
+                  <div className="meta">
+                    {sea && !sea.error && sea.pod_date && <span><Icon name="flag" />{sea.pod_actual ? 'Arrived' : 'ETA'} {portTime(sea.pod_date)}</span>}
+                    {m.where && <span><Icon name="map-pin" />{m.where}</span>}
+                  </div>
+                  {pct != null && (
+                    <div className="prog">
+                      <div className="bar"><span style={{ width: `${pct}%` }} /></div>
+                      <span className="n">{m.arrived ? 'Arrived' : m.waiting ? 'Not sailed yet' : kmLeft != null ? `${kmLeft.toLocaleString('en-IN')} km to go` : `${pct}%`}</span>
+                    </div>
+                  )}
                 </div>
-                <div style={{ fontSize: 12, color: 'var(--muted)' }}>
-                  {(() => {
-                    // Safecube's ETA and position, when one of the ship's jobs is tracked
-                    const sea = seaOfShip(s)
-                    const eta = sea && !sea.error ? (sea.pod_actual ? `Arrived ${portTime(sea.pod_date)}` : `ETA ${portTime(sea.pod_date)}`) : s.jobs.length === 1 && s.jobs[0].job.eta ? `ETA ${fmtDate(s.jobs[0].job.eta)}` : null
-                    return [lineOf(s), s.imo ? null : unknownHint(s), eta, sea && !sea.error ? seaWhere(sea) : null,
-                      !shown(s) && !sea ? 'No position yet: open the job and tap Track this ship' : null].filter(Boolean).join(' · ')
-                  })()}
+              )
+            })}
+          </div>
+        </aside>
+        <div className="ix-vt-map">
+          <ShipMap ships={mapShips} selectedKey={sel?.key || null} onSelect={setSelected} height={mapH} />
+        </div>
+      </div>
+
+      {noPosition.length > 0 && (
+        <div className="ix-card" style={{ marginTop: 16 }}>
+          <div className="ix-card-head">
+            <Icon name="map-pin-off" style={{ color: 'var(--muted)' }} />
+            <h2>Ships without a position yet</h2><span className="ix-chip grey">{noPosition.length}</span>
+            <span className="sub hide-m">Open the job and tap Track this ship, or type the IMO.</span>
+          </div>
+          {noPosition.map((s) => (
+            <div key={s.key} className="ix-ship-row">
+              <div className="who">
+                <span className="ix-ship-ic"><Icon name="ship" /></span>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2px 12px' }}>
+                    {s.jobs.map(({ job }) => (
+                      <span key={job.id}>
+                        <button type="button" className="ix-link" style={{ margin: 0 }} onClick={() => onOpenJob?.(job.id)}><b className="mono">{job.job_no}</b></button>
+                        <span style={{ color: 'var(--text-2)' }}> · {job.client || 'No client'}</span>
+                      </span>
+                    ))}
+                  </div>
+                  <div style={{ fontSize: 12, color: 'var(--muted)' }}>
+                    {[lineOf(s), s.imo ? null : unknownHint(s), s.jobs.length === 1 && s.jobs[0].job.eta ? `ETA ${fmtDate(s.jobs[0].job.eta)}` : null].filter(Boolean).join(' · ')}
+                  </div>
                 </div>
               </div>
+              <div className="act">
+                {!s.imo && igmOf(s.jobs[0].job) && (
+                  <button type="button" className="ix-btn sm" onClick={() => onGo?.(`customs&job=${s.jobs[0].job.id}`)} title="Opens this job's IGM check on the BE & OOC page">
+                    <Icon name="search" />Check IGM
+                  </button>
+                )}
+                {!s.imo && (
+                  <>
+                    <input value={typing[s.key] || ''} onChange={(e) => setTyping((p) => ({ ...p, [s.key]: e.target.value.replace(/\D/g, '').slice(0, 7) }))}
+                      placeholder="IMO (7 digits)" inputMode="numeric" aria-label={`IMO number for ${s.jobs.map((x) => x.job.job_no).join(', ')}`} />
+                    <button type="button" className="ix-btn sm primary" disabled={saving === s.key || String(typing[s.key] || '').length !== 7} onClick={() => saveImo(s)}>{saving === s.key ? 'Saving…' : 'Save'}</button>
+                  </>
+                )}
+              </div>
             </div>
-            <div className="act" onClick={(e) => e.stopPropagation()}>
-              {(s.name || s.imo) && (s.arrived || seaOfShip(s)?.pod_actual ? <Chip tone="amber" icon="anchor">At port, unloading</Chip> : notSailed(seaOfShip(s)) ? <Chip tone="grey" icon="clock">Not sailed yet</Chip> : <Chip tone="blue" icon="ship">At sea</Chip>)}
-              {/* no IMO yet: the IGM check finds it (one check, by a person), or type it */}
-              {!s.imo && igmOf(s.jobs[0].job) && (
-                <button type="button" className="ix-btn sm" onClick={() => onGo?.(`customs&job=${s.jobs[0].job.id}`)} title="Opens this job's IGM check on the BE & OOC page">
-                  <Icon name="search" />Check IGM
-                </button>
-              )}
-              {/* the IMO box, until the ship's IMO is known (saved on all its jobs) */}
-              {!s.imo && (
-                <>
-                  <input value={typing[s.key] || ''} onChange={(e) => setTyping((p) => ({ ...p, [s.key]: e.target.value.replace(/\D/g, '').slice(0, 7) }))}
-                    placeholder="IMO (7 digits)" inputMode="numeric" aria-label={`IMO number for ${s.jobs.map((x) => x.job.job_no).join(', ')}`} />
-                  <button type="button" className="ix-btn sm primary" disabled={saving === s.key || String(typing[s.key] || '').length !== 7} onClick={() => saveImo(s)}>{saving === s.key ? 'Saving…' : 'Save'}</button>
-                </>
-              )}
-            </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
