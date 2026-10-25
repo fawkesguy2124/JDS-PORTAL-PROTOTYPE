@@ -107,6 +107,7 @@ const INITIAL_FORM = {
   igm_no: '',
   igm_date: '',
   igm_item_no: '',
+  hawb_no: '', // air: the house air waybill from the BE (kept in ulip_refs for the air checks)
   bg_required: 'no',
   destination: '',
   free_days: '14',
@@ -312,6 +313,7 @@ export default function CreateJob({ isModal = false, onCancel, onCreated, initia
         igm_no: f.igm_number || null,
         igm_date: f.igm_date || null,
         igm_item_no: f.igm_item_no || null,
+        hawb_no: f.hawb_number || null,
         rms_status: f.rms_status || null,
         port_code: f.port_code || null,
         mode: f.mode || null,
@@ -387,6 +389,7 @@ if (parsed.client && shouldFill('client')) {
       if (parsed.igm_no && shouldFill('igm_no'))         { updates.igm_no = parsed.igm_no;       applied.igm_no = true }
       if (parsed.igm_date && shouldFill('igm_date'))     { updates.igm_date = parsed.igm_date;   applied.igm_date = true }
       if (parsed.igm_item_no && shouldFill('igm_item_no')) { updates.igm_item_no = String(parsed.igm_item_no); applied.igm_item_no = true }
+      if (parsed.hawb_no && shouldFill('hawb_no'))       { updates.hawb_no = parsed.hawb_no }
       if (parsed.rms_status && parsed.rms_status !== 'pending' && form.rms_status === 'pending') {
         updates.rms_status = parsed.rms_status; applied.rms_status = true
       }
@@ -544,6 +547,7 @@ if (parsed.client && shouldFill('client')) {
         ...(form.igm_no.trim() ? { igm_no: form.igm_no.trim() } : {}),
         ...(form.igm_date ? { igm_date: form.igm_date } : {}),
         ...(form.igm_item_no.trim() ? { igm_item_no: form.igm_item_no.trim() } : {}),
+        ...(form.hawb_no.trim() ? { hawb_no: form.hawb_no.trim() } : {}),
       },
       bg_required: form.bg_required,
       destination: form.destination.trim() || null,

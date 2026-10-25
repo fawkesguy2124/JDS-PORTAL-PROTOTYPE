@@ -234,6 +234,12 @@ export function instantAlerts(data, events = [], now = new Date()) {
         ? `🚚 Truck *${meta.plate}* hasn't crossed a toll for ${meta.hours} hours (last: ${meta.last_plaza || 'unknown'}). Worth a call to the driver.`
         : `🚚 Truck *${meta.plate}* papers problem: ${(meta.problems || []).join('; ') || ev.note}.`)
     }
+    // the automatic checks found an air import in Customs' air manifest (Jose, 25 Oct 2026)
+    if (ev.action === 'air_igm') {
+      const job = byId[ev.job_id] || byId[meta.job_id] || byNo[ev.job_no]
+      add('customs', `air_igm:${meta.mark || ev.id}`, job,
+        `✈️ Air cargo *in the manifest*: IGM ${meta.igm_no || '?'}${ev.note ? ` (${ev.note})` : ''}. BE ${job?.be_no ? 'filed ✅' : 'can be filed now'}.`)
+    }
     if (ev.action === 'auto_check_paused') {
       out.push({ key: `auto_paused:${ev.id}`, kind: 'system', jobId: null, jobNo: null,
         text: `⏸ *Automatic checks paused for 2 hours*\n${ev.note || ''}`,

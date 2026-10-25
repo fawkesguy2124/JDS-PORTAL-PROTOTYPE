@@ -613,3 +613,16 @@
 .ix-flag.red { background: var(--red-bg); color: #991b1b } .ix-flag.amber { background: var(--amber-bg); color: #92400e }
 .ix-flag.grey { background: var(--grey-bg); color: var(--text-2) } .ix-flag.info { background: var(--navy-50); color: #1e3a6e }
 @media (max-width: 760px) { .ix-vt-alerts { flex-direction: column; gap: 6px } }
+
+/* Air cargo box in the job sidebar (Jose, 25 Oct 2026) */
+.ix-air { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; margin: 0 0 16px; border: 1px solid var(--navy-100); background: var(--navy-50); border-radius: var(--radius); font-size: 13px; line-height: 1.5 }
+.ix-air > i { font-size: 20px; color: var(--navy); margin-top: 1px }
+.ix-air .hd { display: flex; align-items: center; gap: 8px; justify-content: space-between }
+.ix-air .t { font-weight: 600 }
+.ix-air .nums { color: var(--text-2); margin-top: 2px }
+.ix-air .nums .ix-link { margin-left: 8px }
+.ix-air .st { margin-top: 6px; color: var(--text-2) }
+.ix-air .st.good { color: var(--green); display: flex; gap: 6px; align-items: baseline; flex-wrap: wrap }
+.ix-air .st.muted { color: var(--muted); font-size: 12px }
+.ix-air-edit { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px }
+.ix-air-edit input { height: 30px; border: 1px solid var(--line); border-radius: 8px; padding: 0 8px; font: 13px var(--mono); width: 150px; background: #fff }

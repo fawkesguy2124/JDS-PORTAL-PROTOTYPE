@@ -15,7 +15,8 @@ const FROM_COLUMNS = {
   container_no: (job) => firstContainer(job.containers),
   port_code: (job) => job.port_code,
   eta: (job) => job.eta,
-  mawb_no: (job) => (job.mode === 'Air' ? digitsOnly(job.bl_no) : null),   // air jobs keep the AWB in the BL field
+  // air jobs keep the MAWB in the BL field; an MAWB is always 11 digits (a HAWB there is not one)
+  mawb_no: (job) => { const d = job.mode === 'Air' ? digitsOnly(job.bl_no) : null; return d && d.length === 11 ? d : null },
 }
 
 export function firstContainer(containers) {

@@ -7,7 +7,7 @@
 // Used by the bell (portal) and the desktop alerts (wa-bot/push.ts).
 
 const PAGE = [
-  [/^(ooc|ooc_granted|customs|be_stage|be_status_check|be_not_filed|be_filed|sb_filed)$/, 'customs'],
+  [/^(ooc|ooc_granted|customs|be_stage|be_status_check|be_not_filed|be_filed|sb_filed|air_igm)$/, 'customs'],
   [/^(ship_arrived|ship_due|ship_unloaded|eta_changed)$/, 'vessels'],
   [/^(truck|truck_stuck|truck_papers|truck_dispatched)$/, 'trucks'],
   [/^(container|container_update|free_days|detention_alert)$|container/, 'containers'],

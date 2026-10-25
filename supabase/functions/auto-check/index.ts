@@ -26,7 +26,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 const AS = 'Auto-check'
 const TIME_BUDGET_MS = 75_000         // stop starting new checks after this
 const GAP_MS: [number, number] = [30_000, 60_000]
-const EVERY: Record<string, [number, number]> = { ooc: [50, 70], truck: [75, 95], papers: [30 * 24 * 60, 31 * 24 * 60] } // minutes
+const EVERY: Record<string, [number, number]> = { ooc: [50, 70], air: [50, 70], truck: [75, 95], papers: [30 * 24 * 60, 31 * 24 * 60] } // minutes
 const STUCK_HOURS = 6
 const STUCK_MAX_HOURS = 36
 const TRUCK_WATCH_DAYS = 4
@@ -47,11 +47,14 @@ async function callFn(name: string, body: unknown, token: string) {
 // What should be watched right now
 async function wanted(admin: any) {
   const since = new Date(Date.now() - 60 * 24 * 60 * MIN).toISOString()
-  const { data: jobs } = await admin.from('jobs').select('id, job_no, client, be_no, be_date, stage, mode, job_type, trucks, truck_no, ulip_refs, created_at, updated_at')
+  const { data: jobs } = await admin.from('jobs').select('id, job_no, client, be_no, be_date, bl_no, port_code, stage, mode, job_type, trucks, truck_no, ulip_refs, created_at, updated_at')
     .or('stage.is.null,stage.lt.10').gte('created_at', since)
   const open = (jobs || []).filter((j: any) => j.job_type !== 'export')
   const { data: cs } = await admin.from('customs_status').select('job_id, be_no, ooc_date').in('job_id', open.map((j: any) => j.id))
   const ooc = new Map((cs || []).map((r: any) => [r.job_id, r]))
+  // air imports already found in Customs' air manifest (ICEGATE/09): no need to ask again
+  const { data: airDone } = await admin.from('ulip_results').select('job_id').eq('api', 'ICEGATE/09').eq('found', true).in('job_id', open.map((j: any) => j.id))
+  const manifested = new Set((airDone || []).map((r: any) => r.job_id))
   const items = new Map<string, any>()
   for (const j of open) {
     const be = String(j.be_no || '').trim()
@@ -59,6 +62,15 @@ async function wanted(admin: any) {
     const hasOoc = got?.ooc_date && String(got.be_no) === be
     if (/^\d{7}$/.test(be) && j.be_date && !hasOoc && Number(j.stage || 0) < 7) {
       items.set(`ooc:${j.id}`, { key: `ooc:${j.id}`, kind: 'ooc', job_id: j.id, label: j.job_no })
+    }
+    // an air import not yet in the air manifest (IGM): ICEGATE/09 by MAWB + airport, about
+    // hourly, until it is (Jose, 25 Oct 2026). The MAWB: the BL field when it is 11 digits
+    // (air jobs keep it there), else the one typed in the job's Air cargo box.
+    const blDigits = String(j.bl_no || '').replace(/\D/g, '')
+    const mawb = blDigits.length === 11 ? blDigits : String(j.ulip_refs?.mawb_no || '').replace(/\D/g, '')
+    if (/air/i.test(j.mode || '') && mawb.length === 11 && Number(j.stage || 0) < 7 && !manifested.has(j.id)) {
+      const site = /^[A-Z0-9]{6}$/.test(String(j.port_code || '').toUpperCase()) ? String(j.port_code).toUpperCase() : 'INBOM4'
+      items.set(`air:${j.id}`, { key: `air:${j.id}`, kind: 'air', job_id: j.id, label: j.job_no, meta: { mawb, site } })
     }
     for (const t of jobTrucks(j)) {
       if (!/^[A-Z]{2}\d{1,2}[A-Z]{0,3}\d{3,4}$|^\d{2}BH\d{4}[A-Z]{1,2}$/.test(t.no)) continue
@@ -98,6 +110,24 @@ async function runOne(admin: any, item: any, job: any, token: string) {
     }
     const r = out.data || {}
     return { ok: true, result: r.ooc_date ? `OOC ${r.ooc_no || ''} dated ${String(r.ooc_date).slice(0, 10)}` : 'no OOC yet' }
+  }
+  if (item.kind === 'air') {
+    const { mawb, site } = item.meta || {}
+    const out = await callFn('ulip', { api: 'ICEGATE/09', params: { mawbNumber: mawb, custSite: site }, jobId: item.job_id, asName: AS }, token)
+    if (!out?.success) {
+      const e = String(out?.error || 'no answer')
+      return { ok: /already running|cannot run this check|many (government )?checks/i.test(e), error: e, result: `not checked: ${e.slice(0, 140)}` }
+    }
+    const row = out.data || {}
+    if (!row.found) return { ok: true, result: 'not in the air manifest yet' }
+    const x = row.parsed?.extra || {}
+    const f = (label: string) => row.parsed?.fields?.find((q: any) => q.label === label)?.value
+    if (!(await loggedBefore(admin, 'air_igm', 'mark', String(mawb)))) {
+      const bits = [f('IGM date') && `IGM date ${f('IGM date')}`, x.flightNumber && `flight ${x.flightNumber}`, f('Total packages') && `${f('Total packages')} pkg`, f('Gross weight') && `${f('Gross weight')} kg`].filter(Boolean)
+      await log(admin, 'air_igm', `${job?.job_no || mawb} — Air cargo in the manifest (IGM ${x.igmRtn || '?'})`, bits.join(' · '), job,
+        { mark: String(mawb), mawb, igm_no: x.igmRtn || null, igm_date: x.igmDate || null, flight: x.flightNumber || null })
+    }
+    return { ok: true, result: `in the manifest: IGM ${x.igmRtn || '?'}` }
   }
   const plate = String(item.key).split(':')[1]
   const api = item.kind === 'truck' ? 'FASTAG/01' : 'VAHAN/04'

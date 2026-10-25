@@ -128,8 +128,10 @@ export function parseBeLines(lines) {
       out.inward_date = null
       let k = 2
       if (DATE.test(t[k] || '')) { out.inward_date = ddmmyyyyToIso(t[k]); k++ }
-      // Gateway IGM: "0" when none, else number + date
-      if (/^\d+$/.test(t[k] || '')) { k++; if (DATE.test(t[k] || '')) k++ }
+      // Gateway IGM: "0" when none, else number + date. A gateway IGM number is short:
+      // an 11-digit air waybill (MAWB) right after "0 0" is the MAWB, not a gateway IGM
+      // (J-677, 25 Oct 2026: the MAWB was skipped and the HAWB taken as the BL)
+      if (/^\d{1,8}$/.test(t[k] || '')) { k++; if (DATE.test(t[k] || '')) k++ }
       const rest = t.slice(k)
       // From the right: packages, gross weight
       const nums = []

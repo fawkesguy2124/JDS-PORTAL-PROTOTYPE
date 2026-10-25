@@ -11,6 +11,7 @@ import { openDoc, downloadDoc } from '../services/docFiles'
 import PdfPreview from '../components/PdfPreview'
 import SeaTracking, { portTime } from './SeaTracking'
 import BeStage from './BeStage'
+import AirCargo from './AirCargo'
 
 // The side panel that opens when a job is clicked: what it is, where it is,
 // what is next, its containers, timeline, documents and team notes. Editing
@@ -249,6 +250,8 @@ export default function JobDrawer({ jobId, initialTab = 'overview', onClose, onO
                   <div><b>Check the {m.field.toLowerCase()}:</b> this job says <b>{m.job}</b>, container tracking (LDB) says <b>{m.tracking}</b>. Correct it on the full job page if the job is wrong.</div>
                 </div>
               ))}
+              {/* air imports: is the air waybill in Customs' air manifest yet (ICEGATE/09) */}
+              {!isExport && /air/i.test(job.mode || '') && <AirCargo key={job.id} job={job} showToast={showToast} />}
               {/* ETA, ship and position from Safecube; offered only while the ship is still at sea */}
               {!isExport && !/air/i.test(job.mode || '') && (data?.seaByJob?.[job.id] || (!j.arrivedAt && !containers.some((c) => c.raw?.port_in) && Number(job.stage || 0) < 7)) && (
                 <SeaTracking job={job} showToast={showToast} />
