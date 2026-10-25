@@ -154,6 +154,7 @@ export default function ShipMap({ ships = [], selectedKey, onSelect, height = 42
   const lastFitKey = useRef(null)
   const [big, setBig] = useState(false)
   const [closedFor, setClosedFor] = useState(null) // the ship whose card was closed
+  const [, setZoomTick] = useState(0) // a zoom redraws, so the job cards are spread again
 
   useEffect(() => {
     if (!box.current || map.current) return
@@ -161,6 +162,7 @@ export default function ShipMap({ ships = [], selectedKey, onSelect, height = 42
     map.current = L.map(box.current, { zoomControl: true, scrollWheelZoom: true, wheelPxPerZoomLevel: 90, worldCopyJump: true, minZoom: 2 }).setView(...ARABIAN_SEA)
     addSeaChart(map.current)
     layer.current = L.layerGroup().addTo(map.current)
+    map.current.on('zoomend', () => setZoomTick((n) => n + 1))
     return () => { map.current?.remove(); map.current = null }
   }, [])
 
@@ -213,6 +215,23 @@ export default function ShipMap({ ships = [], selectedKey, onSelect, height = 42
         }
       }
     }
+    // job cards never on top of each other (Jose, 25 Oct 2026: J-584 over J-689 off
+    // Mumbai): a card that would overlap one already placed is lifted above it, with a
+    // thin line down to its ship. Worked out for the current zoom (redone on zoom).
+    const lift = {}
+    const taken = []
+    const order = [...placed].sort((a, b) => (a.key === sel?.key ? -1 : b.key === sel?.key ? 1 : 0))
+    for (const s of order) {
+      const p = m.latLngToContainerPoint(trips[s.key]?.pos || s.pos)
+      const w = 58 + 7.5 * String(s.jobs).length + (s.clients ? 16 + 6.8 * Math.min(String(s.clients).length, 28) : 0)
+      const H = 36
+      const boxAt = (up) => ({ x1: p.x - w / 2 - 4, x2: p.x + w / 2 + 4, y2: p.y - 15 - up + 4, y1: p.y - 15 - up - H - 4 })
+      const hits = (b) => taken.some((o) => b.x1 < o.x2 && b.x2 > o.x1 && b.y1 < o.y2 && b.y2 > o.y1)
+      let up = 0
+      while (hits(boxAt(up)) && up < 6 * (H + 8)) up += H + 8
+      lift[s.key] = up
+      taken.push(boxAt(up))
+    }
     for (const s of placed) {
       const t = trips[s.key]
       const isSel = sel?.key === s.key
@@ -225,7 +244,9 @@ export default function ShipMap({ ships = [], selectedKey, onSelect, height = 42
         : `<span class="dot" style="background:${color}"></span>`
       // JDS knows ships by their jobs: the pin shows the job numbers, not the IMO (Jose, 24 Oct 2026)
       const tone = s.waiting ? 'old' : stale ? 'old' : s.arrived ? 'port' : 'sea'
-      const html = `<div class="ix-ship ${isSel ? 'sel' : ''}">${shape}<div class="ix-smark ${tone} ${isSel ? 'sel' : ''}"><span class="ic"><i class="ti ti-ship"></i></span>${esc(s.jobs)}${s.clients ? `<span class="cl">${esc(s.clients)}</span>` : ''}</div></div>`
+      const up = lift[s.key] || 0
+      const stem = up ? `<span class="ix-stem ${tone}" style="top:${-(15 + up)}px;height:${up}px"></span>` : ''
+      const html = `<div class="ix-ship ${isSel ? 'sel' : ''}">${shape}${stem}<div class="ix-smark ${tone} ${isSel ? 'sel' : ''}"${up ? ` style="transform:translate(-50%,-100%) translateY(${-(24 + up)}px)"` : ''}><span class="ic"><i class="ti ti-ship"></i></span>${esc(s.jobs)}${s.clients ? `<span class="cl">${esc(s.clients)}</span>` : ''}</div></div>`
       // no hover box: the voyage card on the right says it all (Jose, 24 Oct 2026)
       L.marker(pos, { icon: L.divIcon({ className: 'ix-tpin', iconSize: [0, 0], html }), zIndexOffset: isSel ? 1000 : 0 })
         .on('click', () => { onSelect?.(s.key); setClosedFor(null) })
