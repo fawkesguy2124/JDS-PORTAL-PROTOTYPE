@@ -20,7 +20,8 @@ const TONE_ORDER = { sea: 0, port: 1, old: 2 }
 export default function VesselsPage({ onOpenJob, showToast, onGo }) {
   const { data, active, loading, patchJob } = useJourney()
   useFreshOnOpen()
-  const [selected, setSelected] = useState(null) // ship row key
+  // ship row key; an alert link (?job=) picks the ship carrying that job
+  const [selected, setSelected] = useState(() => { const j = new URLSearchParams(window.location.search).get('job'); return j ? `link:${j}` : null })
   const [typing, setTyping] = useState({}) // row key -> IMO being typed
   const [saving, setSaving] = useState(null)
   const [filter, setFilter] = useState('all') // ship list: all / at sea / at port
@@ -81,7 +82,8 @@ export default function VesselsPage({ onOpenJob, showToast, onGo }) {
     return rows.find((r) => s.imo && r.vessel_imo === s.imo) || rows[0] || null
   }
   // nothing chosen at first: the map opens on all the ships
-  const sel = ships.find((s) => s.key === selected && shown(s)) || null
+  const linked = typeof selected === 'string' && selected.startsWith('link:') ? selected.slice(5) : null
+  const sel = ships.find((s) => shown(s) && (linked ? s.jobs.some((x) => x.job.id === linked) : s.key === selected)) || null
   // the map's pins: one per ship with a known position
   const mapShips = ships.map((s) => {
     const sea = seaOfShip(s)

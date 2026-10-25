@@ -3,6 +3,7 @@
 // 15-minute alerts run to every computer that switched them on (push_subscriptions),
 // for the kinds that computer chose. Free: browsers deliver them, not Meta.
 import webpush from 'npm:web-push@3.6.7'
+import { alertUrl } from '../_shared/portal/alertLinks.js'
 
 type Admin = any
 const env = (k: string) => (Deno.env.get(k) || '').trim()
@@ -38,7 +39,8 @@ export async function pushAlerts(admin: Admin, alerts: any[]) {
       try {
         await webpush.sendNotification({ endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } }, JSON.stringify({
           title: `${TITLE[a.kind] || 'JDS alert'} · ${who}`, body: String(what || ''),
-          url: a.jobId ? `/admin?tab=jobs&jobId=${a.jobId}` : '/admin?tab=today', tag: a.key,
+          // the page the alert is about, not the job's edit screen (Jose, 25 Oct 2026)
+          url: alertUrl(a.kind, a.jobId, a.cn), tag: a.key,
         }), { TTL: 24 * 3600 })
         sent++
         await admin.from('push_subscriptions').update({ last_ok_at: new Date().toISOString(), failures: 0 }).eq('endpoint', s.endpoint)

@@ -1560,13 +1560,14 @@ function ContainerTrackingSection({ showToast, jobs, pendingNavAction, onNavActi
 
   useEffect(() => {
     if (!pendingNavAction || pendingNavAction.tab !== 'containers') return
-    if (!pendingNavAction.jobId || !pendingNavAction.cn) return
+    if (!pendingNavAction.jobId) return
     if (jobs.length === 0) return
 
     const job = jobs.find(j => j.id === pendingNavAction.jobId)
     if (!job) return
 
-    setActiveContainer({ jobId: pendingNavAction.jobId, cn: pendingNavAction.cn })
+    // an alert without a container number opens the job's first container
+    setActiveContainer({ jobId: pendingNavAction.jobId, cn: pendingNavAction.cn || parseContainerNos(job.containers)[0] || null })
     setDetailJob(job)
     onNavActionConsumed?.()
   }, [pendingNavAction, jobs])

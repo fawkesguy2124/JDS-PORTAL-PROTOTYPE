@@ -1407,8 +1407,10 @@ export default function EmployeeDashboard() {
           <div className="ml-auto flex items-center gap-2">
             <NotificationBell
               onNavigate={action => {
-                setPendingNavAction(action)
-                handleNavClick(action.tab)
+                // pages the staff screen does not have open the job instead
+                const tab = ['vessels', 'health'].includes(action.tab) ? 'jobs' : action.tab
+                setPendingNavAction({ ...action, tab })
+                handleNavClick(tab)
               }}
               profile={profile}
             />

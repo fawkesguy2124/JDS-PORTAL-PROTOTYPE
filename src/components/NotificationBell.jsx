@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { supabase } from '../supabase'
+import { alertUrl } from '../../supabase/functions/_shared/portal/alertLinks.js'
 import DesktopAlerts from './DesktopAlerts'
 
 const getStorageKey = (userId) => `jds_notif_last_seen_${userId || 'unknown'}`
@@ -148,22 +149,10 @@ export default function NotificationBell({ onNavigate, profile }) {
     const meta = n.meta || {}
     const t = n.type || n.action || ''
 
-    // a ship arrived (ship tracking): open the job
-    if (t === 'ship_arrived' || t === 'eta_changed' || t === 'truck_stuck' || t === 'truck_papers') {
-      onNavigate({ tab: 'jobs', jobId: meta.job_id || n.job_id })
-      return
-    }
-    if (t === 'be_status_check' || t === 'ooc_granted' || t === 'be_stage') {
-      onNavigate({ tab: 'jobs', jobId: meta.job_id || n.job_id, hash: 'customs' })
-      return
-    }
-    if (t === 'container_update' || t === 'detention_alert' || t.includes('container')) {
-      onNavigate({ tab: 'containers', jobId: meta.job_id || n.job_id, cn: meta.container_no })
-    } else if (t.includes('stage') || t.includes('job') || t === 'job_update' || t === 'job_created') {
-      onNavigate({ tab: 'jobs', jobId: meta.job_id || n.job_id })
-    } else if (t.includes('upload') || t.includes('document')) {
-      onNavigate({ tab: 'documents', jobNo: meta.job_no || n.job_no })
-    }
+    // the page the alert is about, with its job picked (shared with the desktop alerts)
+    const url = alertUrl(t, meta.job_id || n.job_id, meta.container_no)
+    const tab = new URLSearchParams(url.split('?')[1] || '').get('tab') || 'today'
+    onNavigate({ url, tab, jobId: meta.job_id || n.job_id, cn: meta.container_no, jobNo: meta.job_no || n.job_no })
   }
 
   const filteredNotifications = filter === 'all'

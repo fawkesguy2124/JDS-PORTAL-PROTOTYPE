@@ -645,6 +645,24 @@ function AdminDashboardInner() {
     if (!journey?.byId?.[jobId]) return openFullJob(jobId, DRAWER_TABS.includes(tab) ? 'details' : tab)
     setDrawer({ id: jobId, tab: DRAWER_TABS.includes(tab) ? tab : 'overview' })
   }
+  // links from alerts (bell and desktop; alertLinks.js): pick the alert's job on its page
+  useEffect(() => {
+    const params = new URLSearchParams(location.search)
+    const tab = params.get('tab')
+    const open = params.get('open')
+    const job = params.get('job')
+    if (tab === 'jobs' && open && journey?.data) {
+      openJob(open)
+      params.delete('open')
+      navigate(`/admin?${params.toString()}`, { replace: true })
+    } else if (tab === 'containers' && job && jobs.length) {
+      setPendingNavAction({ tab: 'containers', jobId: job, cn: params.get('cn') })
+    } else if (tab === 'documents' && job && jobs.length) {
+      const no = jobs.find((j) => j.id === job)?.job_no
+      if (no) setDocumentExpandJobId(no)
+    }
+  }, [location.search, jobs.length, !!journey?.data]) // eslint-disable-line react-hooks/exhaustive-deps
+
   const canEditBE = isAdmin || ['Akshyani', 'Trupti'].includes(currentUserName)
   const pageProps = { profile, currentUserName, onOpenJob: openJob, showToast, canUpdateStage, canEditBE }
   const desktopFilters = (
@@ -739,6 +757,8 @@ function AdminDashboardInner() {
       onLogout={handleLogout}
       profile={profile}
       onBellNavigate={(action) => {
+        // the alert's own page, with its job picked (alertLinks.js)
+        if (action.url) { setSelectedJob(null); navigate(action.url); return }
         setPendingNavAction(action)
         handleNavClick(action.tab)
         if (action.hash) setTimeout(() => { window.location.hash = action.hash }, 100)
@@ -763,7 +783,7 @@ function AdminDashboardInner() {
       {activeNav === 'board' && <IxBoardPage {...ixProps} />}
       {activeNav === 'customs' && <IxCustomsPage key={urlJob || 'none'} {...ixProps} />}
       {activeNav === 'trucks' && <IxTrucksPage key={urlJob || 'none'} {...ixProps} />}
-      {activeNav === 'vessels' && <IxVesselsPage {...ixProps} />}
+      {activeNav === 'vessels' && <IxVesselsPage key={urlJob || 'none'} {...ixProps} />}
 
       {!fullJob && activeNav === 'overview' && legacyPage('Team & stages', 'Urgent jobs, detention risk and jobs that have not moved',
         <ControlTowerSection
