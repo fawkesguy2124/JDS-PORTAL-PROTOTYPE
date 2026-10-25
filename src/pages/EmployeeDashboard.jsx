@@ -12,7 +12,6 @@ import NotificationBell from '../components/NotificationBell'
 import ContainerTrackingSection from '../components/ContainerTrackingSection'
 import ShipmentTracker from '../components/ShipmentTracker'
 import TodayPage from './v2/TodayPage'
-import ShipmentBoardPage from './v2/ShipmentBoardPage'
 import TrucksPage from './v2/TrucksPage'
 import CustomsDeskPage from './v2/CustomsDeskPage'
 import SearchPage from './v2/SearchPage'
@@ -574,7 +573,6 @@ export default function EmployeeDashboard() {
       label: 'SHIPMENTS',
       items: [
         { id: 'jobs',       label: 'All Jobs',           icon: '≡'  },
-        { id: 'board',      label: 'Shipment Board',     icon: '🗺' },
         { id: 'containers', label: 'Containers',         icon: '⊟' },
         { id: 'trucks',     label: 'Trucks',             icon: '🚚' },
       ],
@@ -606,7 +604,7 @@ export default function EmployeeDashboard() {
   const activeNav = useMemo(() => {
     const params = new URLSearchParams(location.search)
     const t = params.get('tab') || (isFieldOps ? 'trucks' : 'today')
-    const id = ({ lookup: 'search', 'shipment-tracker': 'board' })[t] || t
+    const id = ({ lookup: 'search', 'shipment-tracker': 'jobs', board: 'jobs' })[t] || t
     const allowed = NAV_SECTIONS.flatMap(s => s.items).map(i => i.id)
     return allowed.includes(id) ? id : (isFieldOps ? 'trucks' : 'today')
   }, [location.search, isFieldOps, NAV_SECTIONS])
@@ -1391,7 +1389,6 @@ export default function EmployeeDashboard() {
                : activeNav === 'shipment-tracker' ? 'Shipment Tracker'
                : activeNav === 'search' ? 'Search anything'
                : activeNav === 'today' ? 'Today'
-               : activeNav === 'board' ? 'Shipment Board'
                : activeNav === 'trucks' ? 'Trucks'
                : activeNav === 'customs' ? 'BE & OOC'
                : activeNav === 'clients' ? 'Clients'
@@ -1815,7 +1812,6 @@ export default function EmployeeDashboard() {
             />
           )}
           {activeNav === 'today' && <TodayPage {...pageProps} />}
-          {activeNav === 'board' && <ShipmentBoardPage {...pageProps} />}
           {activeNav === 'trucks' && <TrucksPage {...pageProps} />}
           {activeNav === 'customs' && <CustomsDeskPage {...pageProps} />}
           {activeNav === 'search' && <SearchPage {...pageProps} />}

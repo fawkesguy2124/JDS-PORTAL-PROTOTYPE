@@ -10,6 +10,8 @@ const LEVELS = [
   { id: 'amber', title: 'Soon' },
   { id: 'info', title: 'Worth a look' },
 ]
+// a pipeline row opens the Jobs list on the matching view
+const PHASE_VIEW = { ooc: 'ooc', release: 'truck', truck: 'onroad' }
 const PHASE_ICON = { arrival: 'ship', docs: 'file-text', ooc: 'hourglass', release: 'circle-check', truck: 'truck', delivered: 'flag' }
 const FEED_ICON = {
   ooc_granted: ['circle-check', 'var(--green-bg)', 'var(--green)'],
@@ -155,7 +157,7 @@ export default function TodayPage({ onOpenJob, currentUserName, onGo }) {
             <div className="ix-card-head"><Icon name="chart-funnel" style={{ color: 'var(--navy)' }} /><h2>Pipeline</h2><span className="sub">import jobs by stage</span></div>
             <div style={{ padding: '8px 0' }}>
               {PHASES.map((p) => (
-                <button key={p.id} type="button" className="ix-funnel-row" onClick={() => onGo?.('board')} title={p.hint}>
+                <button key={p.id} type="button" className="ix-funnel-row" onClick={() => openView(PHASE_VIEW[p.id] || 'open')} title={p.hint}>
                   <span style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13 }}><Icon name={PHASE_ICON[p.id]} style={{ color: 'var(--muted)' }} />{p.label}</span>
                   <div className="ix-funnel-bar"><span style={{ width: `${(counts[p.id] / maxCount) * 100}%` }} /></div>
                   <b className="num" style={{ textAlign: 'right' }}>{dash ? '–' : counts[p.id]}</b>

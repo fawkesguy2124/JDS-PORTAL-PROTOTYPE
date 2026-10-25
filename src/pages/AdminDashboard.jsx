@@ -12,7 +12,6 @@ import JobDrawer from '../industrial/JobDrawer'
 import { Skeleton } from '../industrial/ui'
 import IxTodayPage from '../industrial/pages/TodayPage'
 import IxJobsPage from '../industrial/pages/JobsPage'
-import IxBoardPage from '../industrial/pages/BoardPage'
 import IxCustomsPage from '../industrial/pages/CustomsPage'
 import { forceRefreshAllContainers } from '../services/tracking/ldbProvider'
 
@@ -36,7 +35,6 @@ const NAV_SECTIONS = [
   { label: 'TODAY', items: [{ id: 'today', label: 'Today', icon: 'home' }] },
   { label: 'SHIPMENTS', items: [
     { id: 'jobs', label: 'All jobs', icon: 'list-details' },
-    { id: 'board', label: 'Shipment board', icon: 'layout-kanban' },
     { id: 'containers', label: 'Containers', icon: 'box' },
     { id: 'trucks', label: 'Trucks', icon: 'truck' },
     { id: 'vessels', label: 'Vessels', icon: 'ship' },
@@ -59,7 +57,8 @@ const NAV_SECTIONS = [
 ]
 
 // Old page names still work (bookmarks, bell links)
-const OLD_TAB_NAMES = { lookup: 'search', 'shipment-tracker': 'board', 'be-filing': 'customs' }
+// (the shipment board was removed on 25 Oct 2026: All jobs does the job)
+const OLD_TAB_NAMES = { lookup: 'search', 'shipment-tracker': 'jobs', board: 'jobs', 'be-filing': 'customs' }
 
 const NAV_ITEMS = NAV_SECTIONS.flatMap(s => s.items)
 
@@ -780,7 +779,6 @@ function AdminDashboardInner() {
 
       {!fullJob && activeNav === 'today' && <IxTodayPage {...ixProps} />}
       {!fullJob && activeNav === 'jobs' && <IxJobsPage {...ixProps} selectedId={drawer?.id} />}
-      {activeNav === 'board' && <IxBoardPage {...ixProps} />}
       {activeNav === 'customs' && <IxCustomsPage key={urlJob || 'none'} {...ixProps} />}
       {activeNav === 'trucks' && <IxTrucksPage key={urlJob || 'none'} {...ixProps} />}
       {activeNav === 'vessels' && <IxVesselsPage key={urlJob || 'none'} {...ixProps} />}
