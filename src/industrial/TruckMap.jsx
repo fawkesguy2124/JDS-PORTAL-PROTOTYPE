@@ -51,6 +51,7 @@ export default function TruckMap({ trucks, selectedId, onSelect }) {
   useEffect(() => {
     if (!box.current || map.current) return
     map.current = L.map(box.current, { zoomControl: true, scrollWheelZoom: false }).setView([19.05, 73.05], 9)
+    map.current.attributionControl.setPrefix(false) // no "Leaflet" credit; the map credits sit behind the small ⓘ
     addBaseMap(map.current)
     layer.current = L.layerGroup().addTo(map.current)
     return () => { map.current?.remove(); map.current = null }

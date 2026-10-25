@@ -151,7 +151,8 @@ const fit = (m, bounds, maxZoom = 7, card = false) => {
   if (!alive(m)) return
   const wide = card && m.getSize().x > 760
   if (bounds.length === 1) m.setView(bounds[0], 6)
-  else if (bounds.length) m.fitBounds(L.latLngBounds(bounds), { paddingTopLeft: [50, 50], paddingBottomRight: [wide ? 410 : 40, 50], maxZoom })
+  // room for the tags beside the ships (about 180 px) and the colour key below
+  else if (bounds.length) m.fitBounds(L.latLngBounds(bounds), { paddingTopLeft: [90, 50], paddingBottomRight: [wide ? 410 : 190, 80], maxZoom })
   else m.setView(...ARABIAN_SEA)
 }
 // the vessel mark ship trackers use: a slim arrow, bow up, turned to the heading
@@ -195,6 +196,7 @@ export default function ShipMap({ ships = [], selectedKey, onSelect, height = 42
     if (!box.current || map.current) return
     // the mouse wheel zooms (Jose, 24 Oct 2026)
     map.current = L.map(box.current, { zoomControl: false, scrollWheelZoom: true, wheelPxPerZoomLevel: 90, worldCopyJump: true, minZoom: 2, zoomSnap: 0.25 }).setView(...ARABIAN_SEA)
+    map.current.attributionControl.setPrefix(false) // no "Leaflet" credit; the map credits sit behind the small ⓘ
     L.control.zoom({ position: 'topleft' }).addTo(map.current)
     L.control.scale({ position: 'bottomright', imperial: false, maxWidth: 110 }).addTo(map.current)
     addSeaChart(map.current)
@@ -265,8 +267,19 @@ export default function ShipMap({ ships = [], selectedKey, onSelect, height = 42
       const spots = [[gap, -h / 2], [-w - gap, -h / 2], [-w / 2, -h - gap], [-w / 2, gap], [gap, -h / 2 - h - 4], [gap, h / 2 + 4], [-w - gap, -h / 2 - h - 4], [-w - gap, h / 2 + 4]]
       const at = (dx, dy) => ({ x1: p.x + dx - 3, x2: p.x + dx + w + 3, y1: p.y + dy - 3, y2: p.y + dy + h + 3 })
       // inside the map, clear of the controls, and clear of other tags
-      const inside = (b) => b.x1 >= 48 && b.x2 <= size.x - 6 && b.y1 >= 6 && b.y2 <= size.y - 34
-      const pick = spots.find(([dx, dy]) => inside(at(dx, dy)) && !hits(at(dx, dy))) || spots.find(([dx, dy]) => !hits(at(dx, dy))) || spots[0]
+      const area = (a, o) => Math.max(0, Math.min(a.x2, o.x2) - Math.max(a.x1, o.x1)) * Math.max(0, Math.min(a.y2, o.y2) - Math.max(a.y1, o.y1))
+      const cornerBox = { x1: size.x - 110, x2: size.x, y1: size.y - 66, y2: size.y }
+      const keyBox = { x1: 0, x2: 310, y1: size.y - 48, y2: size.y }
+      const zoomBox = { x1: 0, x2: 48, y1: 0, y2: 84 }
+      const inside = (b) => b.x1 >= 6 && b.x2 <= size.x - 6 && b.y1 >= 6 && b.y2 <= size.y - 6 && area(b, keyBox) === 0 && area(b, zoomBox) === 0 && area(b, cornerBox) === 0
+      // no clean spot: the one that hides least (cut off at the edge counts double)
+      const view = { x1: 6, x2: size.x - 6, y1: 6, y2: size.y - 6 }
+      const cost = ([dx, dy]) => {
+        const b = at(dx, dy)
+        const out = (b.x2 - b.x1) * (b.y2 - b.y1) - area(b, view)
+        return out * 2 + (area(b, keyBox) + area(b, zoomBox) + area(b, cornerBox)) * 2 + taken.reduce((t, o) => t + area(b, o), 0)
+      }
+      const pick = spots.find(([dx, dy]) => inside(at(dx, dy)) && !hits(at(dx, dy))) || [...spots].sort((x, y) => cost(x) - cost(y))[0]
       taken.push(at(...pick))
       return pick
     }
