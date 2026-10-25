@@ -3,7 +3,7 @@
 // asks "Reply YES to confirm"; only a YES makes the change, and the change is
 // made here by plain code (never by the AI), on a fresh copy of the job, with
 // the same checks as the portal, logged as done by that person via WhatsApp.
-import { jobTrucks, plateNo, parseContainerNos } from '../_shared/portal/journeyCore.js'
+import { jobTrucks, plateNo, parseContainerNos, BE_STAGES } from '../_shared/portal/journeyCore.js'
 import { jobsFor, BOT_NUMBERS, LEVEL_LABEL } from '../_shared/portal/botMessages.js'
 import { isLineNotShip, lineName } from '../_shared/portal/shippingLines.js'
 
@@ -21,6 +21,8 @@ export const ACTIONS = ['mark_delivered', 'add_truck', 'remove_truck', 'record_b
   // added 24 Oct 2026
   'attach_document', 'set_eta', 'set_imo', 'set_vessel', 'set_shipping_line', 'set_cfs', 'set_free_days', 'set_priority', 'set_owner',
   'add_container', 'remove_container', 'record_ooc',
+  // added 25 Oct 2026: where the BE is with Customs (RMS / AO / query / AC / assessed / duty paid / examination)
+  'set_be_stage',
   // added 24 Oct 2026 (2): a new job by chat, the CFS payment, a task for a teammate
   'create_job', 'record_payment', 'assign_task',
   // who may use the bot (admins only)
@@ -31,7 +33,7 @@ const DOC_TYPES = ['BE', 'BL', 'Invoice', 'Packing List', 'COO', 'Insurance', 'E
 
 export const CHANGE_TOOL = {
   name: 'propose_change',
-  description: 'Make a change in the portal for the person: mark_delivered, add_truck (truck_no, optional container), remove_truck (truck_no), record_be (be_no 7 digits, be_date YYYY-MM-DD), set_leaves_by (mode truck/rail), set_delivery_by (by jds/client), add_note (note), attach_document (the file the person just sent; doc_type), set_eta (date YYYY-MM-DD), set_imo (imo = the 7-digit IMO number of the ship), set_vessel (vessel = the SHIP\'s name, never the shipping line), set_shipping_line (line), set_cfs (cfs), set_free_days (days), set_priority (priority normal/high/urgent), set_owner (owner = staff name), add_container (container, size), remove_container (container), record_ooc (ooc_no, ooc_date YYYY-MM-DD; OOC seen in LiveImpex), create_job (job = the NEW job no; client, job_mode, port, bl_no, containers, size, vessel, eta, line, be_no, be_date, days), record_payment (amount in rupees = the CFS amount), assign_task (to = teammate name, task, due = YYYY-MM-DD HH:MM India time), set_access (admins only; gives, changes or removes WhatsApp bot access: phone = 10-digit mobile, to = the name of the person, level = view / staff / admin / remove). The SAME change on several jobs: give them all in jobs (e.g. ["J-519","J-633"]) in ONE call. Call it ONCE; the bot then asks the person to confirm. Nothing changes until they do.',
+  description: 'Make a change in the portal for the person: mark_delivered, add_truck (truck_no, optional container), remove_truck (truck_no), record_be (be_no 7 digits, be_date YYYY-MM-DD), set_leaves_by (mode truck/rail), set_delivery_by (by jds/client), add_note (note), attach_document (the file the person just sent; doc_type), set_eta (date YYYY-MM-DD), set_imo (imo = the 7-digit IMO number of the ship), set_vessel (vessel = the SHIP\'s name, never the shipping line), set_shipping_line (line), set_cfs (cfs), set_free_days (days), set_priority (priority normal/high/urgent), set_owner (owner = staff name), add_container (container, size), remove_container (container), record_ooc (ooc_no, ooc_date YYYY-MM-DD; OOC seen in LiveImpex), set_be_stage (stage = where the BE is with Customs: rms / ao / query / ac / assessed / duty_paid / exam; note optional, e.g. the query text), create_job (job = the NEW job no; client, job_mode, port, bl_no, containers, size, vessel, eta, line, be_no, be_date, days), record_payment (amount in rupees = the CFS amount), assign_task (to = teammate name, task, due = YYYY-MM-DD HH:MM India time), set_access (admins only; gives, changes or removes WhatsApp bot access: phone = 10-digit mobile, to = the name of the person, level = view / staff / admin / remove). The SAME change on several jobs: give them all in jobs (e.g. ["J-519","J-633"]) in ONE call. Call it ONCE; the bot then asks the person to confirm. Nothing changes until they do.',
   parameters: {
     type: 'OBJECT',
     properties: {
@@ -49,6 +51,7 @@ export const CHANGE_TOOL = {
       cfs: { type: 'STRING' }, days: { type: 'NUMBER' }, priority: { type: 'STRING', enum: ['normal', 'high', 'urgent'] },
       owner: { type: 'STRING' }, size: { type: 'STRING' }, ooc_no: { type: 'STRING' }, ooc_date: { type: 'STRING' },
       phone: { type: 'STRING' }, level: { type: 'STRING', enum: ['view', 'staff', 'admin', 'remove'] },
+      stage: { type: 'STRING', enum: BE_STAGES.map((x: any) => x.id) },
     },
     required: ['action'],
   },
@@ -242,6 +245,12 @@ function prepareOne(args: any, data: any, person: Person, extra: ChangeContext =
     if (!Number.isInteger(days) || days < 0 || days > 120) return { ok: false, error: 'Free days must be a whole number, for example 14.' }
     return p(`Set the free days of ${who} to *${days}*${job.free_days != null ? ` (was ${job.free_days})` : ''}`, { days })
   }
+  if (action === 'set_be_stage') {
+    const def = BE_STAGES.find((x: any) => x.id === String(args?.stage))
+    if (!def) return { ok: false, error: `Say the stage: ${BE_STAGES.map((x: any) => x.short).join(', ')}.` }
+    if (!/^\d{7}$/.test(String(job.be_no || '').trim())) return { ok: false, error: `${job.job_no} has no BE number yet. Record the BE first.` }
+    return p(`Set the customs stage of ${who} (BE ${job.be_no}) to *${def.label}*${args?.note ? `: ${String(args.note).slice(0, 120)}` : ''}`, { stage: def.id, note: args?.note ? String(args.note).slice(0, 300) : null })
+  }
   if (action === 'set_priority') {
     const pr = ['normal', 'high', 'urgent'].includes(String(args?.priority)) ? String(args.priority) : null
     if (!pr) return { ok: false, error: 'Say normal, high or urgent.' }
@@ -360,6 +369,13 @@ They should send any message (e.g. "hi") to the bot to start. While the bot uses
   }
   const a = pending.args || {}
 
+  if (pending.action === 'set_be_stage') {
+    const def = BE_STAGES.find((x: any) => x.id === a.stage)
+    const meta = job.field_meta && typeof job.field_meta === 'object' ? job.field_meta : {}
+    const err = await save({ field_meta: { ...meta, be_stage: { stage: a.stage, be_no: job.be_no || null, at: now, by, note: a.note || null } } }); if (err) return err
+    await log('be_stage', `${job.job_no} — Customs: ${def.label}`, a.note || `BE ${job.be_no || ''}`.trim(), { stage: a.stage, be_no: job.be_no || null })
+    return `✅ Done: ${job.job_no} is now *${def.label}*.`
+  }
   if (pending.action === 'mark_delivered') {
     if (Number(job.stage) >= 10) return `${job.job_no} was already marked delivered.`
     const err = await save({ stage: 10 }); if (err) return err

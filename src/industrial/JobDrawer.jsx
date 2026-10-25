@@ -10,6 +10,7 @@ import { isLineNotShip } from '../../supabase/functions/_shared/portal/shippingL
 import { openDoc, downloadDoc } from '../services/docFiles'
 import PdfPreview from '../components/PdfPreview'
 import SeaTracking, { portTime } from './SeaTracking'
+import BeStage from './BeStage'
 
 // The side panel that opens when a job is clicked: what it is, where it is,
 // what is next, its containers, timeline, documents and team notes. Editing
@@ -235,6 +236,10 @@ export default function JobDrawer({ jobId, initialTab = 'overview', onClose, onO
                     <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13, padding: '4px 2px' }}><span className={`ix-dot ${a.level}`} />{a.text}</div>
                   ))}
                 </div>
+              )}
+              {/* where the BE is now, after filing: one tap (Jose, 25 Oct 2026) */}
+              {!isExport && j.beFiled && !j.oocDone && j.phase !== 'delivered' && (
+                <BeStage job={job} userName={currentUserName} showToast={showToast} />
               )}
               {/* saved details that container tracking contradicts */}
               {(j.mismatches || []).map((m) => (

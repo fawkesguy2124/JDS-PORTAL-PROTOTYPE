@@ -7,6 +7,7 @@ import { JobPicker, CustomsWorkspace, NoJobChosen } from '../JobChecks'
 import { useJourney, useFreshOnOpen } from '../JourneyContext'
 import { useAutoChecks, checkCustoms, isDue, COOLDOWN_MIN } from '../autoChecks'
 import AutoStatus from '../AutoStatus'
+import BeStage from '../BeStage'
 import { Icon, fmtDate, timeAgo, Skeleton } from '../ui'
 
 // BE & OOC desk. Imports: pick a job on the left, see and run all its customs
@@ -245,14 +246,18 @@ export default function CustomsPage({ currentUserName, onOpenJob, showToast, can
             placeholder="Any import job: job no, client, BE, container…"
             lists={[
               { title: 'Waiting for OOC', icon: 'hourglass', color: 'var(--amber)', rows: waitingList, empty: 'No jobs waiting for OOC.',
-                sub: ({ job, j }) => `BE ${job.be_no} · ${filedText(job.be_date)}${j.phase === 'arrival' ? ' · ship not in yet' : ''} · checked ${j.customs?.checked_at ? timeAgo(j.customs.checked_at) : 'never'}` },
+                sub: ({ job, j }) => `BE ${job.be_no} · ${j.beStage ? `${j.beStage.short} · ` : ''}${filedText(job.be_date)}${j.phase === 'arrival' ? ' · ship not in yet' : ''} · checked ${j.customs?.checked_at ? timeAgo(j.customs.checked_at) : 'never'}` },
               { title: 'OOC granted — next steps', icon: 'circle-check', color: 'var(--green)', rows: inPhase('release'), empty: 'No jobs with OOC granted right now.',
                 sub: ({ j }) => `OOC ${j.oocDate ? fmtDate(j.oocDate) : 'recorded by staff'} · truck or rail not arranged` },
             ]}
           />
           {selId
-            ? <CustomsWorkspace jobId={selId} onOpenJob={onOpenJob} canEditBE={canEditBE} canUpdateStage={canUpdateStage}
+            ? <div style={{ minWidth: 0 }}>
+              {/* where the BE is now: one tap (Jose, 25 Oct 2026) */}
+              {(() => { const r = rows.find((x) => x.job.id === selId); return r && r.j.beFiled && !r.j.oocDone ? <BeStage job={r.job} userName={currentUserName} showToast={showToast} /> : null })()}
+              <CustomsWorkspace jobId={selId} onOpenJob={onOpenJob} canEditBE={canEditBE} canUpdateStage={canUpdateStage}
                 currentUserName={currentUserName} showToast={showToast} groups={[...CUSTOMS_TAB_GROUPS, ...SHIP_GROUPS]} />
+            </div>
             : <NoJobChosen text="Pick a job on the left to see its customs status: BE, OOC, cargo details, IGM and more. Each check asks Customs only when you press its button." />}
         </div>
       ) : (

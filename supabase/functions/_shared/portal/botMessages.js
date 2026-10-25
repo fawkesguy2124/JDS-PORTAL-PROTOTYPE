@@ -219,6 +219,14 @@ export function instantAlerts(data, events = [], now = new Date()) {
       add('ship_arrived', `ship_arrived:${job?.id}`, job,
         `⚓ Ship arrived at ${meta.port || 'the port'}${ev.note ? ` (${String(ev.note).replace(/^Arrived /, '')})` : ''}. BE ${job?.be_no ? 'filed ✅' : 'not filed ❌'}.`)
     }
+    // the customs stage staff set (Jose, 25 Oct 2026): the ones that need someone to act
+    if (ev.action === 'be_stage' && ['query', 'assessed', 'exam'].includes(meta.stage)) {
+      const job = byId[ev.job_id] || byId[meta.job_id] || byNo[ev.job_no]
+      const what = meta.stage === 'query' ? `🛃 Customs *query raised* on BE ${meta.be_no || job?.be_no || ''}${ev.note && !/^BE /.test(ev.note) ? `: ${ev.note}` : ''}. Reply needed.`
+        : meta.stage === 'assessed' ? `🛃 BE ${meta.be_no || job?.be_no || ''} *assessed*: pay the duty.`
+        : `🛃 BE ${meta.be_no || job?.be_no || ''}: *examination* of the goods ordered.`
+      add('customs', `be_stage:${job?.id}:${meta.stage}:${meta.be_no || ''}`, job, what)
+    }
     // the automatic checks (Jose, 25 Oct 2026): a truck not moving, a truck's papers
     if (ev.action === 'truck_stuck' || ev.action === 'truck_papers') {
       const job = byId[ev.job_id] || byId[meta.job_id] || byNo[ev.job_no]

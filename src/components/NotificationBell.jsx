@@ -53,8 +53,8 @@ function groupByDay(notifications) {
 
 const ROLE_FILTERS = {
   admin:     null,
-  field_ops: ['container_update', 'detention_alert', 'ooc_granted', 'ship_arrived', 'truck_stuck', 'truck_papers'],
-  employee:  ['container_update', 'detention_alert', 'job_created', 'stage_update', 'document_upload', 'ooc_granted', 'ship_arrived', 'truck_stuck', 'truck_papers'],
+  field_ops: ['container_update', 'detention_alert', 'ooc_granted', 'ship_arrived', 'truck_stuck', 'truck_papers', 'be_stage'],
+  employee:  ['container_update', 'detention_alert', 'job_created', 'stage_update', 'document_upload', 'ooc_granted', 'ship_arrived', 'truck_stuck', 'truck_papers', 'be_stage'],
 }
 
 export default function NotificationBell({ onNavigate, profile }) {
@@ -153,7 +153,7 @@ export default function NotificationBell({ onNavigate, profile }) {
       onNavigate({ tab: 'jobs', jobId: meta.job_id || n.job_id })
       return
     }
-    if (t === 'be_status_check' || t === 'ooc_granted') {
+    if (t === 'be_status_check' || t === 'ooc_granted' || t === 'be_stage') {
       onNavigate({ tab: 'jobs', jobId: meta.job_id || n.job_id, hash: 'customs' })
       return
     }

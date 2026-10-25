@@ -249,6 +249,29 @@ function containerFacts(job, data) {
   return { nos, all, tracked, minFree, anyOut, allDelivered, finishedOn, portIn, allStale, staleDays }
 }
 
+// Customs stages after the BE (Jose, 25 Oct 2026). ICEGATE through ULIP only gives the
+// OOC, so staff set the stage they see in LiveImpex with one tap (portal or WhatsApp):
+// RMS facilitated, or AO → (query) → AC → assessed; then duty paid → (examination) → OOC.
+// Saved on the job as field_meta.be_stage { stage, be_no, at, by, note }; it only counts
+// for the BE it was set on.
+export const BE_STAGES = [
+  { id: 'rms', label: 'RMS facilitated', short: 'RMS cleared', next: 'Next: pay the duty', tone: 'blue' },
+  { id: 'ao', label: 'With appraising officer (AO)', short: 'With AO', next: 'With the appraising officer', tone: 'blue' },
+  { id: 'query', label: 'Query raised', short: 'Query raised', next: 'Next: reply to the customs query', tone: 'red' },
+  { id: 'ac', label: 'With assistant commissioner (AC)', short: 'With AC', next: 'With the assistant commissioner', tone: 'blue' },
+  { id: 'assessed', label: 'Assessed: pay duty', short: 'Assessed', next: 'Next: pay the duty', tone: 'amber' },
+  { id: 'duty_paid', label: 'Duty paid', short: 'Duty paid', next: 'Duty paid: waiting for OOC', tone: 'green' },
+  { id: 'exam', label: 'Examination', short: 'Examination', next: 'Next: examination of the goods', tone: 'amber' },
+]
+export function beStageOf(job) {
+  const s = job?.field_meta?.be_stage
+  const def = s && BE_STAGES.find((x) => x.id === s.stage)
+  if (!def) return null
+  // set on an earlier BE (a new BE was filed since): does not count
+  if (s.be_no && job?.be_no && String(s.be_no).trim() !== String(job.be_no).trim()) return null
+  return { ...def, at: s.at || null, by: s.by || null, note: s.note || null }
+}
+
 // What staff see as the next thing to happen, for the step that is "current"
 const NEXT_TEXT = {
   arrival: 'Waiting for arrival',
@@ -294,6 +317,7 @@ export function journeyFor(job, data) {
   const oocDate = cs?.ooc_date || null
   const oocDone = !!oocDate || stage >= 7
   const beFiled = !!(job.be_no && job.be_date)
+  const beStage = beFiled && !oocDone ? beStageOf(job) : null
   // every truck on the job, each with its own saved FASTag and papers answers
   const trucks = jobTrucks(job).map((t) => {
     const fastag = resultFor(results, ['FASTAG/01'], 'vehiclenumber', t.no)
@@ -319,7 +343,7 @@ export function journeyFor(job, data) {
     // a BE is often filed before the ship comes in (advance BE): say so, so the strip
     // does not look like it contradicts itself (Jose, 24 Oct 2026: J-689)
     { id: 'be', label: 'BE filed', done: beFiled, when: dayLabel(job.be_date), sub: beFiled ? (arrived ? `BE ${job.be_no}` : 'Before arrival') : 'In LiveImpex' },
-    { id: 'ooc', label: 'OOC', done: oocDone, when: dayLabel(oocDate), sub: oocDate ? (cs.ooc_no ? `OOC ${cs.ooc_no}` : null) : oocDone ? 'Recorded by staff' : beFiled ? 'Waiting' : null },
+    { id: 'ooc', label: 'OOC', done: oocDone, when: dayLabel(oocDate), sub: oocDate ? (cs.ooc_no ? `OOC ${cs.ooc_no}` : null) : oocDone ? 'Recorded by staff' : beFiled ? (beStage?.short || 'Waiting') : null },
     { id: 'out', label: isAirJob(job) ? 'Cargo out' : 'Container out', done: c.anyOut || stage >= 9, when: null, sub: c.tracked[0]?.status_text || null },
     { id: 'truck', label: mode === 'rail' ? 'Rail' : mode === 'truck' ? 'Truck' : 'Truck / rail', done: oocDone && (!!truck || railMoving), when: null,
       sub: truck ? (trucks.length > 1 ? `${trucks.length} trucks` : truck) : (mode === 'rail' ? (railMoving ? 'On its way by rail' : 'Going by rail') : oocDone ? 'Not arranged yet' : null) },
@@ -331,6 +355,8 @@ export function journeyFor(job, data) {
   markCurrent(steps)
   const moveStep = steps.find((s) => s.id === 'truck')
   if (moveStep?.current) moveStep.nextText = mode === 'rail' ? 'Next: send the container by rail' : mode === 'truck' ? 'Next: assign a truck' : 'Next: arrange truck or rail'
+  const oocStep = steps.find((s) => s.id === 'ooc')
+  if (oocStep?.current && beStage) oocStep.nextText = beStage.next
 
   let phase = 'arrival'
   if (delivered) phase = 'delivered'
@@ -364,7 +390,13 @@ export function journeyFor(job, data) {
     if (readyForTruck) add('amber', mode === 'truck' ? 'OOC done — no truck assigned yet' : 'OOC done — arrange truck or rail', 'truck')
     if (beFiled && !oocDone && phase === 'ooc') {
       const filedDays = daysSince(job.be_date)
-      if (filedDays !== null && filedDays >= 3) add('amber', `BE filed ${filedDays} days ago — OOC not yet`, 'customs')
+      const inStage = beStage?.at ? daysSince(beStage.at) : null
+      // the customs stage staff set says more than "OOC not yet" (Jose, 25 Oct 2026)
+      if (beStage?.id === 'query') add('red', `Customs query raised${inStage ? ` ${inStage} day${inStage === 1 ? '' : 's'} ago` : ''} — reply needed`, 'customs')
+      else if (beStage?.id === 'assessed') add('amber', `BE assessed${inStage ? ` ${inStage} day${inStage === 1 ? '' : 's'} ago` : ''} — pay the duty`, 'customs')
+      else if (beStage?.id === 'exam') add('amber', 'Examination of the goods pending', 'customs')
+      else if (beStage && ['ao', 'ac'].includes(beStage.id) && inStage !== null && inStage >= 2) add('amber', `${beStage.short} for ${inStage} days — follow up`, 'customs')
+      else if (filedDays !== null && filedDays >= 3) add('amber', `BE filed ${filedDays} days ago — ${beStage ? beStage.short.toLowerCase() : 'OOC not yet'}`, 'customs')
     }
     for (const t of trucks) if (t.papers?.found && t.papers.tone === 'bad') add('red', `Truck ${t.no} papers problem: ${t.papers.summary}`, 'truck')
     if (job.detention_risk === 'high') add('red', 'Marked as high detention risk', 'containers')
@@ -375,7 +407,7 @@ export function journeyFor(job, data) {
   // the newest toll crossing of any of the job's trucks
   const seen = trucks.filter((t) => t.location).sort((a, b) => String(b.location.at || '').localeCompare(String(a.location.at || '')))
   return {
-    steps, phase, attention,
+    steps, phase, attention, beStage,
     oocDate, oocDone, beFiled, truck, trucks, readyForTruck, onwardMode: mode,
     arrivedAt: ata || c.portIn || null,
     // a finished job has no free days to count down (Jose, 25 Oct 2026)

@@ -6,7 +6,7 @@ import webpush from 'npm:web-push@3.6.7'
 
 type Admin = any
 const env = (k: string) => (Deno.env.get(k) || '').trim()
-const TITLE: Record<string, string> = { ooc: 'OOC granted', free_days: 'Free days running out', be_not_filed: 'Ship in, BE not filed', container: 'Container update', ship_arrived: 'Ship arrived', ship_due: 'Ship arriving', ship_unloaded: 'Cargo unloaded', truck: 'Truck alert', system: 'JDS portal' }
+const TITLE: Record<string, string> = { ooc: 'OOC granted', free_days: 'Free days running out', be_not_filed: 'Ship in, BE not filed', container: 'Container update', ship_arrived: 'Ship arrived', ship_due: 'Ship arriving', ship_unloaded: 'Cargo unloaded', truck: 'Truck alert', customs: 'Customs update', system: 'JDS portal' }
 
 let ready = false
 function setup() {

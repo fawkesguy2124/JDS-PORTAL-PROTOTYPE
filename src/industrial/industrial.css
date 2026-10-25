@@ -498,3 +498,19 @@
 /* the voyage card's last move / next stop (they move on as the cargo goes) */
 .ix-voyage .moves { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line); display: grid; gap: 4px; font-size: 12.5px }
 .ix-voyage .moves .k { display: inline-block; min-width: 78px; font-size: 10.5px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; font-weight: 600 }
+
+/* customs stage after the BE: one tap (Jose, 25 Oct 2026) */
+.ix-bestage { border: 1px solid var(--line); background: #fff; border-radius: 12px; padding: 12px 14px; margin: 0 0 16px }
+.ix-bestage .hd { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; flex-wrap: wrap }
+.ix-bestage .hd > i { color: var(--navy); font-size: 18px }
+.ix-bestage .hd .t { font-weight: 700; font-size: 13.5px }
+.ix-bestage .hd .s { font-size: 12px; color: var(--muted) }
+.ix-bestage .chips { display: flex; flex-wrap: wrap; gap: 6px }
+.ix-bestage .st { border: 1px solid var(--line-2); background: #fff; color: var(--text-2); border-radius: 999px; padding: 5px 12px; font: 600 12px Inter, sans-serif; cursor: pointer; transition: background .12s, border-color .12s, color .12s }
+.ix-bestage .st:hover { border-color: var(--navy-100); background: var(--navy-50); color: var(--navy) }
+.ix-bestage .st.on.blue { background: var(--blue-bg); border-color: var(--blue-line); color: var(--blue) }
+.ix-bestage .st.on.red { background: #fdecec; border-color: #f5c2c2; color: #b42318 }
+.ix-bestage .st.on.amber { background: #fef3e2; border-color: #f7d7a6; color: #b45309 }
+.ix-bestage .st.on.green { background: #e7f6ec; border-color: #b7e2c4; color: #15803d }
+.ix-bestage .st.on { box-shadow: 0 0 0 2px rgba(26,79,160,.08) }
+.ix-bestage.compact { border: 0; padding: 0; margin: 6px 0 0; background: none }
