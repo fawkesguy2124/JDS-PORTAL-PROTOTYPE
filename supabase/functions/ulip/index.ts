@@ -14,7 +14,8 @@ import { cleanParams, findApi } from './apis/index.ts'
 const MIN_MINUTES_BETWEEN_SAME_CHECK = 5
 const MIN_MINUTES_AFTER_FAILURE = 2
 // the WhatsApp bot may ask only these, when a person asks it to (Jose, 24 Oct 2026)
-const BOT_APIS = ['FASTAG/01', 'ICEGATE/01', 'ICEGATE/07']
+// + LDB/01 (live container movement) and VAHAN/04 (truck papers), Jose 25 Oct 2026
+const BOT_APIS = ['FASTAG/01', 'ICEGATE/01', 'ICEGATE/07', 'LDB/01', 'VAHAN/04']
 const MIN_MINUTES_BETWEEN_BOT_CHECKS = 30
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 

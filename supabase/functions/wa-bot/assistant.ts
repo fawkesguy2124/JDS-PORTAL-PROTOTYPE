@@ -31,6 +31,16 @@ export const SERVER_TOOLS = [
     parameters: { type: 'OBJECT', properties: { truck_no: S, job: S } },
   },
   {
+    name: 'container_now',
+    description: 'LIVE container status and its whole movement timeline (port in/out, CFS/ICD in/out, rail, road) straight from the port systems (ULIP LDB), for a container number or all containers of a job (up to 8). Use when the person wants the latest / live / right now / full movement / where it went after the port (port → CFS). For a quick answer from saved data use the read tools instead. At most once every 30 minutes per container; the result follows in a separate message.',
+    parameters: { type: 'OBJECT', properties: { container: S, job: S } },
+  },
+  {
+    name: 'vehicle_check_now',
+    description: 'A truck\'s papers live from VAHAN: road tax, permit, fitness, insurance, PUC, RC status (goods vehicles only). truck_no, or a job whose truck it is. ONLY when the person asks to check a truck\'s papers / road tax / permit / insurance. At most once every 30 minutes per truck.',
+    parameters: { type: 'OBJECT', properties: { truck_no: S, job: S } },
+  },
+  {
     name: 'find_ship_now',
     description: 'Find a job\'s ship (IMO, arrival) from its IGM, by asking ICEGATE. ONLY when the person asks to find / check the ship. At most once every 30 minutes per IGM. The result follows in a separate message.',
     parameters: { type: 'OBJECT', properties: { job: S }, required: ['job'] },

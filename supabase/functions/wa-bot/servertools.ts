@@ -52,6 +52,40 @@ async function recent(admin: Admin, key: string) {
   return data && minutesAgo(data.checked_at) < GAP_MIN ? data : null
 }
 
+// A container's LDB answer told like a person would (Jose, 25 Oct 2026): where it
+// is now, port → CFS in one sentence, then the whole timeline oldest first.
+// Rows of the "Event history" table: [when, event, place, moved by, empty/loaded].
+const cap = (s: string) => String(s || '').toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase()).replace(/\b(Cfs|Icd|Jnpt|Nsict|Gti|Bmct|Nsigt|Dpd|Dpe)\b/g, (w) => w.toUpperCase())
+function boxStory(no: string, parsed: any, at: string) {
+  const hist = (parsed?.tables || []).find((t: any) => /event history/i.test(t?.title || ''))?.rows || []
+  if (!hist.length) return `*${no}*: ${parsed?.summary || 'the port systems have no movement for it yet.'}`
+  const now = hist[0]
+  const lines = [`*${no}*: last move was *${cap(now[1])}*${now[2] ? ` at *${now[2]}*` : ''}${now[0] ? ` on ${now[0]}` : ''}${now[4] ? ` (${String(now[4]).toLowerCase()})` : ''}.`]
+  // port → CFS: the last time it left a port and the first CFS / ICD arrival after that
+  const up = [...hist].reverse()
+  const outIdx = up.findIndex((r: any) => /PORT\s*OUT|GATE\s*OUT|TERMINAL\s*OUT|DEPART/i.test(r[1] || '') && !/CFS|ICD/i.test(r[2] || ''))
+  const cfs = outIdx >= 0 ? up.slice(outIdx + 1).find((r: any) => /CFS|ICD/i.test(`${r[1]} ${r[2]}`) && /IN|ARRIV|ENTRY/i.test(r[1] || '')) : null
+  if (outIdx >= 0 && cfs) lines.push(`It left the port on ${up[outIdx][0]} and reached *${cfs[2] || cap(cfs[1])}* on ${cfs[0]}.`)
+  if (hist.length > 1) lines.push(`Full movement:\n${up.map((r: any) => `• ${r[0]} · ${cap(r[1])}${r[2] ? ` · ${r[2]}` : ''}${r[3] ? ` (${String(r[3]).toLowerCase()})` : ''}`).join('\n')}`)
+  lines.push(`_Live from the port systems, ${when(at)}._`)
+  return lines.join('\n')
+}
+
+// A truck's VAHAN answer in plain words: what's expired first, then what's fine
+function paperStory(truck: string, parsed: any, summary?: string) {
+  const x = parsed?.extra || {}
+  if (parsed?.found === false || !x.vehicleNumber) return `*${truck}*: ${summary || 'VAHAN has no record for this truck (it covers goods vehicles only).'}`
+  const papers: [string, string | null][] = [['Road tax', x.taxUpto], ['Permit', x.permitUpto], ['National permit', x.nationalPermitUpto], ['Fitness', x.fitnessUpto], ['Insurance', x.insuranceUpto], ['PUC', x.pucUpto]]
+  const day = (v: string) => new Date(v).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', timeZone: TZ })
+  const past = papers.filter(([, v]) => v && new Date(v).getTime() < Date.now())
+  const ok = papers.filter(([, v]) => v && new Date(v).getTime() >= Date.now())
+  const rcBad = x.rcStatus && !/^\s*active/i.test(x.rcStatus)
+  const issues = [...(rcBad ? [`RC is ${String(x.rcStatus).toLowerCase()}`] : []), ...(x.blacklisted ? ['it is blacklisted'] : []), ...past.map(([k, v]) => `${k.toLowerCase()} expired on ${day(v!)}`)]
+  const lines = [issues.length ? `⚠️ *${truck}* has a problem: ${issues.join(', ')}.` : `✅ *${truck}*'s papers are all in date.`]
+  if (ok.length) lines.push(ok.map(([k, v]) => `${k} valid till ${day(v!)}`).join(' · '))
+  return lines.join('\n')
+}
+
 // keeps working after the reply has gone out
 function later(work: Promise<unknown>) {
   try { (globalThis as any).EdgeRuntime?.waitUntil?.(work) } catch { /* it still runs */ }
@@ -116,6 +150,69 @@ export function makeServerTools(d: Deps) {
         await d.send(text)
       })())
       return { say: `🚚 Checking *${truck}* with FASTag now. The result follows in a separate message.`, started: true, note: 'FASTag asked now, result to follow in a separate message', tell_the_person: 'Say only that you are checking the truck now and the result follows in a separate message.' }
+    },
+
+    // ── container: live status + the whole movement timeline from ULIP (LDB) ──
+    // (Jose, 25 Oct 2026: JDS sometimes wants it "instant", not the portal's saved copy.
+    // Port → CFS comes from the same timeline: CFSICD/01 is not approved for JDS.)
+    async container_now(args: any) {
+      let boxes: string[] = []
+      const job = args?.job ? findJob(data, person, args.job) : null
+      const typed = String(args?.container || '').toUpperCase().replace(/[^A-Z0-9]/g, '')
+      if (/^[A-Z]{4}\d{7}$/.test(typed)) boxes = [typed]
+      else if (job) boxes = parseContainerNos(job.containers)
+      else if (args?.job) return { not_found: args.job }
+      if (!boxes.length) return { not_possible: job ? `${job.job_no} has no container number yet.` : 'Give me the container number (4 letters and 7 digits) or the job number.' }
+      const owner = job || (data.jobs || []).find((j: any) => parseContainerNos(j.containers).includes(boxes[0])) || null
+      const take = boxes.slice(0, MANY_MAX)
+      const saved: string[] = []
+      const ask: string[] = []
+      for (const no of take) {
+        const s = await recent(admin, `LDB/01?containerNumber=${no}`)
+        if (s) saved.push(boxStory(no, s.parsed, s.checked_at)); else ask.push(no)
+      }
+      const more = boxes.length > take.length ? `\n\n(${boxes.length - take.length} more containers on this job; ask me for them by number.)` : ''
+      if (!ask.length) return { say: `${saved.join('\n\n')}\n\n_I checked ${take.length === 1 ? 'this' : 'these'} a few minutes ago, so it's still fresh._${more}`, checked_recently: true, note: 'LDB NOT asked again (checked within 30 min)' }
+      if (d.test) return { say: `(test) Would check ${ask.join(', ')} live with the port systems now.`, started: true, test_mode: 'LDB was NOT asked' }
+      later((async () => {
+        const parts = [...saved]
+        for (let i = 0; i < ask.length; i++) {
+          if (i) await new Promise((r) => setTimeout(r, MANY_GAP_MS))
+          const out = await botUlip(admin, person, 'LDB/01', { containerNumber: ask[i] }, owner?.id || null).catch((e) => ({ success: false, error: (e as Error).message }))
+          parts.push(out?.success && out.data?.found !== false
+            ? boxStory(ask[i], out.data?.parsed, new Date().toISOString())
+            : `*${ask[i]}*: I couldn't get it from the port systems just now${out?.data?.summary ? ` (${out.data.summary})` : out?.error ? ` (${String(out.error).slice(0, 120)})` : ''}. I can try again in a few minutes.`)
+        }
+        d.dataChanged()
+        await d.send(parts.join('\n\n') + more)
+      })())
+      const what = ask.length === 1 ? `*${ask[0]}*` : `the ${ask.length} containers${owner ? ` of *${owner.job_no}*` : ''}`
+      return { say: `Sure, checking ${what} live with the port systems now. I'll send you the full movement in a moment.`, started: true, note: `LDB asked now for ${ask.join(', ')}, result to follow`, tell_the_person: 'Say in one friendly line that you are checking live now and will send the movement in a moment.' }
+    },
+
+    // ── truck papers: road tax, permit, fitness, insurance, PUC (ULIP VAHAN/04) ──
+    async vehicle_check_now(args: any) {
+      let truck = plateNo(args?.truck_no || '')
+      const job = args?.job ? findJob(data, person, args.job) : null
+      if (!truck && job) {
+        const trucks = jobTrucks(job)
+        if (!trucks.length) return { not_possible: `${job.job_no} has no truck yet.` }
+        if (trucks.length > 1) return { ask: `${job.job_no} has ${trucks.length} trucks: ${trucks.map((t: any) => t.no).join(', ')}. Which one?` }
+        truck = trucks[0].no
+      }
+      if (!/^[A-Z]{2}\d{1,2}[A-Z]{0,3}\d{3,4}$|^\d{2}BH\d{4}[A-Z]{1,2}$/.test(truck)) return { not_possible: 'Give me the truck number, for example MH04AB1234.' }
+      const saved = await recent(admin, `VAHAN/04?vehiclenumber=${truck}`)
+      if (saved) return { say: `${paperStory(truck, saved.parsed, saved.summary)}\n\n_I checked this a few minutes ago, so it's still fresh._`, checked_recently: true, note: 'VAHAN NOT asked again (checked within 30 min)' }
+      if (d.test) return { say: `(test) Would check the papers of ${truck} now.`, started: true, test_mode: 'VAHAN was NOT asked' }
+      later((async () => {
+        const out = await botUlip(admin, person, 'VAHAN/04', { vehiclenumber: truck }, job?.id || null).catch((e) => ({ success: false, error: (e as Error).message }))
+        const text = out?.success
+          ? paperStory(truck, out.data?.parsed, out.data?.summary)
+          : `I couldn't get the papers of *${truck}* just now (${String(out?.error || 'no answer').slice(0, 120)}). VAHAN only covers goods vehicles; I can try again in a few minutes.`
+        d.dataChanged()
+        await d.send(text)
+      })())
+      return { say: `Sure, checking the papers of *${truck}* now (road tax, permit, fitness, insurance). One moment.`, started: true, note: 'VAHAN asked now, result to follow', tell_the_person: 'Say in one friendly line that you are checking the truck papers now.' }
     },
 
     // ── ship: IMO and arrival from the IGM ──

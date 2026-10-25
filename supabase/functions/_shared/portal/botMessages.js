@@ -373,7 +373,7 @@ export const BOT_NUMBERS = BOT_PEOPLE.map((p) => p.phone)
 export const LEVELS = ['view', 'staff', 'admin']
 export const LEVEL_LABEL = { view: 'view only', staff: 'staff', admin: 'full admin' }
 const NEEDS = {
-  send_document: 'staff', send_pack: 'staff', check_truck_now: 'staff', find_ship_now: 'staff', check_customs_now: 'staff', check_customs_many: 'staff',
+  send_document: 'staff', send_pack: 'staff', check_truck_now: 'staff', container_now: 'staff', vehicle_check_now: 'staff', find_ship_now: 'staff', check_customs_now: 'staff', check_customs_many: 'staff',
   set_reminder: 'staff', cancel_reminder: 'staff', watch: 'staff', cancel_watch: 'staff', change: 'staff', files: 'staff',
   send_report: 'admin', create_job: 'admin', record_payment: 'admin', assign_task: 'admin', set_access: 'admin', list_access: 'admin',
 }
