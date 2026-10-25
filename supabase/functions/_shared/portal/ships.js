@@ -92,26 +92,9 @@ export function shipIdOf(job, name, data) {
   return { imo: null, mmsi: null, from: null }
 }
 
-// Rough sea area of a position, in words (for the bot's "last heard" line)
-const AREAS = [
-  ['near Nhava Sheva / Mumbai', 18.3, 19.6, 72.3, 73.2],
-  ['off the west coast of India', 8, 23.5, 66, 77],
-  ['near Colombo / Sri Lanka', 5, 10, 78, 82.5],
-  ['in the Arabian Sea', 5, 25, 55, 77],
-  ['in the Persian Gulf', 23.5, 30.5, 47.5, 57],
-  ['in the Red Sea / Gulf of Aden', 11, 30, 32, 51],
-  ['in the Bay of Bengal', 5, 23, 80, 95],
-  ['near Singapore / Malacca Strait', -1, 8, 95, 105],
-  ['in the South China Sea', 0, 23, 105, 121],
-  ['near China / Korea / Japan', 23, 45, 115, 145],
-  ['in the Mediterranean', 30, 46, -6, 36.5],
-  ['in the Indian Ocean', -40, 25, 40, 100],
-]
-export function seaArea(lat, lon) {
-  if (typeof lat !== 'number' || typeof lon !== 'number') return null
-  const a = AREAS.find(([, la1, la2, lo1, lo2]) => lat >= la1 && lat <= la2 && lon >= lo1 && lon <= lo2)
-  return a ? a[0] : 'at sea'
-}
+// Where a ship is, in words ("Bohai Sea, near Dalian"): seaAreas.js
+export { seaArea } from './seaAreas.js'
+import { seaArea } from './seaAreas.js'
 
 // Is this job's cargo still on this ship? (Jose, 22 Oct 2026: a ship stays on the
 // Vessels page only while our cargo is on board; once it is unloaded, the ship
