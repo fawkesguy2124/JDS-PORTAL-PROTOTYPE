@@ -159,7 +159,8 @@ const hull = (color) => `<svg viewBox="0 0 16 26" width="16" height="26" aria-hi
 export const TONE_COLOR = { sea: '#15803d', port: '#c2410c', old: '#94a3b8' }
 export const toneOf = (s) => {
   const stale = s.at && Date.now() - new Date(s.at).getTime() > STALE_HOURS * 3600e3
-  return s.waiting || stale ? 'old' : s.arrived ? 'port' : 'sea'
+  // at the port (confirmed, or already within reach of it) beats an old position
+  return s.waiting ? 'old' : s.arrived || s.atPod ? 'port' : stale ? 'old' : 'sea'
 }
 // "Arabian Sea, near Nhava Sheva" → "near Nhava Sheva"
 const placeOf = (where) => {
@@ -279,7 +280,7 @@ export default function ShipMap({ ships = [], selectedKey, onSelect, height = 42
       const pod = s.route?.pod
       if (!Array.isArray(pod) || !s.podName) continue
       const g = ports.get(s.podName) || { name: s.podName, pos: pod, inbound: 0, here: 0 }
-      if (s.arrived) g.here++
+      if (s.arrived || s.atPod) g.here++
       else if (!s.waiting) g.inbound++
       ports.set(s.podName, g)
     }
@@ -395,16 +396,17 @@ export default function ShipMap({ ships = [], selectedKey, onSelect, height = 42
               <div className="legs">
                 <div><div className="k">From</div><div className="v">{sel.polName || '—'}</div>{sel.polDate && <div className="d">{sel.polDate}</div>}</div>
                 <Icon name="arrow-right" />
-                <div style={{ textAlign: 'right' }}><div className="k">To</div><div className="v">{sel.podName || '—'}</div>{sel.eta && <div className="d">{sel.eta}</div>}</div>
+                <div style={{ textAlign: 'right' }}><div className="k">To</div><div className="v">{sel.podName || '—'}</div>{sel.eta && <div className="d">{sel.eta}</div>}{sel.delay && <div className={`ix-delay ${sel.delay.tone}`}>{sel.delay.text}</div>}</div>
               </div>
             )}
             {viaText(sel.route) && <div className="via"><Icon name="transfer" />{viaText(sel.route)}</div>}
+            {(sel.flags || []).map((f) => <div key={f.id} className={`ix-flag ${f.tone}`}><Icon name={f.icon} />{f.text}</div>)}
             {v?.pct != null && (
               <>
-                <div className="bar"><span style={{ width: `${sel.arrived ? 100 : sel.waiting ? 0 : v.pct}%` }} /></div>
+                <div className="bar"><span style={{ width: `${sel.arrived || sel.atPod ? 100 : sel.waiting ? 0 : v.pct}%` }} /></div>
                 <div className="prog">
-                  <span>{sel.arrived ? 'Arrived' : sel.waiting ? 'Not sailed yet' : `${v.pct}% of the way`}</span>
-                  {!sel.arrived && v.left != null && <span>{Math.round(v.left * 1.852).toLocaleString('en-IN')} km {sel.waiting ? 'voyage' : 'to go'}</span>}
+                  <span>{sel.arrived ? 'Arrived' : sel.atPod ? 'At the port · arrival not confirmed yet' : sel.waiting ? 'Not sailed yet' : `${v.pct}% of the way`}</span>
+                  {!sel.arrived && !sel.atPod && v.left != null && <span>{Math.round(v.left * 1.852).toLocaleString('en-IN')} km {sel.waiting ? 'voyage' : 'to go'}</span>}
                 </div>
               </>
             )}

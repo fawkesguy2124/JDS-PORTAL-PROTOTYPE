@@ -6,6 +6,7 @@ import ShipMap, { vesselsOf, shipIdOf, shipPosition, voyage, toneOf, TONE_COLOR 
 import { cargoOnShip } from '../../../supabase/functions/_shared/portal/ships.js'
 import { lineName } from '../../../supabase/functions/_shared/portal/shippingLines.js'
 import { Icon, Skeleton, fmtDate } from '../ui'
+import { shipChecks } from '../shipChecks'
 import { portTime, seaWhere, portName, notSailed, polText, moveText, nextStop, atPort } from '../SeaTracking'
 
 const TONE_ORDER = { sea: 0, port: 1, old: 2 }
@@ -95,6 +96,11 @@ export default function VesselsPage({ onOpenJob, showToast, onGo }) {
       lastMove: ok && atPort(sea) ? moveText(sea.last_event, false) : null, nextStop: ok && atPort(sea) ? nextStop(sea) : null,
       polName: ok ? portName(sea.pol) : null, polDate: ok ? polText(sea) : null, waiting: notSailed(sea), podName: ok ? portName(sea.pod) : null,
     }
+  }).map((m, i) => {
+    // at the port before the line confirms it, ETA passed, delays (shipChecks)
+    const sea = seaOfShip(ships[i])
+    const c = shipChecks(sea && !sea.error ? sea : null, m, voyage(m))
+    return { ...m, atPod: c.atPod, delay: c.delay, flags: c.flags }
   })
 
   // one IMO for the ship, saved on every job on it
@@ -127,14 +133,19 @@ export default function VesselsPage({ onOpenJob, showToast, onGo }) {
     const sea = seaOfShip(s)
     return { s, m, sea, tone: toneOf(m), trip: voyage(m), podAt: sea && !sea.error && !sea.pod_actual ? sea.pod_date : null }
   }).sort((a, b) => (TONE_ORDER[a.tone] - TONE_ORDER[b.tone]) || String(a.podAt || '9').localeCompare(String(b.podAt || '9')))
-  const count = (t) => rows.filter((r) => (t === 'port' ? r.m.arrived : t === 'sea' ? r.tone === 'sea' : true)).length
-  const listed = rows.filter((r) => filter === 'all' || (filter === 'port' ? r.m.arrived : r.tone === 'sea'))
+  const inPort = (r) => r.m.arrived || r.m.atPod
+  const count = (t) => rows.filter((r) => (t === 'port' ? inPort(r) : t === 'sea' ? r.tone === 'sea' : true)).length
+  const listed = rows.filter((r) => filter === 'all' || (filter === 'port' ? inPort(r) : r.tone === 'sea'))
+  // everything worth a look, most serious first (Jose, 25 Oct 2026)
+  const RANK = { red: 0, amber: 1, grey: 2, info: 3 }
+  const alerts = rows.flatMap((r) => r.m.flags.map((f) => ({ ...f, key: r.s.key, jobs: r.m.jobs }))).sort((a, b) => RANK[a.tone] - RANK[b.tone])
+  const serious = alerts.filter((a) => a.tone === 'red' || a.tone === 'amber').length
   // the next ship due (port time, written as UTC; Nhava Sheva is India time)
   const next = rows.filter((r) => r.podAt && r.tone === 'sea' && new Date(r.podAt).getTime() - 5.5 * 3600e3 > Date.now())
     .sort((a, b) => String(a.podAt).localeCompare(String(b.podAt)))[0]
   const noPosition = ships.filter((s) => !shown(s))
   const mapH = typeof window !== 'undefined' ? (window.innerWidth < 900 ? 420 : Math.max(560, window.innerHeight - 190)) : 560
-  const statusText = (r) => (r.m.waiting ? 'Not sailed' : r.m.arrived ? 'At port' : r.tone === 'old' ? 'Old position' : 'At sea')
+  const statusText = (r) => (r.m.waiting ? 'Not sailed' : r.m.arrived ? 'At port' : r.m.atPod ? 'At port' : r.tone === 'old' ? 'Old position' : 'At sea')
 
   return (
     <div className="ix-page ix-page-wide">
@@ -147,9 +158,26 @@ export default function VesselsPage({ onOpenJob, showToast, onGo }) {
           <div><b>{rows.length}</b><span>ships tracked</span></div>
           <div><b style={{ color: TONE_COLOR.sea }}>{count('sea')}</b><span>at sea</span></div>
           <div><b style={{ color: TONE_COLOR.port }}>{count('port')}</b><span>at port</span></div>
-          {next && <div className="wide"><b>{next.s.jobs.map((x) => x.job.job_no).join(', ')}</b><span>next arrival · {portTime(next.podAt)}</span></div>}
+          {next && <div className="wide"><b>{next.s.jobs.map((x) => x.job.job_no).join(', ')}</b><span>next arrival · {portTime(next.podAt)}{next.m.flags.some((f) => f.id === 'early') ? ' (likely later)' : ''}</span></div>}
         </div>
       </div>
+
+      {data && rows.length > 0 && (
+        <div className={`ix-card ix-vt-alerts ${serious ? '' : 'ok'}`}>
+          <div className="hd">
+            <Icon name={serious ? 'alert-triangle' : 'circle-check'} />
+            <b>{serious ? `Needs attention · ${serious}` : 'All ships on schedule'}</b>
+          </div>
+          <div className="items">
+            {alerts.map((a) => (
+              <button key={`${a.key}-${a.id}`} type="button" className={`ix-vt-alert ${a.tone} ${sel?.key === a.key ? 'on' : ''}`} onClick={() => setSelected(a.key)} title="Show this ship on the map">
+                <Icon name={a.icon} /><b>{a.jobs}</b><span>{a.text}</span>
+              </button>
+            ))}
+            {!alerts.length && <span className="none">No delays, no missed ETAs, every position is fresh.</span>}
+          </div>
+        </div>
+      )}
 
       <div className="ix-card ix-vt" style={{ "--vt-h": `${mapH}px` }}>
         <aside className="ix-vt-list">
@@ -165,8 +193,8 @@ export default function VesselsPage({ onOpenJob, showToast, onGo }) {
             {data && !listed.length && <div className="ix-empty">{rows.length ? 'No ship in this group.' : 'No ship is carrying our cargo right now.'}</div>}
             {listed.map((r) => {
               const { s, m, sea, trip } = r
-              const pct = m.arrived ? 100 : m.waiting ? 0 : trip?.pct
-              const kmLeft = !m.arrived && !m.waiting && trip?.left != null ? Math.round(trip.left * 1.852) : null
+              const pct = m.arrived || m.atPod ? 100 : m.waiting ? 0 : trip?.pct
+              const kmLeft = !m.arrived && !m.atPod && !m.waiting && trip?.left != null ? Math.round(trip.left * 1.852) : null
               return (
                 <div key={s.key} className={`ix-vrow ${r.tone} ${sel?.key === s.key ? 'sel' : ''}`} role="button" tabIndex={0}
                   onClick={() => setSelected(sel?.key === s.key ? null : s.key)}
@@ -182,13 +210,14 @@ export default function VesselsPage({ onOpenJob, showToast, onGo }) {
                   </div>
                   <div className="cl">{m.clients || 'No client'}{m.line ? <span> · {m.line}</span> : null}</div>
                   <div className="meta">
-                    {sea && !sea.error && sea.pod_date && <span><Icon name="flag" />{sea.pod_actual ? 'Arrived' : 'ETA'} {portTime(sea.pod_date)}</span>}
+                    {sea && !sea.error && sea.pod_date && <span><Icon name="flag" />{sea.pod_actual ? 'Arrived' : 'ETA'} {portTime(sea.pod_date)}{m.delay && !m.arrived && <em className={`ix-delay ${m.delay.tone}`}>{m.delay.text}</em>}</span>}
+                    {m.flags.filter((f) => f.tone === 'red' || f.tone === 'amber').slice(0, 1).map((f) => <span key={f.id} className={`warn ${f.tone}`}><Icon name={f.icon} />{f.text}</span>)}
                     {m.where && <span><Icon name="map-pin" />{m.where}</span>}
                   </div>
                   {pct != null && (
                     <div className="prog">
                       <div className="bar"><span style={{ width: `${pct}%` }} /></div>
-                      <span className="n">{m.arrived ? 'Arrived' : m.waiting ? 'Not sailed yet' : kmLeft != null ? `${kmLeft.toLocaleString('en-IN')} km to go` : `${pct}%`}</span>
+                      <span className="n">{m.arrived ? 'Arrived' : m.atPod ? 'At the port' : m.waiting ? 'Not sailed yet' : kmLeft != null ? `${kmLeft.toLocaleString('en-IN')} km to go` : `${pct}%`}</span>
                     </div>
                   )}
                 </div>

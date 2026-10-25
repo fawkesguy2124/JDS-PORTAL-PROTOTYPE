@@ -172,6 +172,17 @@ async function logArrival(admin: any, job: any, row: any) {
   })
 }
 
+// "J-674 — ETA moved to 23 Nov (+3 days)"
+async function logEtaChange(admin: any, job: any, before: string, row: any) {
+  const days = Math.round((new Date(row.pod_date).getTime() - new Date(before).getTime()) / 86400e3)
+  const shift = days > 0 ? `+${days} day${days === 1 ? '' : 's'}, later` : `${days} day${days === -1 ? '' : 's'}, earlier`
+  await admin.from('activity_log').insert({
+    type: 'eta_changed', action: 'eta_changed', title: `${job.job_no} — ETA moved to ${portClock(row.pod_date)} (${shift})`,
+    note: `Was ${portClock(before)}${row.vessel_name ? ` · ${row.vessel_name}` : ''}`, job_id: job.id, job_no: job.job_no, done_by_name: 'Ship tracking',
+    meta: { job_id: job.id, job_no: job.job_no, from: before, to: row.pod_date, days },
+  })
+}
+
 // The ship has arrived (or the job is finished): stop looking it up
 function arrived(row: any) {
   if (row?.status === 'DELIVERED') return true
@@ -214,13 +225,21 @@ async function track(admin: any, job: any, lines: any[], opts: { start?: boolean
   const track: any[] = Array.isArray(prev?.track) ? prev.track : []
   const lastPt = track[track.length - 1]
   if (typeof r.row.lat === 'number' && (!lastPt || lastPt[0] !== r.row.lat || lastPt[1] !== r.row.lng)) track.push([r.row.lat, r.row.lng, r.row.position_at || now])
-  const row = { ...base, ...r.row, track: track.slice(-300), error: null, refresh_error: null, done: arrived(r.row) }
+  // the ETA's history: the first ETA, and one entry each time it changes (for "ETA +3 days")
+  const etaMs = (v: unknown) => (v ? new Date(String(v)).getTime() : NaN)
+  const etas: any[] = Array.isArray(prev?.eta_history) ? prev.eta_history : []
+  const lastEta = etas[etas.length - 1]?.eta ?? prev?.pod_date ?? null
+  if (r.row.pod_date && etaMs(lastEta) !== etaMs(r.row.pod_date)) etas.push({ eta: r.row.pod_date, seen: now })
+  const firstEta = prev?.first_pod_date || prev?.pod_date || r.row.pod_date || null
+  const row = { ...base, ...r.row, track: track.slice(-300), first_pod_date: firstEta, eta_history: etas.slice(-30), error: null, refresh_error: null, done: arrived(r.row) }
   delete (row as any).next_event
   const { error } = await admin.from('sea_tracking').upsert({ ...row, last_event: { ...(r.row.last_event || {}), next: r.row.next_event } }, { onConflict: 'job_id' })
   if (error) return { job: job.job_no, error: `save: ${error.message}` }
   // the ship has just arrived: one "Ship arrived" entry, which the bell, WhatsApp and
   // desktop alerts all show (Jose, 25 Oct 2026: J-689 arrived with no notification)
   if (r.row.pod_actual && !prev?.pod_actual) await logArrival(admin, job, r.row)
+  // the ETA moved by a day or more since the last check: one entry for the bell
+  if (!r.row.pod_actual && prev?.pod_date && r.row.pod_date && Math.abs(etaMs(r.row.pod_date) - etaMs(prev.pod_date)) >= 86400e3) await logEtaChange(admin, job, prev.pod_date, r.row)
   return { job: job.job_no, number: n.number, type: n.type, status: r.row.status, eta: r.row.pod_date, arrived: r.row.pod_actual, vessel: r.row.vessel_name, imo: r.row.vessel_imo, pos: r.row.lat != null ? [r.row.lat, r.row.lng] : null, last: r.row.last_event, done: row.done, warnings: r.row.warnings }
 }
 

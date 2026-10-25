@@ -604,3 +604,32 @@
 .ix-realmap .leaflet-control-scale { margin-bottom: 26px !important; margin-right: 52px !important }
 .ix-realmap .leaflet-control-scale-line { border-color: #8a93a1; color: #5f6b7c; background: rgba(255,255,255,.8); font-size: 10.5px }
 .ix-realmap .leaflet-bar a { color: var(--text) }
+
+/* Vessels: what needs attention, delays (Jose, 25 Oct 2026) */
+.ix-vt-alerts { display: flex; align-items: flex-start; gap: 14px; padding: 10px 14px; margin-bottom: 12px; border-left: 3px solid #d97706 }
+.ix-vt-alerts.ok { border-left-color: var(--green) }
+.ix-vt-alerts .hd { display: flex; align-items: center; gap: 7px; white-space: nowrap; height: 30px; font-size: 13px }
+.ix-vt-alerts .hd i { font-size: 17px; color: #d97706 }
+.ix-vt-alerts.ok .hd i { color: var(--green) }
+.ix-vt-alerts .items { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0 }
+.ix-vt-alerts .none { color: var(--muted); font-size: 12.5px; line-height: 30px }
+.ix-vt-alert { display: inline-flex; align-items: center; gap: 6px; min-height: 30px; padding: 4px 10px; border-radius: 7px; border: 1px solid var(--line); background: var(--surface-2); font: 500 12px Inter, sans-serif; color: var(--text-2); cursor: pointer; text-align: left; max-width: 100% }
+.ix-vt-alert b { color: var(--text); font-weight: 700; white-space: nowrap }
+.ix-vt-alert span { overflow: hidden; text-overflow: ellipsis }
+.ix-vt-alert i { font-size: 15px; flex-shrink: 0 }
+.ix-vt-alert.red { background: var(--red-bg); border-color: var(--red-line); color: #991b1b } .ix-vt-alert.red i { color: var(--red) }
+.ix-vt-alert.amber { background: var(--amber-bg); border-color: var(--amber-line); color: #92400e } .ix-vt-alert.amber i { color: #d97706 }
+.ix-vt-alert.grey i { color: var(--muted) }
+.ix-vt-alert.info { background: var(--navy-50); border-color: #cddbf1; color: #1e3a6e } .ix-vt-alert.info i { color: var(--navy) }
+.ix-vt-alert:hover { filter: brightness(.97) }
+.ix-vt-alert.on { box-shadow: 0 0 0 2px var(--navy) }
+.ix-delay { display: inline-block; margin-left: 6px; padding: 0 5px; border-radius: 4px; font-style: normal; font-size: 10.5px; font-weight: 700; line-height: 16px }
+.ix-delay.late { background: var(--red-bg); color: var(--red) } .ix-delay.early { background: var(--green-bg); color: var(--green) }
+.ix-voyage .ix-delay { margin: 3px 0 0 }
+.ix-vrow .meta .warn { font-weight: 600; white-space: normal }
+.ix-vrow .meta .warn.red { color: var(--red) } .ix-vrow .meta .warn.amber { color: #b45309 }
+.ix-flag { display: flex; align-items: flex-start; gap: 7px; margin-top: 8px; padding: 7px 9px; border-radius: 8px; font-size: 12px; line-height: 1.4 }
+.ix-flag i { font-size: 15px; margin-top: 1px; flex-shrink: 0 }
+.ix-flag.red { background: var(--red-bg); color: #991b1b } .ix-flag.amber { background: var(--amber-bg); color: #92400e }
+.ix-flag.grey { background: var(--grey-bg); color: var(--text-2) } .ix-flag.info { background: var(--navy-50); color: #1e3a6e }
+@media (max-width: 760px) { .ix-vt-alerts { flex-direction: column; gap: 6px } }
