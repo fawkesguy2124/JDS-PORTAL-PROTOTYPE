@@ -238,7 +238,6 @@ const compact = (v) => {
 // Ships of the jobs, one entry per ship (same IMO = same ship, like the Vessels
 // page). The position is only what the free vessel-track finder last heard
 // (it hears little off west India); the live map is the Vessels page.
-const VESSELS_PAGE = 'https://jds-portal-prototype.vercel.app/admin?tab=vessels'
 const NAV = { 0: 'moving', 1: 'at anchor', 5: 'moored', 8: 'sailing' }
 function shipInfo(args, data, rows) {
   const want = String(args?.ship || '').trim()
@@ -272,7 +271,7 @@ function shipInfo(args, data, rows) {
     const etas = open.map((x) => x.job.eta).filter(Boolean).sort()
     // the finder's position, only when it is this same ship (not a namesake)
     const f = g.names.map((n) => data.shipIds?.[n]).find((x) => x && typeof x.lat === 'number' && (!g.imo || !x.imo || String(x.imo) === g.imo))
-    let last_heard = 'no position heard (the free ship finder hears little near India); use live_map'
+    let last_heard = 'no position heard (the free ship finder hears little near India)'
     if (f) {
       const hrs = Math.round((Date.now() - new Date(f.seen_at)) / 3600000)
       last_heard = `${day(f.seen_at)} ${new Date(f.seen_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: TZ })} (${hrs < 1 ? 'under an hour' : `${hrs} h`} ago): ${seaArea(f.lat, f.lon)} (${f.lat.toFixed(2)}, ${f.lon.toFixed(2)})`
@@ -296,7 +295,7 @@ function shipInfo(args, data, rows) {
         updated: `${day(sea.fetched_at)} ${new Date(sea.fetched_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: TZ })} (checked every hour)`,
       }
     }
-    const card = sea ? shipCardText((open.length ? open : g.jobs).map((x) => x.job), sea, { line: sea.sealine_name || g.jobs.find((x) => x.job.shipping_line)?.job.shipping_line || null, imo: g.imo || null, liveMap: open.length ? VESSELS_PAGE : null }) : null
+    const card = sea ? shipCardText((open.length ? open : g.jobs).map((x) => x.job), sea, { line: sea.sealine_name || g.jobs.find((x) => x.job.shipping_line)?.job.shipping_line || null, imo: g.imo || null }) : null
     return {
       card,
       ship: g.names.join(' / '), imo: g.imo || (g.mmsi ? 'not known (radio no. known, map works)' : 'not added yet (type it on the Vessels page)'),
@@ -305,10 +304,9 @@ function shipInfo(args, data, rows) {
       eta: etas.length ? day(etas[0]) : null,
       jobs: g.jobs.map((x) => `${x.job.job_no} · ${x.job.client || 'No client'}${x.j.phase === 'delivered' ? ' (finished)' : !x.cargo.onBoard ? ' (unloaded)' : ''}${x.job.eta ? `, ETA ${day(x.job.eta)}` : ''}`),
       last_heard,
-      live_map: open.length && (g.imo || g.mmsi) ? VESSELS_PAGE : null,
     }
   }).sort((a, b) => (/^at sea/.test(a.status) ? 0 : 1) - (/^at sea/.test(b.status) ? 0 : 1))
-  return { total: out.length, ships: out.slice(0, 20), vessels_page: VESSELS_PAGE }
+  return { total: out.length, ships: out.slice(0, 20) }
 }
 
 // Runs one tool call. person decides which jobs they may see.
@@ -539,7 +537,7 @@ Rules:
 - Reply in the question's language: an English question gets an English answer; Hindi or Hinglish only when the question itself is in Hindi/Hinglish. WhatsApp style: short, *bold* key facts, "• " bullets, no tables or headers, about 12 lines max unless a full list is asked.
 - free_days_left below 0 = detention running that many days. Never mention tools, JSON or AI.
 - Container tracking events (staff use these words): PORT IN (unloaded at the port), PORT OUT (left the port terminal, usually to a CFS), CFS IN / ICD IN (entered the CFS / ICD), CFS OUT / ICD OUT (left with cargo for the client; "CFS gate out" = CFS OUT), GATE IN / GATE OUT (a PORT gate, not a CFS), GATE CROSSED / TOLL PLAZA CROSSED (on the road), STATION CROSSED / LOADING (on rail), DPD (direct port delivery), DPE (export). Use place_type to say where it is (port, CFS, ICD, road, rail); never call an event or place by a name the data doesn't show. "Containers in port out" or "port out containers" = containers whose latest event is PORT OUT: use list_containers with last_event. Same for any other event name.
-- Which tool: one job / container / BE / BL / truck number → get_job. Jobs by ANY field, date range, count, "how many", "per client", averages → search_jobs (combine filters freely; use group_by for counts per group). A container's full journey → container_history. "What happened", updates, who did what, uploads → recent_activity. Containers by event, place or movement date → list_containers. A ship / vessel (where is it, its IMO, which jobs are on it, at sea or arrived, "ship of J-519", "which ships are at sea") → ship_info. "Ships at sea" / the ship list = ships still carrying our cargo; once our cargo is unloaded a ship is no longer tracked. Where a ship / a job's ship is, how far, its ETA: reply with ship_info's "card" EXACTLY as given (it is the fixed layout JDS wants; copy it character for character, add nothing before it and at most one short line after). Several ships: give each card, one after another. Without a card, use ship_info's tracking (exact coordinates, sea area, ETA, route, the time it was updated; it updates every hour): give the coordinates when asked. Only when there is no tracking, last_heard is a rough older position (say so). The Vessels page (live_map) shows them on a map. Never guess a position.
+- Which tool: one job / container / BE / BL / truck number → get_job. Jobs by ANY field, date range, count, "how many", "per client", averages → search_jobs (combine filters freely; use group_by for counts per group). A container's full journey → container_history. "What happened", updates, who did what, uploads → recent_activity. Containers by event, place or movement date → list_containers. A ship / vessel (where is it, its IMO, which jobs are on it, at sea or arrived, "ship of J-519", "which ships are at sea") → ship_info. "Ships at sea" / the ship list = ships still carrying our cargo; once our cargo is unloaded a ship is no longer tracked. Where a ship / a job's ship is, how far, its ETA: reply with ship_info's "card" EXACTLY as given (it is the fixed layout JDS wants; copy it character for character, add nothing before it and at most one short line after). Several ships: give each card, one after another. Without a card, use ship_info's tracking (exact coordinates, sea area, ETA, route, the time it was updated; it updates every hour): give the coordinates when asked. Only when there is no tracking, last_heard is a rough older position (say so). Never send a link to the portal or a map in WhatsApp. Never guess a position.
 - Use the date ranges above exactly as given (YYYY-MM-DD). "OOC granted / BE filed / arrived in a period" → search_jobs with ooc_/be_/arrived_ dates (the real dates); recent_activity only shows when staff recorded something in the portal.
 - The portal holds only one money figure: the CFS amount per job (record_payment). It does NOT hold: other payments, duty or invoice amounts, freight rates, bank details, phone numbers or emails of clients/CFS/transporters, or the contents of documents. If asked, say plainly the portal doesn't have that. Only for duty suggest ICEGATE / LiveImpex; for DO or line charges the shipping line. Never invent other places to look.
 - If a tool answers with not_found or zero jobs, say so plainly and suggest the closest thing you can check (e.g. a similar client name).

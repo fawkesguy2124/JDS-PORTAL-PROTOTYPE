@@ -211,7 +211,8 @@ function untilText(iso) {
   return ms >= 0 ? `in ${span}` : `${span} ago`
 }
 
-// jobs: [{ job_no, client }]; sea: the tracking row; extra: { line, imo, liveMap }
+// jobs: [{ job_no, client }]; sea: the tracking row; extra: { line, imo }
+// No portal link in WhatsApp (Jose, 25 Oct 2026)
 export function shipCardText(jobs, sea, extra = {}) {
   const who = jobs.map((j) => `*${j.job_no}* · ${String(j.client || 'No client').trim()}`).join('\n')
   const v = seaVoyage(sea)
@@ -237,7 +238,7 @@ export function shipCardText(jobs, sea, extra = {}) {
   }
   const via = (sea.route?.via || []).filter((x) => x.change).map((x) => port(x.name))
   lines.push(`🧭 *Route:* ${port(sea.pol) || '?'}${sea.pol_date && !notSailed ? ` (left ${portClock(sea.pol_date, false)})` : ''} → ${port(sea.pod) || '?'}${via.length ? ` · change ship at ${via.join(', ')}` : ''}`)
-  if (sea.fetched_at) lines.push('', `_Ship tracking, updated ${ist(sea.fetched_at)}${extra.liveMap ? ` · map: ${extra.liveMap}` : ''}_`)
+  if (sea.fetched_at) lines.push('', `_Ship tracking, updated ${ist(sea.fetched_at)}_`)
   return lines.join('\n')
 }
 
