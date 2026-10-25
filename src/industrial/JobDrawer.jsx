@@ -224,7 +224,7 @@ export default function JobDrawer({ jobId, initialTab = 'overview', onClose, onO
               <div className={`ix-next ${topAttention?.level === 'red' ? 'red' : ''}`}>
                 <Icon name={topAttention?.level === 'red' ? 'alert-triangle' : 'arrow-big-right-lines'} />
                 <div>
-                  <div className="t">{next?.nextText || 'Nothing left to do'}</div>
+                  <div className="t">{next?.nextText || (j.phase === 'delivered' ? 'Job finished: delivered' : 'Nothing left to do')}</div>
                   <div className="s">{topAttention ? topAttention.text : 'Nothing urgent on this job'}</div>
                 </div>
                 {action && <button type="button" className="ix-btn sm primary" onClick={action.run}>{action.label}</button>}

@@ -108,7 +108,7 @@ export default function JobsPage({ profile, onOpenJob, onCreateJob, selectedId }
             <tbody>
               {list.map(({ job, j }) => {
                 const lvl = worst(j)
-                const next = j.attention[0]?.text || j.steps.find((s) => s.current)?.nextText || '—'
+                const next = j.phase === 'delivered' ? 'Job finished' : j.attention[0]?.text || j.steps.find((s) => s.current)?.nextText || '—'
                 return (
                   <tr key={job.id} className={selectedId === job.id ? 'sel' : ''} onClick={() => onOpenJob(job.id)}>
                     <td><span style={{ display: 'inline-flex', gap: 8, alignItems: 'center' }}><span className={`ix-dot ${lvl}`} title={lvl === 'none' ? '' : 'Needs attention'} /><b className="mono">{job.job_no}</b></span><div className="ix-sub-m" title={job.client || ''}>{job.client || 'No client'}</div></td>

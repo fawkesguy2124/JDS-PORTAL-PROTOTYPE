@@ -325,6 +325,9 @@ export function journeyFor(job, data) {
       sub: truck ? (trucks.length > 1 ? `${trucks.length} trucks` : truck) : (mode === 'rail' ? (railMoving ? 'On its way by rail' : 'Going by rail') : oocDone ? 'Not arranged yet' : null) },
     { id: 'delivered', label: 'Delivered', done: delivered, when: !isDelivered(job) && c.finishedOn ? dayLabel(c.finishedOn) : null, sub: !isDelivered(job) && c.allDelivered ? (deliveryBy(job) === 'client' ? 'Collected by client' : 'Empty container back') : null },
   ]
+  // delivered = the whole job is over: every step counts as done, nothing is "next"
+  // (Jose, 25 Oct 2026: old delivered jobs with no BE saved said "Next: file the BE")
+  if (delivered) for (const s of steps) { if (!s.done) { s.done = true; s.sub = null } }
   markCurrent(steps)
   const moveStep = steps.find((s) => s.id === 'truck')
   if (moveStep?.current) moveStep.nextText = mode === 'rail' ? 'Next: send the container by rail' : mode === 'truck' ? 'Next: assign a truck' : 'Next: arrange truck or rail'
@@ -375,7 +378,8 @@ export function journeyFor(job, data) {
     steps, phase, attention,
     oocDate, oocDone, beFiled, truck, trucks, readyForTruck, onwardMode: mode,
     arrivedAt: ata || c.portIn || null,
-    freeDaysLeft: c.minFree,
+    // a finished job has no free days to count down (Jose, 25 Oct 2026)
+    freeDaysLeft: delivered ? null : c.minFree,
     containers: c,
     truckLocation: seen[0] ? { ...seen[0].location, truck: seen[0].no } : null,
     truckPapers: trucks[0]?.papers || null,
