@@ -179,7 +179,7 @@ function noTables(text: string) {
   let head: string[] | null = null
   for (const line of text.split('\n')) {
     if (!/^\s*\|.*\|\s*$/.test(line)) { head = null; out.push(line); continue }
-    if (/^\s*\|?\s*:?-{2,}/.test(line.replace(/\|    if (/^s*|?s*:?-{2,}/.test(line)) continue // the |---|---| line
+    if (/^\s*\|?\s*:?-{2,}/.test(line)) continue // the |---|---| line
     const c = cells(line)
     if (!head) { head = c; continue } // header row: dropped, the values speak for themselves
     out.push(`• ${c.filter(Boolean).join(' · ')}`)
