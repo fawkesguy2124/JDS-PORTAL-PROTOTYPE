@@ -3,18 +3,34 @@ import { loadJourneyData, journeyFor } from '../../services/journey'
 import JourneyStrip from '../../components/journey/JourneyStrip'
 import UlipCheck from '../../components/ulip/UlipCheck'
 import { LOOKUP_CATEGORIES } from '../../components/ulip/ulipChecks'
+import { useJourney } from '../../industrial/JourneyContext'
 import { detectNumberType, jobMatches, jobExactlyMatches, cleanNumber } from './search.helpers'
 
 const card = { background: '#fff', border: '1.5px solid #e2e6ed', borderRadius: '14px', padding: '14px', marginBottom: '12px' }
 
+// a number typed in Ctrl K → "Look up on ULIP"
+function takeLookup() {
+  try { const q = sessionStorage.getItem('ix_lookup') || ''; sessionStorage.removeItem('ix_lookup'); return q } catch { return '' }
+}
+
 export default function SearchPage({ onOpenJob }) {
-  const [data, setData] = useState(null)
+  const shared = useJourney()?.data // the admin screens already have every job loaded
+  const [own, setData] = useState(null)
+  const data = shared || own
   const [loadError, setLoadError] = useState('')
-  const [text, setText] = useState('')
-  const [searched, setSearched] = useState('')
+  const [first] = useState(takeLookup)
+  const [text, setText] = useState(first)
+  const [searched, setSearched] = useState(first)
   const [showAll, setShowAll] = useState(false)
 
   useEffect(() => {
+    const on = (e) => { takeLookup(); setText(e.detail); setSearched(e.detail); setShowAll(false) }
+    window.addEventListener('ix-lookup', on)
+    return () => window.removeEventListener('ix-lookup', on)
+  }, [])
+
+  useEffect(() => {
+    if (shared) return undefined
     let cancelled = false
     async function load() {
       try {
@@ -26,7 +42,7 @@ export default function SearchPage({ onOpenJob }) {
     }
     load()
     return () => { cancelled = true }
-  }, [])
+  }, [shared])
 
   const go = (e) => {
     e?.preventDefault()

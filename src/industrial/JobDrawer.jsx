@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../supabase'
-import { getStageName, parseContainerNos, getContainerSize } from '../utils/jobHelpers'
+import { parseContainerNos, getContainerSize } from '../utils/jobHelpers'
 import { portLabel } from '../utils/ports'
 import { useJourney } from './JourneyContext'
-import { containerFinishedOn, deliveryBy, effectiveStage } from '../services/journey'
+import { containerFinishedOn, deliveryBy } from '../services/journey'
 import { Chip, FreeDays, Icon, PhaseChip, fmtDate, initials, jobOwnerName, timeAgo } from './ui'
 import { vesselOf, shipIdOf } from './ShipMap'
 import { isLineNotShip } from '../../supabase/functions/_shared/portal/shippingLines.js'
@@ -199,7 +199,8 @@ export default function JobDrawer({ jobId, initialTab = 'overview', onClose, onO
           <div style={{ color: 'var(--text-2)', marginTop: 2 }}>{job.client || '—'} · {job.mode || '—'} · {isExport ? 'Export' : 'Import'}</div>
           <div className="ix-facts">
             <div className="ix-fact"><div className="k">ETA</div><div className="v" title={!job.eta && data?.seaByJob?.[job.id]?.pod_date ? 'From ship tracking' : undefined}>{job.eta || !data?.seaByJob?.[job.id]?.pod_date ? fmtDate(job.eta) : portTime(data.seaByJob[job.id].pod_date, false)}</div></div>
-            <div className="ix-fact"><div className="k">Stage</div><div className="v" title={getStageName(effectiveStage(job, j))}>{getStageName(effectiveStage(job, j))}</div></div>
+            {/* the stage is already in the chip and the step bar (Jose, 25 Oct 2026: no repeats) */}
+            <div className="ix-fact"><div className="k">{isExport ? 'SB no' : 'BE no'}</div><div className="v mono">{(isExport ? job.ulip_refs?.sb_no : job.be_no) || '—'}</div></div>
             <div className="ix-fact"><div className="k">Free days</div><div className="v"><FreeDays value={j.freeDaysLeft} /></div></div>
             <div className="ix-fact"><div className="k">Owner</div><div className="v">{ownerName || '—'}</div></div>
           </div>

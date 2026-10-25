@@ -1,31 +1,36 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { supabase } from '../supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { getStageName, isEtaThisWeek } from '../utils/jobHelpers'
-import ControlTowerSection from '../components/ControlTower'
-import JobDetailView from '../components/JobDetailView'
-import DocumentsSection from '../components/DocumentsSection'
-import ContainerTrackingSection from '../components/ContainerTrackingSection'
-import PaymentsSection from '../components/PaymentsSection'
-import ComplianceSection from '../components/ComplianceSection'
-import SearchPage from './v2/SearchPage'
-import ClientsPage from './v2/ClientsPage'
-import DetentionPage from './v2/DetentionPage'
-import BotPreviewPage from './v2/BotPreviewPage'
-import CreateJob from './CreateJob'
+import lazyPage from '../utils/lazyPage'
 import '../industrial/industrial.css'
 import { JourneyProvider, useJourney } from '../industrial/JourneyContext'
 import { rememberJob } from '../industrial/recentJobs'
 import Shell from '../industrial/Shell'
 import JobDrawer from '../industrial/JobDrawer'
+import { Skeleton } from '../industrial/ui'
 import IxTodayPage from '../industrial/pages/TodayPage'
 import IxJobsPage from '../industrial/pages/JobsPage'
 import IxBoardPage from '../industrial/pages/BoardPage'
 import IxCustomsPage from '../industrial/pages/CustomsPage'
-import IxTrucksPage from '../industrial/pages/TrucksPage'
-import IxVesselsPage from '../industrial/pages/VesselsPage'
 import { forceRefreshAllContainers } from '../services/tracking/ldbProvider'
+
+// Opened less often (or heavy, like the maps): loaded the first time they are opened
+const IxTrucksPage = lazyPage(() => import('../industrial/pages/TrucksPage'))
+const IxVesselsPage = lazyPage(() => import('../industrial/pages/VesselsPage'))
+const IxHealthPage = lazyPage(() => import('../industrial/pages/HealthPage'))
+const ControlTowerSection = lazyPage(() => import('../components/ControlTower'))
+const JobDetailView = lazyPage(() => import('../components/JobDetailView'))
+const DocumentsSection = lazyPage(() => import('../components/DocumentsSection'))
+const ContainerTrackingSection = lazyPage(() => import('../components/ContainerTrackingSection'))
+const PaymentsSection = lazyPage(() => import('../components/PaymentsSection'))
+const ComplianceSection = lazyPage(() => import('../components/ComplianceSection'))
+const SearchPage = lazyPage(() => import('./v2/SearchPage'))
+const ClientsPage = lazyPage(() => import('./v2/ClientsPage'))
+const DetentionPage = lazyPage(() => import('./v2/DetentionPage'))
+const BotPreviewPage = lazyPage(() => import('./v2/BotPreviewPage'))
+const CreateJob = lazyPage(() => import('./CreateJob'))
 
 const NAV_SECTIONS = [
   { label: 'TODAY', items: [{ id: 'today', label: 'Today', icon: 'home' }] },
@@ -43,11 +48,13 @@ const NAV_SECTIONS = [
     { id: 'detention', label: 'Detention', icon: 'clock-exclamation', alert: true },
   ] },
   { label: 'TOOLS', items: [
-    { id: 'search', label: 'Search anything', icon: 'search' },
+    // reached from Ctrl K → "Look up on ULIP" (Jose, 25 Oct 2026: one search box, not two)
+    { id: 'search', label: 'ULIP lookup', icon: 'search', hidden: true },
     { id: 'clients', label: 'Clients', icon: 'users' },
     { id: 'overview', label: 'Team & stages', icon: 'chart-bar' },
     { id: 'compliance', label: 'BIS & Licences', icon: 'certificate' },
     { id: 'bot', label: 'WhatsApp bot', icon: 'brand-whatsapp' },
+    { id: 'health', label: 'System health', icon: 'heart-rate-monitor' },
   ] },
 ]
 
@@ -737,6 +744,7 @@ function AdminDashboardInner() {
         if (action.hash) setTimeout(() => { window.location.hash = action.hash }, 100)
       }}
     >
+      <Suspense fallback={<div className="ix-page"><div className="ix-card"><Skeleton rows={6} /></div></div>}>
       {fullJob && legacy(
         <>
           <JobDetailView
@@ -789,6 +797,7 @@ function AdminDashboardInner() {
       {activeNav === 'payments' && legacyPage('Payments', 'Payments waiting for approval', <PaymentsSection jobs={jobs} profiles={profiles} showToast={showToast} getStageName={getStageName} />)}
       {activeNav === 'compliance' && legacyPage('BIS & Licences', 'Certificates and licences, with their expiry dates', <ComplianceSection showToast={showToast} />)}
       {activeNav === 'bot' && legacy(<BotPreviewPage {...pageProps} />)}
+      {activeNav === 'health' && <IxHealthPage />}
 
       {!NAV_ITEMS.some(n => n.id === activeNav) && (
         <div className="ix-page"><div className="ix-card ix-empty">This page does not exist. Pick one from the menu.</div></div>
@@ -826,6 +835,7 @@ function AdminDashboardInner() {
           </div>
         </div>
       )}
+      </Suspense>
     </Shell>
   )
 }

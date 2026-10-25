@@ -31,7 +31,7 @@ async function readAll(build) {
 // error is a plain message (or null); pages must show it instead of "all clear".
 export async function loadJourneyData() {
   const since = new Date(Date.now() - 180 * DAY).toISOString()
-  const [jobsRes, csRes, resultsRes, ctRes] = await Promise.all([
+  const [jobsRes, csRes, resultsRes, ctRes, ships, sea] = await Promise.all([
     readAll(() => supabase.from('jobs').select('*').order('job_no', { ascending: false })),
     readAll(() => supabase.from('customs_status').select('*').order('job_id')),
     readAll(() => supabase.from('ulip_results')
@@ -42,6 +42,10 @@ export async function loadJourneyData() {
     readAll(() => supabase.from('container_tracking')
       .select('container_no, job_id, job_no, status, status_text, current_location, free_days, port_in, port_out, cfs_gate_in, milestones, last_refreshed_at, vessel, shipping_line_ldb, eta')
       .order('container_no')),
+    // ship numbers found by the vessel-track finder (by ship name); optional
+    supabase.from('vessel_positions').select('name, mmsi, imo, candidates, seen_at, destination, lat, lon'),
+    // ETA, ship and position from Safecube (sea-track function); optional
+    supabase.from('sea_tracking').select('*'),
   ])
   const firstError = [jobsRes, csRes, resultsRes, ctRes].find((r) => r.error)?.error
   if (firstError) console.warn('[journey] load problem:', firstError.message)
@@ -50,11 +54,7 @@ export async function loadJourneyData() {
     { jobs: jobsRes.data, customs: csRes.data, results: resultsRes.data, containers: ctRes.data },
     firstError ? (firstError.message || 'Could not load the latest data') : null,
   )
-  // ship numbers found by the vessel-track finder (by ship name); optional
-  const ships = await supabase.from('vessel_positions').select('name, mmsi, imo, candidates, seen_at, destination, lat, lon')
   built.shipIds = Object.fromEntries((ships.data || []).map((r) => [r.name, r]))
-  // ETA, ship and position from Safecube (sea-track function); optional
-  const sea = await supabase.from('sea_tracking').select('*')
   built.seaByJob = Object.fromEntries((sea.data || []).map((r) => [r.job_id, r]))
   return built
 }

@@ -22,13 +22,13 @@ export default function Shell({ sections, active, counts = {}, onGo, onOpenJob, 
   }, [])
   const toggle = (setter, key) => setter((v) => { try { localStorage.setItem(key, v ? '0' : '1') } catch { /* private mode */ } return !v })
 
-  const pages = sections.flatMap((s) => s.items)
+  const pages = sections.flatMap((s) => s.items).filter((it) => !it.hidden)
   const go = (id) => { setMnav(false); onGo(id) }
   const navList = (
     sections.map((s) => (
       <div key={s.label}>
         <div className="ix-nav-label">{s.label}</div>
-        {s.items.map((it) => {
+        {s.items.filter((it) => !it.hidden).map((it) => {
           const n = counts[it.id]
           return (
             <button key={it.id} type="button" className={`ix-nav-item ${active === it.id ? 'active' : ''}`} onClick={() => go(it.id)} title={it.label}>
@@ -94,7 +94,12 @@ export default function Shell({ sections, active, counts = {}, onGo, onOpenJob, 
         </>
       )}
 
-      <CommandPalette open={palette} onClose={() => setPalette(false)} pages={pages} onGo={go} onOpenJob={onOpenJob} />
+      <CommandPalette open={palette} onClose={() => setPalette(false)} pages={pages} onGo={go} onOpenJob={onOpenJob}
+        onLookup={sections.some((s) => s.items.some((it) => it.id === 'search')) ? (q) => {
+          try { sessionStorage.setItem('ix_lookup', q) } catch { /* private mode: the page opens empty */ }
+          go('search')
+          window.dispatchEvent(new CustomEvent('ix-lookup', { detail: q })) // page already open
+        } : null} />
     </div>
   )
 }

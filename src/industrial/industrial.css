@@ -97,7 +97,7 @@
 .ix-chip.blue { background: var(--blue-bg); color: var(--blue); border-color: var(--blue-line) }
 .ix-chip.grey { background: var(--grey-bg); color: var(--text-2); border-color: var(--line) }
 .ix-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex-shrink: 0 }
-.ix-dot.red { background: var(--red) } .ix-dot.amber { background: #d97706 } .ix-dot.info, .ix-dot.blue { background: var(--blue) } .ix-dot.none { background: transparent }
+.ix-dot.red { background: var(--red) } .ix-dot.green { background: var(--green) } .ix-dot.amber { background: #d97706 } .ix-dot.info, .ix-dot.blue { background: var(--blue) } .ix-dot.none { background: transparent }
 .ix-fd { font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap }
 .ix-fd.red { color: var(--red) } .ix-fd.amber { color: var(--amber) } .ix-fd.green { color: var(--green) } .ix-fd.grey { color: var(--muted); font-weight: 500 }
 .ix-owner { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap }
@@ -514,3 +514,26 @@
 .ix-bestage .st.on.green { background: #e7f6ec; border-color: #b7e2c4; color: #15803d }
 .ix-bestage .st.on { box-shadow: 0 0 0 2px rgba(26,79,160,.08) }
 .ix-bestage.compact { border: 0; padding: 0; margin: 6px 0 0; background: none }
+
+/* System health page */
+.ix-health-banner { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-radius: 12px; margin-bottom: 16px; font-size: 14px; border: 1px solid }
+.ix-health-banner i { font-size: 20px }
+.ix-health-banner.green { background: var(--green-bg); color: var(--green); border-color: var(--green-line) }
+.ix-health-banner.amber { background: var(--amber-bg); color: var(--amber); border-color: var(--amber-line) }
+.ix-health-banner.red { background: var(--red-bg); color: var(--red); border-color: var(--red-line) }
+.ix-health-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px }
+.ix-health { padding: 14px 16px; border-top-width: 3px }
+.ix-health.green { border-top-color: var(--green) } .ix-health.amber { border-top-color: #d97706 } .ix-health.red { border-top-color: var(--red) }
+.ix-health .top { display: flex; align-items: center; gap: 8px; font-size: 14px }
+.ix-health .top .ix-chip { margin-left: auto }
+.ix-health .ico { width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; background: var(--navy-50); color: var(--navy); font-size: 16px }
+.ix-health .status { margin: 10px 0 8px; font-size: 15px; font-weight: 600 }
+.ix-health .facts > div { display: flex; justify-content: space-between; gap: 10px; font-size: 12px; padding: 4px 0; border-top: 1px dashed var(--line) }
+.ix-health .facts span { color: var(--muted) }
+.ix-health .facts b { font-weight: 600; text-align: right }
+.ix-table-plain tbody tr { cursor: default }
+.ix-health-page .ix-grid-2 > * { min-width: 0 }
+.ix-table-plain .muted { color: var(--muted); font-size: 12px }
+.ix-table-plain td.ix-ellipsis { max-width: 260px; overflow: hidden; text-overflow: ellipsis }
+@media (max-width: 1180px) { .ix-health-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) } }
+@media (max-width: 640px) { .ix-health-grid { grid-template-columns: 1fr } }

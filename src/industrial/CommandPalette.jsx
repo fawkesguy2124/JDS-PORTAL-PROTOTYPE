@@ -11,7 +11,7 @@ export default function CommandPalette({ open, ...rest }) {
   return open ? <Palette {...rest} /> : null
 }
 
-function Palette({ onClose, pages, onGo, onOpenJob }) {
+function Palette({ onClose, pages, onGo, onOpenJob, onLookup }) {
   const { rows } = useJourney() || { rows: [] }
   const [q, setQ] = useState('')
   const [hl, setHl] = useState(0)
@@ -39,12 +39,15 @@ function Palette({ onClose, pages, onGo, onOpenJob }) {
       return { type: 'job', id: job.id, job, j, hit }
     })
     const pg = pages.filter((p) => !needle || p.label.toLowerCase().replace(/\s+/g, '').includes(needle)).slice(0, 5).map((p) => ({ type: 'page', ...p }))
-    return [...jobs, ...pg]
-  }, [q, rows, pages])
+    // a number that is not one of ours: check it with the government systems
+    const look = onLookup && needle.length >= 5 && /\d/.test(needle) ? [{ type: 'lookup', id: '__lookup', q: q.trim() }] : []
+    return [...jobs, ...look, ...pg]
+  }, [q, rows, pages, onLookup])
 
   const pick = (it) => {
     onClose()
     if (it.type === 'job') onOpenJob(it.id)
+    else if (it.type === 'lookup') onLookup(it.q)
     else onGo(it.id)
   }
   const onKey = (e) => {
@@ -71,6 +74,14 @@ function Palette({ onClose, pages, onGo, onOpenJob }) {
                 <Icon name="package" /><b className="mono">{it.job.job_no}</b>
                 <span className="c">{it.job.client}</span>
                 <span className="k">{it.hit ? `${it.hit[0]} ${it.hit[1]}` : c.label}</span>
+              </div>
+            )
+          })}
+          {items.filter((i) => i.type === 'lookup').map((it) => {
+            const idx = items.indexOf(it)
+            return (
+              <div key={it.id} className={`ix-pal-item ${idx === hl ? 'hl' : ''}`} onMouseEnter={() => setHl(idx)} onClick={() => pick(it)}>
+                <Icon name="world-search" />Look up <b className="mono">{it.q}</b> on ULIP<span className="k">BE, container, truck…</span>
               </div>
             )
           })}
