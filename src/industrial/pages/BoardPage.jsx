@@ -83,7 +83,7 @@ export default function BoardPage({ onOpenJob }) {
   )
 
   return (
-    <div className="ix-page">
+    <div className="ix-page ix-page-wide">
       <div className="ix-page-head">
         <div>
           <h1>Shipment board</h1>

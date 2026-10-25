@@ -61,6 +61,8 @@
 
 .ix-main { overflow: auto; position: relative }
 .ix-page { padding: 20px 24px 40px; max-width: 1500px }
+/* the shipment board uses the whole screen width (Jose, 25 Oct 2026) */
+.ix-page.ix-page-wide { max-width: none }
 .ix-legacy { padding: 16px 24px 40px }
 .ix-page-head { display: flex; align-items: flex-end; gap: 12px; margin-bottom: 16px; flex-wrap: wrap }
 .ix-page-head h1 { font-size: 20px; font-weight: 700; margin: 0 }
@@ -219,8 +221,8 @@
 .ix-bcard { min-width: 0 }
 .ix-bcard .nx { overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
 .ix-col-h { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
-.ix-col { background: #eef1f6; border-radius: 12px; padding: 10px; display: flex; flex-direction: column; gap: 8px; min-height: 300px; max-height: calc(100vh - 190px); overflow-y: auto }
-.ix-col-h { display: flex; align-items: center; gap: 6px; font-weight: 700; font-size: 13px; padding: 2px 4px 6px; position: sticky; top: -10px; background: #eef1f6; z-index: 1 }
+.ix-col { background: #eef1f6; border-radius: 12px; padding: 0 10px 10px; display: flex; flex-direction: column; gap: 8px; min-height: 300px; max-height: calc(100vh - 190px); overflow-y: auto }
+.ix-col-h { display: flex; align-items: center; gap: 6px; font-weight: 700; font-size: 13px; padding: 12px 4px 8px; position: sticky; top: 0; background: #eef1f6; z-index: 2; flex-shrink: 0 }
 .ix-col-h .n { margin-left: auto; font-size: 11px; background: #fff; border-radius: 10px; padding: 1px 8px; color: var(--text-2) }
 .ix-bcard { background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; cursor: pointer; flex-shrink: 0; text-align: left; width: 100% }
 .ix-bcard:hover { border-color: var(--line-2); box-shadow: 0 2px 8px rgba(26, 34, 51, .06) }
