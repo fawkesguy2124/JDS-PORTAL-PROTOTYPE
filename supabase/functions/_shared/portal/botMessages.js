@@ -10,7 +10,7 @@
 //    person has written to the bot in the last 24 hours.
 //  - Replies to a person's question are normal messages (no template).
 import { journeyFor, isDelivered, isExportJob, parseContainerNos, containerFinishedOn } from './journeyCore.js'
-import { vesselsOf, cargoOnShip, jobImo, igmSiblings } from './ships.js'
+import { vesselsOf, cargoOnShip, jobImo, igmSiblings, shipLineText } from './ships.js'
 
 const DAY = 24 * 60 * 60 * 1000
 const TZ = 'Asia/Kolkata'
@@ -308,6 +308,9 @@ function jobCard(job, data) {
   const next = j.steps.find((s) => s.current)
   lines.push(j.steps.map((s) => `${s.done ? '✅' : s.current ? '▶️' : '▫️'} ${s.label}${s.when ? ` ${s.when}` : ''}${s.sub && !s.done ? ` (${s.sub})` : s.sub && s.id !== 'arrival' ? ` · ${s.sub}` : ''}`).join('\n'))
   if (next?.nextText) lines.push(`*${next.nextText}*`)
+  // the ship, from ship tracking (Jose, 25 Oct 2026)
+  const shipLine = shipLineText(data.seaByJob?.[job.id])
+  if (shipLine) lines.push(shipLine)
   const nos = parseContainerNos(job.containers)
   if (nos.length) {
     const rows = nos.slice(0, 10).map((no) => {

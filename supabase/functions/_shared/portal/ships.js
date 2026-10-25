@@ -180,3 +180,91 @@ export function cargoOnShip(job, name, data, j) {
 }
 const ADVANCE_BE_DAYS = 10
 const STALE_SHIP_DAYS = 21
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The ship card for WhatsApp (Jose, 25 Oct 2026: "where is the ship" must come back
+// in one clear layout JDS reads in seconds: job + client, where it is, how far from
+// the port, ETA with a countdown, the route). Built by code, never by the AI.
+// ─────────────────────────────────────────────────────────────────────────────
+const R_KM = 6371
+const KMH = 30 // a container ship's normal speed, about 16 knots
+const rad = (d) => (d * Math.PI) / 180
+function km(a, b) {
+  const h = Math.sin(rad(b[0] - a[0]) / 2) ** 2 + Math.cos(rad(a[0])) * Math.cos(rad(b[0])) * Math.sin(rad(b[1] - a[1]) / 2) ** 2
+  return 2 * R_KM * Math.asin(Math.min(1, Math.sqrt(h)))
+}
+// How far the ship still has to sail along its route, and how much is done
+export function seaVoyage(sea) {
+  if (!sea || typeof sea.lat !== 'number') return null
+  const line = []
+  for (const seg of sea.route?.segments || []) for (const [la, lo] of seg) {
+    const prev = line[line.length - 1]
+    let x = lo
+    if (prev) { while (x - prev[1] > 180) x -= 360; while (prev[1] - x > 180) x += 360 }
+    line.push([la, x])
+  }
+  let p = [sea.lat, sea.lng]
+  if (line.length < 2) return sea.route?.pod ? { kmLeft: Math.round(km(p, sea.route.pod)), pct: null } : null
+  let k = 0, best = Infinity
+  line.forEach((q, i) => { const d = (q[0] - p[0]) ** 2 + ((q[1] - p[1]) * Math.cos(rad(p[0]))) ** 2; if (d < best) { best = d; k = i } })
+  while (p[1] - line[k][1] > 180) p = [p[0], p[1] - 360]
+  while (line[k][1] - p[1] > 180) p = [p[0], p[1] + 360]
+  let next = k
+  if (k > 0 && k < line.length - 1) next = km(line[k - 1], line[k + 1]) > km(line[k - 1], p) ? k + 1 : k
+  const len = (pts) => pts.slice(1).reduce((t, q, i) => t + km(pts[i], q), 0)
+  const done = len([...line.slice(0, next), p]), left = len([p, ...line.slice(next)])
+  return { kmLeft: Math.round(left), pct: done + left > 0 ? Math.round((done / (done + left)) * 100) : null }
+}
+
+const port = (p) => (p ? String(p).replace(/^Jawaharlal Nehru(, IN)?/i, 'Nhava Sheva') : p)
+// the line's dates are the port's own clock (written as if UTC)
+const portClock = (iso, time = true) => (iso ? new Date(iso).toLocaleString('en-IN', { day: 'numeric', month: 'short', ...(time ? { hour: 'numeric', minute: '2-digit' } : {}), timeZone: 'UTC' }) : null)
+const ist = (iso) => new Date(iso).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Kolkata' })
+// "in about 5 h" / "in 4 days" / "2 h ago" for an Indian port's local time
+function untilText(iso) {
+  const ms = new Date(iso).getTime() - 5.5 * 3600e3 - Date.now()
+  const h = Math.abs(ms) / 3600e3
+  const span = h < 1 ? 'under an hour' : h < 36 ? `about ${Math.round(h)} h` : `${Math.round(h / 24)} days`
+  return ms >= 0 ? `in ${span}` : `${span} ago`
+}
+
+// jobs: [{ job_no, client }]; sea: the tracking row; extra: { line, imo, liveMap }
+export function shipCardText(jobs, sea, extra = {}) {
+  const who = jobs.map((j) => `*${j.job_no}* · ${String(j.client || 'No client').trim()}`).join('\n')
+  const v = seaVoyage(sea)
+  const notSailed = sea.status === 'PLANNED' || (sea.pol_date && new Date(sea.pol_date) > Date.now() && !sea.pod_actual)
+  const lines = [`🚢 ${who}`, `Ship: *${sea.vessel_name || 'name not given'}*${extra.line ? ` (${extra.line})` : ''}${extra.imo ? ` · IMO ${extra.imo}` : ''}`, '']
+  if (sea.pod_actual) {
+    lines.push(`⚓ *Arrived at ${port(sea.pod)}* · ${portClock(sea.pod_date)}`)
+  } else if (notSailed) {
+    lines.push(`⏳ *Not sailed yet* · waiting at ${port(sea.last_event?.where || sea.pol)}`)
+    if (sea.pol_date) lines.push(`🗓 Sails: ${portClock(sea.pol_date, false)}`)
+  } else {
+    const where = typeof sea.lat === 'number' ? `${seaArea(sea.lat, sea.lng)}` : 'position not given'
+    lines.push(`📍 *Now:* ${where}`)
+    if (typeof sea.lat === 'number') lines.push(`      ${Math.abs(sea.lat).toFixed(4)}° ${sea.lat >= 0 ? 'N' : 'S'}, ${Math.abs(sea.lng).toFixed(4)}° ${sea.lng >= 0 ? 'E' : 'W'}${sea.position_at ? ` · as of ${ist(sea.position_at)}` : ''}`)
+    if (v?.kmLeft != null) lines.push(`📏 *Distance to ${port(sea.pod) || 'port'}:* about ${v.kmLeft.toLocaleString('en-IN')} km${v.pct != null ? ` (${v.pct}% of the way done)` : ''}`)
+  }
+  if (!sea.pod_actual && sea.pod_date) lines.push(`🏁 *ETA ${port(sea.pod) || 'port'}:* ${portClock(sea.pod_date)} (${untilText(sea.pod_date)})`)
+  // the line's ETA can't be met at a normal speed (J-644, 25 Oct 2026: ETA in 5 h with
+  // 968 km to go): say when it would really get there at ~16 knots (30 km/h)
+  const real = !sea.pod_actual && !notSailed && v?.kmLeft != null ? Date.now() + (v.kmLeft / KMH) * 3600e3 : null
+  if (real && sea.pod_date && real - (new Date(sea.pod_date).getTime() - 5.5 * 3600e3) > 6 * 3600e3) {
+    lines.push(`⚠️ At normal speed it reaches about *${ist(new Date(real).toISOString())}*, later than the line's ETA.`)
+  }
+  const via = (sea.route?.via || []).filter((x) => x.change).map((x) => port(x.name))
+  lines.push(`🧭 *Route:* ${port(sea.pol) || '?'}${sea.pol_date && !notSailed ? ` (left ${portClock(sea.pol_date, false)})` : ''} → ${port(sea.pod) || '?'}${via.length ? ` · change ship at ${via.join(', ')}` : ''}`)
+  if (sea.fetched_at) lines.push('', `_Ship tracking, updated ${ist(sea.fetched_at)}${extra.liveMap ? ` · map: ${extra.liveMap}` : ''}_`)
+  return lines.join('\n')
+}
+
+// one short line for the job reply: "🚢 At sea · ETA 25 Oct, 6:30 pm · ~1,018 km to Nhava Sheva"
+export function shipLineText(sea) {
+  if (!sea || sea.error) return null
+  const v = seaVoyage(sea)
+  if (sea.pod_actual) return `🚢 ${sea.vessel_name || 'Ship'} arrived at ${port(sea.pod)} · ${portClock(sea.pod_date)}`
+  const notSailed = sea.status === 'PLANNED' || (sea.pol_date && new Date(sea.pol_date) > Date.now())
+  if (notSailed) return `🚢 ${sea.vessel_name || 'Ship'}: not sailed yet${sea.pol ? ` (at ${port(sea.pol)})` : ''}${sea.pod_date ? ` · ETA ${portClock(sea.pod_date)}` : ''}`
+  const late = v?.kmLeft != null && sea.pod_date && Date.now() + (v.kmLeft / KMH) * 3600e3 - (new Date(sea.pod_date).getTime() - 5.5 * 3600e3) > 6 * 3600e3
+  return `🚢 ${sea.vessel_name || 'Ship'} at sea · ${typeof sea.lat === 'number' ? seaArea(sea.lat, sea.lng) : 'position not given'}${v?.kmLeft != null ? ` · ~${v.kmLeft.toLocaleString('en-IN')} km to ${port(sea.pod) || 'port'}` : ''}${sea.pod_date ? ` · ETA ${portClock(sea.pod_date)}${late ? ' (looks too early for the distance)' : ''}` : ''}`
+}

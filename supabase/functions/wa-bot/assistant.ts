@@ -167,6 +167,9 @@ export async function askAssistant(question: string, history: Turn[], data: unkn
 function finishReply(text: string | null, ctx: Ctx, question: string, history: Turn[], data: any, person: Person): string | null {
   const say = ctx.say || []
   if (say.length && !ctx.readTools) return say.join('\n\n')
+  // "where is the ship": the ship card goes out exactly as built, never re-worded
+  // (Jose, 25 Oct 2026: one clear layout JDS reads in seconds)
+  if (ctx.cards?.length && /\b(where|position|located|location|how far|distance|eta|arriv\w*|reach\w*|ship|vessel|coordinates?)\b/i.test(question)) return [...say, ...ctx.cards].join('\n\n')
   const checked = text ? factCheck(noTables(text), ctx, question, history, data, person) : null
   return [...say, checked].filter(Boolean).join('\n\n') || null
 }
@@ -227,7 +230,7 @@ export const needsData = (q: string) => {
 }
 // say: the bot's own fixed sentences for what an action did (never the AI's wording);
 // facts: every tool answer, for checking the reply before it goes out
-type Ctx = { used: string[]; proposal: Pending | null; checkCustoms?: (job: string) => Promise<unknown>; server?: ServerTools; change?: ChangeContext; done?: Map<string, unknown>; say?: string[]; facts?: string[]; readTools?: boolean }
+type Ctx = { used: string[]; proposal: Pending | null; checkCustoms?: (job: string) => Promise<unknown>; server?: ServerTools; change?: ChangeContext; done?: Map<string, unknown>; say?: string[]; facts?: string[]; readTools?: boolean; cards?: string[] }
 // the last reply came from a change request (it may have asked for a missing detail)
 // (not after the bot already asked YES/NO: then the next message is a new question)
 const afterChangeTry = (history: Turn[]) => {
@@ -250,6 +253,8 @@ function systemText(person: Person, data: unknown, ctx: Ctx) {
 async function useTool(ctx: Ctx, name: string, args: any, data: any, person: Person): Promise<unknown> {
   const r = await runOneTool(ctx, name, args, data, person)
   try { (ctx.facts ||= []).push(JSON.stringify(r)) } catch { /* not text */ }
+  // ship cards (fixed layout) kept to send as they are
+  if (name === 'ship_info') for (const x of ((r as any)?.ships || [])) if (x?.card && !(ctx.cards ||= []).includes(x.card)) ctx.cards.push(x.card)
   return r
 }
 async function runOneTool(ctx: Ctx, name: string, args: any, data: any, person: Person): Promise<unknown> {
