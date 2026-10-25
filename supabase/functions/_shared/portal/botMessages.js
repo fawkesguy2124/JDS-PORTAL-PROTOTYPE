@@ -219,6 +219,18 @@ export function instantAlerts(data, events = [], now = new Date()) {
       add('ship_arrived', `ship_arrived:${job?.id}`, job,
         `⚓ Ship arrived at ${meta.port || 'the port'}${ev.note ? ` (${String(ev.note).replace(/^Arrived /, '')})` : ''}. BE ${job?.be_no ? 'filed ✅' : 'not filed ❌'}.`)
     }
+    // the automatic checks (Jose, 25 Oct 2026): a truck not moving, a truck's papers
+    if (ev.action === 'truck_stuck' || ev.action === 'truck_papers') {
+      const job = byId[ev.job_id] || byId[meta.job_id] || byNo[ev.job_no]
+      add('truck', `${ev.action}:${meta.mark || ev.id}`, job, ev.action === 'truck_stuck'
+        ? `🚚 Truck *${meta.plate}* hasn't crossed a toll for ${meta.hours} hours (last: ${meta.last_plaza || 'unknown'}). Worth a call to the driver.`
+        : `🚚 Truck *${meta.plate}* papers problem: ${(meta.problems || []).join('; ') || ev.note}.`)
+    }
+    if (ev.action === 'auto_check_paused') {
+      out.push({ key: `auto_paused:${ev.id}`, kind: 'system', jobId: null, jobNo: null,
+        text: `⏸ *Automatic checks paused for 2 hours*\n${ev.note || ''}`,
+        template: { name: 'jds_alert', values: ['JDS automatic checks', oneLine(ev.note || 'paused for 2 hours'), 'SUMMARY'] } })
+    }
   }
 
   // container events, grouped by job + event

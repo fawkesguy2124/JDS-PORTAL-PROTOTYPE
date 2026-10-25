@@ -57,6 +57,7 @@ export const ALERT_KINDS = [
   { id: 'free_days', label: 'Free days running out' },
   { id: 'be_not_filed', label: 'Ship in, BE not filed' },
   { id: 'container', label: 'Container moves (port, CFS, gate…)' },
+  { id: 'truck', label: 'Truck not moving / papers problem' },
 ]
 export const ALL_KINDS = Object.fromEntries(ALERT_KINDS.map((k) => [k.id, true]))
 

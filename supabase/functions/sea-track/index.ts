@@ -20,7 +20,8 @@ import { lineName } from '../_shared/portal/shippingLines.js'
 const API = 'https://api.sinay.ai/container-tracking/api/v2'
 const MONTH_CAP = 45                 // trial: 50 shipments; 5 kept spare
 const AUTO_FROM = '2026-10-24'       // jobs opened from the trial's first day are added by themselves
-const REFRESH_HOURS = 3
+// every hour now (Jose, 25 Oct 2026: alerts within 1.5 hours)
+const REFRESH_HOURS = 1
 const STAFF_REFRESH_MINUTES = 10
 const env = (k: string) => (Deno.env.get(k) || '').trim()
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))

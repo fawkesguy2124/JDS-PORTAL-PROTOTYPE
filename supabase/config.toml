@@ -12,3 +12,9 @@ verify_jwt = true
 
 [functions.wa-bot]
 verify_jwt = false   # Meta and the scheduler call it; it checks its own secrets
+
+[functions.sea-track]
+verify_jwt = false   # the scheduler calls it with the bot's database password; staff with sign-in
+
+[functions.auto-check]
+verify_jwt = false   # the scheduler only, with the bot's database password
