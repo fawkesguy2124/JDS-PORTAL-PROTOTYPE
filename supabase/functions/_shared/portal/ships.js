@@ -2,7 +2,7 @@
 // portal (Vessels page, job drawer) and the WhatsApp bot, so both say the same.
 // Not ULIP: saved job data, the saved IGM check and the vessel-track finder only.
 import { parseContainerNos, containerTrip, isDelivered } from './journeyCore.js'
-import { isLineNotShip } from './shippingLines.js'
+import { isLineNotShip, isNotShipName } from './shippingLines.js'
 
 const digits = (v) => String(v || '').replace(/\D/g, '')
 
@@ -24,7 +24,8 @@ export function vesselsOf(job, data) {
   if (sea && !sea.error && shipKey(sea.vessel_name).length >= 3) return [shipKey(sea.vessel_name)]
   const names = []
   // a shipping line's name saved as the ship ("EVERGREEN") is not a ship
-  const add = (v, line) => { const k = shipKey(v); if (k.length >= 3 && !isLineNotShip(k, line) && !names.includes(k)) names.push(k) }
+  // (an address the BL reader picked up, e.g. "ANDHERI EAST MUMBAI PINCODE", is not a ship either)
+  const add = (v, line) => { const k = shipKey(v); if (k.length >= 3 && !isLineNotShip(k, line) && !isNotShipName(v) && !names.includes(k)) names.push(k) }
   const own = (x) => {
     if (x?.vessel) add(x.vessel, x.shipping_line)
     for (const no of parseContainerNos(x?.containers)) add(data?.containersByNo?.[no]?.vessel)

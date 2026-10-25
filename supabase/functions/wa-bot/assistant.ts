@@ -167,8 +167,24 @@ export async function askAssistant(question: string, history: Turn[], data: unkn
 function finishReply(text: string | null, ctx: Ctx, question: string, history: Turn[], data: any, person: Person): string | null {
   const say = ctx.say || []
   if (say.length && !ctx.readTools) return say.join('\n\n')
-  const checked = text ? factCheck(text, ctx, question, history, data, person) : null
+  const checked = text ? factCheck(noTables(text), ctx, question, history, data, person) : null
   return [...say, checked].filter(Boolean).join('\n\n') || null
+}
+
+// WhatsApp can't show tables: a markdown table becomes one "• a · b · c" line per row
+// (Jose, 25 Oct 2026: the ship coordinates came back as | … | lines)
+function noTables(text: string) {
+  const cells = (l: string) => l.trim().replace(/^\||\|$/g, '').split('|').map((c) => c.trim())
+  const out: string[] = []
+  let head: string[] | null = null
+  for (const line of text.split('\n')) {
+    if (!/^\s*\|.*\|\s*$/.test(line)) { head = null; out.push(line); continue }
+    if (/^\s*\|?\s*:?-{2,}/.test(line.replace(/\|    if (/^s*|?s*:?-{2,}/.test(line)) continue // the |---|---| line
+    const c = cells(line)
+    if (!head) { head = c; continue } // header row: dropped, the values speak for themselves
+    out.push(`• ${c.filter(Boolean).join(' · ')}`)
+  }
+  return out.join('\n')
 }
 const squash = (s: string) => s.toUpperCase().replace(/[^A-Z0-9]/g, '')
 // what to look for: job refs, 7-digit numbers (BE, IGM, IMO), containers, trucks

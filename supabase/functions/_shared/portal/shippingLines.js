@@ -66,3 +66,12 @@ export function isLineNotShip(raw, jobLine) {
   for (let i = 0; i < 4; i++) core = core.replace(TAIL, '')
   return LINE_NAMES.has(s) || LINE_NAMES.has(core)
 }
+
+// Text that is clearly not a ship's name: an address, PIN code or company line the
+// BL reader picked up (Jose, 25 Oct 2026: J-644 got "ANDHERI EAST.MUMBAI. PINCODE /
+// 400099" as its ship). Real ship names never carry these.
+const ADDRESS = /\bPIN\s?CODE\b|\bPIN\b|\b\d{6}\b|\b(ROAD|RD|STREET|ST|LANE|MARG|NAGAR|COLONY|FLOOR|BLDG|BUILDING|PLOT|SECTOR|PHASE|ESTATE|MIDC|TALUKA|DIST|DISTRICT|STATE|MAHARASHTRA|GUJARAT|ANDHERI|BHIWANDI|THANE|NAVI)\b|\b(PVT|LTD|LIMITED|LLP|COMPANY|CO\.)\b|\b(EAST|WEST)\s*[.,]\s*MUMBAI\b|@|\bTEL\b|\bPHONE\b|\bGSTIN?\b|\bEMAIL\b/
+export function isNotShipName(raw) {
+  const s = String(raw || '').toUpperCase()
+  return !!s.trim() && ADDRESS.test(s)
+}

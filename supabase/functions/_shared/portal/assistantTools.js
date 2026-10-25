@@ -277,8 +277,27 @@ function shipInfo(args, data, rows) {
       last_heard = `${day(f.seen_at)} ${new Date(f.seen_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: TZ })} (${hrs < 1 ? 'under an hour' : `${hrs} h`} ago): ${seaArea(f.lat, f.lon)} (${f.lat.toFixed(2)}, ${f.lon.toFixed(2)})`
         + `${typeof f.sog === 'number' ? `, ${f.sog.toFixed(1)} knots` : ''}${NAV[f.nav_status] ? `, ${NAV[f.nav_status]}` : ''}${f.destination ? `, going to ${f.destination}` : ''}`
     }
+    // the ship tracking (Safecube, every 3 hours): exact position, ETA, route (Jose, 25 Oct 2026)
+    const seas = g.jobs.map((x) => data.seaByJob?.[x.job.id]).filter((r) => r && !r.error)
+    const sea = seas.find((r) => !g.imo || !r.vessel_imo || String(r.vessel_imo) === g.imo) || seas[0] || null
+    const portTime = (iso) => (iso ? new Date(iso).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', timeZone: 'UTC' }) : null)
+    const port = (p) => (p ? String(p).replace(/^Jawaharlal Nehru(, IN)?/i, 'Nhava Sheva') : p)
+    let tracking = null
+    if (sea) {
+      const notSailed = sea.status === 'PLANNED' || (sea.pol_date && new Date(sea.pol_date) > Date.now())
+      tracking = {
+        position: typeof sea.lat === 'number' ? `${notSailed ? `waiting at ${port(sea.pol)}` : seaArea(sea.lat, sea.lng)}: ${sea.lat.toFixed(4)}, ${sea.lng.toFixed(4)}${sea.position_at ? ` as of ${day(sea.position_at)} ${new Date(sea.position_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: TZ })}` : ''}` : null,
+        status: sea.pod_actual ? `arrived at ${port(sea.pod)} ${portTime(sea.pod_date)}` : notSailed ? `not sailed yet from ${port(sea.pol)}` : 'at sea',
+        from: port(sea.pol), left_or_sails: sea.pol_date ? `${new Date(sea.pol_date) > Date.now() ? 'sails' : 'left'} ${portTime(sea.pol_date)}` : null,
+        to: port(sea.pod), eta_port_time: sea.pod_actual ? null : portTime(sea.pod_date),
+        change_ship_at: (sea.route?.via || []).filter((v) => v.change).map((v) => port(v.name)),
+        stops: (sea.route?.via || []).filter((v) => !v.change).map((v) => port(v.name)),
+        updated: `${day(sea.fetched_at)} ${new Date(sea.fetched_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: TZ })} (checked every 3 hours)`,
+      }
+    }
     return {
       ship: g.names.join(' / '), imo: g.imo || (g.mmsi ? 'not known (radio no. known, map works)' : 'not added yet (type it on the Vessels page)'),
+      tracking,
       status: !open.length ? `our cargo already unloaded${unloaded ? ` (${day(unloaded)})` : arrived ? ` (ship arrived ${day(arrived)})` : ''}: no longer tracked` : arrived ? `at port since ${day(arrived)}, unloading` : 'at sea, our cargo on board',
       eta: etas.length ? day(etas[0]) : null,
       jobs: g.jobs.map((x) => `${x.job.job_no} · ${x.job.client || 'No client'}${x.j.phase === 'delivered' ? ' (finished)' : !x.cargo.onBoard ? ' (unloaded)' : ''}${x.job.eta ? `, ETA ${day(x.job.eta)}` : ''}`),
@@ -517,7 +536,7 @@ Rules:
 - Reply in the question's language: an English question gets an English answer; Hindi or Hinglish only when the question itself is in Hindi/Hinglish. WhatsApp style: short, *bold* key facts, "• " bullets, no tables or headers, about 12 lines max unless a full list is asked.
 - free_days_left below 0 = detention running that many days. Never mention tools, JSON or AI.
 - Container tracking events (staff use these words): PORT IN (unloaded at the port), PORT OUT (left the port terminal, usually to a CFS), CFS IN / ICD IN (entered the CFS / ICD), CFS OUT / ICD OUT (left with cargo for the client; "CFS gate out" = CFS OUT), GATE IN / GATE OUT (a PORT gate, not a CFS), GATE CROSSED / TOLL PLAZA CROSSED (on the road), STATION CROSSED / LOADING (on rail), DPD (direct port delivery), DPE (export). Use place_type to say where it is (port, CFS, ICD, road, rail); never call an event or place by a name the data doesn't show. "Containers in port out" or "port out containers" = containers whose latest event is PORT OUT: use list_containers with last_event. Same for any other event name.
-- Which tool: one job / container / BE / BL / truck number → get_job. Jobs by ANY field, date range, count, "how many", "per client", averages → search_jobs (combine filters freely; use group_by for counts per group). A container's full journey → container_history. "What happened", updates, who did what, uploads → recent_activity. Containers by event, place or movement date → list_containers. A ship / vessel (where is it, its IMO, which jobs are on it, at sea or arrived, "ship of J-519", "which ships are at sea") → ship_info. "Ships at sea" / the ship list = ships still carrying our cargo; once our cargo is unloaded a ship is no longer tracked. A ship position is only "last heard" (give the time and say it is not live); for the live position give the Vessels page link (live_map). Never guess a position.
+- Which tool: one job / container / BE / BL / truck number → get_job. Jobs by ANY field, date range, count, "how many", "per client", averages → search_jobs (combine filters freely; use group_by for counts per group). A container's full journey → container_history. "What happened", updates, who did what, uploads → recent_activity. Containers by event, place or movement date → list_containers. A ship / vessel (where is it, its IMO, which jobs are on it, at sea or arrived, "ship of J-519", "which ships are at sea") → ship_info. "Ships at sea" / the ship list = ships still carrying our cargo; once our cargo is unloaded a ship is no longer tracked. For where a ship is, use ship_info's tracking (exact coordinates, sea area, ETA, route, the time it was updated; it updates every 3 hours): give the coordinates when asked. Only when there is no tracking, last_heard is a rough older position (say so). The Vessels page (live_map) shows them on a map. Never guess a position.
 - Use the date ranges above exactly as given (YYYY-MM-DD). "OOC granted / BE filed / arrived in a period" → search_jobs with ooc_/be_/arrived_ dates (the real dates); recent_activity only shows when staff recorded something in the portal.
 - The portal holds only one money figure: the CFS amount per job (record_payment). It does NOT hold: other payments, duty or invoice amounts, freight rates, bank details, phone numbers or emails of clients/CFS/transporters, or the contents of documents. If asked, say plainly the portal doesn't have that. Only for duty suggest ICEGATE / LiveImpex; for DO or line charges the shipping line. Never invent other places to look.
 - If a tool answers with not_found or zero jobs, say so plainly and suggest the closest thing you can check (e.g. a similar client name).

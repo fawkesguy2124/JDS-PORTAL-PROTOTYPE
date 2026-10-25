@@ -144,7 +144,13 @@ function summarize(d: any) {
 async function lookUp(n: { number: string; type: string; scac: string | null }) {
   const params: Record<string, string | boolean> = { shipmentNumber: n.number, shipmentType: n.type, route: true, ais: true }
   if (n.scac) params.sealine = n.scac
-  const r = await call('shipment', params)
+  let r = await call('shipment', params)
+  // the line refused the type or the line code (J-644, 25 Oct 2026: WRONG_TYPE for an
+  // Evergreen box): ask again letting Safecube work them out (400s are not billed)
+  // (Safecube puts the code in errorCode or, as for J-644, in message with errorCode 400)
+  const refused = (x: any) => /WRONG_TYPE|TYPE_NOT_SUPPORTED|WRONG_SEALINE|SEALINE_NOT_SUPPORTED|AUTO_CANT_DETECT_TYPE/.test(`${x.body?.errorCode || ''} ${x.body?.message || ''}`)
+  if (refused(r)) { delete params.shipmentType; r = await call('shipment', params) }
+  if (refused(r) && params.sealine) { delete params.sealine; r = await call('shipment', params) }
   if (r.ok && !r.body?.errorCode) return { ok: true, row: summarize(r.body) }
   const code = r.body?.errorCode || `HTTP ${r.status}`
   // 400 / 500 answers are not billed by Safecube
