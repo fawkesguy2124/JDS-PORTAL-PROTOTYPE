@@ -1,5 +1,5 @@
 import { Suspense, lazy, useMemo, useRef, useState } from 'react'
-import { journeyFor, isDelivered, isExportJob, truckNos } from '../../services/journey'
+import { journeyFor, isDelivered, isExportJob, truckNos, containerFinishedOn } from '../../services/journey'
 import { assignTruck, removeTruck, setStage } from '../../services/jobActions'
 import UlipCheck from '../../components/ulip/UlipCheck'
 import { JOB_TABS } from '../../components/ulip/ulipChecks'
@@ -34,6 +34,15 @@ const fmtTime = (v) => {
   return isNaN(d) ? String(v) : d.toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })
 }
 const containersText = (nos) => (!nos?.length ? '—' : nos.length > 2 ? `${nos.length} containers` : nos.join(', '))
+const TRUCK_WATCH_DAYS = 4 // as the automatic checks (auto-check)
+// a truck's trip is over when its container is finished (empty back, or collected by
+// the client), or it was put on the job more than 4 days ago: no more FASTag look-ups
+// for it (the same rule as the hourly automatic checks; Jose, 25 Oct 2026)
+const tripOver = (r, t) => {
+  if (t.at && Date.now() - new Date(t.at).getTime() > TRUCK_WATCH_DAYS * 864e5) return true
+  const boxes = (r.j.containers?.all || []).filter((b) => !t.container || sameNo(b.container_no, t.container))
+  return boxes.length > 0 && boxes.every((b) => containerFinishedOn(b, r.job))
+}
 
 // Answers from checks made on this page, laid over the loaded data until the next full load
 function useOverlay(data, rows) {
@@ -120,8 +129,8 @@ export default function TrucksPage({ currentUserName, onOpenJob, showToast, canU
   const autoItems = onRoad.flatMap(({ r, t }) => {
     const out = []
     const where = savedFor(r.job.id, 'FASTAG/01', t.no)
-    // where is it: at most every COOLDOWN_MIN minutes per truck
-    if (isDue(...where.map((x) => x.checked_at), ...where.map((x) => x.last_error_at)))
+    // where is it: at most every COOLDOWN_MIN minutes per truck, while its trip lasts
+    if (!tripOver(r, t) && isDue(...where.map((x) => x.checked_at), ...where.map((x) => x.last_error_at)))
       out.push({ key: `w:${t.no}`, label: `truck ${t.no}`, run: () => checkTruck('FASTAG/01', t.no, r.job.id) })
     // papers don't change from day to day: once per truck
     if (!savedFor(r.job.id, 'VAHAN/04', t.no).some((x) => x.checked_at))

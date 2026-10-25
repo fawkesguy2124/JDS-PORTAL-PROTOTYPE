@@ -121,10 +121,14 @@ export function cargoOnShip(job, name, data, j) {
   const seaShip = sea && (!name || !sea.vessel_name || shipKey(sea.vessel_name) === name || ships.length <= 1)
   if (seaShip && sea.pod_actual && sea.pod_date && Date.now() - new Date(sea.pod_date).getTime() > UNLOAD_DAYS * 86400000) return { onBoard: false, unloadedOn: null, arrivedAt: arrivedAt || sea.pod_date, why: 'tracking' }
   // the job's containers on this ship (a box with no ship of its own, or only a
-  // shipping line's name as its ship, is on the job's ship)
+  // shipping line's name as its ship, is on the job's ship). A job on one ship:
+  // all its boxes are on it, whatever ship name LDB gives (Jose, 25 Oct 2026: J-584
+  // was PORT IN on LDB as EVER LEARNED while tracked on ONE THESEUS, and stayed on
+  // Vessels; LDB's port in means the box is off the ship)
   const boxes = parseContainerNos(job?.containers).filter((no) => {
     const t = data?.containersByNo?.[no]
     const own = shipKey(t?.vessel)
+    if (ships.length <= 1) return true
     return own.length >= 3 && !isLineNotShip(own, t?.shipping_line_ldb) ? own === name : (name || null) === (ships[0] || null)
   })
   let last = null

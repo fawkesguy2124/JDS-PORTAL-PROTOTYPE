@@ -16,6 +16,7 @@
 //  • { sealines: true } the lines Safecube covers; { usage: true } this month's count
 import { adminClient, corsHeaders, getCaller, json } from '../_shared/ulip.ts'
 import { lineName } from '../_shared/portal/shippingLines.js'
+import { containerTrip } from '../_shared/portal/journeyCore.js'
 
 const API = 'https://api.sinay.ai/container-tracking/api/v2'
 const MONTH_CAP = 45                 // trial: 50 shipments; 5 kept spare
@@ -255,6 +256,44 @@ async function openSeaJobs(admin: any) {
   return sea.filter((j: any) => !inPort.has(j.id))
 }
 
+// A job whose container LDB already shows as PORT IN (or that reached OOC) is off the
+// ship: its tracking row is closed as arrived, at the port-in time, so the job card and
+// WhatsApp stop saying "at sea" with an old ETA (Jose, 25 Oct 2026: J-584). No Safecube
+// call is made for it.
+async function retireLanded(admin: any, jobIds?: string[]) {
+  let q = admin.from('sea_tracking').select('job_id, pod, pod_date, pod_actual, done').eq('done', false)
+  if (jobIds) q = q.in('job_id', jobIds)
+  const { data: rows } = await q
+  if (!rows?.length) return []
+  const ids = rows.map((r: any) => r.job_id)
+  const [{ data: jobs }, { data: boxes }] = await Promise.all([
+    admin.from('jobs').select('id, job_no, stage, eta, created_at').in('id', ids),
+    admin.from('container_tracking').select('job_id, port_in, milestones').in('job_id', ids),
+  ])
+  // this trip's port in only (a box's port_in can be from an earlier trip)
+  const portIn = new Map<string, string>()
+  for (const b of boxes || []) {
+    const pin = containerTrip(b, (jobs || []).find((j: any) => j.id === b.job_id)).portIn
+    if (pin && (!portIn.has(b.job_id) || pin < portIn.get(b.job_id)!)) portIn.set(b.job_id, pin)
+  }
+  const out = []
+  for (const r of rows) {
+    const job = (jobs || []).find((j: any) => j.id === r.job_id)
+    const pin = portIn.get(r.job_id)
+    if (!pin && Number(job?.stage || 0) < 7) continue
+    const patch: any = { done: true }
+    if (!r.pod_actual) {
+      patch.pod_actual = true
+      // the line's dates for an Indian port are port time saved as UTC; LDB's are real UTC
+      const ms = pin ? new Date(pin).getTime() : NaN
+      if (!isNaN(ms)) patch.pod_date = new Date(/,\s*IN$/i.test(String(r.pod || '')) ? ms + 5.5 * 3600e3 : ms).toISOString()
+    }
+    await admin.from('sea_tracking').update(patch).eq('job_id', r.job_id)
+    out.push({ job: job?.job_no, closed: pin ? `port in ${pin}` : 'OOC done' })
+  }
+  return out
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
   const admin = adminClient()
@@ -299,11 +338,16 @@ Deno.serve(async (req) => {
         return json({ success: true, skipped: 'checked a few minutes ago' })
       }
       if (body.preview) return json({ success: true, would_use: pickNumber(job, lines) })
+      // already off the ship by LDB: close the row instead of spending a lookup
+      const landed = await retireLanded(admin, [job.id])
+      if (landed.length) return json({ success: true, skipped: 'container already in port (LDB)', landed })
       const out = await track(admin, job, lines, { start: !!body.start, by })
       return json({ success: !out.error, ...out, used: await usedThisMonth(admin), cap: MONTH_CAP })
     }
 
-    // scheduler: refresh tracked jobs, add new ones (opened since the trial began)
+    // scheduler: close rows LDB says have landed, refresh tracked jobs, add new ones
+    // (opened since the trial began)
+    const landed = await retireLanded(admin)
     const open = await openSeaJobs(admin)
     const { data: rows } = await admin.from('sea_tracking').select('job_id, done, fetched_at').in('job_id', open.map((j: any) => j.id))
     const state = new Map((rows || []).map((r: any) => [r.job_id, r]))
@@ -317,7 +361,7 @@ Deno.serve(async (req) => {
       results.push(await track(admin, job, lines, { auto: true }))
       await sleep(1500)
     }
-    return json({ success: true, checked: results.length, results, used: await usedThisMonth(admin), cap: MONTH_CAP })
+    return json({ success: true, checked: results.length, results, landed, used: await usedThisMonth(admin), cap: MONTH_CAP })
   } catch (e) {
     return json({ success: false, error: (e as Error).message }, 500)
   }

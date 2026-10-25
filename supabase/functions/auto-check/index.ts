@@ -17,7 +17,8 @@
 // (and say so). Every check is made through the portal's own functions, logged under
 // "Auto-check", with their 30-minute repeat guard and office per-minute limits.
 import { adminClient, corsHeaders, json } from '../_shared/ulip.ts'
-import { jobTrucks } from '../_shared/portal/journeyCore.js'
+import { jobTrucks, containerTrip, containerFinishedOn, parseContainerNos } from '../_shared/portal/journeyCore.js'
+import { correctTrackingRow } from '../_shared/portal/eventOrder.js'
 
 const env = (k: string) => (Deno.env.get(k) || '').trim()
 const MIN = 60_000
@@ -47,7 +48,7 @@ async function callFn(name: string, body: unknown, token: string) {
 // What should be watched right now
 async function wanted(admin: any) {
   const since = new Date(Date.now() - 60 * 24 * 60 * MIN).toISOString()
-  const { data: jobs } = await admin.from('jobs').select('id, job_no, client, be_no, be_date, bl_no, port_code, stage, mode, job_type, trucks, truck_no, ulip_refs, created_at, updated_at')
+  const { data: jobs } = await admin.from('jobs').select('id, job_no, client, be_no, be_date, bl_no, port_code, stage, mode, job_type, trucks, truck_no, ulip_refs, containers, eta, field_meta, created_at, updated_at')
     .or('stage.is.null,stage.lt.10').gte('created_at', since)
   const open = (jobs || []).filter((j: any) => j.job_type !== 'export')
   const { data: cs } = await admin.from('customs_status').select('job_id, be_no, ooc_date').in('job_id', open.map((j: any) => j.id))
@@ -55,12 +56,19 @@ async function wanted(admin: any) {
   // air imports already found in Customs' air manifest (ICEGATE/09): no need to ask again
   const { data: airDone } = await admin.from('ulip_results').select('job_id').eq('api', 'ICEGATE/09').eq('found', true).in('job_id', open.map((j: any) => j.id))
   const manifested = new Set((airDone || []).map((r: any) => r.job_id))
+  // what LDB already says about the boxes: a box that left with cargo had its OOC, and a
+  // finished box (empty back, or collected by the client) needs no truck watch
+  const nos = [...new Set(open.flatMap((j: any) => parseContainerNos(j.containers)))]
+  const { data: boxRows } = nos.length ? await admin.from('container_tracking').select('container_no, status, port_in, milestones, last_refreshed_at').in('container_no', nos) : { data: [] }
+  const boxes = new Map((boxRows || []).map((r: any) => [String(r.container_no).toUpperCase(), correctTrackingRow(r)]))
+  const boxesOf = (j: any) => parseContainerNos(j.containers).map((n: string) => boxes.get(n)).filter(Boolean)
   const items = new Map<string, any>()
   for (const j of open) {
     const be = String(j.be_no || '').trim()
     const got = ooc.get(j.id) as any
     const hasOoc = got?.ooc_date && String(got.be_no) === be
-    if (/^\d{7}$/.test(be) && j.be_date && !hasOoc && Number(j.stage || 0) < 7) {
+    const leftWithCargo = boxesOf(j).some((r: any) => containerTrip(r, j).exitAt)
+    if (/^\d{7}$/.test(be) && j.be_date && !hasOoc && !leftWithCargo && Number(j.stage || 0) < 7) {
       items.set(`ooc:${j.id}`, { key: `ooc:${j.id}`, kind: 'ooc', job_id: j.id, label: j.job_no })
     }
     // an air import not yet in the air manifest (IGM): ICEGATE/09 by MAWB + airport, about
@@ -79,7 +87,10 @@ async function wanted(admin: any) {
       // the last 4 days (a finished trip on a job nobody closed must not raise alarms)
       const since = t.at || j.updated_at
       const fresh = since && Date.now() - new Date(since).getTime() < TRUCK_WATCH_DAYS * 24 * 60 * MIN
-      if (Number(j.stage || 0) >= 7 && Number(j.stage || 0) < 10 && j.mode !== 'Air' && fresh) {
+      // ...and its container (or, with none named, every box of the job) not finished yet
+      const mine = boxesOf(j).filter((r: any) => !t.container || String(r.container_no).toUpperCase() === String(t.container).toUpperCase())
+      const finished = mine.length > 0 && mine.every((r: any) => containerFinishedOn(r, j))
+      if (Number(j.stage || 0) >= 7 && Number(j.stage || 0) < 10 && j.mode !== 'Air' && fresh && !finished) {
         items.set(`truck:${t.no}`, { key: `truck:${t.no}`, kind: 'truck', job_id: j.id, label: `${t.no} (${j.job_no})`, meta: { plate: t.no, since } })
       }
     }

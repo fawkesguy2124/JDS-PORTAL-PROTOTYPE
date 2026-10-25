@@ -315,7 +315,11 @@ export function journeyFor(job, data) {
   const delivered = isDelivered(job) || c.allDelivered
 
   const oocDate = cs?.ooc_date || null
-  const oocDone = !!oocDate || stage >= 7
+  // a container that left the port / CFS with cargo on this trip had its OOC, even if
+  // the ICEGATE check never saw it (Jose, 25 Oct 2026: a later fact retires the
+  // earlier wait)
+  const leftWithCargo = c.all.some((t) => containerTrip(t, job).exitAt)
+  const oocDone = !!oocDate || stage >= 7 || leftWithCargo
   const beFiled = !!(job.be_no && job.be_date)
   const beStage = beFiled && !oocDone ? beStageOf(job) : null
   // every truck on the job, each with its own saved FASTag and papers answers
@@ -331,8 +335,13 @@ export function journeyFor(job, data) {
   })
   const truck = trucks[0]?.no || null
   const vessel = resultFor(results, ['JNPT/01', 'MBPT/01', 'IPORTMAN/01'])
-  const ata = vessel?.parsed?.extra?.ata || null
-  const arrived = !!(ata || c.portIn || stage >= 3)
+  // the ship tracking saw the ship reach the port; an air waybill in Customs' air
+  // manifest (ICEGATE/09) means the flight is in
+  const sea = data.seaByJob?.[job.id]
+  const seaAt = sea && !sea.error && sea.pod_actual && sea.pod_date ? sea.pod_date : null
+  const airIgm = isAirJob(job) ? (results['ICEGATE/09'] || []).find((r) => r.found) : null
+  const ata = vessel?.parsed?.extra?.ata || seaAt || null
+  const arrived = !!(ata || c.portIn || airIgm || stage >= 3)
   const mode = onwardMode(job, c.all)
   const railMoving = mode === 'rail' && c.anyOut
 
@@ -343,7 +352,7 @@ export function journeyFor(job, data) {
     // a BE is often filed before the ship comes in (advance BE): say so, so the strip
     // does not look like it contradicts itself (Jose, 24 Oct 2026: J-689)
     { id: 'be', label: 'BE filed', done: beFiled, when: dayLabel(job.be_date), sub: beFiled ? (arrived ? `BE ${job.be_no}` : 'Before arrival') : 'In LiveImpex' },
-    { id: 'ooc', label: 'OOC', done: oocDone, when: dayLabel(oocDate), sub: oocDate ? (cs.ooc_no ? `OOC ${cs.ooc_no}` : null) : oocDone ? 'Recorded by staff' : beFiled ? (beStage?.short || 'Waiting') : null },
+    { id: 'ooc', label: 'OOC', done: oocDone, when: dayLabel(oocDate), sub: oocDate ? (cs.ooc_no ? `OOC ${cs.ooc_no}` : null) : oocDone ? (stage < 7 && leftWithCargo ? 'Container left with cargo' : 'Recorded by staff') : beFiled ? (beStage?.short || 'Waiting') : null },
     { id: 'out', label: isAirJob(job) ? 'Cargo out' : 'Container out', done: c.anyOut || stage >= 9, when: null, sub: c.tracked[0]?.status_text || null },
     { id: 'truck', label: mode === 'rail' ? 'Rail' : mode === 'truck' ? 'Truck' : 'Truck / rail', done: oocDone && (!!truck || railMoving), when: null,
       sub: truck ? (trucks.length > 1 ? `${trucks.length} trucks` : truck) : (mode === 'rail' ? (railMoving ? 'On its way by rail' : 'Going by rail') : oocDone ? 'Not arranged yet' : null) },

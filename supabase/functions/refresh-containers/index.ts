@@ -1,5 +1,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { lineName } from '../_shared/portal/shippingLines.js'
+import { containerFinishedOn } from '../_shared/portal/journeyCore.js'
+import { correctTrackingRow } from '../_shared/portal/eventOrder.js'
 
 const SUPABASE_URL     = Deno.env.get('SUPABASE_URL')!
 const SUPABASE_SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
@@ -300,7 +302,7 @@ Deno.serve(async (req) => {
   try {
     const { data: jobs, error: jobsErr } = await supabase
       .from('jobs')
-      .select('id, job_no, containers, shipping_line, vessel, eta, free_days')
+      .select('id, job_no, containers, shipping_line, vessel, eta, free_days, field_meta, created_at')
       .not('containers', 'is', null)
       .neq('containers', '')
 
@@ -325,15 +327,19 @@ Deno.serve(async (req) => {
     const cutoff = new Date(Date.now() - FRESHNESS_MINS * 60 * 1000).toISOString()
     const { data: recentRows } = await supabase
       .from('container_tracking')
-      .select('container_no, status, last_refreshed_at')
+      .select('container_no, status, last_refreshed_at, port_in, milestones')
       .in('container_no', allContainers.map(c => c.cn))
 
     const recentMap = new Map((recentRows || []).map((r: any) => [r.container_no, r]))
 
-    const toRefresh = allContainers.filter(({ cn }) => {
+    const toRefresh = allContainers.filter(({ cn, job }) => {
       const row = recentMap.get(cn)
       if (!row) return true
       if (TERMINAL_STATUSES.includes(row.status)) return false
+      // this job's trip with the box is over (empty back, or collected by the client):
+      // nothing more to learn for it (Jose, 25 Oct 2026). A box on a newer job still
+      // gets refreshed through that job.
+      if (containerFinishedOn(correctTrackingRow(row), job)) return false
       if (row.last_refreshed_at && row.last_refreshed_at > cutoff) return false
       return true
     })
