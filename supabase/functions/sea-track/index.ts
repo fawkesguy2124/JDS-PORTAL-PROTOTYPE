@@ -199,6 +199,13 @@ async function track(admin: any, job: any, lines: any[], opts: { start?: boolean
   const now = new Date().toISOString()
   const base = { job_id: job.id, job_no: job.job_no, number: n.number, number_type: n.type, sealine: n.scac, fetched_at: now, ...(prev ? {} : { started_by: opts.by || 'auto' }) }
   if (!r.ok) {
+    // a failed update of a ship we already follow: keep its last good position, ETA and
+    // route on screen and try again next hour; only note the failure (Jose, 25 Oct
+    // 2026: J-584 vanished from the map after one "500: UNEXPECTED_ERROR" from Safecube)
+    if (prev && !prev.error && (prev.pod_date || typeof prev.lat === 'number')) {
+      await admin.from('sea_tracking').update({ refresh_error: r.error, refresh_error_at: now }).eq('job_id', job.id)
+      return { job: job.job_no, number: n.number, error: r.error, kept: 'last good data kept' }
+    }
     // a number the line doesn't know: don't try it again by itself (staff can)
     await admin.from('sea_tracking').upsert({ ...base, error: r.error, done: prev?.done || (!r.retry && !!opts.auto && !prev) }, { onConflict: 'job_id' })
     return { job: job.job_no, number: n.number, error: r.error }
@@ -207,7 +214,7 @@ async function track(admin: any, job: any, lines: any[], opts: { start?: boolean
   const track: any[] = Array.isArray(prev?.track) ? prev.track : []
   const lastPt = track[track.length - 1]
   if (typeof r.row.lat === 'number' && (!lastPt || lastPt[0] !== r.row.lat || lastPt[1] !== r.row.lng)) track.push([r.row.lat, r.row.lng, r.row.position_at || now])
-  const row = { ...base, ...r.row, track: track.slice(-300), error: null, done: arrived(r.row) }
+  const row = { ...base, ...r.row, track: track.slice(-300), error: null, refresh_error: null, done: arrived(r.row) }
   delete (row as any).next_event
   const { error } = await admin.from('sea_tracking').upsert({ ...row, last_event: { ...(r.row.last_event || {}), next: r.row.next_event } }, { onConflict: 'job_id' })
   if (error) return { job: job.job_no, error: `save: ${error.message}` }

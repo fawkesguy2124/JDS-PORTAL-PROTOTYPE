@@ -65,3 +65,7 @@ select cron.schedule('sea-track', '15 1-16/3 * * *', $$
     headers := jsonb_build_object('Content-Type', 'application/json', 'x-bot-secret', (select cron_token from bot_state where id = 1)),
     body := '{}'::jsonb, timeout_milliseconds := 120000)
 $$);
+
+-- 25 Oct 2026: a failed hourly update keeps the last good data and is only noted here
+alter table public.sea_tracking add column if not exists refresh_error text;
+alter table public.sea_tracking add column if not exists refresh_error_at timestamptz;
