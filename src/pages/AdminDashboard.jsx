@@ -33,26 +33,32 @@ const CreateJob = lazyPage(() => import('./CreateJob'))
 
 const NAV_SECTIONS = [
   { label: 'TODAY', items: [{ id: 'today', label: 'Today', icon: 'home' }] },
-  { label: 'SHIPMENTS', items: [
-    { id: 'jobs', label: 'All jobs', icon: 'list-details' },
+  // in work order (Jose, 25 Oct 2026): the jobs, then where the cargo is as it moves
+  // (sea → port → road), the paperwork, money; records and admin last
+  { label: 'JOBS', items: [{ id: 'jobs', label: 'All jobs', icon: 'list-details' }] },
+  { label: 'TRACKING', items: [
+    { id: 'vessels', label: 'Vessels', icon: 'ship' },
     { id: 'containers', label: 'Containers', icon: 'box' },
     { id: 'trucks', label: 'Trucks', icon: 'truck' },
-    { id: 'vessels', label: 'Vessels', icon: 'ship' },
   ] },
-  { label: 'CUSTOMS', items: [{ id: 'customs', label: 'BE & OOC', icon: 'file-certificate' }] },
-  { label: 'DOCUMENTS', items: [{ id: 'documents', label: 'Documents', icon: 'files' }] },
+  { label: 'CUSTOMS & PAPERS', items: [
+    { id: 'customs', label: 'BE & OOC', icon: 'file-certificate' },
+    { id: 'documents', label: 'Documents', icon: 'files' },
+  ] },
   { label: 'MONEY', items: [
     { id: 'payments', label: 'Payments', icon: 'currency-rupee' },
     { id: 'detention', label: 'Detention', icon: 'clock-exclamation', alert: true },
   ] },
-  { label: 'TOOLS', items: [
-    // reached from Ctrl K → "Look up on ULIP" (Jose, 25 Oct 2026: one search box, not two)
-    { id: 'search', label: 'ULIP lookup', icon: 'search', hidden: true },
+  { label: 'RECORDS', items: [
     { id: 'clients', label: 'Clients', icon: 'users' },
-    { id: 'overview', label: 'Team & stages', icon: 'chart-bar' },
     { id: 'compliance', label: 'BIS & Licences', icon: 'certificate' },
+  ] },
+  { label: 'ADMIN', items: [
+    { id: 'overview', label: 'Team & stages', icon: 'chart-bar' },
     { id: 'bot', label: 'WhatsApp bot', icon: 'brand-whatsapp' },
     { id: 'health', label: 'System health', icon: 'heart-rate-monitor' },
+    // reached from Ctrl K → "Look up on ULIP" (Jose, 25 Oct 2026: one search box, not two)
+    { id: 'search', label: 'ULIP lookup', icon: 'search', hidden: true },
   ] },
 ]
 
