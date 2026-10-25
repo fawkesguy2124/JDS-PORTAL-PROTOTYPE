@@ -213,7 +213,12 @@
 .ix-link { color: var(--navy); font-weight: 600; font-size: 12.5px; background: none; border: none; padding: 0; margin-left: 6px }
 
 /* board */
-.ix-board { display: grid; grid-auto-flow: column; grid-auto-columns: 264px; gap: 12px; overflow-x: auto; padding-bottom: 8px }
+/* every column on one screen, sharing the width (Jose, 25 Oct 2026: no sideways scrolling) */
+.ix-board { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 10px; padding-bottom: 8px }
+.ix-col { min-width: 0 }
+.ix-bcard { min-width: 0 }
+.ix-bcard .nx { overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.ix-col-h { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
 .ix-col { background: #eef1f6; border-radius: 12px; padding: 10px; display: flex; flex-direction: column; gap: 8px; min-height: 300px; max-height: calc(100vh - 190px); overflow-y: auto }
 .ix-col-h { display: flex; align-items: center; gap: 6px; font-weight: 700; font-size: 13px; padding: 2px 4px 6px; position: sticky; top: -10px; background: #eef1f6; z-index: 1 }
 .ix-col-h .n { margin-left: auto; font-size: 11px; background: #fff; border-radius: 10px; padding: 1px 8px; color: var(--text-2) }
@@ -403,7 +408,7 @@
   /* messages appear above the bottom tabs, full width */
   .ix-toast { left: 12px; right: 12px; bottom: calc(74px + env(safe-area-inset-bottom, 0px)); text-align: center }
   /* shipment board: swipe one column at a time */
-  .ix-board { grid-auto-columns: 84vw; scroll-snap-type: x mandatory; -webkit-overflow-scrolling: touch }
+  .ix-board { grid-auto-columns: 84vw; overflow-x: auto; scroll-snap-type: x mandatory; -webkit-overflow-scrolling: touch }
   .ix-col { scroll-snap-align: start; max-height: none }
 }
 @media (max-width: 760px) {
