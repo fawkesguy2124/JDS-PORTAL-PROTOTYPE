@@ -52,6 +52,7 @@ export function useInstallApp() {
 // half is a Supabase secret (VAPID_PRIVATE_KEY).
 const PUSH_PUBLIC_KEY = 'BOwfHv5s-lBibUcMB5m30PrsrBJ1A0rSNHOzSkybr8Vq_lcCY8_RTLR3srCKqqyzAaILMmTmL0ZsVBgtCH-0HDA'
 export const ALERT_KINDS = [
+  { id: 'ship_arrived', label: 'Ship arrived at the port' },
   { id: 'ooc', label: 'OOC granted' },
   { id: 'free_days', label: 'Free days running out' },
   { id: 'be_not_filed', label: 'Ship in, BE not filed' },

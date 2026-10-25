@@ -53,8 +53,8 @@ function groupByDay(notifications) {
 
 const ROLE_FILTERS = {
   admin:     null,
-  field_ops: ['container_update', 'detention_alert', 'ooc_granted'],
-  employee:  ['container_update', 'detention_alert', 'job_created', 'stage_update', 'document_upload', 'ooc_granted'],
+  field_ops: ['container_update', 'detention_alert', 'ooc_granted', 'ship_arrived'],
+  employee:  ['container_update', 'detention_alert', 'job_created', 'stage_update', 'document_upload', 'ooc_granted', 'ship_arrived'],
 }
 
 export default function NotificationBell({ onNavigate, profile }) {
@@ -75,7 +75,7 @@ export default function NotificationBell({ onNavigate, profile }) {
 
   useEffect(() => {
     const load = async () => {
-      const allowedTypes = ROLE_FILTERS[profile?.role] ?? ['container_update', 'detention_alert', 'ooc_granted']
+      const allowedTypes = ROLE_FILTERS[profile?.role] ?? ['container_update', 'detention_alert', 'ooc_granted', 'ship_arrived']
       let query = supabase
         .from('activity_log')
         .select('*')
@@ -92,7 +92,7 @@ export default function NotificationBell({ onNavigate, profile }) {
     const channel = supabase
       .channel('activity_log_changes')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'activity_log' }, payload => {
-        const allowedTypes = ROLE_FILTERS[profile?.role] ?? ['container_update', 'detention_alert', 'ooc_granted']
+        const allowedTypes = ROLE_FILTERS[profile?.role] ?? ['container_update', 'detention_alert', 'ooc_granted', 'ship_arrived']
         if (profile?.role === 'admin' || allowedTypes.includes(payload.new.type)) {
           setNotifications(prev => [payload.new, ...prev].slice(0, 50))
         }
@@ -148,6 +148,11 @@ export default function NotificationBell({ onNavigate, profile }) {
     const meta = n.meta || {}
     const t = n.type || n.action || ''
 
+    // a ship arrived (ship tracking): open the job
+    if (t === 'ship_arrived') {
+      onNavigate({ tab: 'jobs', jobId: meta.job_id || n.job_id })
+      return
+    }
     if (t === 'be_status_check' || t === 'ooc_granted') {
       onNavigate({ tab: 'jobs', jobId: meta.job_id || n.job_id, hash: 'customs' })
       return

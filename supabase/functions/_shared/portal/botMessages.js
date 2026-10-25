@@ -133,8 +133,11 @@ const BOX_ICON = [[/PORT IN|DISCHARGE|VESSEL ARRIVED|DPD/, '🚢'], [/PORT OUT|G
 const boxIcon = (ev) => BOX_ICON.find(([re]) => re.test(ev))?.[1] || '📦'
 const placeOf = (note) => oneLine(String(note || '').split('·').slice(1).join('·')).replace(/^Latest:.*$/i, '').trim() || null
 
-// When a job's ship is due: the ETA typed on the job, else the IGM's expected arrival
+// When a job's ship is due: the ship tracking's ETA (follows the line's latest plan),
+// else the ETA typed on the job, else the IGM's expected arrival
 function shipEta(job, data) {
+  const sea = data.seaByJob?.[job.id]
+  if (sea && !sea.error && !sea.pod_actual && sea.pod_date) return String(sea.pod_date).slice(0, 10)
   if (job.eta) return String(job.eta).slice(0, 10)
   const igm = [].concat(data.resultsByJob?.[job.id]?.['ICEGATE/01'] || [])
   const d = igm.map((r) => r?.parsed?.extra?.expectedArrival).find(Boolean)
@@ -209,6 +212,12 @@ export function instantAlerts(data, events = [], now = new Date()) {
       const job = byId[ev.job_id] || byNo[ev.job_no] || byNo[String(ev.title || '').split('— ').pop()?.trim()]
       const ooc = meta.ooc_no ? `OOC ${meta.ooc_no}${meta.ooc_date ? ` dated ${dayText(meta.ooc_date)}` : ''}` : 'OOC granted'
       add('ooc', `ooc:${job?.id}:${meta.ooc_no || ev.id}`, job, `✅ OOC granted: ${ooc}. Arrange truck or rail.`)
+    }
+    // the ship tracking saw the ship arrive (Jose, 25 Oct 2026)
+    if (ev.action === 'ship_arrived') {
+      const job = byId[ev.job_id] || byId[meta.job_id] || byNo[ev.job_no]
+      add('ship_arrived', `ship_arrived:${job?.id}`, job,
+        `⚓ Ship arrived at ${meta.port || 'the port'}${ev.note ? ` (${String(ev.note).replace(/^Arrived /, '')})` : ''}. BE ${job?.be_no ? 'filed ✅' : 'not filed ❌'}.`)
     }
   }
 

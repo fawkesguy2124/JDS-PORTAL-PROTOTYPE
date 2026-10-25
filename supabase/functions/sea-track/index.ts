@@ -151,6 +151,20 @@ async function lookUp(n: { number: string; type: string; scac: string | null }) 
   return { ok: false, billed: r.ok, error: `${code}${r.body?.message ? `: ${String(r.body.message).slice(0, 160)}` : ''}`, retry: /NO_RESPONSE|TEMPORARY|MAINTENANCE/.test(code) || r.status >= 500 }
 }
 
+// "J-689 — Ship arrived": once per job (a second arrival entry is never written)
+const portWord = (p: unknown) => String(p || 'the port').replace(/^Jawaharlal Nehru(, IN)?/i, 'Nhava Sheva')
+const portClock = (iso: string | null) => (iso ? new Date(iso).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', timeZone: 'UTC' }) : '')
+async function logArrival(admin: any, job: any, row: any) {
+  const { data: had } = await admin.from('activity_log').select('id').eq('action', 'ship_arrived').eq('job_id', job.id).limit(1)
+  if (had?.length) return
+  const ship = row.vessel_name ? ` (${row.vessel_name})` : ''
+  await admin.from('activity_log').insert({
+    type: 'ship_arrived', action: 'ship_arrived', title: `${job.job_no} — Ship arrived at ${portWord(row.pod)}`,
+    note: `Arrived ${portClock(row.pod_date)}${ship}`, job_id: job.id, job_no: job.job_no, done_by_name: 'Ship tracking',
+    meta: { job_id: job.id, job_no: job.job_no, port: portWord(row.pod), arrived_at: row.pod_date, vessel: row.vessel_name || null },
+  })
+}
+
 // The ship has arrived (or the job is finished): stop looking it up
 function arrived(row: any) {
   if (row?.status === 'DELIVERED') return true
@@ -190,6 +204,9 @@ async function track(admin: any, job: any, lines: any[], opts: { start?: boolean
   delete (row as any).next_event
   const { error } = await admin.from('sea_tracking').upsert({ ...row, last_event: { ...(r.row.last_event || {}), next: r.row.next_event } }, { onConflict: 'job_id' })
   if (error) return { job: job.job_no, error: `save: ${error.message}` }
+  // the ship has just arrived: one "Ship arrived" entry, which the bell, WhatsApp and
+  // desktop alerts all show (Jose, 25 Oct 2026: J-689 arrived with no notification)
+  if (r.row.pod_actual && !prev?.pod_actual) await logArrival(admin, job, r.row)
   return { job: job.job_no, number: n.number, type: n.type, status: r.row.status, eta: r.row.pod_date, arrived: r.row.pod_actual, vessel: r.row.vessel_name, imo: r.row.vessel_imo, pos: r.row.lat != null ? [r.row.lat, r.row.lng] : null, last: r.row.last_event, done: row.done, warnings: r.row.warnings }
 }
 

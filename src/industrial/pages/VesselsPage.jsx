@@ -173,7 +173,7 @@ export default function VesselsPage({ onOpenJob, showToast, onGo }) {
               </div>
             </div>
             <div className="act" onClick={(e) => e.stopPropagation()}>
-              {(s.name || s.imo) && (s.arrived ? <Chip tone="amber" icon="anchor">At port, unloading</Chip> : notSailed(seaOfShip(s)) ? <Chip tone="grey" icon="clock">Not sailed yet</Chip> : <Chip tone="blue" icon="ship">At sea</Chip>)}
+              {(s.name || s.imo) && (s.arrived || seaOfShip(s)?.pod_actual ? <Chip tone="amber" icon="anchor">At port, unloading</Chip> : notSailed(seaOfShip(s)) ? <Chip tone="grey" icon="clock">Not sailed yet</Chip> : <Chip tone="blue" icon="ship">At sea</Chip>)}
               {/* no IMO yet: the IGM check finds it (one check, by a person), or type it */}
               {!s.imo && igmOf(s.jobs[0].job) && (
                 <button type="button" className="ix-btn sm" onClick={() => onGo?.(`customs&job=${s.jobs[0].job.id}`)} title="Opens this job's IGM check on the BE & OOC page">
