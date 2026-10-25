@@ -597,7 +597,8 @@ async function handleInbound(admin: Admin, payload: any) {
 // Meta only passes incoming messages to the bot if the WhatsApp account is
 // "subscribed" to the app. Make sure of that once each time the bot starts,
 // using the bot's own key, and write the outcome to the log (never the key).
-const WABA_ID = '1646613459995849'
+// JDS Logistics (real number +91 93454 31746, 25 Oct 2026); the old test account was 1646613459995849
+const WABA_ID = '1889002935590311'
 const APP_ID = '1971564977582223' // JDS portal bot
 let subscribeChecked = false
 async function ensureSubscribed() {
