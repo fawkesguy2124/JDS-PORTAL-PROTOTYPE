@@ -240,11 +240,9 @@ export function instantAlerts(data, events = [], now = new Date()) {
       add('customs', `air_igm:${meta.mark || ev.id}`, job,
         `✈️ Air cargo *in the manifest*: IGM ${meta.igm_no || '?'}${ev.note ? ` (${ev.note})` : ''}. BE ${job?.be_no ? 'filed ✅' : 'can be filed now'}.`)
     }
-    if (ev.action === 'auto_check_paused') {
-      out.push({ key: `auto_paused:${ev.id}`, kind: 'system', jobId: null, jobNo: null,
-        text: `⏸ *Automatic checks paused for 2 hours*\n${ev.note || ''}`,
-        template: { name: 'jds_alert', values: ['JDS automatic checks', oneLine(ev.note || 'paused for 2 hours'), 'SUMMARY'] } })
-    }
+    // (no WhatsApp / desktop alert when the automatic checks pause after government
+    // errors: JDS found it irritating, Jose 30 Oct 2026. It stays in the bell and on
+    // the System health page.)
   }
 
   // container events, grouped by job + event
