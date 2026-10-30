@@ -71,6 +71,25 @@ function buildMilestones(trackLog: any[]) {
     }))
 }
 
+// Alerts are stamped with the moment the portal saw the event, never the event's own
+// time (Jose, 30 Oct 2026: the bell showed "11:59 PM" for evening events). LDB gives
+// date-only events (DPE, sometimes PORT IN) as 11:59:59 pm IST, and the WhatsApp alerts
+// pick up everything stamped since their last run: a future stamp waited till midnight,
+// an older one could be missed. The event's real time, when LDB gives one, goes in the
+// text instead.
+function eventTime(milestones: any[]): string | null {
+  for (const m of milestones || []) {
+    const t = m?.date ? new Date(m.date).getTime() : NaN
+    if (isNaN(t) || t > Date.now()) continue
+    const ist = new Date(t + 5.5 * 3600e3)
+    if (ist.getUTCHours() === 23 && ist.getUTCMinutes() === 59) continue
+    if (ist.getUTCHours() === 0 && ist.getUTCMinutes() === 0 && ist.getUTCSeconds() === 0) continue
+    return new Date(t).toISOString()
+  }
+  return null
+}
+const atText = (iso: string | null) => (iso ? ` · at ${new Date(iso).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Kolkata' })}` : '')
+
 // ── LDB Fetch ─────────────────────────────────────────────────────────────────
 
 async function fetchLDB(cn: string): Promise<{ ok: boolean; data?: any; error?: string }> {
@@ -213,9 +232,9 @@ async function persistAndNotify(cn: string, job: any, ldbData: any) {
             type:       'container_update',
             action:     'container_update',
             title:      notifTitle,
-            note:       `Status: ${existing.status} → ${ldbData.status}`,
-            meta:       { job_id: job.id, container_no: cn, old_status: existing.status, new_status: ldbData.status },
-            created_at: ldbData.milestones?.[0]?.date || new Date().toISOString(),
+            note:       `Status: ${existing.status} → ${ldbData.status}${atText(eventTime(ldbData.milestones))}`,
+            meta:       { job_id: job.id, container_no: cn, old_status: existing.status, new_status: ldbData.status, event_at: eventTime(ldbData.milestones) },
+            created_at: new Date().toISOString(),
           }, { onConflict: 'title,job_no', ignoreDuplicates: true })
           if (logErr) console.warn('[CRON] activity_log status insert failed:', logErr.message)
         } catch (e: any) { console.warn('[CRON] activity_log status insert failed:', e.message) }
@@ -247,10 +266,10 @@ async function persistAndNotify(cn: string, job: any, ldbData: any) {
             action:     'container_update',
             title:      notifTitle,
             note:       newMilestones.length > 1
-              ? `${newMilestones.length} new events · Latest: ${latest.description}`
-              : `${latest.description} · ${latest.location || ''}`,
-            meta:       { job_id: job.id, container_no: cn },
-            created_at: latest.date || new Date().toISOString(),
+              ? `${newMilestones.length} new events · Latest: ${latest.description}${atText(eventTime([latest]))}`
+              : `${latest.description} · ${latest.location || ''}${atText(eventTime([latest]))}`,
+            meta:       { job_id: job.id, container_no: cn, event_at: eventTime([latest]) },
+            created_at: new Date().toISOString(),
           }, { onConflict: 'title,job_no', ignoreDuplicates: true })
           if (logErr) console.warn('[CRON] activity_log milestone insert failed:', logErr.message)
         } catch (e: any) { console.warn('[CRON] activity_log milestone insert failed:', e.message) }
@@ -277,7 +296,7 @@ async function persistAndNotify(cn: string, job: any, ldbData: any) {
             title:      notifTitle,
             note:       `Only ${freeDays} free day${freeDays !== 1 ? 's' : ''} left · Port in: ${ldbData.portIn ? new Date(ldbData.portIn).toLocaleDateString('en-IN', { day:'2-digit', month:'short', timeZone:'Asia/Kolkata' }) : '—'} · ${job.job_no}`,
             meta:       { job_id: job.id, container_no: cn, port_in: ldbData.portIn || null, free_days_remaining: freeDays },
-            created_at: ldbData.portIn || new Date().toISOString(),
+            created_at: new Date().toISOString(),
           }, { onConflict: 'title,job_no', ignoreDuplicates: true })
           if (logErr) console.warn('[CRON] activity_log detention insert failed:', logErr.message)
         } catch (e: any) { console.warn('[CRON] activity_log detention insert failed:', e.message) }
@@ -302,7 +321,7 @@ Deno.serve(async (req) => {
   try {
     const { data: jobs, error: jobsErr } = await supabase
       .from('jobs')
-      .select('id, job_no, containers, shipping_line, vessel, eta, free_days, field_meta, created_at')
+      .select('id, job_no, containers, shipping_line, vessel, eta, free_days, field_meta, created_at, stage')
       .not('containers', 'is', null)
       .neq('containers', '')
 
@@ -315,6 +334,10 @@ Deno.serve(async (req) => {
 
     const allContainers: { cn: string; job: any }[] = []
     for (const job of jobs) {
+      // a delivered job's boxes are no longer its business: a box reused on a new job is
+      // followed through that job (Jose, 30 Oct 2026: J-632, delivered on 25 Oct, got
+      // PORT IN alerts for its container's next trip)
+      if (Number(job.stage) >= 10) continue
       const cnList = (job.containers || '')
         .split(/[\s,;/]+/)
         .map((s: string) => s.trim().toUpperCase())
