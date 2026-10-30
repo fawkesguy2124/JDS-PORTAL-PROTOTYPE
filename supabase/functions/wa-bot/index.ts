@@ -285,7 +285,11 @@ async function runMorning(admin: Admin) {
 async function runAlerts(admin: Admin) {
   const { data: state } = await admin.from('bot_state').select('alerts_checked_at').eq('id', 1).maybeSingle()
   const since = state?.alerts_checked_at || new Date(Date.now() - 60 * 60 * 1000).toISOString()
-  const now = new Date().toISOString()
+  // read only up to 2 minutes ago: the container refresh runs at the same moment and
+  // stamps its record a split second before saving it, so a record still being saved
+  // fell before the next run's start and was never sent (Jose, 31 Oct 2026: J-691's
+  // PORT OUT at 1:30 am reached the bell but not WhatsApp)
+  const now = new Date(Date.now() - 2 * 60 * 1000).toISOString()
   const [data, team, events] = await Promise.all([
     loadData(admin), loadTeam(admin),
     readAll(() => admin.from('activity_log').select('*').gt('created_at', since).lte('created_at', now).order('created_at')),
