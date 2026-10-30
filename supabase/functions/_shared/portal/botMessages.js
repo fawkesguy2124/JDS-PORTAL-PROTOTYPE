@@ -14,7 +14,7 @@ import { vesselsOf, cargoOnShip, jobImo, igmSiblings, shipLineText } from './shi
 
 const DAY = 24 * 60 * 60 * 1000
 const TZ = 'Asia/Kolkata'
-const MAX_LINES = 8 // per section; the rest is "+N more"
+const MAX_LINES = 5 // per section; the rest is "+N more"
 
 // Templates to submit in Meta (WhatsApp Manager → Message templates).
 // Category: Utility. Language: English. {{n}} = values filled by the bot.
@@ -112,7 +112,6 @@ export function morningSummary(allData, person, now = new Date()) {
     section(`🚢 Arriving in the next 2 days (${soon.length})`, soon),
   ]
   if (!urgent.length && !todo.length) parts.push('✅ Nothing urgent today.')
-  parts.push('Ask me anything about these jobs, or tell me what to do.')
 
   return {
     text: parts.filter(Boolean).join('\n\n'),
@@ -200,7 +199,8 @@ export function instantAlerts(data, events = [], now = new Date()) {
     const who = `${job.job_no} (${shortClient(job.client)})`
     out.push({
       key, kind, jobId: job.id, jobNo: job.job_no,
-      text: `🔔 *${who}*\n${what}\nReply ${job.job_no} for the job details.`,
+      // two lines, nothing else (Jose, 31 Oct 2026: replies were too text-heavy)
+      text: `🔔 *${who}*\n${what}`,
       template: { name: 'jds_alert', values: [who, oneLine(what).replace(/[.\s]+$/, ''), job.job_no] },
     })
   }
@@ -304,12 +304,10 @@ function hello(person) {
   const first = String(person?.name || '').trim().split(/\s+/)[0]
   const canChange = allowed(person, 'change')
   return [
-    `Hi${first ? ` ${first}` : ''} 👋 I'm *JDS AI Assistant*, your personal assistant for JDS Logistics.`,
-    `I'm connected to the JDS portal, so just ask me anything about your jobs in plain words, typed or as a voice note: where a container or ship is, which jobs are waiting for OOC, what's due today, when free days run out.`,
+    `Hi${first ? ` ${first}` : ''} 👋 I'm the *JDS assistant*. Ask me about any job, container or ship, typed or by voice note.`,
     canChange
-      ? `I can also do the work for you: update a job, record a BE or OOC, add a truck, save a document you send me, create a job from a BL, set reminders, or send you a job's papers or an Excel report. I always check with you before I change anything.`
-      : `You have view access, so I'll look things up for you; changes are made by the JDS team.`,
-    `What can I help you with?`,
+      ? `I can also update jobs, add trucks, save documents and set reminders (I always ask before changing anything).`
+      : `You have view access: I look things up; changes are made by the JDS team.`,
   ].join('\n\n')
 }
 
@@ -442,9 +440,13 @@ export function missingDetails(data, person) {
     if (!boxes.length && !/lcl/i.test(job.mode || '')) missing.push('containers')
     if (!job.shipping_line) missing.push('shipping line')
     if (!arrived) {
-      if (!job.eta && !boxes.some((no) => data.containersByNo?.[no]?.eta)) missing.push('ETA')
+      // ship tracking already has the ETA and the ship (Jose, 30 Oct 2026: J-674 and
+      // J-691 were asked for an ETA and IMO the Vessels page was showing)
+      const sea = data.seaByJob?.[job.id]
+      const tracked = sea && !sea.error ? sea : null
+      if (!job.eta && !tracked?.pod_date && !boxes.some((no) => data.containersByNo?.[no]?.eta)) missing.push('ETA')
       const igm = String(job.ulip_refs?.igm_no || '').replace(/\D/g, '')
-      if (!jobImo(job, data) && !igmSiblings(job, data).some((o) => jobImo(o, data)) && igm.length < 5) missing.push('IMO')
+      if (!tracked?.vessel_imo && typeof tracked?.lat !== 'number' && !jobImo(job, data) && !igmSiblings(job, data).some((o) => jobImo(o, data)) && igm.length < 5) missing.push('IMO')
     }
     if (missing.length) items.push({ job, missing })
   }
@@ -453,11 +455,10 @@ export function missingDetails(data, person) {
   const rows = items.flatMap(({ job, missing }) => missing.map((m) => ({ id: ask[m](job.job_no), title: `${m === 'containers' ? 'Containers' : m === 'shipping line' ? 'Line' : m} · ${job.job_no}`.slice(0, 24), description: `${job.client || 'No client'}`.slice(0, 72) }))).slice(0, 10)
   const text = items.length
     ? [
-        `🧩 *Details missing* (${items.length} job${items.length === 1 ? '' : 's'}). With these filled, the portal follows the job by itself:`,
-        ...items.slice(0, 12).map(({ job, missing }) => `• *${job.job_no}* (${job.client || 'no client'}): ${missing.join(', ')}`),
-        ...(items.length > 12 ? [`…and ${items.length - 12} more`] : []),
-        '',
-        `Tap one below, or just reply, e.g. "ETA of ${items[0].job.job_no} is 28 Oct".`,
+        `🧩 *Details missing*`,
+        ...items.slice(0, 6).map(({ job, missing }) => `• *${job.job_no}*: ${missing.join(', ')}`),
+        ...(items.length > 6 ? [`+${items.length - 6} more`] : []),
+        `_e.g. "ETA of ${items[0].job.job_no} is 28 Oct"_`,
       ].join('\n')
     : null
   return { items, text, rows }

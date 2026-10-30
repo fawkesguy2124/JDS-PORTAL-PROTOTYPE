@@ -228,13 +228,32 @@ async function sendHeld(admin: Admin, person: Person) {
   const since = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString()
   const { data: rows } = await admin.from('bot_sent').select('key, kind, text, sent_at').eq('phone', person.phone).eq('error', HELD).gte('sent_at', since).order('sent_at')
   if (!rows?.length) return
-  const when = (iso: string) => new Date(iso).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' })
-  // the newest summary only; every alert, reminder and task in time order
-  const lastSummary = [...rows].reverse().find((r: any) => r.kind === 'morning')
-  const keep = rows.filter((r: any) => r.kind !== 'morning' || r === lastSummary)
-  const parts = keep.map((r: any) => `🕘 _${when(r.sent_at)}_\n${r.text}`)
-  let text = `📬 *While you were away* (${keep.length} message${keep.length === 1 ? '' : 's'}):\n\n${parts.join('\n\n')}`
-  if (text.length > 4000) text = `${text.slice(0, 3900)}\n\n…more in the portal.`
+  // one short line per message, newest last (Jose, 31 Oct 2026: the full messages
+  // pasted one after another were too much to read). The morning summary becomes one
+  // line; the missing-details list is left out (the next morning repeats it).
+  const when = (iso: string) => new Date(iso).toLocaleString('en-IN', { hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Kolkata' })
+  const news = rows.filter((r: any) => r.kind !== 'morning' && r.kind !== 'missing')
+  const line = (t: string) => {
+    const ls = String(t || '').split('\n').map((x) => x.replace(/[*_]/g, '').trim()).filter(Boolean)
+    const head = ls[0]?.replace(/^🔔\s*/, '') || ''
+    const body = ls.slice(1).join(' ').replace(/\s+/g, ' ')
+    const one = body ? `${head}: ${body}` : head
+    return one.length > 110 ? `${one.slice(0, 107)}…` : one
+  }
+  const MAX = 8
+  const shown = news.slice(-MAX).map((r: any) => `• ${when(r.sent_at)} ${line(r.text)}`)
+  const more = news.length > MAX ? `\n_+${news.length - MAX} earlier, in the portal bell_` : ''
+  // the summary as one line: how much is urgent, and how to see it
+  const summary = [...rows].reverse().find((r: any) => r.kind === 'morning')
+  const count = (re: RegExp) => Number(String(summary?.text || '').match(re)?.[1] || 0)
+  const sumLine = summary ? `☀️ 8 am summary: ${count(/Urgent \((\d+)\)/)} urgent, ${count(/To do today \((\d+)\)/)} to do · reply *today* to see it` : ''
+  const text = news.length || summary
+    ? [`📬 *While you were away*`, ...shown, more.trim(), sumLine].filter(Boolean).join('\n')
+    : null
+  if (!text) {
+    await admin.from('bot_sent').update({ error: 'held, dropped (overview only)' }).eq('phone', person.phone).eq('error', HELD)
+    return
+  }
   const r = await send(person.phone, { text })
   if (!r.error) await admin.from('bot_sent').update({ error: 'held, then sent together', wa_message_id: r.id || null }).eq('phone', person.phone).eq('error', HELD)
 }
@@ -247,7 +266,7 @@ async function runMorning(admin: Admin) {
   for (const person of team) {
     const summary = morningSummary(data, person)
     // free only: tomorrow's summary can reach them only if they write within 24 hours
-    const text = PAID_TEMPLATES ? summary.text : `${summary.text}\n\n_Reply anything (even "ok") so tomorrow's 8 am summary can reach you._`
+    const text = PAID_TEMPLATES ? summary.text : `${summary.text}\n\n_Reply "ok" to get tomorrow's summary._`
     out.push(await sendOnce(admin, `morning:${today}`, person, 'morning', { ...summary, text }))
   }
   // then the details missing on their jobs, with a tap list (the list only goes
