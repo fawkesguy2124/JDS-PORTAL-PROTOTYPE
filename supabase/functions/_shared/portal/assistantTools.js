@@ -91,7 +91,10 @@ function jobFacts(job, data, detail = false) {
     customs_stage: j.beStage ? `${j.beStage.label}${j.beStage.at ? ` (set ${day(j.beStage.at)}${j.beStage.by ? ` by ${j.beStage.by}` : ''})` : ''}${j.beStage.note ? `: ${j.beStage.note}` : ''}` : null,
     be_no: job.be_no || null, be_date: day(job.be_date), ooc_date: day(j.oocDate) || (j.oocDone && !j.oocDate ? 'recorded by staff' : null),
     free_days_left: j.freeDaysLeft, problems: j.attention.map((a) => `${a.level === 'red' ? 'URGENT' : a.level === 'amber' ? 'TO DO' : 'NOTE'}: ${a.text}`),
-    leaves_by: j.onwardMode || 'not decided', trucks: (j.trucks || []).map((t) => `${t.no}${t.container ? ` (${t.container})` : ''}`),
+    leaves_by: j.onwardMode || 'not decided',
+    // the newest road / rail movement LDB shows on this trip (toll plaza or railway station)
+    moving: j.onwardMove ? `${j.onwardMove.mode === 'rail' ? 'by rail' : 'by road'}${j.onwardMove.place ? `, last at ${j.onwardMove.place}` : ''} on ${day(j.onwardMove.at)}` : null,
+    trucks: (j.trucks || []).map((t) => `${t.no}${t.container ? ` (${t.container})` : ''}`),
     ...customsCheck(job, data, j),
   }
   if (!detail) return { ...facts, containers: parseContainerNos(job.containers).length }

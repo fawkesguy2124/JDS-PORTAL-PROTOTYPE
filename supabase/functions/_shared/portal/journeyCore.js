@@ -210,18 +210,57 @@ export function jobTrucks(job) {
 }
 export const truckNos = (job) => jobTrucks(job).map((t) => t.no)
 
+// How the cargo leaves the port / CFS / ICD on this trip, read from LDB (Jose, 31 Oct
+// 2026). Checked against every box JDS has tracked:
+//   • STATION CROSSED (a railway station or division) = rail, whatever LDB's
+//     transport label says (it says TRUCK on most of them)
+//   • TOLL PLAZA CROSSED / GATE CROSSED = road
+//   • ICD IN / ICD OUT is NOT rail: JDS's ICD is mostly Dronagiri Rail Terminal, used
+//     like a CFS, and the box then leaves by road through the toll plazas
+// Each departure (PORT OUT, CFS OUT, ICD OUT, GATE OUT, TERMINAL OUT) starts a leg; the
+// leg's first movement says rail or road, until the box reaches its next stop.
+// The leg that counts is the one that took the cargo out (exitAt); before that, a leg
+// by rail straight from the port (to an inland ICD) also counts.
+// Returns { mode: 'rail' | 'truck', at, place } of the newest movement, or null.
+const DEPART = /^(PORT OUT|PORTOUT|CFS OUT|CFS GATE OUT|ICD OUT|ICD GATE OUT|GATE OUT|TERMINAL OUT)$/
+const STOP = /^(PORT IN|PORTIN|CFS IN|CFS GATE IN|ICD IN|ICD GATE IN|GATE IN|TERMINAL IN)$|EMPTY/
+const ON_RAIL = /^STATION CROSSED$/
+const ON_ROAD = /^(TOLL PLAZA CROSSED|GATE CROSSED)$/
+export function onwardMove(row, job) {
+  const trip = containerTrip(row, job)
+  if (!trip.portIn || trip.laterTrip) return null
+  const from = new Date(trip.portIn).getTime()
+  const until = trip.returnedAt ? new Date(trip.returnedAt).getTime() : Infinity
+  const ms = (Array.isArray(row?.milestones) ? row.milestones : [])
+    .filter((m) => !isNaN(WHEN(m)) && WHEN(m) > from && WHEN(m) < until)
+    .sort((a, b) => WHEN(a) - WHEN(b))
+  const exitAt = trip.exitAt ? new Date(trip.exitAt).getTime() : null
+  let found = null
+  for (let k = 0; k < ms.length; k++) {
+    if (!DEPART.test(NAME(ms[k]))) continue
+    const leg = []
+    for (const m of ms.slice(k + 1)) { if (STOP.test(NAME(m))) break; leg.push(m) }
+    const moves = leg.filter((m) => ON_RAIL.test(NAME(m)) || ON_ROAD.test(NAME(m)))
+    if (!moves.length) continue
+    const mode = ON_RAIL.test(NAME(moves[0])) ? 'rail' : 'truck'
+    const isExitLeg = exitAt !== null && WHEN(ms[k]) >= exitAt
+    if (!isExitLeg && mode !== 'rail') continue
+    const last = moves.at(-1)
+    found = { mode, at: new Date(WHEN(last)).toISOString(), place: String(last.location || '').split(',')[0].replace(/^[^/]*\//, '').trim() || null }
+  }
+  return found
+}
+
 // How the cargo leaves after OOC: not always a truck. Staff can set it on the job
-// (field_meta.onward_mode = 'truck' | 'rail'); otherwise rail is recognised from the
-// container's own tracking (rail transport, station crossed, wagon), and a truck
-// number means truck. null = not decided yet.
-const RAIL_EVENT = /RAIL|STATION|WAGON|TRAIN/
+// (field_meta.onward_mode = 'truck' | 'rail'); otherwise this trip's LDB movement
+// (onwardMove) says it, and a truck number means truck. null = not decided yet.
 export function onwardMode(job, rows = []) {
   const set = job?.field_meta?.onward_mode
   if (set === 'truck' || set === 'rail') return set
-  const onRail = rows.some((t) => (Array.isArray(t?.milestones) ? t.milestones : [])
-    .some((m) => RAIL_EVENT.test(String(m?.description || '').toUpperCase()) || /^R(AIL)?$/i.test(String(m?.transportMode || '').trim())))
-  if (onRail || rows.some((t) => t?.status === 'on_rail')) return 'rail'
-  return truckNos(job).length ? 'truck' : null
+  const moves = rows.map((t) => onwardMove(t, job)).filter(Boolean)
+  if (moves.some((m) => m.mode === 'rail') || rows.some((t) => t?.status === 'on_rail')) return 'rail'
+  if (moves.length || truckNos(job).length) return 'truck'
+  return null
 }
 
 // Container facts for a job (containers still in play only)
@@ -338,12 +377,21 @@ export function journeyFor(job, data) {
   // the ship tracking saw the ship reach the port; an air waybill in Customs' air
   // manifest (ICEGATE/09) means the flight is in
   const sea = data.seaByJob?.[job.id]
-  const seaAt = sea && !sea.error && sea.pod_actual && sea.pod_date ? sea.pod_date : null
+  // (the line's dates for an Indian port are port time saved as UTC: 5½ h earlier for real)
+  const seaAt = sea && !sea.error && sea.pod_actual && sea.pod_date
+    ? (/,\s*IN$/i.test(String(sea.pod || '')) ? new Date(new Date(sea.pod_date).getTime() - 5.5 * 3600e3).toISOString() : sea.pod_date)
+    : null
   const airIgm = isAirJob(job) ? (results['ICEGATE/09'] || []).find((r) => r.found) : null
   const ata = vessel?.parsed?.extra?.ata || seaAt || null
   const arrived = !!(ata || c.portIn || airIgm || stage >= 3)
   const mode = onwardMode(job, c.all)
-  const railMoving = mode === 'rail' && c.anyOut
+  // LDB already shows the cargo moving (newest movement of any box on this trip): no
+  // "arrange a truck" while it is on the road or on rail (Jose, 31 Oct 2026: J-644 was
+  // past the Khalapur toll and still said "assign a truck")
+  const moved = c.all.map((t) => onwardMove(t, job)).filter(Boolean).sort((a, b) => String(b.at).localeCompare(String(a.at)))[0] || null
+  const railMoving = mode === 'rail' && (c.anyOut || moved?.mode === 'rail')
+  const roadMoving = !railMoving && moved?.mode === 'truck'
+  const movedText = moved ? `${moved.mode === 'rail' ? 'On rail' : 'On the road'}${moved.place ? ` · ${moved.place}` : ''}` : null
 
   const steps = [
     arrived
@@ -351,11 +399,12 @@ export function journeyFor(job, data) {
       : { id: 'arrival', label: isAirJob(job) ? 'Flight due' : 'Ship due', done: false, when: null, sub: job.eta ? `ETA ${dayLabel(job.eta)}` : beFiled ? 'Not arrived yet' : null },
     // a BE is often filed before the ship comes in (advance BE): say so, so the strip
     // does not look like it contradicts itself (Jose, 24 Oct 2026: J-689)
-    { id: 'be', label: 'BE filed', done: beFiled, when: dayLabel(job.be_date), sub: beFiled ? (arrived ? `BE ${job.be_no}` : 'Before arrival') : 'In LiveImpex' },
+    // a container that left with cargo had its BE filed, even if the number is not in the portal
+    { id: 'be', label: 'BE filed', done: beFiled || leftWithCargo, when: dayLabel(job.be_date), sub: beFiled ? (arrived ? `BE ${job.be_no}` : 'Before arrival') : leftWithCargo ? 'BE number not in the portal' : 'In LiveImpex' },
     { id: 'ooc', label: 'OOC', done: oocDone, when: dayLabel(oocDate), sub: oocDate ? (cs.ooc_no ? `OOC ${cs.ooc_no}` : null) : oocDone ? (stage < 7 && leftWithCargo ? 'Container left with cargo' : 'Recorded by staff') : beFiled ? (beStage?.short || 'Waiting') : null },
     { id: 'out', label: isAirJob(job) ? 'Cargo out' : 'Container out', done: c.anyOut || stage >= 9, when: null, sub: c.tracked[0]?.status_text || null },
-    { id: 'truck', label: mode === 'rail' ? 'Rail' : mode === 'truck' ? 'Truck' : 'Truck / rail', done: oocDone && (!!truck || railMoving), when: null,
-      sub: truck ? (trucks.length > 1 ? `${trucks.length} trucks` : truck) : (mode === 'rail' ? (railMoving ? 'On its way by rail' : 'Going by rail') : oocDone ? 'Not arranged yet' : null) },
+    { id: 'truck', label: mode === 'rail' ? 'Rail' : mode === 'truck' ? 'Truck' : 'Truck / rail', done: oocDone && (!!truck || railMoving || roadMoving), when: moved ? dayLabel(moved.at) : null,
+      sub: truck ? (trucks.length > 1 ? `${trucks.length} trucks` : truck) : movedText || (mode === 'rail' ? 'Going by rail' : oocDone ? 'Not arranged yet' : null) },
     { id: 'delivered', label: 'Delivered', done: delivered, when: !isDelivered(job) && c.finishedOn ? dayLabel(c.finishedOn) : null, sub: !isDelivered(job) && c.allDelivered ? (deliveryBy(job) === 'client' ? 'Collected by client' : 'Empty container back') : null },
   ]
   // delivered = the whole job is over: every step counts as done, nothing is "next"
@@ -369,7 +418,7 @@ export function journeyFor(job, data) {
 
   let phase = 'arrival'
   if (delivered) phase = 'delivered'
-  else if ((truck && oocDone) || (railMoving && oocDone) || stage >= 9) phase = 'truck'
+  else if ((truck && oocDone) || ((railMoving || roadMoving) && oocDone) || stage >= 9) phase = 'truck'
   else if (oocDone) phase = 'release'
   // a BE filed before the ship came in waits for the ship first, not for OOC.
   // LCL boxes are often not tracked, so a BE filed 10+ days ago counts as arrived.
@@ -378,7 +427,7 @@ export function journeyFor(job, data) {
   else if (arrived || stage >= 1) phase = 'docs'
 
   // OOC done and the onward move not arranged yet (rail jobs don't wait for a truck)
-  const readyForTruck = !delivered && oocDone && !truck && mode !== 'rail'
+  const readyForTruck = !delivered && oocDone && !truck && mode !== 'rail' && !roadMoving
 
   // ── Saved job details that container tracking (LDB) contradicts ──
   const mismatches = []
@@ -397,6 +446,8 @@ export function journeyFor(job, data) {
     else if (c.minFree !== null && c.minFree <= 5) add('amber', `${c.minFree} free days left`, 'containers')
     // (no "move the job to the OOC stage" reminder: the customs check moves it by itself)
     if (readyForTruck) add('amber', mode === 'truck' ? 'OOC done — no truck assigned yet' : 'OOC done — arrange truck or rail', 'truck')
+    // on the road by LDB, but the portal has no truck number (for live truck tracking)
+    if (roadMoving && !truck) add('info', `${movedText}${moved.at ? ` (${dayLabel(moved.at)})` : ''} — add the truck number to follow it live`, 'truck')
     if (beFiled && !oocDone && phase === 'ooc') {
       const filedDays = daysSince(job.be_date)
       const inStage = beStage?.at ? daysSince(beStage.at) : null
@@ -417,7 +468,7 @@ export function journeyFor(job, data) {
   const seen = trucks.filter((t) => t.location).sort((a, b) => String(b.location.at || '').localeCompare(String(a.location.at || '')))
   return {
     steps, phase, attention, beStage,
-    oocDate, oocDone, beFiled, truck, trucks, readyForTruck, onwardMode: mode,
+    oocDate, oocDone, beFiled, truck, trucks, readyForTruck, onwardMode: mode, onwardMove: moved,
     arrivedAt: ata || c.portIn || null,
     // a finished job has no free days to count down (Jose, 25 Oct 2026)
     freeDaysLeft: delivered ? null : c.minFree,

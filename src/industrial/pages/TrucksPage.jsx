@@ -101,15 +101,17 @@ export default function TrucksPage({ currentUserName, onOpenJob, showToast, canU
   const lists = useMemo(() => {
     const q = search.trim().toLowerCase()
     const match = (j) => !q || [...truckNos(j), j.job_no, j.client].some((v) => String(v || '').toLowerCase().includes(q))
-    const ready = [], road = [], carting = []
+    const ready = [], road = [], carting = [], moving = []
     for (const r of rows) {
       const { job, j } = r
       if (isDelivered(job) || j.phase === 'delivered' || !match(job)) continue
       if (isExportJob(job)) carting.push(r)
       else if (truckNos(job).length) road.push(r)
+      // container tracking (LDB) shows it moving, but no truck number on the job
+      else if (j.oocDone && j.onwardMove) moving.push(r)
       else if (j.readyForTruck) ready.push(r)
     }
-    return { ready, road, carting }
+    return { ready, road, carting, moving }
   }, [rows, search])
 
   // the ?q= job (from a link elsewhere) is highlighted and shown on the map
@@ -309,7 +311,9 @@ export default function TrucksPage({ currentUserName, onOpenJob, showToast, canU
           <div style={{ minWidth: 0 }}>
             <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{job.client || 'No client'}</div>
             <div style={{ fontSize: 12, color: 'var(--muted)' }}>
-              {j.oocDate ? `OOC ${fmtDate(j.oocDate)}` : isExportJob(job) ? 'Export cargo to the port' : 'OOC recorded'} · <span className="mono">{containersText(j.containers?.nos)}</span>
+              {j.onwardMove
+                ? <>{j.onwardMove.mode === 'rail' ? 'On rail' : 'On the road'}{j.onwardMove.place ? ` · ${j.onwardMove.place}` : ''} · {timeAgo(j.onwardMove.at)} (container tracking)</>
+                : j.oocDate ? `OOC ${fmtDate(j.oocDate)}` : isExportJob(job) ? 'Export cargo to the port' : 'OOC recorded'} · <span className="mono">{containersText(j.containers?.nos)}</span>
             </div>
           </div>
           {truckForm(job, j)}
@@ -357,11 +361,17 @@ export default function TrucksPage({ currentUserName, onOpenJob, showToast, canU
             </Suspense>
             <div className="ix-card-head">
               <Icon name="truck" style={{ color: 'var(--navy)' }} />
-              <h2>On the road</h2><span className="ix-chip grey">{onRoad.filter((x) => !isExportJob(x.r.job)).length}</span>
+              <h2>On the road</h2><span className="ix-chip grey">{onRoad.filter((x) => !isExportJob(x.r.job)).length + lists.moving.length}</span>
               <span className="sub hide-m">Each check asks FASTag. Check when you need to know.</span>
             </div>
-            {lists.road.length === 0 && <div className="ix-empty">{search ? 'No truck on the road matches your search.' : 'No trucks on the road right now.'}</div>}
+            {lists.road.length === 0 && !lists.moving.length && <div className="ix-empty">{search ? 'No truck on the road matches your search.' : 'No trucks on the road right now.'}</div>}
             {lists.road.map(renderRoad)}
+            {lists.moving.length > 0 && (
+              <>
+                <div className="ix-subhead">Moving by container tracking, truck number not added ({lists.moving.length})</div>
+                {lists.moving.map(renderReady)}
+              </>
+            )}
           </div>
 
           <div className="ix-card" style={{ marginBottom: 16 }}>
