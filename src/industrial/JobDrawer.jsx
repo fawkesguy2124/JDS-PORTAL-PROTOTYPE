@@ -208,7 +208,6 @@ export default function JobDrawer({ jobId, onClose, onOpenFull, onOpenTruck, cur
   const [viewDoc, setViewDoc] = useState(null) // a PDF shown inside the portal
   const [openBox, setOpenBox] = useState(null)
   const [checking, setChecking] = useState(false) // Check OOC running in the panel
-  const [allEvents, setAllEvents] = useState(false)
 
   const log = loaded.id === curId ? loaded.log : []
   const docs = loaded.id === curId ? loaded.docs : []
@@ -241,7 +240,7 @@ export default function JobDrawer({ jobId, onClose, onOpenFull, onOpenTruck, cur
     if (at < 0 || !id) return
     rememberJob(id)
     setCurId(id)
-    setViewDoc(null); setOpenBox(null); setAllEvents(false)
+    setViewDoc(null); setOpenBox(null)
   }
 
   useEffect(() => {
@@ -372,12 +371,7 @@ export default function JobDrawer({ jobId, onClose, onOpenFull, onOpenTruck, cur
   if (job.created_at) events.push({ at: job.created_at, t: 'Job created', src: 'staff' })
   const byTime = (a, b) => new Date(b.at) - new Date(a.at)
   events.sort(byTime)
-  // many containers: fold their moves into one line that opens the Containers tab
-  let shownEvents = events
-  const ctrEvents = events.filter((e) => e.ctr)
-  if (boxes.length > 3 && ctrEvents.length && !allEvents) {
-    shownEvents = [...events.filter((e) => !e.ctr), { at: ctrEvents[0].at, t: `${ctrEvents.length} container updates`, src: 'port', fold: true }].sort(byTime)
-  }
+  // (every event shown, nothing folded or cut short: the card scrolls; Jose, 1 Nov 2026)
   const upcoming = []
   if (!delivered && j.freeTill) {
     const box = j.freeBox && boxes.length > 1 ? ` · ${j.freeBox}` : ''
@@ -393,8 +387,8 @@ export default function JobDrawer({ jobId, onClose, onOpenFull, onOpenTruck, cur
     return d === 0 ? `Today · ${fmtDate(iso)}` : d === 1 ? `Yesterday · ${fmtDate(iso)}` : fmtDate(iso)
   }
   // (render functions, not components: they read this render's values)
-  const timeline = (limit) => {
-    const list = limit ? shownEvents.slice(0, limit) : shownEvents
+  const timeline = () => {
+    const list = events
     const items = []
     let lastDay = null
     list.forEach((e, i) => {
@@ -407,8 +401,7 @@ export default function JobDrawer({ jobId, onClose, onOpenFull, onOpenTruck, cur
         <div key={i} className="ix-jp-ev">
           <span className={`d ${e.bad ? 'bad' : e.src}`} />
           <p>
-            {e.fold ? <button type="button" className="ix-link" onClick={() => setAllEvents(true)}>{e.t} · show all</button>
-              : e.no ? <><span className="mono">{e.no}</span> {e.t.toLowerCase()}{e.place ? ` · ${e.place}` : ''}</> : e.t}
+            {e.no ? <><span className="mono">{e.no}</span> {e.t.toLowerCase()}{e.place ? ` · ${e.place}` : ''}</> : e.t}
             <small><Icon name={icon} />{label}{e.by ? ` · ${e.by}` : ''}{time ? ` · ${time}` : ''}</small>
           </p>
         </div>,
@@ -426,7 +419,6 @@ export default function JobDrawer({ jobId, onClose, onOpenFull, onOpenTruck, cur
         )}
         {list.length === 0 && <EmptyState line icon="clock" title="No events yet" />}
         {items}
-        {limit && shownEvents.length > limit ? <button type="button" className="ix-link" style={{ margin: '4px 0 0' }} onClick={() => setAllEvents(true)}>See the full timeline</button> : null}
       </div>
     )
   }
@@ -679,7 +671,7 @@ export default function JobDrawer({ jobId, onClose, onOpenFull, onOpenTruck, cur
                     </div>
                   </Section>
                   <Section title={<><Icon name="clock" />Timeline</>} right={<span className="muted">IST</span>}>
-                    {timeline(allEvents ? 0 : 6)}
+                    {timeline()}
                   </Section>
                 </div>
               </div>
