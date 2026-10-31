@@ -6,7 +6,7 @@
 //  • a BL counts once however many containers it has, so a carrier BL is used first
 //  • only sea imports whose containers are not in port yet are looked up
 //  • jobs opened before the trial are only tracked when staff ask (start: true)
-//  • every number is counted per month (sea_track_usage) and the function stops at MONTH_CAP
+//  • every number is counted (sea_track_usage, per month) and the function stops at MONTH_CAP for the whole trial
 //  • once the ship has arrived the job is marked done and never looked up again
 //
 // Calls:
@@ -195,14 +195,20 @@ function arrived(row: any) {
   return !!(row?.pod_actual && row?.pod_date && Date.now() - new Date(row.pod_date).getTime() > 86400e3)
 }
 
-async function usedThisMonth(admin: any) {
-  const { count } = await admin.from('sea_track_usage').select('number', { count: 'exact', head: true }).eq('month', month())
+// the trial's 50 shipments are for the whole trial, not per month (1 Nov 2026: October
+// had used 8, so 45 more in November would have gone past 50)
+async function usedInTrial(admin: any) {
+  const { count } = await admin.from('sea_track_usage').select('number', { count: 'exact', head: true })
   return count || 0
 }
 
 // One job: look up, save. `start` allows a number not yet counted this month.
 async function track(admin: any, job: any, lines: any[], opts: { start?: boolean; by?: string; auto?: boolean }) {
-  const { data: prev } = await admin.from('sea_tracking').select('*').eq('job_id', job.id).maybeSingle()
+  const { data: saved } = await admin.from('sea_tracking').select('*').eq('job_id', job.id).maybeSingle()
+  // the number tracked must still be on the job: staff may have corrected the BL or
+  // container number since (the old row would otherwise ask about the wrong number for ever)
+  const onJob = (no: string) => clean(job.bl_no) === no || boxNos(job.containers).includes(no)
+  const prev = saved && onJob(saved.number) ? saved : null
   // a container is asked of the job's line as it is worked out today (an older row may
   // carry a wrong line code: J-1001 had Cleve & Zonen's for ONE)
   const n = prev
@@ -212,13 +218,13 @@ async function track(admin: any, job: any, lines: any[], opts: { start?: boolean
   // a new number this month uses one of the trial's shipments
   const { data: counted } = await admin.from('sea_track_usage').select('number').eq('month', month()).eq('number', n.number).maybeSingle()
   if (!counted) {
-    if (!prev && !opts.start && !opts.auto) return { job: job.job_no, skipped: 'not tracked yet' }
-    if (await usedThisMonth(admin) >= MONTH_CAP) return { job: job.job_no, skipped: `monthly limit (${MONTH_CAP}) reached` }
+    if (!prev && !saved && !opts.start && !opts.auto) return { job: job.job_no, skipped: 'not tracked yet' }
+    if (await usedInTrial(admin) >= MONTH_CAP) return { job: job.job_no, skipped: `trial limit (${MONTH_CAP} shipments) reached` }
   }
   const r = await lookUp(n)
   if (!counted && (r.ok || r.billed)) await admin.from('sea_track_usage').insert({ month: month(), number: n.number, job_no: job.job_no })
   const now = new Date().toISOString()
-  const base = { job_id: job.id, job_no: job.job_no, number: n.number, number_type: n.type, sealine: n.scac, fetched_at: now, ...(prev ? {} : { started_by: opts.by || 'auto' }) }
+  const base = { job_id: job.id, job_no: job.job_no, number: n.number, number_type: n.type, sealine: n.scac, fetched_at: now, ...(saved ? {} : { started_by: opts.by || 'auto' }) }
   // the line still answers with this container's PREVIOUS trip (J-673, 1 Nov 2026: the box
   // was delivered at Chennai on 9 Aug, long before the job was opened on 27 Oct). That is
   // not this job's ship: nothing of it is kept, the job is not marked arrived, and the
@@ -242,8 +248,11 @@ async function track(admin: any, job: any, lines: any[], opts: { start?: boolean
       await admin.from('sea_tracking').update({ refresh_error: r.error, refresh_error_at: now }).eq('job_id', job.id)
       return { job: job.job_no, number: n.number, error: r.error, kept: 'last good data kept' }
     }
-    // a number the line doesn't know: don't try it again by itself (staff can)
-    await admin.from('sea_tracking').upsert({ ...base, error: r.error, done: prev?.done || (!r.retry && !!opts.auto && !prev) }, { onConflict: 'job_id' })
+    // a number the line doesn't know (yet): asked again every hour for the job's first two
+    // weeks, as lines often publish a booking only once the box is loaded (1 Nov 2026:
+    // the first hourly answer used to stop it for good); after that, only staff retry
+    const young = Date.now() - new Date(job.created_at || 0).getTime() < 14 * 864e5
+    await admin.from('sea_tracking').upsert({ ...base, error: r.error, done: !young && (!!prev?.done || (!r.retry && !!opts.auto && !prev)) }, { onConflict: 'job_id' })
     return { job: job.job_no, number: n.number, error: r.error }
   }
   // what the last check saved, unless it was the container's previous trip: that trip's
@@ -344,7 +353,7 @@ Deno.serve(async (req) => {
   }
 
   try {
-    if (body.usage) return json({ success: true, month: month(), used: await usedThisMonth(admin), cap: MONTH_CAP })
+    if (body.usage) return json({ success: true, month: month(), used: await usedInTrial(admin), cap: MONTH_CAP })
     if (body.sealines) {
       const lines = await sealines()
       return json({ success: true, count: lines.length, lines: lines.map((s: any) => ({ name: s.name, scac: s.scacCodes, prefixes: s.prefixes, types: s.activeTypes, maintenance: s.maintenance })) })
@@ -362,8 +371,10 @@ Deno.serve(async (req) => {
       const { data: job } = await admin.from('jobs').select('id, job_no, bl_no, containers, shipping_line, mode, job_type, stage, created_at, field_meta').eq('id', body.jobId).maybeSingle()
       if (!job) return json({ success: false, error: 'Job not found' }, 404)
       if (job.mode === 'Air') return json({ success: false, error: 'Air job: nothing to track at sea' }, 400)
-      const { data: prev } = await admin.from('sea_tracking').select('fetched_at').eq('job_id', job.id).maybeSingle()
-      if (cron === null && prev?.fetched_at && Date.now() - new Date(prev.fetched_at).getTime() < STAFF_REFRESH_MINUTES * 60e3) {
+      const { data: prev } = await admin.from('sea_tracking').select('fetched_at, number').eq('job_id', job.id).maybeSingle()
+      // (a number just corrected on the job is looked up at once)
+      const sameNumber = !!prev && (clean(job.bl_no) === prev.number || boxNos(job.containers).includes(prev.number))
+      if (cron === null && sameNumber && prev?.fetched_at && Date.now() - new Date(prev.fetched_at).getTime() < STAFF_REFRESH_MINUTES * 60e3) {
         return json({ success: true, skipped: 'checked a few minutes ago' })
       }
       if (body.preview) return json({ success: true, would_use: pickNumber(job, lines) })
@@ -371,7 +382,7 @@ Deno.serve(async (req) => {
       const landed = await retireLanded(admin, [job.id])
       if (landed.length) return json({ success: true, skipped: 'container already in port (LDB)', landed })
       const out = await track(admin, job, lines, { start: !!body.start, by })
-      return json({ success: !out.error, ...out, used: await usedThisMonth(admin), cap: MONTH_CAP })
+      return json({ success: !out.error, ...out, used: await usedInTrial(admin), cap: MONTH_CAP })
     }
 
     // scheduler: close rows LDB says have landed, refresh tracked jobs, add new ones
@@ -390,7 +401,7 @@ Deno.serve(async (req) => {
       results.push(await track(admin, job, lines, { auto: true }))
       await sleep(1500)
     }
-    return json({ success: true, checked: results.length, results, landed, used: await usedThisMonth(admin), cap: MONTH_CAP })
+    return json({ success: true, checked: results.length, results, landed, used: await usedInTrial(admin), cap: MONTH_CAP })
   } catch (e) {
     return json({ success: false, error: (e as Error).message }, 500)
   }

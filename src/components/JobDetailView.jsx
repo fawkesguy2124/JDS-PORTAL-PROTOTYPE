@@ -5,6 +5,7 @@ import { useJourney } from '../industrial/JourneyContext'
 import { daysAgo, deliveryBy, displayLine, effectiveStage } from '../services/journey'
 import { seaOf, shipIdOf, vesselOf } from '../../supabase/functions/_shared/portal/ships.js'
 import { isLineNotShip } from '../../supabase/functions/_shared/portal/shippingLines.js'
+import { startShipTracking } from '../services/shipTracking'
 import { Button, Chip, Dash, Icon, JobNo, Panel, PhaseStatus, Status, Tabs, fmtDate, fmtDateTime, fmtINR, timeAgo } from '../industrial/ui'
 import CustomsStatusCard from './CustomsStatusCard'
 import { PORTS, portLabel } from '../utils/ports'
@@ -345,6 +346,8 @@ function JobDetailView({ job, profiles = {}, currentUserName, isAdmin, canUpdate
       const { error } = await supabase.from('jobs').update(updates).eq('id', job.id)
       if (error) throw error
       notify('Saved successfully.', 'success')
+      // a BL / container number or line added or corrected: ship tracking (re)starts now with it
+      if (['bl_no', 'containers', 'shipping_line', 'mode', 'job_type'].some((k) => k in updates)) startShipTracking({ ...job, ...updates })
       setEditMode(false)
       await reload()
     } catch (e) {

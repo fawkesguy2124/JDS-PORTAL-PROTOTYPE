@@ -257,6 +257,8 @@ function readBl(lines, text) {
     container_numbers: containers,
     seal_numbers: seals.filter((s) => !containers.includes(s)),
     container_size: containerSize(t),
+    // FCL or LCL as the BL's service terms say: CFS/CFS (shared box, J-691) or CY/CY (own box)
+    container_load: /\bCFS\s*[/-]\s*CFS\b|\bLCL\b/i.test(t) ? 'LCL' : /\bCY\s*[/-]\s*CY\b|\bFCL\b/i.test(t) ? 'FCL' : null,
     port_of_loading: port(lines, /PORT OF LOADING/i, true),
     port_of_discharge: port(lines, /PORT OF DISCHARGE(?!\s*AGENT)/i) || (/NHAVA SHEVA/i.test(t) ? 'Nhava Sheva' : null),
     place_of_delivery: port(lines, /PLACE OF DELIVERY/i),

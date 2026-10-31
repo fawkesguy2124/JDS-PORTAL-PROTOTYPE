@@ -11,7 +11,8 @@ const TRACKING_FROM = '2026-10-24'
 export const SHIP_TRACKED = 'jds:ship-tracked'
 
 export function shouldTrackShip(job) {
-  if (!job?.id || job.mode === 'Air' || job.job_type === 'export') return false
+  // sea jobs only (Air, Courier and Land have no ship; a job with no mode yet may be sea)
+  if (!job?.id || (job.mode && !/^sea/i.test(job.mode)) || job.job_type === 'export') return false
   if (!job.bl_no && !job.containers) return false
   return String(job.created_at || new Date().toISOString()).slice(0, 10) >= TRACKING_FROM
 }

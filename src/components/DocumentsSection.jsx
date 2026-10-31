@@ -2,9 +2,7 @@ import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '../supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { availableTypes, docTypeLabel } from '../utils/docTypes'
-import { vesselFromBl } from '../services/blVessel'
-import { startShipTracking } from '../services/shipTracking'
-import { isLineNotShip } from '../../supabase/functions/_shared/portal/shippingLines.js'
+import { applyBlToJob } from '../services/jobDocuments'
 import { downloadDoc, useDocUrl } from '../services/docFiles'
 import PdfPreview from './PdfPreview'
 import { cachedDocs, keepDocs, loadDocs } from '../services/docCache'
@@ -213,23 +211,13 @@ function DocumentsSection({ jobs, currentUserName, showToast, initialExpandJobId
         created_at: new Date().toISOString(),
       })
       if (insErr) throw insErr
-      // a BL on a job with no ship yet: save the ship name from it, so the
-      // Vessels page can follow the ship from the pre-alert (never overwrites)
-      // (a shipping line saved as the ship, e.g. "EVERGREEN", counts as no ship: the BL's replaces it)
-      const lineAsShip = !!job.vessel && isLineNotShip(String(job.vessel).split('/')[0], job.shipping_line)
-      if (docType === 'BL' && (!job.vessel || lineAsShip)) {
-        try {
-          const vessel = await vesselFromBl(uploadFile)
-          if (vessel) {
-            let q = supabase.from('jobs').update({ vessel }).eq('id', job.id)
-            q = lineAsShip ? q.eq('vessel', job.vessel) : q.is('vessel', null)
-            const { data: upd } = await q.select('id')
-            if (upd?.length) showToast(`Ship name saved from the BL: ${vessel}`, 'success')
-          }
-        } catch (e) { console.warn('[Documents] could not read the ship name from the BL:', e?.message) }
+      // a BL: the job gets what it is still missing from it (ship, BL number, containers,
+      // line; never overwritten) and ship tracking starts at once (services/jobDocuments)
+      if (docType === 'BL') {
+        const { vessel, filled } = await applyBlToJob(job, uploadFile)
+        if (vessel) showToast(`Ship name saved from the BL: ${vessel}`, 'success')
+        if (filled.some((k) => k !== 'vessel')) showToast(`From the BL: ${filled.filter((k) => k !== 'vessel').map((k) => ({ bl_no: 'BL number', containers: 'containers', shipping_line: 'shipping line' }[k])).join(', ')} saved`, 'success')
       }
-      // a BL: ship tracking starts now (runs on in the background)
-      if (docType === 'BL') startShipTracking(job)
       clearInterval(sim)
       setUploadProgress(100)
       showToast(`${docType} uploaded for ${job.job_no}`, 'success')

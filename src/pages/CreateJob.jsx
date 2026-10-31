@@ -12,6 +12,7 @@ import { availableTypes, typesFoundInside, docTypeLabel } from '../utils/docType
 import { isLineNotShip } from '../../supabase/functions/_shared/portal/shippingLines.js'
 import { Button, Chip, Icon } from '../industrial/ui'
 import { startShipTracking } from '../services/shipTracking'
+import { shipText } from '../services/blVessel'
 // tokens live on .ix: the employee screen and the full-page route do not load them otherwise
 import '../industrial/industrial.css'
 import '../industrial/styles/createjob.css'
@@ -274,7 +275,8 @@ export default function CreateJob({ isModal = false, onCancel, onCreated, initia
       setExtractStatus('Reading pages...')
       const result = await readPdf(pdfjs, new Uint8Array(await file.arrayBuffer()))
       const inside = typesFoundInside(result.documents)
-      setStagedDocs(prev => prev.map(d => d.id === docId ? { ...d, foundInside: inside } : d))
+      // no type picked: the reader's own answer (a BL is a BL; Jose, 1 Nov 2026: "just upload the BL")
+      setStagedDocs(prev => prev.map(d => d.id === docId ? { ...d, foundInside: inside, docType: d.docType || inside[0] || 'Other' } : d))
       const f = result.fields
       setExtractProgress(80)
       setExtractStatus('Applying fields...')
@@ -292,7 +294,8 @@ export default function CreateJob({ isModal = false, onCancel, onCreated, initia
         container_size: f.container_size || null,
         container_load: f.container_load || null,
         shipping_line: f.shipping_line || null,
-        vessel: f.vessel_name ? `${f.vessel_name}${f.voyage_no ? ` / ${f.voyage_no}` : ''}` : null,
+        // only a real ship: not an address or a line's name read off the BL (it would block saving)
+        vessel: shipText(f.vessel_name, f.voyage_no),
         goods: f.goods_description || null,
         eta: f.eta || null,
         hs_code: f.hs_code || null,
@@ -350,6 +353,9 @@ export default function CreateJob({ isModal = false, onCancel, onCreated, initia
       // FCL / LCL sets the mode when it isn't chosen yet: the BE's LCL/FCL column, or a BL that says LCL
       if (!form.mode && (parsed.container_load === 'LCL' || parsed.container_size === 'LCL')) { updates.mode = 'Sea LCL'; applied.mode = true }
       else if (!form.mode && parsed.container_load === 'FCL') { updates.mode = 'Sea FCL'; applied.mode = true }
+      // a BL with a container and a full-box size (40HC, 20GP …) is a Sea FCL job: the mode is
+      // set too, so the container shows at once and nothing is left to pick (J-1001, 1 Nov 2026)
+      else if (!form.mode && updates.containers && CONTAINER_SIZES.includes(parsed.container_size)) { updates.mode = 'Sea FCL'; applied.mode = true }
       // the container size the BL shows, for rows that have no size yet (FCL)
       const sz = parsed.container_size
       if (sz && CONTAINER_SIZES.includes(sz) && (updates.mode || form.mode) !== 'Sea LCL') {
@@ -546,7 +552,7 @@ export default function CreateJob({ isModal = false, onCancel, onCreated, initia
       if (!form.carrier) return fail('carrier', 'Shipping line is required when containers are given.')
       const containerList = containersString.split(/\s+/).filter(Boolean)
       const linkResults = await Promise.allSettled(
-        containerList.map((cn) => linkContainer(cn.toUpperCase(), jobId, jobNo, form.carrier))
+        containerList.map((cn) => linkContainer(cn.toUpperCase(), jobId, jobNo, payload.shipping_line))
       )
       linkResults.forEach((result, i) => {
         if (result.status === 'rejected') {
@@ -640,7 +646,6 @@ export default function CreateJob({ isModal = false, onCancel, onCreated, initia
     const reset = () => { if (input) input.value = '' }
     if (!file) return reset()
     if (extractingRef.current) { setAddDocError('Wait for the current document to finish reading.'); return reset() }
-    if (!addDocType) { setAddDocError('Please select a document type first.'); return reset() }
     if (file.size > 10 * 1024 * 1024) { setAddDocError('File must be under 10MB.'); return reset() }
     setAddDocError('')
 
@@ -648,8 +653,10 @@ export default function CreateJob({ isModal = false, onCancel, onCreated, initia
     const docId = Date.now()
     setStagedDocs(prev => [...prev, { file, docType, id: docId, extracted: false, irrelevant: false }])
 
-    // Every PDF is read: the reader works out which documents are inside
+    // Every PDF is read: the reader works out which documents are inside (and, when no
+    // type was picked, what this one is)
     await handleQuickExtract(file, docType, docId)
+    setStagedDocs(prev => prev.map(d => (d.id === docId && !d.docType ? { ...d, docType: 'Other' } : d)))
 
     setAddDocType('')
     reset()
@@ -690,13 +697,13 @@ export default function CreateJob({ isModal = false, onCancel, onCreated, initia
         <form className="ix-cj-form" onSubmit={handleSubmit} noValidate>
           <div className="ix-cj-body">
 
-            {/* Fill from a document: a quiet dropzone; the type is picked first, as before */}
+            {/* Fill from a document: a quiet dropzone; the type is optional (worked out from the PDF) */}
             <div className={`ix-cj-drop${dragOver ? ' over' : ''}`} onDragOver={onDragOver} onDragLeave={onDragLeave} onDrop={onDrop}>
               <div className="ix-cj-drop-head">
                 <Icon name="file-upload" />
                 <div className="txt">
                   <b>Fill from a document</b>
-                  <span>Pick the document type, then choose or drop the file. PDFs are read on this computer and only empty fields are filled.</span>
+                  <span>Choose or drop the BL (or BE). The type is worked out from the PDF, or pick it. PDFs are read on this computer and only empty fields are filled.</span>
                 </div>
               </div>
 
@@ -745,7 +752,7 @@ export default function CreateJob({ isModal = false, onCancel, onCreated, initia
                   onChange={e => { setAddDocType(e.target.value); setAddDocError('') }}
                   className="ix-cj-in"
                 >
-                  <option value="">Document type…</option>
+                  <option value="">Type: found by itself</option>
                   {availableTypes(usedTypes()).map(t => <option key={t} value={t}>{docTypeLabel(t)}</option>)}
                 </select>
                 <input
@@ -759,10 +766,7 @@ export default function CreateJob({ isModal = false, onCancel, onCreated, initia
                 <Button
                   icon={extracting ? undefined : 'upload'}
                   disabled={extracting}
-                  onClick={() => {
-                    if (!addDocType) { setAddDocError('Please select a document type first.'); return }
-                    quickUploadRef.current?.click()
-                  }}
+                  onClick={() => quickUploadRef.current?.click()}
                 >
                   {extracting ? <><Icon name="loader-2" className="ix-cj-spin" />{extractStatus || 'Reading…'}</> : 'Choose file'}
                 </Button>

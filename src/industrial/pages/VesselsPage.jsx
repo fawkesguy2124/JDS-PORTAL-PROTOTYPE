@@ -252,7 +252,7 @@ export default function VesselsPage({ onOpenJob, showToast, onGo }) {
                           <td><span className="ix-trk-jobs">{jobNos(s.jobs)}</span></td>
                           <td className="cl">{clients || <Dash />}</td>
                           <td>{lineOf(s) || <Dash />}</td>
-                          <td className="dim">{s.imo ? 'Waiting for the first position' : unknownHint(s)}</td>
+                          <td className="dim">{s.imo ? (notSailed(seaOfShip(s)) ? `Not sailed yet${polText(seaOfShip(s)) ? ` · ${polText(seaOfShip(s))}` : ''}` : 'Waiting for the first position') : unknownHint(s)}</td>
                           <td className="r">{eta ? fmtDate(eta) : <Dash />}</td>
                           <td className="act">
                             <div>
