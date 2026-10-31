@@ -174,3 +174,12 @@ html[data-theme="dark"] .ix .ix-shipmap2 .leaflet-container { background: #0f203
   .ix-trk-form input, .ix-trk-form select { height: 42px; flex: 1 1 160px }
   .ix-trk-form .ix-btn { flex: 0 0 auto }
 }
+
+/* Vessels: the next arrival, at the right of the page title (Jose, 1 Nov 2026) */
+.ix-vs-next { display: inline-flex; align-items: center; gap: 10px; padding: 6px 14px 6px 6px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); box-shadow: var(--shadow-xs); cursor: pointer; color: var(--text); font: inherit; text-align: left }
+.ix-vs-next:hover { border-color: var(--navy); background: var(--navy-50) }
+.ix-vs-next .ic { width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; background: var(--navy-50); color: var(--navy); font-size: 17px; flex-shrink: 0 }
+.ix-vs-next .t { display: flex; flex-direction: column; line-height: 1.2 }
+.ix-vs-next small { font-size: var(--fs-xs); font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--muted) }
+.ix-vs-next b { font-weight: 600; white-space: nowrap }
+.ix-vs-next b .mono { font-weight: 700 }

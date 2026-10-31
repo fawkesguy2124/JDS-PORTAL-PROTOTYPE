@@ -4,7 +4,7 @@ import { isDelivered, isExportJob, displayLine } from '../../services/journey'
 import { useJourney, useFreshOnOpen } from '../JourneyContext'
 import ShipMap, { vesselsOf, shipIdOf, shipPosition, voyage, toneOf } from '../ShipMap'
 import { cargoOnShip, seaOf } from '../../../supabase/functions/_shared/portal/ships.js'
-import { Icon, Skeleton, fmtDate, PageHead, JobNo, Status, Tabs, Panel, Button, EmptyState, Dash } from '../ui'
+import { Icon, Skeleton, fmtDate, PageHead, JobNo, Status, Panel, Button, EmptyState, Dash } from '../ui'
 import { shipChecks, realMs } from '../shipChecks'
 import { polText, seaWhere, portName, notSailed, moveText, nextStop, atPort } from '../SeaTracking'
 import '../styles/tracking.css'
@@ -42,7 +42,6 @@ export default function VesselsPage({ onOpenJob, showToast, onGo }) {
   const [selected, setSelected] = useState(() => { const j = new URLSearchParams(window.location.search).get('job'); return j ? `link:${j}` : null })
   const [typing, setTyping] = useState({}) // row key -> IMO being typed
   const [saving, setSaving] = useState(null)
-  const [filter, setFilter] = useState('all') // ship list: all / sea / port / attn
   const [openedAt] = useState(() => Date.now()) // 'next arrival' is counted from when the page opened
 
   const igmOf = (job) => { const n = String(job.ulip_refs?.igm_no || '').replace(/\D/g, ''); return n.length >= 5 && !/^0+$/.test(n) ? n : null }
@@ -154,21 +153,15 @@ export default function VesselsPage({ onOpenJob, showToast, onGo }) {
   // ship leaves this list by itself two days later; Jose, 24 Oct 2026)
 
   // the tracking console (Jose, 25 Oct 2026): the ship list on the left, the map beside
-  // it. No figures on top (Jose, 31 Oct 2026): the tabs already count the ships; only
-  // the next arrival, which the tabs don't say, sits in the page sub-line.
+  // it. No figures and no filter tabs (Jose, 1 Nov 2026: each row already says At sea /
+  // At port); only the next arrival, at the right of the page title.
   const rows = ships.filter(shown).map((s) => {
     const m = mapShips.find((x) => x.key === s.key)
     const sea = seaOfShip(s)
     const serious = m.flags.filter((f) => f.tone === 'red' || f.tone === 'amber')
     return { s, m, sea, serious, tone: toneOf(m), trip: voyage(m), podAt: sea && !sea.error && !sea.pod_actual ? sea.pod_date : null }
   }).sort((a, b) => (TONE_ORDER[a.tone] - TONE_ORDER[b.tone]) || String(a.podAt || '9').localeCompare(String(b.podAt || '9')))
-  const inPort = (r) => r.m.arrived || r.m.atPod
-  const inGroup = (r, t) => (t === 'port' ? inPort(r) : t === 'sea' ? r.tone === 'sea' : t === 'attn' ? r.serious.length > 0 : true)
-  const count = (t) => rows.filter((r) => inGroup(r, t)).length
-  const listed = rows.filter((r) => inGroup(r, filter))
-  // the "Needs a look" tab is red when any ship has a red flag; the calm notes
-  // (arriving soon, changes ship) stay on the row and in the map card
-  const anyRed = rows.some((r) => r.serious.some((f) => f.tone === 'red'))
+  const listed = rows
   // the next ship due (the line's port time; Nhava Sheva is India time)
   const next = rows.filter((r) => r.podAt && r.tone === 'sea' && realMs(r.podAt, r.sea?.pod) > openedAt)
     .sort((a, b) => String(a.podAt).localeCompare(String(b.podAt)))[0]
@@ -178,16 +171,18 @@ export default function VesselsPage({ onOpenJob, showToast, onGo }) {
   const jobNos = (jobs) => jobs.map(({ job }) => <JobNo key={job.id} no={job.job_no} onClick={() => onOpenJob?.(job.id)} />)
   // 'Next arrival J-674 · 20 Nov', job number first; pressing it shows that ship on the map
   const nextLine = next ? (
-    <span>Next arrival{' '}
-      <button type="button" className="ix-link" style={{ marginLeft: 0, fontSize: 'inherit' }} onClick={() => setSelected(next.s.key)} title="Show this ship on the map">
-        {next.s.jobs.map(({ job }) => job.job_no).join(', ')} · {nextEta.day}{nextEta.time ? `, ${nextEta.time}` : ''}
-      </button>
-    </span>
+    <button type="button" className="ix-vs-next" onClick={() => setSelected(next.s.key)} title="Show this ship on the map">
+      <span className="ic"><Icon name="anchor" /></span>
+      <span className="t">
+        <small>Next arrival</small>
+        <b><span className="mono">{next.s.jobs.map(({ job }) => job.job_no).join(', ')}</span> · {nextEta.day}{nextEta.time ? `, ${nextEta.time}` : ''}</b>
+      </span>
+    </button>
   ) : null
 
   return (
     <>
-      <PageHead title="Vessels" sub={[nextLine, next ? 'positions update by themselves' : 'Positions update by themselves']} />
+      <PageHead title="Vessels" actions={nextLine} />
 
       {loading && !data ? (
         <div className="ix-card"><Skeleton rows={5} /></div>
@@ -195,16 +190,9 @@ export default function VesselsPage({ onOpenJob, showToast, onGo }) {
         <>
           <section className="ix-card ix-trk-console" style={{ '--vt-h': `${mapH}px` }}>
             <aside className="ix-trk-list">
-              <Tabs value={filter} onChange={setFilter} tabs={[
-                { id: 'all', label: 'All', count: rows.length },
-                { id: 'sea', label: 'At sea', count: count('sea') },
-                { id: 'port', label: 'At port', count: count('port') },
-                { id: 'attn', label: 'Needs a look', count: count('attn'), tone: anyRed ? 'red' : 'amber' },
-              ]} />
               <div className="ix-trk-rows">
                 {!listed.length && (
-                  <EmptyState icon={rows.length ? 'filter-off' : 'ship'} tone={filter === 'attn' ? 'green' : 'grey'}
-                    title={!rows.length ? 'No ship is carrying our cargo right now' : filter === 'attn' ? 'All ships on schedule' : 'No ship in this group'} />
+                  <EmptyState icon="ship" title="No ship is carrying our cargo right now" />
                 )}
                 {listed.map((r) => {
                   const { s, m, sea, trip } = r
@@ -250,7 +238,7 @@ export default function VesselsPage({ onOpenJob, showToast, onGo }) {
 
           {noPosition.length > 0 && (
             <Panel className="ix-trk-panel" title={<>Ships without a position yet <span className="n">{noPosition.length}</span></>}
-              meta="Open the job and tap Track this ship, or type the IMO">
+              meta="Ship tracking fills these in by itself once the line reports">
               <div className="ix-tbl-wrap">
                 <table className="ix-tbl">
                   <thead><tr><th>Job</th><th>Client</th><th>Line</th><th>What we know</th><th className="r">ETA</th><th className="r" aria-label="Actions" /></tr></thead>
