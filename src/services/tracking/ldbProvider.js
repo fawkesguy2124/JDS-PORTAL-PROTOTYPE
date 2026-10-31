@@ -187,6 +187,26 @@ export async function fetchLDBTracking(containerNo) {
   return result
 }
 
+// Alerts are stamped with the moment the portal saw the event, never the event's own time
+// (Jose, 31 Oct 2026: a date-only LDB event such as DPE comes as 11:59:59 pm, so the bell
+// showed it as unread all evening and "mark read" could not clear it). The event's real
+// time, when LDB gives one, goes in the text instead. Same rule as the refresh-containers
+// server function.
+function eventTime(milestones) {
+  for (const m of milestones || []) {
+    const t = m?.date ? new Date(m.date).getTime() : NaN
+    if (isNaN(t) || t > Date.now()) continue
+    const ist = new Date(t + 5.5 * 3600e3)
+    if (ist.getUTCHours() === 23 && ist.getUTCMinutes() === 59) continue
+    if (ist.getUTCHours() === 0 && ist.getUTCMinutes() === 0 && ist.getUTCSeconds() === 0) continue
+    return new Date(t).toISOString()
+  }
+  return null
+}
+const atText = (iso) => (iso ? ` · at ${new Date(iso).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Kolkata' })}` : '')
+// a delivered job's boxes are no longer its business (a reused box is followed through its new job)
+const openJobs = (jobs) => (jobs || []).filter((j) => j.containers && !(Number(j.stage) >= 10))
+
 async function wasAlreadyLogged(title, jobNo) {
   try {
     const { data } = await supabase
@@ -278,9 +298,9 @@ export async function persistLDBTracking(containerNo, jobContext, ldbData) {
             type:       'container_update',
             action:     'container_update',
             title:      notifTitle,
-            note:       `Status: ${existing.status} → ${ldbData.status}`,
-            meta:       { job_id: jobContext.id, container_no: containerNo, old_status: existing.status, new_status: ldbData.status },
-            created_at: ldbData.milestones?.[0]?.date || new Date().toISOString(),
+            note:       `Status: ${existing.status} → ${ldbData.status}${atText(eventTime(ldbData.milestones))}`,
+            meta:       { job_id: jobContext.id, container_no: containerNo, old_status: existing.status, new_status: ldbData.status, event_at: eventTime(ldbData.milestones) },
+            created_at: new Date().toISOString(),
           }, { onConflict: 'title,job_no', ignoreDuplicates: true })
           if (logErr) console.warn('[LDB] activity_log status insert failed:', logErr.message)
         } catch (logErr) {
@@ -314,10 +334,10 @@ export async function persistLDBTracking(containerNo, jobContext, ldbData) {
             action:     'container_update',
             title:      notifTitle,
             note:       newMilestones.length > 1
-              ? `${newMilestones.length} new events · Latest: ${latest.description}`
-              : `${latest.description} · ${latest.location || ''}`,
-            meta:       { job_id: jobContext.id, container_no: containerNo },
-            created_at: latest.date || new Date().toISOString(),
+              ? `${newMilestones.length} new events · Latest: ${latest.description}${atText(eventTime([latest]))}`
+              : `${latest.description} · ${latest.location || ''}${atText(eventTime([latest]))}`,
+            meta:       { job_id: jobContext.id, container_no: containerNo, event_at: eventTime([latest]) },
+            created_at: new Date().toISOString(),
           }, { onConflict: 'title,job_no', ignoreDuplicates: true })
           if (logErr) console.warn('[LDB] activity_log milestone insert failed:', logErr.message)
         } catch (logErr) {
@@ -357,7 +377,7 @@ export async function persistLDBTracking(containerNo, jobContext, ldbData) {
             title:      notifTitle,
             note:       `Only ${calculatedFreeDays} free day${calculatedFreeDays !== 1 ? 's' : ''} left · Port in: ${ldbData.portIn ? new Date(ldbData.portIn).toLocaleDateString('en-IN', { day:'2-digit', month:'short', timeZone:'Asia/Kolkata' }) : '—'} · ${jobContext.job_no}`,
             meta:       { job_id: jobContext.id, container_no: containerNo, port_in: ldbData.portIn || null, free_days_remaining: calculatedFreeDays },
-            created_at: ldbData.portIn || new Date().toISOString(),
+            created_at: new Date().toISOString(),
           }, { onConflict: 'title,job_no', ignoreDuplicates: true })
           if (logErr) console.warn('[LDB] activity_log detention insert failed:', logErr.message)
         } catch (logErr) {
@@ -416,7 +436,7 @@ export async function refreshJobContainers(job, existingTrackingData = {}) {
 
 export async function refreshAllContainers(jobs, existingTracking = {}, onProgress = null) {
   _loggedThisRun.clear()
-  const allJobs = (jobs || []).filter(j => j.containers)
+  const allJobs = openJobs(jobs)
   const totals = { updated: 0, skipped: 0, failed: 0, messages: [] }
   for (const job of allJobs) {
     const summary = await refreshJobContainers(job, existingTracking)
@@ -433,7 +453,7 @@ export async function refreshAllContainers(jobs, existingTracking = {}, onProgre
 
 export async function forceRefreshAllContainers(jobs, onProgress = null) {
   _loggedThisRun.clear()
-  const allJobs = (jobs || []).filter(j => j.containers)
+  const allJobs = openJobs(jobs)
   const totals = { updated: 0, skipped: 0, failed: 0, messages: [] }
 
   // Collect all containers across all jobs

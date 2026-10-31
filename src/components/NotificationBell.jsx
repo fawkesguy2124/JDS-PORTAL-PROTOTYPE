@@ -63,6 +63,7 @@ export default function NotificationBell({ onNavigate, profile }) {
   const [notifications, setNotifications] = useState([])
   const [filter, setFilter] = useState('all')
   const [lastSeen, setLastSeen] = useState(null)
+  const [readAhead, setReadAhead] = useState(() => [])
   const dropdownRef = useRef(null)
   const bellRef = useRef(null)
 
@@ -71,6 +72,7 @@ export default function NotificationBell({ onNavigate, profile }) {
     if (profile?.id) {
       const stored = localStorage.getItem(getStorageKey(profile.id))
       setLastSeen(stored || null)
+      try { setReadAhead(JSON.parse(localStorage.getItem(`${getStorageKey(profile.id)}_ahead`) || '[]')) } catch { setReadAhead([]) }
     }
   }, [profile?.id])
 
@@ -116,33 +118,42 @@ export default function NotificationBell({ onNavigate, profile }) {
 
   const unreadCount = useMemo(() =>
     notifications.filter(n =>
-      !lastSeen || new Date(n.created_at) > new Date(lastSeen)
+      (!lastSeen || new Date(n.created_at) > new Date(lastSeen)) && !readAhead.includes(n.id)
     ).length
-  , [notifications, lastSeen])
+  , [notifications, lastSeen, readAhead])
 
+  // Opening the bell marks everything read (Jose, 31 Oct 2026: no "Mark all read" button).
+  // "Read up to" is now; alerts stamped later than now (old LDB 11:59 pm stamps) are
+  // remembered by id instead, so they cannot stay unread for ever and a real alert that
+  // comes in this evening still shows as new. What was new stays highlighted while open.
+  const [newSince, setNewSince] = useState(null)
+  const [newAhead, setNewAhead] = useState([])
   const markAllRead = () => {
     const now = new Date().toISOString()
-    const key = getStorageKey(profile?.id)
-    localStorage.setItem(key, now)
+    const ahead = notifications.filter((n) => n.created_at > now).map((n) => n.id)
+    const seen = [...new Set([...readAhead, ...ahead])].slice(-200)
+    localStorage.setItem(getStorageKey(profile?.id), now)
+    localStorage.setItem(`${getStorageKey(profile?.id)}_ahead`, JSON.stringify(seen))
     setLastSeen(now)
+    setReadAhead(seen)
   }
+
+  // how many were new when the bell was opened (shown in the header while it is open)
+  const wasNew = (n) => newSince === '' || (!!newSince && new Date(n.created_at) > new Date(newSince) && !newAhead.includes(n.id))
+  const newCount = notifications.filter(wasNew).length
 
   const handleOpen = () => {
     const nowOpen = !open
     setOpen(nowOpen)
     if (nowOpen) {
-      const now = new Date().toISOString()
-      const key = getStorageKey(profile?.id)
-      localStorage.setItem(key, now)
-      setLastSeen(now)
+      setNewSince(lastSeen || '')
+      setNewAhead(readAhead)
+      markAllRead()
     }
   }
 
   const handleItemClick = (n) => {
-    const now = new Date().toISOString()
-    const key = getStorageKey(profile?.id)
-    localStorage.setItem(key, now)
-    setLastSeen(now)
+    markAllRead()
     setOpen(false)
 
     if (!onNavigate) return
@@ -233,18 +244,12 @@ if (filter === 'container') return t.includes('container') || t === 'detention_a
           <div style={{ padding: '12px 16px 10px', borderBottom: '0.5px solid #e2e6ed', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', fontWeight: 700, color: '#1a2233' }}>
               Notifications
-              {unreadCount > 0 && (
+              {newCount > 0 && (
                 <span style={{ background: '#dc2626', color: 'white', borderRadius: '9999px', fontSize: '10px', fontWeight: 700, padding: '2px 7px' }}>
-                  {unreadCount} new
+                  {newCount} new
                 </span>
               )}
             </div>
-            <button
-              onClick={markAllRead}
-              style={{ fontSize: '11px', fontWeight: 600, color: '#1a4fa0', background: 'none', border: 'none', cursor: 'pointer' }}
-            >
-              Mark all read
-            </button>
           </div>
 
           <div style={{ display: 'flex', gap: '5px', padding: '8px 16px', borderBottom: '0.5px solid #f4f6f9', overflowX: 'auto' }}>
@@ -260,7 +265,7 @@ if (filter === 'container') return t.includes('container') || t === 'detention_a
                   cursor: 'pointer', whiteSpace: 'nowrap', transition: 'all 0.12s',
                 }}
               >
-                {f.charAt(0).toUpperCase() + f.slice(1)}
+                {f === 'ulip' ? 'Customs' : f.charAt(0).toUpperCase() + f.slice(1)}
               </button>
             ))}
           </div>
@@ -280,7 +285,7 @@ if (filter === 'container') return t.includes('container') || t === 'detention_a
                       {day}
                     </div>
                     {items.map((n, i) => {
-                      const isUnread = !lastSeen || new Date(n.created_at) > new Date(lastSeen)
+                      const isUnread = wasNew(n)
                       const t = n.type || n.action || ''
                       const tagCls = t === 'detention_alert' ? 'alert' : t.includes('container') ? 'container' : t.includes('job') || t.includes('stage') ? 'job' : t.includes('upload') || t.includes('document') ? 'document' : t === 'be_status_check' || t === 'ooc_granted' || t.includes('ulip') ? 'ulip' : 'default'
                       const ts = tagStyles[tagCls] || tagStyles.default
