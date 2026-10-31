@@ -10,7 +10,7 @@ import {
   displayLine, freeTimeFor, tripMilestones, STALE_AFTER_DAYS,
 } from '../services/journey'
 import { seaOf } from '../../supabase/functions/_shared/portal/ships.js'
-import { Button, Chip, Dash, EmptyState, FreeDays, Icon, JobNo, Section, Segmented, Status, Tabs, fmtDate, fmtDateTime, fmtINR, fmtTime, initials, jobOwnerName, timeAgo, worst } from './ui'
+import { Button, Chip, Dash, EmptyState, FreeDays, Icon, JobNo, Section, Segmented, Status, fmtDate, fmtDateTime, fmtTime, jobOwnerName, worst } from './ui'
 import { vesselOf, shipIdOf } from './ShipMap'
 import { openDoc, downloadDoc } from '../services/docFiles'
 import PdfPreview from '../components/PdfPreview'
@@ -133,15 +133,11 @@ function sourceOf(r) {
 const BAD = /alert|problem|error|fail|query|detention/i
 const ROAD = /^On (road|rail)/
 
-// The papers a job is expected to have (graft from direction 3, Jose 31 Oct 2026)
-const PAPERS_IMPORT = ['BL', 'Invoice', 'Packing List', 'BE', 'OOC', 'E-Way Bill']
-const PAPERS_EXPORT = ['Invoice', 'Packing List']
 const paperName = (t, job) => (t === 'BL' && job?.mode === 'Air' ? 'AWB' : t === 'Packing List' ? 'Packing list' : t === 'E-Way Bill' ? 'E-way bill' : t)
 
 // RMS / assessment as saved on the job (pending = nothing to say yet)
 const RMS = { rms: 'RMS facilitated', hold: 'On hold', check: 'Check' }
 const rmsText = (v) => (!v || String(v).toLowerCase() === 'pending' ? null : RMS[String(v).toLowerCase()] || String(v).toUpperCase())
-const bgText = (v) => (v === true || /^y/i.test(String(v)) ? 'Needed' : /^100/.test(String(v)) ? 'Needed (100%)' : null)
 
 const freeWord = (left) => (left === null || left === undefined ? null : left < 0 ? `${-left} d over` : left === 0 ? 'last day today' : `${left} d left`)
 const nextDay = (ymd) => { const d = new Date(`${ymd}T00:00:00Z`); return isNaN(d) ? null : new Date(d.getTime() + 864e5).toISOString().slice(0, 10) }
@@ -201,21 +197,17 @@ function UploadMenu({ job, docs, userName, showToast, onDone, label = 'Upload' }
   )
 }
 
-export default function JobDrawer({ jobId, initialTab = 'overview', onClose, onOpenFull, onOpenTruck, currentUserName, showToast }) {
+export default function JobDrawer({ jobId, onClose, onOpenFull, onOpenTruck, currentUserName, showToast }) {
   const { byId, data, profiles, patchJob, active } = useJourney()
   const navigate = useNavigate()
   const [curId, setCurId] = useState(jobId)
   const row = byId[curId]
   const job = row?.job
   const j = row?.j
-  const [tab, setTab] = useState(initialTab)
   const [loaded, setLoaded] = useState({ id: null, log: [], docs: [] })
   const [viewDoc, setViewDoc] = useState(null) // a PDF shown inside the portal
-  const [note, setNote] = useState('')
-  const [saving, setSaving] = useState(false)
-  const [ctrFilter, setCtrFilter] = useState('all')
-  const [ctrQ, setCtrQ] = useState('')
   const [openBox, setOpenBox] = useState(null)
+  const [allEvents, setAllEvents] = useState(false)
 
   const log = loaded.id === curId ? loaded.log : []
   const docs = loaded.id === curId ? loaded.docs : []
@@ -248,7 +240,7 @@ export default function JobDrawer({ jobId, initialTab = 'overview', onClose, onO
     if (at < 0 || !id) return
     rememberJob(id)
     setCurId(id)
-    setNote(''); setViewDoc(null); setOpenBox(null); setCtrFilter('all'); setCtrQ('')
+    setViewDoc(null); setOpenBox(null); setAllEvents(false)
   }
 
   useEffect(() => {
@@ -270,7 +262,6 @@ export default function JobDrawer({ jobId, initialTab = 'overview', onClose, onO
   const isAir = /air/i.test(job.mode || '')
   const delivered = j.phase === 'delivered'
   const sea = isExport || isAir ? null : seaOf(job, data)
-  const notes = log.filter((r) => r.type === 'note')
   const ownerName = jobOwnerName(job, profiles)
   const level = worst(j)
   const line = displayLine(job.shipping_line)
@@ -283,21 +274,6 @@ export default function JobDrawer({ jobId, initialTab = 'overview', onClose, onO
     if (error) { showToast?.(`Could not save: ${error.message}`, 'error'); return }
     patchJob(saved)
     showToast?.(done, 'success')
-  }
-
-  const addNote = async () => {
-    const text = note.trim()
-    if (!text) return
-    setSaving(true)
-    const { data: inserted, error } = await supabase.from('activity_log').insert({
-      type: 'note', action: 'note', title: text.length > 80 ? `${text.slice(0, 77)}…` : text, note: text,
-      job_id: job.id, job_no: job.job_no, done_by_name: currentUserName || null,
-      meta: { job_id: job.id, job_no: job.job_no },
-    }).select()
-    setSaving(false)
-    if (error) { showToast?.(`Could not save the note: ${error.message}`, 'error'); return }
-    setLoaded((s) => (s.id === job.id ? { ...s, log: [...(inserted || []), ...s.log] } : s))
-    setNote('')
   }
 
   const copyLink = async () => {
@@ -320,7 +296,12 @@ export default function JobDrawer({ jobId, initialTab = 'overview', onClose, onO
   } else if (!isExport && j.phase === 'ooc') cta = { key: 'customs', step: 'ooc', label: 'Check OOC', icon: 'file-certificate', run: () => onOpenFull(job.id, 'customs') }
   else if (!isExport && (j.phase === 'docs' || j.phase === 'arrival') && !job.be_no) cta = { key: 'customs', step: 'be', label: 'Record BE no', icon: 'file-plus', run: () => onOpenFull(job.id, 'customs') }
   else if (isExport && !j.sbNo) cta = { key: 'export', step: 'sb', label: 'Record SB no', icon: 'file-plus', run: () => onOpenFull(job.id, isAir ? 'air' : 'export') }
-  else if (!isExport && j.phase === 'truck' && !j.truck && j.onwardMode !== 'rail' && deliveryBy(job) === 'jds') cta = { key: 'truck', step: 'truck', label: 'Add truck number', icon: 'truck', run: () => onOpenTruck(job.id) }
+  else if (!isExport && j.phase === 'truck' && !j.truck && j.onwardMode !== 'rail' && deliveryBy(job) === 'jds') cta = { key: 'truck', step: 'truck', label: 'Add truck number', icon: 'truck', run: () => onOpenTruck(job.id), onDone: true }
+  // left the port by road with no truck number yet: the button sits under Truck / rail even
+  // though that step is done, instead of a "Left port … add the truck number" banner that
+  // repeats the step bar (Jose, 31 Oct 2026)
+  const askTruck = !isExport && j.attention.some((a) => a.action === 'truck' && /add the truck number/.test(a.text))
+  if (!cta && askTruck) cta = { key: 'truck', step: 'truck', label: 'Add truck number', icon: 'truck', run: () => onOpenTruck(job.id), onDone: true }
 
   // ── alerts, each with its own action (never the same as the primary one) ──
   const alerts = j.attention
@@ -328,6 +309,7 @@ export default function JobDrawer({ jobId, initialTab = 'overview', onClose, onO
     // "OOC done, arrange truck" — is left out: the step bar shows it; Jose, 31 Oct 2026)
     .filter((a) => !(a.action === 'truck' && /^OOC done/.test(a.text)))
     .filter((a) => !(a.action === 'customs' && /^BE filed \d+ days? ago/.test(a.text)))
+    .filter((a) => !(a.action === 'truck' && /add the truck number/.test(a.text)))
     .map((a) => {
       const m = (j.mismatches || []).find((x) => a.text.startsWith(`Check the ${x.field.toLowerCase()}`))
       let title = a.text
@@ -339,7 +321,7 @@ export default function JobDrawer({ jobId, initialTab = 'overview', onClose, onO
         sub = `${sub ? `${sub}. ` : ''}Free time ${j.freeDaysLeft < 0 ? 'ended' : 'ends'} ${fmtDate(j.freeTill)}${box}.`
       }
       let act = null
-      if (a.action === 'containers' && boxes.length) act = { label: 'See containers', run: () => setTab('containers') }
+      if (a.action === 'containers' && boxes.length && !isExport) act = { label: 'Open on Containers', run: () => goPage('containers') }
       else if (a.action === 'truck') act = { key: 'truck', label: 'Open on Trucks', run: () => onOpenTruck(job.id) }
       else if (a.action === 'customs') act = { key: 'customs', label: 'Open BE & OOC', run: () => onOpenFull(job.id, 'customs') }
       else if (a.action === 'details') act = { label: 'Open full job', run: () => onOpenFull(job.id, 'details') }
@@ -370,7 +352,7 @@ export default function JobDrawer({ jobId, initialTab = 'overview', onClose, onO
   // many containers: fold their moves into one line that opens the Containers tab
   let shownEvents = events
   const ctrEvents = events.filter((e) => e.ctr)
-  if (boxes.length > 3 && ctrEvents.length) {
+  if (boxes.length > 3 && ctrEvents.length && !allEvents) {
     shownEvents = [...events.filter((e) => !e.ctr), { at: ctrEvents[0].at, t: `${ctrEvents.length} container updates`, src: 'port', fold: true }].sort(byTime)
   }
   const upcoming = []
@@ -402,7 +384,7 @@ export default function JobDrawer({ jobId, initialTab = 'overview', onClose, onO
         <div key={i} className="ix-jp-ev">
           <span className={`d ${e.bad ? 'bad' : e.src}`} />
           <p>
-            {e.fold ? <button type="button" className="ix-link" onClick={() => setTab('containers')}>{e.t} · see Containers</button>
+            {e.fold ? <button type="button" className="ix-link" onClick={() => setAllEvents(true)}>{e.t} · show all</button>
               : e.no ? <><span className="mono">{e.no}</span> {e.t.toLowerCase()}{e.place ? ` · ${e.place}` : ''}</> : e.t}
             <small><Icon name={icon} />{label}{e.by ? ` · ${e.by}` : ''}{time ? ` · ${time}` : ''}</small>
           </p>
@@ -421,14 +403,12 @@ export default function JobDrawer({ jobId, initialTab = 'overview', onClose, onO
         )}
         {list.length === 0 && <EmptyState line icon="clock" title="No events yet" />}
         {items}
-        {limit && shownEvents.length > limit ? <button type="button" className="ix-link" style={{ margin: '4px 0 0' }} onClick={() => setTab('timeline')}>See the full timeline →</button> : null}
+        {limit && shownEvents.length > limit ? <button type="button" className="ix-link" style={{ margin: '4px 0 0' }} onClick={() => setAllEvents(true)}>See the full timeline</button> : null}
       </div>
     )
   }
 
-  // ── papers checklist from the job's documents ──
-  const paperTypes = isExport ? PAPERS_EXPORT : PAPERS_IMPORT
-  const docOf = (t) => docs.find((d) => d.doc_type === t)
+  // ── papers: a PDF opens inside the portal ──
   const showDoc = (d) => (/pdf/i.test(d.file_type || d.file_name) ? setViewDoc(d) : openDoc(d))
 
   // ── facts, once ──
@@ -475,44 +455,23 @@ export default function JobDrawer({ jobId, initialTab = 'overview', onClose, onO
   const shipArrived = !isExport && !!j.steps?.[0]?.done
   const showSeaTrack = !isExport && !isAir && !shipArrived && (sea || (!j.arrivedAt && !boxes.some((b) => b.raw?.port_in) && Number(job.stage || 0) < 7))
 
-  const tabs = [
-    { id: 'overview', label: 'Overview' },
-    ...(boxes.length ? [{ id: 'containers', label: 'Containers', count: boxes.length }] : []),
-    { id: 'docs', label: 'Documents', count: docs.length || undefined },
-    { id: 'timeline', label: 'Timeline', count: shownEvents.length || undefined },
-    { id: 'payments', label: 'Payments' },
-    { id: 'notes', label: 'Notes', count: notes.length || undefined },
-  ]
-  const shown = tabs.some((t) => t.id === tab) ? tab : 'overview'
   const sd = stageDays(job, j)
   const stageSince = sd === null ? null : j.phase === 'release' ? `· ${sd} d since OOC` : j.phase === 'ooc' ? `· ${sd} d since BE` : `· ${sd} d`
 
-  // containers tab groups
-  const groups = [
-    ['all', 'All', () => true],
-    ['port', 'At port / CFS', (b) => ['port', 'cfs', 'to_cfs'].includes(b.where)],
-    ['out', 'Out', (b) => ['out', 'road', 'rail', 'collected'].includes(b.where)],
-    ['risk', 'Free days ≤ 2', (b) => b.freeLeft !== null && b.freeLeft <= 2],
-    ['done', 'Finished', (b) => !!b.finishedOn || b.where === 'empty_back'],
-  ].filter(([id, , fn]) => id === 'all' || boxes.some(fn))
-  const cf = groups.find((g) => g[0] === ctrFilter) || groups[0]
-  const ctrRows = boxes.filter(cf[2]).filter((b) => !ctrQ || b.no.includes(ctrQ.trim().toUpperCase()))
-
-  const boxRows = (b, full) => {
-    const open = full && openBox === b.no
+  const boxRows = (b) => {
+    const open = openBox === b.no
     const out = [
-      <tr key={b.no} onClick={full ? () => setOpenBox(open ? null : b.no) : undefined} title={full ? 'Show this trip’s moves' : undefined}>
+      <tr key={b.no} onClick={() => setOpenBox(open ? null : b.no)} title="Show this trip’s moves">
         <td className="box">{b.no}{b.stale && <span title="No movement for 30+ days" className="muted"> <Icon name="clock-question" /></span>}</td>
         <td>{b.size || <Dash />}</td>
         <td><WhereStatus b={b} /></td>
-        {full && <td className="dim">{b.whereSince ? fmtDateTime(b.whereSince) : <Dash />}</td>}
         <td className={b.leftAt ? '' : 'dim'}>{b.leftAt ? fmtDateTime(b.leftAt) : <Dash />}</td>
         <td className="r"><FreeDays value={b.freeLeft} till={b.freeTill && fmtDate(b.freeTill)} /></td>
       </tr>,
     ]
     if (open) {
       out.push(
-        <tr key={`${b.no}-ms`} className="ms"><td colSpan={6}>
+        <tr key={`${b.no}-ms`} className="ms"><td colSpan={5}>
           {b.milestones.length ? (
             <ul className="ix-jp-ms">
               {[...b.milestones].reverse().map((m, i) => <li key={i}>{m.label}{m.place ? ` · ${m.place}` : ''} <span>· {fmtDateTime(m.at)}</span></li>)}
@@ -523,18 +482,16 @@ export default function JobDrawer({ jobId, initialTab = 'overview', onClose, onO
     }
     return out
   }
-  const boxTable = (rows, full) => (
+  const boxTable = (rows) => (
     <div className="ix-jp-inner">
-      <table className={`ix-tbl${full ? ' click' : ''}`}>
+      <table className="ix-tbl click">
         <thead><tr>
           <th>Container</th><th>Size</th><th>Where now</th>
-          {full && <th>Since</th>}
           <th>Left</th><th className="r">Free till</th>
         </tr></thead>
         <tbody>
-          {rows.flatMap((b) => boxRows(b, full))}
-          {rows.length === 0 && <tr><td colSpan={full ? 6 : 5} className="dim">No containers match</td></tr>}
-        </tbody>
+          {rows.flatMap((b) => boxRows(b))}
+                  </tbody>
       </table>
     </div>
   )
@@ -589,8 +546,8 @@ export default function JobDrawer({ jobId, initialTab = 'overview', onClose, onO
                     <b>{s.label}</b>
                     <div className="w">{s.when}{sub && <span>{sub}</span>}</div>
                     {/* the step's own action, only while the step is still to do (e.g. Check OOC
-                        until OOC is granted) */}
-                    {cta && !s.done && (cta.step || (s.current && s.id)) === s.id && (
+                        until OOC is granted); Add truck number also once the box has left */}
+                    {cta && (!s.done || cta.onDone) && (cta.step || (s.current && s.id)) === s.id && (
                       <div className="act">
                         <Button size="sm" variant="primary" urgent={level === 'red' && cta.key === 'truck'} icon={cta.icon} onClick={cta.run}>{cta.label}</Button>
                         {alt && <Button size="sm" variant="ghost" icon={alt.icon} onClick={alt.run}>{alt.label}</Button>}
@@ -602,12 +559,11 @@ export default function JobDrawer({ jobId, initialTab = 'overview', onClose, onO
             </div>
           </div>
 
-          <Tabs className="ix-jp-tabs" value={shown} onChange={setTab} tabs={tabs} />
         </div>
 
         <div className="ix-jp-body">
-          {shown === 'overview' && (
-            <>
+          {/* one page, no tabs: containers, papers and timeline are all here (Jose, 31 Oct 2026) */}
+          <>
               {alerts.length > 0 && (
                 <div className="ix-jp-alerts">
                   {alerts.map((a, i) => (
@@ -629,10 +585,8 @@ export default function JobDrawer({ jobId, initialTab = 'overview', onClose, onO
                 <div>
                   {boxes.length > 0 && (
                     <Section title={`Containers · ${boxes.length}`} right={!isExport && !delivered ? <button type="button" className="ix-link" onClick={() => goPage('containers')}>Open on Containers <Icon name="arrow-right" /></button> : null}>
-                      {boxTable(boxes.slice(0, 5), false)}
-                      {boxes.length > 5
-                        ? <div className="ix-jp-more">Showing 5 of {boxes.length} · <button type="button" className="ix-link" onClick={() => setTab('containers')}>See all</button></div>
-                        : <div className="ix-jp-more" />}
+                      {boxTable(boxes)}
+                      <div className="ix-jp-more" />
                     </Section>
                   )}
 
@@ -706,122 +660,12 @@ export default function JobDrawer({ jobId, initialTab = 'overview', onClose, onO
                     </div>
                   </Section>
                   <Section title="Timeline" right={<span className="muted">IST</span>}>
-                    {timeline(6)}
+                    {timeline(allEvents ? 0 : 6)}
                   </Section>
                 </div>
               </div>
-            </>
-          )}
-
-          {shown === 'containers' && (
-            <>
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 10 }}>
-                <Segmented label="Show containers" value={cf[0]} onChange={setCtrFilter}
-                  options={groups.map(([id, l, fn]) => ({ value: id, label: `${l} ${boxes.filter(fn).length}` }))} />
-                {boxes.length > 6 && (
-                  <label className="ix-tsearch" style={{ width: 200 }}>
-                    <Icon name="search" />
-                    <input value={ctrQ} onChange={(e) => setCtrQ(e.target.value)} placeholder="Find a container" aria-label="Find a container" />
-                  </label>
-                )}
-              </div>
-              {boxTable(ctrRows, true)}
-              <div className="ix-jp-more">
-                Click a container to see this trip’s moves · trucks are assigned on the Trucks page
-                {!isExport && !delivered && <> · <button type="button" className="ix-link" onClick={() => goPage('containers')}>Open on Containers</button></>}
-              </div>
-            </>
-          )}
-
-          {shown === 'timeline' && timeline()}
-
-          {shown === 'docs' && (
-            <div className="ix-jp-docs">
-              <Section title="Papers" right={<UploadMenu job={job} docs={docs} userName={currentUserName} showToast={showToast} onDone={() => setDocsTick((n) => n + 1)} />}>
-                <div className="ix-jp-inner">
-                  <table className="ix-tbl">
-                    <thead><tr><th>Paper</th><th>File</th><th>Uploaded</th><th /></tr></thead>
-                    <tbody>
-                      {paperTypes.map((t) => {
-                        const d = docOf(t)
-                        return (
-                          <tr key={t}>
-                            <td className={d ? 'ok' : 'dim'}><Icon name={d ? 'circle-check' : 'circle-dashed'} /> {paperName(t, job)}</td>
-                            <td className="cl" title={d?.file_name || ''}>{d ? d.file_name : <Dash />}</td>
-                            <td className="dim" title={d ? timeAgo(d.created_at) : undefined}>{d ? `${fmtDateTime(d.created_at)}${d.uploaded_by_name ? ` · ${d.uploaded_by_name}` : ''}` : <Dash />}</td>
-                            <td className="r">{d
-                              ? ((d.file_path || d.file_url) && <Button size="sm" variant="ghost" onClick={() => showDoc(d)}>View</Button>)
-                              : null}</td>
-                          </tr>
-                        )
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              </Section>
-              {(() => {
-                const others = docs.filter((d) => !paperTypes.includes(d.doc_type) || docOf(d.doc_type) !== d)
-                if (!others.length) return docs.length ? null : <EmptyState line icon="files" title="No documents uploaded yet." />
-                return (
-                  <Section title={`Other files · ${others.length}`}>
-                    {others.map((d) => (
-                      <div key={d.id} className="ix-jp-file">
-                        <Icon name={/pdf/i.test(d.file_type || d.file_name) ? 'file-type-pdf' : 'file-text'} />
-                        <div style={{ minWidth: 0 }}>
-                          <div className="n">{d.doc_type ? `${d.doc_type} · ` : ''}{d.file_name}</div>
-                          <div className="s" title={timeAgo(d.created_at)}>{d.uploaded_by_name ? `${d.uploaded_by_name} · ` : ''}{fmtDateTime(d.created_at)}</div>
-                        </div>
-                        {(d.file_path || d.file_url) && <Button size="sm" variant="ghost" onClick={() => showDoc(d)}>View</Button>}
-                      </div>
-                    ))}
-                  </Section>
-                )
-              })()}
-            </div>
-          )}
-
-          {shown === 'payments' && (() => {
-            // what the job has today: the CFS amount, the bank guarantee and the duty stage
-            const duty = isExport ? null
-              : j.oocDone ? 'Paid (OOC given)'
-                : j.beStage?.id === 'duty_paid' ? 'Paid'
-                  : j.beStage?.id === 'assessed' ? 'Assessed: to pay'
-                    : null
-            const pay = [
-              ['CFS amount', job.cfs_amount !== null && job.cfs_amount !== undefined && job.cfs_amount !== '' ? fmtINR(job.cfs_amount) : null],
-              ['Customs duty', duty],
-              ['Bank guarantee', bgText(job.bg_required)],
-            ].filter(([, v]) => v)
-            return (
-              <Section title="Payments" right={<button type="button" className="ix-link" onClick={() => onOpenFull(job.id, 'details')}>Edit on the full job page</button>}>
-                {pay.length
-                  ? <div className="ix-jp-kv">{pay.map(([k, v]) => [<div key={`${k}-k`}>{k}</div>, <div key={`${k}-v`}>{v}</div>])}</div>
-                  : <EmptyState line icon="receipt" title="No payment details on this job yet." />}
-              </Section>
-            )
-          })()}
-
-          {shown === 'notes' && (
-            notes.length === 0
-              ? <EmptyState line icon="message" title="No notes yet.">Notes are seen by everyone at JDS who opens this job.</EmptyState>
-              : [...notes].reverse().map((n) => (
-                <div key={n.id} className="ix-note">
-                  <span className="ix-avatar">{initials(n.done_by_name)}</span>
-                  <div style={{ minWidth: 0 }}>
-                    <div className="who" title={timeAgo(n.created_at)}>{n.done_by_name || 'Someone'} · {fmtDateTime(n.created_at)}</div>
-                    <div className="bubble">{n.note || n.title}</div>
-                  </div>
-                </div>
-              ))
-          )}
+          </>
         </div>
-
-        {shown === 'notes' && (
-          <div className="ix-composer">
-            <input value={note} onChange={(e) => setNote(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && !saving && addNote()} placeholder="Write a note for the team…" maxLength={1000} />
-            <Button variant="primary" onClick={addNote} disabled={saving || !note.trim()}>{saving ? 'Saving…' : 'Send'}</Button>
-          </div>
-        )}
 
         {/* a PDF, drawn by the portal itself (works on every browser and phone) */}
         {viewDoc && (

@@ -12,7 +12,7 @@ import '../styles/jobs.css'
 // sidebar, Today and this page agree (Jose, 31 Oct 2026: one number, one source).
 const TABS = [
   { id: 'action', label: 'Needs action', tone: 'red', test: (r) => isActiveRow(r) && r.j.attention.some((a) => a.level !== 'info') },
-  { id: 'open', label: 'Open', test: isActiveRow },
+  { id: 'open', label: 'Active', test: isActiveRow },
   { id: 'arriving', label: 'Arriving', test: (r) => isActiveRow(r) && r.j.phase === 'arrival' },
   { id: 'customs', label: 'At customs', test: (r) => isActiveRow(r) && ['docs', 'ooc', 'sb', 'leo'].includes(r.j.phase) },
   { id: 'move', label: 'To move', test: (r) => isActiveRow(r) && r.j.phase === 'release' },
