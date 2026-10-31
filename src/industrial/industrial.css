@@ -177,7 +177,7 @@
 .ix-main { grid-row: 2; grid-column: 2; min-width: 0; overflow: auto; position: relative }
 
 /* ── page frame: AdminDashboard mounts every page in one .ix-page ───── */
-.ix-page { padding: var(--s4) var(--s5) var(--s8); max-width: 1500px }
+.ix-page { padding: var(--s4) var(--s5) var(--s8) }  /* full width: wide office screens use all of it (Jose, 31 Oct 2026) */
 /* wide pages (Vessels) use the whole screen width (Jose, 25 Oct 2026) */
 .ix-page.ix-page-wide { max-width: none }
 /* a page that still draws its own .ix-page inside the frame: no double padding */
