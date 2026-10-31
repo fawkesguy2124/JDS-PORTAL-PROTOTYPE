@@ -134,3 +134,25 @@
   .ix-td-feed { max-height: none }
   .ix-td-feed .ev { padding: 5px 12px }
 }
+
+/* ── Today, lighter (Jose, 1 Nov 2026): three highlights, a to-do list when one is tapped ── */
+.ix-td-kpis { margin-bottom: 14px }
+.ix-td-todo { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--shadow-xs); margin: -4px 0 16px; overflow: hidden }
+.ix-td-todo .hd { display: flex; align-items: center; justify-content: space-between; padding: 8px 10px 8px 16px; border-bottom: 1px solid var(--line); background: var(--surface-2) }
+.ix-td-todo .hd b { font-size: var(--fs-xs); font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--text-2) }
+.ix-td-todo .it { display: grid; grid-template-columns: 8px 64px minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 10px 16px; border-bottom: 1px solid var(--line); cursor: pointer }
+.ix-td-todo .it:last-child { border-bottom: 0 }
+.ix-td-todo .it:hover { background: var(--surface-2) }
+.ix-td-todo .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted) }
+.ix-td-todo .it.red .dot { background: var(--red) }
+.ix-td-todo .it.amber .dot { background: var(--amber-dot) }
+.ix-td-todo p { margin: 0; min-width: 0 }
+.ix-td-todo p b { display: block; font-weight: 600 }
+.ix-td-todo p small { display: block; color: var(--muted); font-size: var(--fs-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+/* the runway always shows the whole job number; the client name gives way instead */
+.ix-td-runway .rw-row { grid-template-columns: 190px minmax(0, 1fr) }
+.ix-td-runway .who > :first-child { flex-shrink: 0 }
+@media (max-width: 640px) {
+  .ix-td-todo .it { grid-template-columns: 8px 56px minmax(0, 1fr); }
+  .ix-td-todo .it .ix-btn { grid-column: 2 / -1; justify-self: start }
+}

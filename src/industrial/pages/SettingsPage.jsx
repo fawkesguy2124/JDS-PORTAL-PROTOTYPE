@@ -167,12 +167,6 @@ function Startup({ prefs, save }) {
         <Segmented label="Time format" value={prefs.timeFormat} onChange={(v) => save('timeFormat', v)}
           options={[{ value: '24h', label: '24-hour' }, { value: '12h', label: '12-hour' }]} />
       </Row>
-      <Row label="Today page starts on" help="Which jobs the Today page shows first. Changing it on the Today page changes it here too.">
-        <Segmented label="Job type" value={prefs.todayType} onChange={(v) => save('todayType', v)}
-          options={[{ value: 'all', label: 'All' }, { value: 'import', label: 'Import' }, { value: 'export', label: 'Export' }]} />
-        <Segmented label="Whose jobs" value={prefs.todayScope} onChange={(v) => save('todayScope', v)}
-          options={[{ value: 'everyone', label: 'Everyone' }, { value: 'mine', label: 'My jobs' }]} />
-      </Row>
     </>
   )
 }
