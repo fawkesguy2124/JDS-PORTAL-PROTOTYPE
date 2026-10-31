@@ -7,7 +7,9 @@
 // - same job checked again within 5 minutes → saved answer, no ULIP call
 // - after a failure → wait 2 minutes before asking ULIP again
 // - two presses at once → the second is refused
-// - JNPT is asked only for JNPT jobs (no pointless calls for other ports)
+// - JNPT is asked only for JNPT jobs (no pointless calls for other ports), and only
+//   when a person asks (button or WhatsApp): automatic runs send { auto: true } and skip
+//   it — JNPT/02 answered once in 376 tries 17-31 Oct 2026 (Jose, 31 Oct 2026)
 // - the WhatsApp bot may ask too, when a person asks it to check (Jose, 23 Oct
 //   2026): with the bot's database password, at most once every 30 minutes per
 //   job; a newer check is answered from the saved one
@@ -81,7 +83,7 @@ Deno.serve(async (req) => {
     const [y, m, d] = beDate.split('-')
     const beDt = `${d}${m}${y}` // ICEGATE wants DDMMYYYY
     const ctx = { jobId: job.id, userId: caller.id, userName: caller.name, requestStart }
-    const askJnpt = job.mode !== 'Air' && (!job.port_code || job.port_code === 'INNSA1')
+    const askJnpt = !body?.auto && job.mode !== 'Air' && (!job.port_code || job.port_code === 'INNSA1')
 
     // One after the other (not in parallel) to keep traffic gentle
     const started = Date.now()

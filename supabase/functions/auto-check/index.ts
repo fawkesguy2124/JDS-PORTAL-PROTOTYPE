@@ -113,7 +113,8 @@ async function loggedBefore(admin: any, action: string, metaKey: string, value: 
 // One check. Returns { ok, error?, result } — ok:false only for a real ULIP / Customs failure.
 async function runOne(admin: any, item: any, job: any, token: string) {
   if (item.kind === 'ooc') {
-    const out = await callFn('customs-status', { jobId: item.job_id, asName: AS }, token)
+    // auto: Customs only, no port check (see customs-status)
+    const out = await callFn('customs-status', { jobId: item.job_id, asName: AS, auto: true }, token)
     if (!out?.success) {
       const e = String(out?.error || 'no answer')
       // our own guards (needs a BE, already running, checked a moment ago) are not ULIP failures

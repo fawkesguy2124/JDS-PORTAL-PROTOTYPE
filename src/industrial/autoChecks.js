@@ -19,9 +19,10 @@ const MAX_PER_OPEN = 8
 const minutesSince = (iso) => (iso ? (Date.now() - new Date(iso).getTime()) / 60_000 : Infinity)
 export const isDue = (...isoTimes) => Math.min(...isoTimes.map(minutesSince)) >= COOLDOWN_MIN
 
-// One customs check (ICEGATE OOC + JNPT) for a job, through the customs-status function
+// One automatic customs check (ICEGATE OOC only; the port check runs only when a person
+// presses Check customs status) for a job, through the customs-status function
 export async function checkCustoms(jobId) {
-  const { data, error } = await supabase.functions.invoke('customs-status', { body: { jobId } })
+  const { data, error } = await supabase.functions.invoke('customs-status', { body: { jobId, auto: true } })
   return { ok: !error && !!data?.success, oocDate: data?.data?.ooc_date || null }
 }
 
