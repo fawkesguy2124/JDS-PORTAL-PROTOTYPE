@@ -1,10 +1,9 @@
 import { useMemo, useState } from 'react'
-import { supabase } from '../../supabase'
 import { isDelivered, isExportJob, displayLine } from '../../services/journey'
 import { useJourney, useFreshOnOpen } from '../JourneyContext'
 import ShipMap, { vesselsOf, shipIdOf, shipPosition, voyage, toneOf } from '../ShipMap'
 import { cargoOnShip, seaOf } from '../../../supabase/functions/_shared/portal/ships.js'
-import { Icon, Skeleton, fmtDate, fmtTime, PageHead, JobNo, Status, Panel, Button, EmptyState, Dash } from '../ui'
+import { Icon, Skeleton, fmtDate, PageHead, JobNo, Status, EmptyState } from '../ui'
 import { shipChecks, realMs } from '../shipChecks'
 import { polText, seaWhere, portName, notSailed, moveText, nextStop, atPort } from '../SeaTracking'
 import '../styles/tracking.css'
@@ -35,13 +34,11 @@ const statusOf = (r) => (r.m.waiting ? ['grey', 'Not sailed'] : r.m.arrived || r
 // (cargoOnShip) the ship leaves this page. Staff type the IMO once (saved on every job
 // of that ship); behind the scenes the IGM check and the vessel-track finder may also
 // supply it. Nothing here calls a government system.
-export default function VesselsPage({ onOpenJob, showToast, onGo }) {
-  const { data, active, loading, patchJob } = useJourney()
+export default function VesselsPage({ onOpenJob }) {
+  const { data, active, loading } = useJourney()
   useFreshOnOpen()
   // ship row key; an alert link (?job=) picks the ship carrying that job
   const [selected, setSelected] = useState(() => { const j = new URLSearchParams(window.location.search).get('job'); return j ? `link:${j}` : null })
-  const [typing, setTyping] = useState({}) // row key -> IMO being typed
-  const [saving, setSaving] = useState(null)
   const [openedAt] = useState(() => Date.now()) // 'next arrival' is counted from when the page opened
 
   const igmOf = (job) => { const n = String(job.ulip_refs?.igm_no || '').replace(/\D/g, ''); return n.length >= 5 && !/^0+$/.test(n) ? n : null }
@@ -93,26 +90,6 @@ export default function VesselsPage({ onOpenJob, showToast, onGo }) {
   // the shipping line of a ship's jobs: with the IMO that is all JDS needs; the
   // ship's own name is not asked for (Jose, 24 Oct 2026)
   const lineOf = (s) => { const j = s.jobs.find((x) => x.job.shipping_line)?.job; return j ? displayLine(j.shipping_line) || j.shipping_line : null }
-  // a ship the map cannot show yet: what is known, and how to get the IMO
-  const unknownHint = (s) => {
-    const job = s.jobs[0].job
-    // ship tracking is already on it (it follows the BL / container and brings the IMO
-    // itself): nothing to type (Jose, 1 Nov 2026)
-    const sea = seaOfShip(s)
-    // what the line said, in plain words, and when it was last asked (Jose, 1 Nov 2026: J-1001
-    // "still can't see the tracking": the line had no record of the box yet)
-    if (sea?.error) {
-      const line = lineOf(s) || 'The line'
-      const box = sea.number_type === 'CT' ? `container ${sea.number}` : `BL ${sea.number}`
-      const said = /HASNT_PROVIDE|NOT_FOUND|NO_DATA/i.test(sea.error) ? `${line} has no record of ${box} yet (usually until it is loaded on the ship)`
-        : /previous trip/i.test(sea.error) ? `${line} still shows this container’s previous trip`
-          : `${line} did not answer for ${box}`
-      return `${said} · asked again every hour${sea.fetched_at ? `, last at ${fmtTime(sea.fetched_at)}` : ''}`
-    }
-    if (sea) return 'Ship tracking is on · looking up the ship'
-    const igm = igmOf(job)
-    return `IMO not known yet${igm ? ` · IGM ${igm}${job.ulip_refs?.igm_date ? ` (${fmtDate(job.ulip_refs.igm_date)})` : ''}` : ''}`
-  }
   // nothing chosen at first: the map opens on all the ships
   const linked = typeof selected === 'string' && selected.startsWith('link:') ? selected.slice(5) : null
   const sel = ships.find((s) => shown(s) && (linked ? s.jobs.some((x) => x.job.id === linked) : s.key === selected)) || null
@@ -138,26 +115,6 @@ export default function VesselsPage({ onOpenJob, showToast, onGo }) {
     return { ...m, atPod: c.atPod, delay: c.delay ? { ...c.delay, text: delayText(c.delay) } : null, flags: c.flags }
   })
 
-  // one IMO for the ship, saved on every job on it
-  const saveImo = async (s) => {
-    const no = String(typing[s.key] || '').replace(/\D/g, '')
-    if (no.length !== 7) { showToast?.('The IMO number has 7 digits, for example 9467287.', 'error'); return }
-    setSaving(s.key)
-    let failed = null
-    // (a job's saved IMO is its first ship's: jobs where this ship is a second ship are skipped)
-    for (const { job } of s.jobs.filter((x) => x.first)) {
-      const { data: row, error } = await supabase.rpc('merge_job_refs', { p_job: job.id, p_found: {}, p_typed: { imo_code: no }, p_truck: null })
-      const saved = Array.isArray(row) ? row[0] : row
-      if (error || !saved?.id) { failed = error?.message || 'no permission'; continue }
-      patchJob(saved)
-    }
-    setSaving(null)
-    if (failed) { showToast?.(`Could not save on every job: ${failed}`, 'error'); return }
-    setTyping((p) => ({ ...p, [s.key]: undefined }))
-    setSelected(`imo:${no}`)
-    showToast?.(`IMO ${no} saved on ${s.jobs.map((x) => x.job.job_no).join(', ')}`, 'success')
-  }
-
   // (no "Ship has left" button any more: ship tracking says when the ship arrives and the
   // ship leaves this list by itself two days later; Jose, 24 Oct 2026)
 
@@ -175,7 +132,6 @@ export default function VesselsPage({ onOpenJob, showToast, onGo }) {
   const next = rows.filter((r) => r.podAt && r.tone === 'sea' && realMs(r.podAt, r.sea?.pod) > openedAt)
     .sort((a, b) => String(a.podAt).localeCompare(String(b.podAt)))[0]
   const nextEta = next ? etaParts(next.podAt) : null
-  const noPosition = ships.filter((s) => !shown(s))
   const mapH = typeof window !== 'undefined' ? (window.innerWidth < 900 ? 420 : Math.max(520, window.innerHeight - 250)) : 560
   const jobNos = (jobs) => jobs.map(({ job }) => <JobNo key={job.id} no={job.job_no} onClick={() => onOpenJob?.(job.id)} />)
   // 'Next arrival J-674 · 20 Nov', job number first; pressing it shows that ship on the map
@@ -245,50 +201,8 @@ export default function VesselsPage({ onOpenJob, showToast, onGo }) {
             </div>
           </section>
 
-          {noPosition.length > 0 && (
-            <Panel className="ix-trk-panel" title={<>Ships without a position yet <span className="n">{noPosition.length}</span></>}
-              meta="Ship tracking fills these in by itself once the line reports">
-              <div className="ix-tbl-wrap">
-                <table className="ix-tbl">
-                  <thead><tr><th>Job</th><th>Client</th><th>Line</th><th>What we know</th><th className="r">ETA</th><th className="r" aria-label="Actions" /></tr></thead>
-                  <tbody>
-                    {noPosition.map((s) => {
-                      const first = s.jobs[0].job
-                      const clients = [...new Set(s.jobs.map((x) => x.job.client).filter(Boolean))].join(', ')
-                      const eta = s.jobs.length === 1 ? first.eta : null
-                      return (
-                        <tr key={s.key}>
-                          <td><span className="ix-trk-jobs">{jobNos(s.jobs)}</span></td>
-                          <td className="cl">{clients || <Dash />}</td>
-                          <td>{lineOf(s) || <Dash />}</td>
-                          <td className="dim">{s.imo ? (notSailed(seaOfShip(s)) ? `Not sailed yet${polText(seaOfShip(s)) ? ` · ${polText(seaOfShip(s))}` : ''}` : 'Waiting for the first position') : unknownHint(s)}</td>
-                          <td className="r">{eta ? fmtDate(eta) : <Dash />}</td>
-                          <td className="act">
-                            <div>
-                              {!s.imo && igmOf(first) && (
-                                <Button size="sm" icon="search" onClick={() => onGo?.(`customs&job=${first.id}`)} title="Opens this job's IGM check on the BE & OOC page">Check IGM</Button>
-                              )}
-                              {!s.imo && !seaOfShip(s) && (
-                                <span className="ix-trk-form" style={{ padding: 0 }}>
-                                  <input value={typing[s.key] || ''} onChange={(e) => setTyping((p) => ({ ...p, [s.key]: e.target.value.replace(/\D/g, '').slice(0, 7) }))}
-                                    placeholder="IMO, 7 digits" inputMode="numeric" style={{ width: 120 }} className="mono"
-                                    onKeyDown={(e) => { if (e.key === 'Enter' && String(typing[s.key] || '').length === 7) saveImo(s) }}
-                                    aria-label={`IMO number for ${s.jobs.map((x) => x.job.job_no).join(', ')}`} />
-                                  <Button size="sm" disabled={saving === s.key || String(typing[s.key] || '').length !== 7} onClick={() => saveImo(s)}>
-                                    {saving === s.key ? 'Saving…' : 'Save IMO'}
-                                  </Button>
-                                </span>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </Panel>
-          )}
+          {/* (no 'Ships without a position yet' list: not for JDS; a job shows here once its
+              ship has a position; Jose, 1 Nov 2026) */}
         </>
       )}
     </>
