@@ -261,7 +261,10 @@ async function track(admin: any, job: any, lines: any[], opts: { start?: boolean
   const oldEta = (v: unknown) => !!v && isOldVoyage({ pod_date: v }, job)
   const prevTrip = prev && !isOldVoyage(prev, job) ? prev : null
   // the ship's position history for the map's track (one point per new position, last 300)
-  const track: any[] = prevTrip && Array.isArray(prevTrip.track) ? prevTrip.track : []
+  // (a row whose history began on the previous trip, saved before this rule, starts its
+  // track afresh: J-673's first point was the box at Chennai in August)
+  const startedOld = oldEta(prev?.first_pod_date)
+  const track: any[] = prevTrip && !startedOld && Array.isArray(prevTrip.track) ? prevTrip.track : []
   const lastPt = track[track.length - 1]
   if (typeof r.row.lat === 'number' && (!lastPt || lastPt[0] !== r.row.lat || lastPt[1] !== r.row.lng)) track.push([r.row.lat, r.row.lng, r.row.position_at || now])
   // the ETA's history: the first ETA, and one entry each time it changes (for "ETA +3 days")
