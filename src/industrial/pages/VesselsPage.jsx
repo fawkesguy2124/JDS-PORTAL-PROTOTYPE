@@ -195,17 +195,8 @@ export default function VesselsPage({ onOpenJob, showToast, onGo }) {
               onClick={() => pickFilter('attn')} selected={filter === 'attn'} />
           </KpiStrip>
 
-          {alerts.length > 0 && (
-            <div className="ix-trk-alerts" role="list" aria-label="Ships that need a look">
-              {alerts.map((a) => (
-                <div key={`${a.key}-${a.id}`} role="listitem" className={`ix-trk-al ${a.tone} ${sel?.key === a.key ? 'on' : ''}`}>
-                  <Icon name={a.icon} />
-                  <p><span className="jobs">{jobNos(a.jobs)}</span><span className="t">{a.text}</span></p>
-                  <Button size="sm" variant="ghost" icon="map-pin" onClick={() => setSelected(a.key)}>Show on map</Button>
-                </div>
-              ))}
-            </div>
-          )}
+          {/* (no alert strip above the map: each ship's card in the list already says it;
+              Jose, 31 Oct 2026. The "Needs a look" tab and figure remain.) */}
 
           <section className="ix-card ix-trk-console" style={{ '--vt-h': `${mapH}px` }}>
             <aside className="ix-trk-list">
