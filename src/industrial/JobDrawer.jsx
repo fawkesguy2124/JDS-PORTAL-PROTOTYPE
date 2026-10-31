@@ -1,5 +1,5 @@
 /* eslint-disable react-refresh/only-export-components -- the jobs table shares the row helpers and the pager with this panel */
-import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../supabase'
 import { parseContainerNos, getContainerSize } from '../utils/jobHelpers'
@@ -18,6 +18,8 @@ import SeaTracking, { portTime } from './SeaTracking'
 import BeStage from './BeStage'
 import AirCargo from './AirCargo'
 import { rememberJob } from './recentJobs'
+import { availableTypes, docTypeLabel } from '../utils/docTypes'
+import { uploadJobDocument } from '../services/jobDocuments'
 import './styles/jobs.css'
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -149,6 +151,56 @@ const typing = (e) => { const t = e.target; return !!t && (['INPUT', 'TEXTAREA',
 // what, one next step, the facts once, where every container is, papers, ship,
 // timeline and notes. Editing and government checks stay on the full job page and
 // on the BE & OOC / Trucks pages (button press only).
+// One Upload button with the paper types in a menu (Jose, 31 Oct 2026: instead of a
+// placeholder per paper). Only the types this job does not have yet (each once per job,
+// "Other" as often as needed). Picking one opens the file picker and uploads in place.
+function UploadMenu({ job, docs, userName, showToast, onDone, label = 'Upload' }) {
+  const [open, setOpen] = useState(false)
+  const [busy, setBusy] = useState(null)
+  const typeRef = useRef(null)
+  const fileRef = useRef(null)
+  const boxRef = useRef(null)
+  useEffect(() => {
+    if (!open) return undefined
+    const close = (e) => { if (!boxRef.current?.contains(e.target)) setOpen(false) }
+    const esc = (e) => { if (e.key === 'Escape') { e.stopPropagation(); setOpen(false) } }
+    document.addEventListener('mousedown', close)
+    document.addEventListener('keydown', esc, true)
+    return () => { document.removeEventListener('mousedown', close); document.removeEventListener('keydown', esc, true) }
+  }, [open])
+  const types = availableTypes(docs.map((d) => d.doc_type))
+  const pick = (t) => { typeRef.current = t; setOpen(false); fileRef.current?.click() }
+  const send = async (e) => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file || !typeRef.current) return
+    setBusy(typeRef.current)
+    const r = await uploadJobDocument({ job, file, docType: typeRef.current, userName })
+    setBusy(null)
+    if (!r.ok) { showToast?.(r.error, 'error'); return }
+    showToast?.(`${typeRef.current} uploaded`, 'success')
+    if (r.vessel) showToast?.(`Ship name saved from the BL: ${r.vessel}`, 'success')
+    onDone?.()
+  }
+  return (
+    <div className="ix-jp-up" ref={boxRef}>
+      <Button size="sm" icon={busy ? 'loader-2' : 'upload'} onClick={() => setOpen((v) => !v)} disabled={!!busy} aria-haspopup="menu" aria-expanded={open}>
+        {busy ? `Uploading ${busy}…` : label}<Icon name="chevron-down" />
+      </Button>
+      {open && (
+        <div className="ix-menu" role="menu">
+          {types.map((t) => (
+            <button key={t} type="button" role="menuitem" onClick={() => pick(t)}>
+              <Icon name="file-upload" />{t === 'BL' && job.mode === 'Air' ? 'Air waybill (AWB)' : docTypeLabel(t)}
+            </button>
+          ))}
+        </div>
+      )}
+      <input ref={fileRef} type="file" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png" hidden onChange={send} />
+    </div>
+  )
+}
+
 export default function JobDrawer({ jobId, initialTab = 'overview', onClose, onOpenFull, onOpenTruck, currentUserName, showToast }) {
   const { byId, data, profiles, patchJob, active } = useJourney()
   const navigate = useNavigate()
@@ -167,6 +219,7 @@ export default function JobDrawer({ jobId, initialTab = 'overview', onClose, onO
 
   const log = loaded.id === curId ? loaded.log : []
   const docs = loaded.id === curId ? loaded.docs : []
+  const [docsTick, setDocsTick] = useState(0)
 
   useEffect(() => {
     if (!curId) return
@@ -178,7 +231,7 @@ export default function JobDrawer({ jobId, initialTab = 'overview', onClose, onO
       if (!cancelled) setLoaded({ id: curId, log: l.data || [], docs: d.data || [] })
     })
     return () => { cancelled = true }
-  }, [curId])
+  }, [curId, docsTick])
 
   // the list highlights the job the panel shows
   useEffect(() => { pager.cur = curId; tell() }, [curId])
@@ -377,7 +430,6 @@ export default function JobDrawer({ jobId, initialTab = 'overview', onClose, onO
   const paperTypes = isExport ? PAPERS_EXPORT : PAPERS_IMPORT
   const docOf = (t) => docs.find((d) => d.doc_type === t)
   const showDoc = (d) => (/pdf/i.test(d.file_type || d.file_name) ? setViewDoc(d) : openDoc(d))
-  const upload = () => onOpenFull(job.id, 'documents')
 
   // ── facts, once ──
   const facts = []
@@ -418,7 +470,10 @@ export default function JobDrawer({ jobId, initialTab = 'overview', onClose, onO
   // ── ship card (the ship's name and IMO appear only here) ──
   const shipName = !isExport && !isAir ? vesselOf(job, data) : (isExport ? job.vessel : null)
   const imo = shipName && !isExport ? shipIdOf(job, shipName, data).imo : null
-  const showSeaTrack = !isExport && !isAir && (sea || (!j.arrivedAt && !boxes.some((b) => b.raw?.port_in) && Number(job.stage || 0) < 7))
+  // the ship card only while the ship is still on its way: once it has arrived the step
+  // bar says so and the ship is of no more interest here (Jose, 31 Oct 2026)
+  const shipArrived = !isExport && !!j.steps?.[0]?.done
+  const showSeaTrack = !isExport && !isAir && !shipArrived && (sea || (!j.arrivedAt && !boxes.some((b) => b.raw?.port_in) && Number(job.stage || 0) < 7))
 
   const tabs = [
     { id: 'overview', label: 'Overview' },
@@ -607,7 +662,7 @@ export default function JobDrawer({ jobId, initialTab = 'overview', onClose, onO
                       <SeaTracking job={job} showToast={showToast} shipName={shipName} imo={imo} onVessels={() => goPage('vessels')} />
                     </Section>
                   )}
-                  {!showSeaTrack && shipName && (
+                  {!showSeaTrack && shipName && !shipArrived && (
                     <Section title="Ship">
                       <div className="ix-jp-ship">
                         <span className={`ic${j.arrivedAt || isExport ? '' : ' sea'}`}><Icon name={j.arrivedAt ? 'anchor' : 'ship'} /></span>
@@ -640,14 +695,14 @@ export default function JobDrawer({ jobId, initialTab = 'overview', onClose, onO
                 </div>
 
                 <div>
-                  <Section title="Papers" right={<button type="button" className="ix-link" onClick={() => setTab('docs')}>Documents</button>}>
+                  <Section title="Papers" right={<UploadMenu job={job} docs={docs} userName={currentUserName} showToast={showToast} onDone={() => setDocsTick((n) => n + 1)} />}>
                     <div className="ix-jp-papers">
-                      {paperTypes.map((t) => {
-                        const d = docOf(t)
-                        return d
-                          ? <button key={t} type="button" className="ix-jp-paper" onClick={() => showDoc(d)} title={`${d.file_name} · ${fmtDateTime(d.created_at)}`}><Icon name="circle-check" />{paperName(t, job)}</button>
-                          : <button key={t} type="button" className="ix-jp-paper miss" onClick={upload} title={`No ${paperName(t, job)} yet: upload it on the full job page`}><Icon name="upload" />{paperName(t, job)}</button>
-                      })}
+                      {docs.length === 0 && <span className="muted">No papers yet</span>}
+                      {docs.map((d) => (
+                        <button key={d.id} type="button" className="ix-jp-paper" onClick={() => showDoc(d)} title={`${d.file_name} · ${fmtDateTime(d.created_at)}`}>
+                          <Icon name="circle-check" />{paperName(d.doc_type || 'Other', job)}
+                        </button>
+                      ))}
                     </div>
                   </Section>
                   <Section title="Timeline" right={<span className="muted">IST</span>}>
@@ -682,7 +737,7 @@ export default function JobDrawer({ jobId, initialTab = 'overview', onClose, onO
 
           {shown === 'docs' && (
             <div className="ix-jp-docs">
-              <Section title="Papers" right={<Button size="sm" icon="upload" onClick={upload}>Upload</Button>}>
+              <Section title="Papers" right={<UploadMenu job={job} docs={docs} userName={currentUserName} showToast={showToast} onDone={() => setDocsTick((n) => n + 1)} />}>
                 <div className="ix-jp-inner">
                   <table className="ix-tbl">
                     <thead><tr><th>Paper</th><th>File</th><th>Uploaded</th><th /></tr></thead>
@@ -696,7 +751,7 @@ export default function JobDrawer({ jobId, initialTab = 'overview', onClose, onO
                             <td className="dim" title={d ? timeAgo(d.created_at) : undefined}>{d ? `${fmtDateTime(d.created_at)}${d.uploaded_by_name ? ` · ${d.uploaded_by_name}` : ''}` : <Dash />}</td>
                             <td className="r">{d
                               ? ((d.file_path || d.file_url) && <Button size="sm" variant="ghost" onClick={() => showDoc(d)}>View</Button>)
-                              : <Button size="sm" variant="ghost" icon="upload" onClick={upload}>Upload</Button>}</td>
+                              : null}</td>
                           </tr>
                         )
                       })}

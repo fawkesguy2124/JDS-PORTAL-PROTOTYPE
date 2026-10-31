@@ -150,6 +150,10 @@
 
 /* papers checklist */
 .ix-jp-papers { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 16px }
+/* the one Upload button and its paper-type menu */
+.ix-jp-up { position: relative; display: inline-flex }
+.ix-jp-up .ix-btn > i:last-child { margin-left: 2px; font-size: 13px }
+.ix-jp-up .ix-menu { width: 220px; max-height: 320px; overflow-y: auto }
 .ix-jp-paper { display: inline-flex; align-items: center; gap: 4px; height: 24px; padding: 0 8px; border-radius: var(--r-sm); font-size: var(--fs-sm); font-weight: 500; border: 1px solid var(--green-line); background: var(--green-bg); color: var(--green); white-space: nowrap }
 .ix-jp-paper > i { font-size: 13px }
 button.ix-jp-paper { cursor: pointer }
