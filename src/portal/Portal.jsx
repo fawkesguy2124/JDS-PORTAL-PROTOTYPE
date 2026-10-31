@@ -26,6 +26,10 @@ const NewJobSheet = lazyPage(() => import('./NewJobSheet'))
 
 const PHONE = '(max-width: 899.98px)'
 const FRESH_MS = 60_000
+// while the portal is on screen, reload the saved data when it is older than this
+// (database only, never ULIP; the portal is often left open all day)
+const AUTO_FRESH_MS = 150_000
+const AUTO_TICK_MS = 30_000
 const LDB_GAP_HOURS = 6
 const MANAGE_IDS = ['overview', 'bot', 'health', 'search']
 const ADMIN_ONLY = ['overview', 'bot', 'health']
@@ -96,7 +100,7 @@ function PortalInner() {
   const manageId = urlManage && MANAGE_IDS.includes(urlManage) && (p.canManage || !ADMIN_ONLY.includes(urlManage)) ? urlManage : null
   const createFrom = location.state?.ptCreate || null
   const managePage = createPage ? { id: 'create', file: createPage.file || null }
-    : createFrom ? { id: 'create', path: createFrom }
+    : createFrom && p.canCreateJob ? { id: 'create', path: createFrom }
     : openId && sp.get('edit') === '1' ? { id: 'edit', jobId: openId }
     : manageId ? { id: manageId } : null
   const manageOpen = !!managePage
@@ -128,13 +132,24 @@ function PortalInner() {
     navigate({ pathname: location.pathname, search: s ? `?${s}` : '' }, push ? { state: { pt: 1 } } : { replace: true, state: state === undefined ? location.state : state })
   }, [navigate, location.pathname, location.state])
 
+  // reload the saved data when it is older than ms (and no load is running)
+  const freshness = useRef({ loadedAt: null, loading: true })
+  useEffect(() => { freshness.current = { loadedAt: data?.loadedAt || null, loading } }, [data, loading])
+  const refreshIfStale = useCallback((ms = FRESH_MS) => {
+    const f = freshness.current
+    if (!f.loadedAt || f.loading || Date.now() - new Date(f.loadedAt).getTime() <= ms) return
+    f.loading = true
+    refresh()
+  }, [refresh])
+
   const openJob = useCallback((id) => {
     if (!id) return
+    refreshIfStale()
     rememberJob(id)
     const q = new URLSearchParams()
     q.set('job', String(id))
     go(q, !openId && !manageOpen)
-  }, [go, openId, manageOpen])
+  }, [go, openId, manageOpen, refreshIfStale])
 
   const closeJob = useCallback(() => {
     if (!openId) return
@@ -174,11 +189,12 @@ function PortalInner() {
   // a page inside Manage opened a job: show it in place of the frame
   const manageOpenJob = useCallback((id) => {
     setCreatePage(null)
+    refreshIfStale()
     rememberJob(id)
     const q = new URLSearchParams()
     q.set('job', String(id))
     go(q, false)
-  }, [go])
+  }, [go, refreshIfStale])
 
   const openNewJob = useCallback(() => {
     if (!p.canCreateJob) return
@@ -244,6 +260,11 @@ function PortalInner() {
     document.addEventListener('visibilitychange', fn)
     return () => document.removeEventListener('visibilitychange', fn)
   }, [])
+  // a portal left open stays fresh: every AUTO_TICK_MS, while the tab is visible
+  useEffect(() => {
+    const t = setInterval(() => { if (document.visibilityState === 'visible') refreshIfStale(AUTO_FRESH_MS) }, AUTO_TICK_MS)
+    return () => clearInterval(t)
+  }, [refreshIfStale])
 
   // ── open / close motion (prototype open() / closePage() / clip()) ──
   useEffect(() => { openRef.current = openId }, [openId])

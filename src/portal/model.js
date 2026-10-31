@@ -37,7 +37,8 @@ export function perms(profile) {
     canEditBE: isAdmin || name === 'Akshyani',
     canUpdateStage: isAdmin || ['Trupti', 'Uphadhya'].includes(name),
     canCreateJob: isAdmin || isFieldOps || ['Uphadhya', 'Akshyani'].includes(name),
-    canSetBeStage: isOffice,
+    // Assessed / Duty paid / Query answered (field_meta.be_stage): the BeStage chips were on admin pages only
+    canSetBeStage: isAdmin,
     canManage: isAdmin,
     userName: name || '—',
   }
@@ -187,7 +188,7 @@ export function parseDeepLink(search, rows, p) {
   if (!keys.some((k) => !OWN.includes(k))) return null
   const out = { job: null, manage: null, create: null, notFound: false }
   const create = sp.get('createFrom')
-  if (create) { out.create = create; return out }
+  if (create) { if (p?.canCreateJob) out.create = create; return out }
   const all = rows || []
   const has = (id) => all.some((r) => String(r.job.id) === String(id))
   const want = (id) => { if (has(id)) out.job = String(id); else out.notFound = true; return out }
@@ -311,11 +312,16 @@ export function nextAction(row, p = {}) {
     }
     const bs = j.beStage?.id || null
     if (!j.beFiled) return a('be', 'File BE', p.canEditBE, 'be')
-    if (bs === 'query') return a('query_answered', 'Query answered', p.canSetBeStage)
-    if (!bs || bs === 'ao' || bs === 'ac') return a('assessed', 'Assessed', p.canSetBeStage)
-    if (bs === 'rms' || bs === 'assessed') return a('duty_paid', 'Duty paid', p.canSetBeStage)
-    if (p.canUpdateStage) return a('ooc', 'OOC received', true)
-    return a('check_ooc', 'Check OOC', /^\d{7}$/.test(String(job.be_no || '')) && !!job.be_date)
+    if (p.canSetBeStage) {
+      if (bs === 'query') return a('query_answered', 'Query answered', true)
+      if (!bs || bs === 'ao' || bs === 'ac') return a('assessed', 'Assessed', true)
+      if (bs === 'rms' || bs === 'assessed') return a('duty_paid', 'Duty paid', true)
+    }
+    // OOC comes from ICEGATE (a granted OOC moves the job on): ask it, as the old
+    // customs card did. Marking it by hand only when the BE cannot be checked.
+    const canCheck = /^\d{7}$/.test(String(job.be_no || '').trim()) && !!job.be_date
+    if (!canCheck && p.canUpdateStage) return a('ooc', 'OOC received', true)
+    return a('check_ooc', 'Check OOC', canCheck)
   }
   if (st === 'road') {
     if (j.onwardMode === 'rail') return a('delivered', 'Delivered', p.canUpdateStage)

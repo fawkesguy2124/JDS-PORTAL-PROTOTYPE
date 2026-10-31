@@ -1,7 +1,7 @@
 import { supabase } from '../supabase'
 import { markBeFiled, markSbFiled, assignTruck, setStage } from '../services/jobActions'
 import { saveBeStage } from '../industrial/BeStage'
-import { checkCustoms, checkTruck, isDue } from '../industrial/autoChecks'
+import { checkCustoms, checkTruck, isDue, COOLDOWN_MIN } from '../industrial/autoChecks'
 import { isExportJob, isDelivered, plateNo, containerFinishedOn } from '../services/journey'
 import { getStageName } from '../utils/jobHelpers'
 import { vesselFromBl } from '../services/blVessel'
@@ -26,6 +26,24 @@ const ok = (message) => ({ ok: true, message })
 const fail = (error) => ({ ok: false, error: plainSaveError(error) })
 const cancelled = () => ({ ok: false, cancelled: true })
 
+// as jobActions.js: the job is gone or RLS hides it from this person
+const NO_PERMISSION = 'You don’t have permission to change this job (or it was deleted). Please ask an admin.'
+
+// Every write starts from the job as it is in the database NOW, not the copy the
+// portal loaded (it may be hours old): the services write whole objects
+// (ulip_refs / trucks, field_meta), so a stale copy would erase what a colleague,
+// the bot or merge_job_refs saved since. → { job } | { error }
+async function freshJob(job, patchJob) {
+  const { data: fresh, error } = await supabase.from('jobs').select('*').eq('id', job.id).maybeSingle()
+  if (error) return { error: `Could not save: ${error.message}` }
+  if (!fresh) return { error: NO_PERMISSION }
+  patchJob(fresh)
+  return { job: fresh }
+}
+
+const GAP_MS = 3000 // as useAutoChecks: one ULIP call at a time, a few seconds apart
+const pause = (ms) => new Promise((r) => setTimeout(r, ms))
+
 // runAction(kind, row, input, ctx) → { ok: true, message } | { ok: false, error } | { ok: false, cancelled: true }
 // ctx = { userName, patchJob, refresh }
 export async function runAction(kind, row, input, ctx) {
@@ -36,26 +54,37 @@ export async function runAction(kind, row, input, ctx) {
     patchJob(res.job)
     return ok(message)
   }
+  // write(fn): re-read the job, then run the write on the fresh row
+  const write = async (fn) => {
+    const f = await freshJob(job, patchJob)
+    if (f.error) return { ok: false, error: f.error }
+    return fn(f.job)
+  }
   try {
     switch (kind) {
       case 'be':
-        return saved('BE filed')(await markBeFiled(job, { beNo: input?.no, beDate: input?.date }, userName))
+        return saved('BE filed')(await write((fresh) => markBeFiled(fresh, { beNo: input?.no, beDate: input?.date }, userName)))
       case 'sb':
-        return saved('shipping bill filed')(await markSbFiled(job, { sbNo: input?.no, sbDate: input?.date }, userName))
+        return saved('shipping bill filed')(await write((fresh) => markSbFiled(fresh, { sbNo: input?.no, sbDate: input?.date }, userName)))
       case 'arrived':
-        return saved('marked arrived')(await setStage(job, 4, getStageName(4), userName))
+        return saved('marked arrived')(await write((fresh) => setStage(fresh, 4, getStageName(4), userName)))
       case 'assessed':
       case 'query_answered':
       case 'duty_paid': {
         // saveBeStage throws on error; a reply to a query sends the BE back to the appraising officer
         const stage = { assessed: 'assessed', query_answered: 'ao', duty_paid: 'duty_paid' }[kind]
-        const res = await saveBeStage(job, stage, userName)
+        const f = await freshJob(job, patchJob)
+        if (f.error) return fail(f.error)
+        const res = await saveBeStage(f.job, stage, userName)
         patchJob(res)
         return ok({ assessed: 'assessed', query_answered: 'query answered', duty_paid: 'duty paid' }[kind])
       }
       case 'ooc':
-        return saved('OOC received')(await setStage(job, 7, 'OOC', userName))
+        // only offered when the BE cannot be checked with ICEGATE (see model.js nextAction)
+        if (!window.confirm(`ICEGATE has not confirmed OOC for ${job.job_no}. Mark OOC received anyway?`)) return cancelled()
+        return saved('OOC received')(await write((fresh) => setStage(fresh, 7, 'OOC', userName)))
       case 'check_ooc': {
+        markChecked(`customs:${job.id}`)
         const r = await checkCustoms(job.id)
         refresh()
         if (!r.ok) return fail(`${job.job_no}: customs check failed`)
@@ -63,23 +92,28 @@ export async function runAction(kind, row, input, ctx) {
       }
       case 'close_export':
         if (!window.confirm(`Mark job ${job.job_no} as shipped?`)) return cancelled()
-        return saved('shipped')(await setStage(job, 10, 'Delivered', userName))
-      case 'truck': {
-        const res = await assignTruck(job, { truckNo: input?.truckNo }, userName)
-        return saved(`truck ${plateNo(input?.truckNo)} assigned`)(res)
-      }
+        return saved('shipped')(await write((fresh) => setStage(fresh, 10, 'Delivered', userName)))
+      case 'truck':
+        return saved(`truck ${plateNo(input?.truckNo)} assigned`)(await write((fresh) => assignTruck(fresh, { truckNo: input?.truckNo }, userName)))
       case 'left_cfs':
-        return saved('left CFS')(await setStage(job, 9, 'Vehicle Out', userName))
+        return saved('left CFS')(await write((fresh) => setStage(fresh, 9, 'Vehicle Out', userName)))
       case 'delivered':
         if (!window.confirm(`Mark job ${job.job_no} as delivered?`)) return cancelled()
-        return saved('delivered')(await setStage(job, 10, 'Delivered', userName))
+        return saved('delivered')(await write((fresh) => setStage(fresh, 10, 'Delivered', userName)))
       case 'locate': {
-        const no = j.trucks?.[0]?.no
-        if (!no) return fail('This job has no truck yet.')
-        const r = await checkTruck('FASTAG/01', no, job.id)
+        // every truck still on its trip, one at a time (as TrucksPage "Where is it?" on each row)
+        const trucks = (j.trucks || []).filter((t) => t.no && !tripOver(row, t))
+        if (!trucks.length) return fail((j.trucks || []).length ? 'No truck of this job is still on its way.' : 'This job has no truck yet.')
+        let any = false
+        for (let i = 0; i < trucks.length; i++) {
+          if (i > 0) await pause(GAP_MS)
+          markChecked(`w:${keyNo(trucks[i].no)}`)
+          const r = await checkTruck('FASTAG/01', trucks[i].no, job.id)
+          if (r.ok) any = true
+        }
         refresh()
-        if (!r.ok) return fail(`${job.job_no}: FASTag check failed`)
-        return ok('truck location updated')
+        if (!any) return fail(`${job.job_no}: FASTag check failed`)
+        return ok(trucks.length > 1 ? 'truck locations updated' : 'truck location updated')
       }
       case 'empty': {
         if (!window.confirm(`Mark the empty container(s) of ${job.job_no} as returned?`)) return cancelled()
@@ -90,7 +124,7 @@ export async function runAction(kind, row, input, ctx) {
       }
       case 'close':
         if (!window.confirm(`Mark job ${job.job_no} as delivered?`)) return cancelled()
-        return saved('closed')(await setStage(job, 10, 'Delivered', userName))
+        return saved('closed')(await write((fresh) => setStage(fresh, 10, 'Delivered', userName)))
       default:
         return fail('This action is not available.')
     }
@@ -195,8 +229,14 @@ export function guessPaperType(fileName) {
 
 // ── checks made by themselves when a person opens a job (BUILD-SPEC §2) ──
 // Same rules as CustomsPage / TrucksPage "on open": cool-down shared through the
-// saved check times, one at a time (useAutoChecks), silent.
+// saved check times, one at a time (useAutoChecks), silent. On top of that:
+// - JobPage starts them only once the page has stayed open a moment (arrowing
+//   through the list never fires them) and reads this job's saved answers
+//   fresh first (freshChecksFor), so a colleague's recent check counts;
+// - this tab never repeats a check within COOLDOWN_MIN, whatever the loaded
+//   data says (lastRun below), so reopening a job asks ULIP nothing.
 const sameNo = (a, b) => !!a && !!b && String(a).toUpperCase().replace(/\s+/g, '') === String(b).toUpperCase().replace(/\s+/g, '')
+const keyNo = (no) => String(no || '').toUpperCase().replace(/\s+/g, '')
 const TRUCK_WATCH_DAYS = 4 // as TrucksPage.jsx
 // copy of TrucksPage.jsx tripOver
 const tripOver = (r, t) => {
@@ -205,27 +245,53 @@ const tripOver = (r, t) => {
   return boxes.length > 0 && boxes.every((b) => containerFinishedOn(b, r.job))
 }
 
-export function autoChecksFor(row, data, toast) {
+// key → when this tab last ran that check (customs:<job id>, w:<truck>, p:<truck>)
+const lastRun = new Map()
+const markChecked = (key) => { lastRun.set(key, Date.now()) }
+const ranLately = (key) => lastRun.has(key) && Date.now() - lastRun.get(key) < COOLDOWN_MIN * 60_000
+
+const ULIP_COLS = 'api, job_id, found, summary, parsed, params, checked_at, last_error, last_error_at'
+const TRUCK_APIS = ['FASTAG/01', 'VAHAN/04']
+
+// This job's saved check answers, read now (database only, never ULIP):
+// → { customs: row|null, results: { 'FASTAG/01': [...], 'VAHAN/04': [...] } } | null on error
+export async function freshChecksFor(jobId) {
+  const [cs, ur] = await Promise.all([
+    supabase.from('customs_status').select('*').eq('job_id', jobId).maybeSingle(),
+    supabase.from('ulip_results').select(ULIP_COLS).eq('job_id', jobId).in('api', TRUCK_APIS)
+      .order('checked_at', { ascending: false, nullsFirst: false }),
+  ])
+  if (cs.error || ur.error) { console.warn('[portal] could not read the saved checks:', (cs.error || ur.error).message); return null }
+  const results = Object.fromEntries(TRUCK_APIS.map((api) => [api, []]))
+  for (const r of ur.data || []) (results[r.api] ||= []).push(r)
+  return { customs: cs.data || null, results }
+}
+
+// items for useAutoChecks; saved = freshChecksFor(job.id) (else the loaded data is used)
+export function autoChecksFor(row, data, toast, saved = null) {
   if (!row || !data) return []
   const { job, j } = row
   const items = []
-  const cs = data.customsByJob?.[job.id]
+  const cs = saved ? saved.customs : data.customsByJob?.[job.id]
+  const customsKey = `customs:${job.id}`
   if (!isExportJob(job) && (j.phase === 'ooc' || (j.phase === 'arrival' && j.beFiled))
-    && /^\d{7}$/.test(String(job.be_no || '').trim()) && job.be_date && isDue(cs?.checked_at, cs?.last_error_at)) {
+    && /^\d{7}$/.test(String(job.be_no || '').trim()) && job.be_date && isDue(cs?.checked_at, cs?.last_error_at) && !ranLately(customsKey)) {
     items.push({
-      key: job.id, label: job.job_no,
-      run: async () => { const r = await checkCustoms(job.id); if (r.oocDate) toast?.(`${job.job_no}: OOC granted`) },
+      key: customsKey, label: job.job_no,
+      run: async () => { if (ranLately(customsKey)) return; markChecked(customsKey); const r = await checkCustoms(job.id); if (r.oocDate) toast?.(`${job.job_no}: OOC granted`) },
     })
   }
-  const savedFor = (api, no) => [].concat(data.resultsByJob?.[job.id]?.[api] || []).filter((r) => r && sameNo(r.params?.vehiclenumber, no))
+  const savedFor = (api, no) => [].concat((saved ? saved.results : data.resultsByJob?.[job.id])?.[api] || []).filter((r) => r && sameNo(r.params?.vehiclenumber, no))
   // trucks: as TrucksPage, only jobs still on their way (not delivered)
   const onWay = !isDelivered(job) && j.phase !== 'delivered'
   for (const t of onWay ? j.trucks || [] : []) {
+    const wKey = `w:${keyNo(t.no)}`
+    const pKey = `p:${keyNo(t.no)}`
     const where = savedFor('FASTAG/01', t.no)
-    if (!tripOver(row, t) && isDue(...where.map((x) => x.checked_at), ...where.map((x) => x.last_error_at)))
-      items.push({ key: `w:${t.no}`, label: `truck ${t.no}`, run: () => checkTruck('FASTAG/01', t.no, job.id) })
-    if (!savedFor('VAHAN/04', t.no).some((x) => x.checked_at))
-      items.push({ key: `p:${t.no}`, label: `truck ${t.no} papers`, run: () => checkTruck('VAHAN/04', t.no, job.id) })
+    if (!tripOver(row, t) && isDue(...where.map((x) => x.checked_at), ...where.map((x) => x.last_error_at)) && !ranLately(wKey))
+      items.push({ key: wKey, label: `truck ${t.no}`, run: () => { if (ranLately(wKey)) return null; markChecked(wKey); return checkTruck('FASTAG/01', t.no, job.id) } })
+    if (!savedFor('VAHAN/04', t.no).some((x) => x.checked_at) && !ranLately(pKey))
+      items.push({ key: pKey, label: `truck ${t.no} papers`, run: () => { if (ranLately(pKey)) return null; markChecked(pKey); return checkTruck('VAHAN/04', t.no, job.id) } })
   }
   return items
 }

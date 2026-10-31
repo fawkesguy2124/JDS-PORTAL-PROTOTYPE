@@ -47,6 +47,19 @@ export function JourneyProvider({ children }) {
     setData((d) => d && ({ ...d, seaByJob: { ...(d.seaByJob || {}), [row.job_id]: row } }))
   }, [])
 
+  // Put one job's freshly read check answers (customs_status row, ulip_results
+  // per API) into the loaded data without a full reload
+  const patchChecks = useCallback((jobId, { customs, results } = {}) => {
+    if (!jobId) return
+    setData((d) => {
+      if (!d) return d
+      const next = { ...d }
+      if (customs) next.customsByJob = { ...(d.customsByJob || {}), [jobId]: customs }
+      if (results) next.resultsByJob = { ...(d.resultsByJob || {}), [jobId]: { ...(d.resultsByJob?.[jobId] || {}), ...results } }
+      return next
+    })
+  }, [])
+
   const derived = useMemo(() => {
     if (!data) return { rows: [], byId: {} }
     const rows = data.jobs.map((job) => ({ job, j: journeyFor(job, data) }))
@@ -55,10 +68,10 @@ export function JourneyProvider({ children }) {
   }, [data])
 
   const value = useMemo(() => ({
-    data, profiles, loading, error, refresh, patchJob, patchSea,
+    data, profiles, loading, error, refresh, patchJob, patchSea, patchChecks,
     rows: derived.rows, byId: derived.byId,
     active: derived.rows.filter((r) => !isDelivered(r.job) && r.j.phase !== 'delivered'),
-  }), [data, profiles, loading, error, refresh, patchJob, patchSea, derived])
+  }), [data, profiles, loading, error, refresh, patchJob, patchSea, patchChecks, derived])
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }

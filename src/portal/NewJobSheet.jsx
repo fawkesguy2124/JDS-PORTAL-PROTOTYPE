@@ -2,6 +2,7 @@ import { useEffect, useEffectEvent, useRef, useState } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import { lockScroll, pushLayer, trapTab, focusables } from '../ui/hooks'
 import { CLIENT_NAMES } from '../utils/clients'
+import { PORTS } from '../utils/ports'
 import {
   MODES, HAS_BOXES, SHIPPING_LINES, INITIAL_FORM, sizesFor, defaultSize,
   applyModeChange, guessDocType, extractFromPdf, validateJobForm, createJob,
@@ -188,6 +189,21 @@ function SheetBody({ sheetRef, onManual, onCreated }) {
           <option value="" disabled>Choose</option>
           {MODES.map((m) => <option key={m} value={m}>{m}</option>)}
         </select>
+
+        <label htmlFor="pt-nj-type">Type</label>
+        <select id="pt-nj-type" required value={form.job_type} onChange={(e) => edit({ job_type: e.target.value })}>
+          <option value="import">Import</option>
+          <option value="export">Export</option>
+        </select>
+
+        {form.job_type === 'export' && (
+          <>
+            <label htmlFor="pt-nj-port">Port</label>
+            <select id="pt-nj-port" required value={form.port_code} onChange={(e) => edit({ port_code: e.target.value })}>
+              {PORTS.map((pt) => <option key={pt.code} value={pt.code}>{pt.name} ({pt.code})</option>)}
+            </select>
+          </>
+        )}
 
         <label htmlFor="pt-nj-bl">{air ? 'AWB' : 'BL'}</label>
         <input id="pt-nj-bl" className="mono" type="text" autoComplete="off" spellCheck={false}

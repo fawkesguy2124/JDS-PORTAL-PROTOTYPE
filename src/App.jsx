@@ -32,8 +32,27 @@ function RoleHome({ Classic }) {
     navigate(`${pathname}${rest ? `?${rest}` : ''}`, { replace: true })
   }, [wantsNew, pathname, search, navigate])
   if (wantsNew) return null
-  return isClassic() ? <Classic /> : <Portal />
+  if (!isClassic()) return <Portal />
+  // the way back from Classic view (outside the old dashboards, which stay untouched)
+  return (
+    <>
+      <Classic />
+      <style>{BACK_PILL_CSS}</style>
+      <button type="button" className="jds-back-new" onClick={() => navigate(`${pathname}?view=new`, { replace: true })}>
+        Back to new view
+      </button>
+    </>
+  )
 }
+
+// bottom right; on a phone above the old bottom tab bar
+const BACK_PILL_CSS = `
+.jds-back-new { position: fixed; right: 16px; bottom: 16px; z-index: 2147483000; padding: 9px 16px;
+  border: 1px solid rgba(15, 23, 42, .14); border-radius: 999px; background: #fff; color: #1f2937;
+  font: 500 14px/1.2 Roboto, system-ui, sans-serif; box-shadow: 0 2px 10px rgba(15, 23, 42, .16); cursor: pointer }
+.jds-back-new:focus-visible { outline: 2px solid #1d4ed8; outline-offset: 2px }
+@media (max-width: 1023.98px) { .jds-back-new { right: 12px; bottom: calc(84px + env(safe-area-inset-bottom, 0px)); padding: 7px 12px; font-size: 13px } }
+`
 
 function EnterClassic({ base }) {
   const { search, hash } = useLocation()

@@ -101,7 +101,7 @@ function ActionBar({ row, action, onDone, padTop }) {
         <div className="pt-wf" style={padTop ? { paddingTop: 18 } : undefined}>
           {(action.input === 'be' || action.input === 'sb') && open && (
             <>
-              <input ref={numRef} className="pt-tin" value={no} inputMode="numeric" maxLength={7} autoComplete="off"
+              <input ref={numRef} className="pt-tin" value={no} inputMode="numeric" autoComplete="off"
                 placeholder={numLabel} aria-label={numLabel} disabled={busy}
                 onChange={(e) => setNo(e.target.value.replace(/\D/g, '').slice(0, 7))} onKeyDown={onKey} />
               <input className="pt-tin pt-tin-date" type="date" value={date} max={todayIso()} aria-label={dateLabel} disabled={busy}

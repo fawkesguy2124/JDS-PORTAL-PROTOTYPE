@@ -4,7 +4,7 @@ import { useJourney } from '../industrial/JourneyContext'
 import { useAutoChecks } from '../industrial/autoChecks'
 import { usePortal } from './PortalContext'
 import { riskOf, ownerOf } from './model'
-import { autoChecksFor } from './actions'
+import { autoChecksFor, freshChecksFor } from './actions'
 import WhereCard from './WhereCard'
 import Papers from './Papers'
 import { Containers, History } from './JobExtras'
@@ -34,14 +34,52 @@ function useJobFiles(jobId) {
   return { docs: state.docs, activity: state.activity, reload }
 }
 
+// Checks made by themselves when a person opens the job (customs OOC, truck
+// FASTag / papers), kept human-like (autoChecks.js): nothing until the page has
+// stayed open SETTLE_MS (moving through the list with ↑ ↓ never fires one), then
+// this job's saved answers are read fresh so a colleague's recent check counts,
+// and afterwards only this job's answers are read back (no full reload).
+const SETTLE_MS = 2000
+function useJobAutoChecks(row) {
+  const { job } = row
+  const { data, patchJob, patchChecks } = useJourney()
+  const { toast } = usePortal()
+  const [settled, setSettled] = useState(false)
+  const [saved, setSaved] = useState(null)
+  useEffect(() => {
+    const t = setTimeout(() => setSettled(true), SETTLE_MS)
+    return () => clearTimeout(t)
+  }, [])
+  // only read the saved answers when the loaded data says something may be due
+  const maybeDue = autoChecksFor(row, data, toast).length > 0
+  useEffect(() => {
+    if (!settled || !maybeDue) return undefined
+    let cancelled = false
+    freshChecksFor(job.id).then((fresh) => {
+      if (cancelled || !fresh) return
+      patchChecks(job.id, fresh)
+      setSaved(fresh)
+    })
+    return () => { cancelled = true }
+  }, [settled, maybeDue, job.id, patchChecks])
+  const onDone = useCallback(async () => {
+    const [fresh, j] = await Promise.all([
+      freshChecksFor(job.id),
+      supabase.from('jobs').select('*').eq('id', job.id).maybeSingle(),
+    ])
+    if (fresh) patchChecks(job.id, fresh)
+    if (j.data) patchJob(j.data)
+  }, [job.id, patchChecks, patchJob])
+  useAutoChecks(saved ? autoChecksFor(row, data, toast, saved) : [], !!saved, onDone)
+}
+
 function Page({ row, layout, onClose }) {
   const { job } = row
-  const { data, profiles, refresh } = useJourney()
-  const { toast, openEdit } = usePortal()
+  const { data, profiles } = useJourney()
+  const { openEdit } = usePortal()
   const { docs, activity, reload } = useJobFiles(job.id)
 
-  // checks made by themselves when a person opens the job (customs OOC, truck FASTag / papers)
-  useAutoChecks(autoChecksFor(row, data, toast), true, refresh)
+  useJobAutoChecks(row)
 
   const owner = ownerOf(job, profiles)
   const risk = riskOf(row, data)
