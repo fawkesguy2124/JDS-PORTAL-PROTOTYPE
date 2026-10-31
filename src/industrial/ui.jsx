@@ -1,10 +1,16 @@
-// Small shared pieces of the industrial design.
-import { useEffect, useState } from 'react'
+// Small shared pieces of the industrial design. The generic primitives live in
+// src/ui (Icon, Badge, Skeleton …); these are the freight-specific ones.
+import { Icon } from '../ui/Icon'
+import { initials } from '../ui/utils'
 
-export const Icon = ({ name, style }) => <i className={`ti ti-${name}`} style={style} aria-hidden="true" />
+export { Icon } from '../ui/Icon'
+export { Skeleton } from '../ui/Feedback'
+export { initials } from '../ui/utils'
 
+// Chip = Badge with the older tone names: green, amber, red, blue, grey
+// (src/ui/components.css maps them onto the success/warning/danger/info/neutral tones).
 export const Chip = ({ tone = 'grey', icon, children, className = '' }) => (
-  <span className={`ix-chip ${tone} ${className}`}>{icon && <Icon name={icon} />}{children}</span>
+  <span className={`ix-chip ${tone} ${className}`.trim()}>{icon && <Icon name={icon} />}{children}</span>
 )
 
 const PHASE_CHIPS = {
@@ -35,11 +41,9 @@ export function FreeDays({ value }) {
   return <span className={`ix-fd ${tone}`}>{value < 0 ? `${value} d` : `${value} d left`}</span>
 }
 
-export const initials = (name) => String(name || '?').trim().split(/\s+/).map((w) => w[0]).join('').slice(0, 2).toUpperCase()
-
 export const Owner = ({ name, short }) => (name
   ? <span className="ix-owner"><span className="ix-avatar sm">{initials(name)}</span>{!short && name}</span>
-  : <span style={{ color: 'var(--muted)' }}>—</span>)
+  : <span style={{ color: 'var(--fg-4)' }}>—</span>)
 
 // Worst attention level on a job: red > amber > info > none
 export const worst = (j) => (j?.attention?.some((a) => a.level === 'red') ? 'red'
@@ -66,38 +70,4 @@ export function timeAgo(iso) {
   return fmtDate(iso)
 }
 
-export function Sparkline({ points, color = '#1a4fa0' }) {
-  if (!points?.length) return null
-  const w = 120, h = 28, max = Math.max(...points), min = Math.min(...points)
-  const xs = points.map((p, i) => `${(i / Math.max(points.length - 1, 1)) * w},${h - ((p - min) / ((max - min) || 1)) * (h - 4) - 2}`).join(' ')
-  return (
-    <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} style={{ display: 'block', marginTop: 8 }} aria-hidden="true">
-      <polyline fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" points={xs} />
-    </svg>
-  )
-}
-
 export const jobOwnerName = (job, profiles) => profiles?.[job?.assigned_to] || null
-
-// While a page loads: grey outline rows instead of a blank "Loading…". After
-// 15 seconds a Reload button appears (a stuck connection or an expired sign-in).
-export function Skeleton({ rows = 5 }) {
-  const [slow, setSlow] = useState(false)
-  useEffect(() => {
-    const t = setTimeout(() => setSlow(true), 15000)
-    return () => clearTimeout(t)
-  }, [])
-  return (
-    <div className="ix-skel" aria-busy="true" aria-label="Loading">
-      {Array.from({ length: rows }, (_, i) => (
-        <div key={i} className="ix-skel-row"><span style={{ width: `${30 + ((i * 37) % 45)}%` }} /><span /></div>
-      ))}
-      {slow && (
-        <div className="ix-skel-slow">
-          Taking longer than usual.
-          <button type="button" className="ix-btn sm" onClick={() => window.location.reload()}><Icon name="refresh" />Reload</button>
-        </div>
-      )}
-    </div>
-  )
-}

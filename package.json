@@ -16,7 +16,6 @@
     "@maplibre/maplibre-gl-leaflet": "0.1.4",
     "@supabase/supabase-js": "^2.106.2",
     "@tabler/icons-react": "^3.50.0",
-    "@tabler/icons-webfont": "^3.19.0",
     "leaflet": "^1.9.4",
     "maplibre-gl": "4.7.1",
     "pdfjs-dist": "^5.7.284",

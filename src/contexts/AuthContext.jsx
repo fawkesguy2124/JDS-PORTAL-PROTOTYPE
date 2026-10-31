@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import { supabase } from '../supabase'
 
 const AuthContext = createContext(null)
@@ -78,7 +78,7 @@ export function AuthProvider({ children }) {
     }
   }, [])
 
-  const signOut = async () => {
+  const signOut = useCallback(async () => {
     try {
       const { error } = await supabase.auth.signOut()
       if (error) console.warn('[Auth] signOut error:', error.message)
@@ -88,10 +88,13 @@ export function AuthProvider({ children }) {
       setUser(null)
       setProfile(null)
     }
-  }
+  }, [])
+
+  // a stable value: consumers re-render only when one of these changes
+  const value = useMemo(() => ({ user, profile, loading, signOut }), [user, profile, loading, signOut])
 
   return (
-    <AuthContext.Provider value={{ user, profile, loading, signOut }}>
+    <AuthContext.Provider value={value}>
       {children}
     </AuthContext.Provider>
   )

@@ -2,6 +2,9 @@ import { useState, useEffect, useRef, useMemo } from 'react'
 import { supabase } from '../supabase'
 import { alertUrl } from '../../supabase/functions/_shared/portal/alertLinks.js'
 import DesktopAlerts from './DesktopAlerts'
+import { Icon } from '../ui/Icon'
+import { IconButton } from '../ui/Button'
+import { pushLayer, trapTab, useIsPhone } from '../ui/hooks'
 
 const getStorageKey = (userId) => `jds_notif_last_seen_${userId || 'unknown'}`
 
@@ -52,6 +55,13 @@ function groupByDay(notifications) {
   return groups
 }
 
+// "ooc_granted" → "OOC granted" (sentence case, freight acronyms kept)
+const ACRONYMS = { ooc: 'OOC', be: 'BE', sb: 'SB', leo: 'LEO', igm: 'IGM', eta: 'ETA', ulip: 'ULIP', ldb: 'LDB', bl: 'BL', cfs: 'CFS' }
+const typeLabel = (t) => {
+  const words = String(t || 'update').split('_').map((w) => ACRONYMS[w] || w)
+  return words.map((w, i) => (i === 0 && w === w.toLowerCase() ? w.charAt(0).toUpperCase() + w.slice(1) : w)).join(' ')
+}
+
 const ROLE_FILTERS = {
   admin:     null,
   field_ops: ['container_update', 'detention_alert', 'ooc_granted', 'ship_arrived', 'eta_changed', 'air_igm', 'truck_stuck', 'truck_papers', 'be_stage'],
@@ -65,6 +75,8 @@ export default function NotificationBell({ onNavigate, profile }) {
   const [lastSeen, setLastSeen] = useState(null)
   const dropdownRef = useRef(null)
   const bellRef = useRef(null)
+  const headRef = useRef(null)
+  const isPhone = useIsPhone() // a modal bottom sheet on phones, a popover otherwise
 
   // Load lastSeen after profile is available
   useEffect(() => {
@@ -105,6 +117,7 @@ export default function NotificationBell({ onNavigate, profile }) {
 
   useEffect(() => {
     const handler = (e) => {
+      if (e.target.classList?.contains('ix-bell-scrim')) return // it closes on its own click (no tap-through)
       if (dropdownRef.current && !dropdownRef.current.contains(e.target) &&
           bellRef.current && !bellRef.current.contains(e.target)) {
         setOpen(false)
@@ -113,6 +126,23 @@ export default function NotificationBell({ onNavigate, profile }) {
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
   }, [])
+
+  // Esc closes the panel (when it is the top overlay) and gives focus back to
+  // the bell. On phones the sheet is modal: focus moves into it and Tab stays inside.
+  useEffect(() => {
+    if (!open) return undefined
+    const layer = pushLayer(Symbol('bell'))
+    const raf = isPhone ? requestAnimationFrame(() => headRef.current?.focus({ preventScroll: true })) : 0
+    const onKey = (e) => {
+      if (!layer.isTop()) return
+      if (e.key === 'Escape') { setOpen(false); bellRef.current?.focus() }
+      else if (isPhone && e.key === 'Tab') trapTab(e, dropdownRef.current)
+    }
+    document.addEventListener('keydown', onKey)
+    return () => { cancelAnimationFrame(raf); layer.release(); document.removeEventListener('keydown', onKey) }
+  }, [open, isPhone])
+
+  const closeSheet = () => { setOpen(false); bellRef.current?.focus() }
 
   const unreadCount = useMemo(() =>
     notifications.filter(n =>
@@ -169,151 +199,79 @@ if (filter === 'container') return t.includes('container') || t === 'detention_a
 
   const groups = groupByDay(filteredNotifications)
 
-  const tagStyles = {
-    alert:     { bg: '#FCEBEB', color: '#791F1F', border: '#F7C1C1' },
-    container: { bg: '#E6F1FB', color: '#0C447C', border: '#B5D4F4' },
-    job:       { bg: '#EAF3DE', color: '#27500A', border: '#C0DD97' },
-    document:  { bg: '#FAEEDA', color: '#633806', border: '#FAC775' },
-    ulip:      { bg: '#ecfdf5', color: '#065f46', border: '#d1fae5' },
-    default:   { bg: '#f4f6f9', color: '#4a5568', border: '#e2e6ed' },
-  }
+  const TAG_TONE = { alert: 'danger', container: 'info', job: 'success', document: 'warning', ulip: 'brand', default: 'neutral' }
 
   return (
-    <div style={{ position: 'relative' }}>
+    <div className="ix-bell">
       <button
         ref={bellRef}
+        type="button"
         onClick={handleOpen}
-        style={{
-          width: '36px', height: '36px', borderRadius: '8px', position: 'relative',
-          border: unreadCount > 0 ? '1.5px solid #fecaca' : '1.5px solid #e2e6ed',
-          background: unreadCount > 0 ? '#fef2f2' : open ? '#E6F1FB' : 'white',
-          cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: '16px', transition: 'all 0.15s',
-        }}
-        onMouseEnter={e => { e.currentTarget.style.borderColor = '#1a4fa0'; e.currentTarget.style.background = '#E6F1FB' }}
-        onMouseLeave={e => {
-          e.currentTarget.style.borderColor = unreadCount > 0 ? '#fecaca' : open ? '#1a4fa0' : '#e2e6ed'
-          e.currentTarget.style.background = unreadCount > 0 ? '#fef2f2' : open ? '#E6F1FB' : 'white'
-        }}
+        className={`ix-icon-btn ix-bell-btn ${unreadCount > 0 ? 'has-new' : ''}`}
+        aria-label={unreadCount > 0 ? `Notifications, ${unreadCount} new` : 'Notifications'}
+        aria-expanded={open}
+        aria-haspopup="dialog"
+        title="Notifications"
       >
-        🔔
-        {unreadCount > 0 && (
-          <span style={{
-            position: 'absolute', top: '-5px', right: '-5px',
-            background: '#dc2626', color: 'white', borderRadius: '9999px',
-            fontSize: '10px', fontWeight: 700, minWidth: '16px', height: '16px',
-            padding: '0 3px', display: 'flex', alignItems: 'center', justifyContent: 'center',
-            border: '2px solid white', animation: 'bellBadgePop 0.25s cubic-bezier(0.16,1,0.3,1)',
-          }}>
-            {unreadCount > 99 ? '99+' : unreadCount}
-          </span>
-        )}
+        <Icon name="bell" />
+        {unreadCount > 0 && <span className="ix-bell-count">{unreadCount > 99 ? '99+' : unreadCount}</span>}
       </button>
 
+      {/* phone only (CSS): the panel is a bottom sheet over this backdrop; a tap on it closes the panel */}
+      {open && <div className="ix-bell-scrim" aria-hidden="true" onClick={() => setOpen(false)} />}
       {open && (
-        <div
-          ref={dropdownRef}
-          style={{
-            position: 'fixed',
-            top: window.innerWidth >= 768 ? '56px' : '68px',
-            right: window.innerWidth >= 768 ? '72px' : '8px',
-            width: 'min(360px, calc(100vw - 16px))', background: 'white',
-            border: '1.5px solid #d0d9e8', borderRadius: '14px',
-            boxShadow: '0 8px 32px rgba(0,0,0,0.14)', zIndex: 9999,
-            overflow: 'hidden',
-            maxHeight: 'calc(100vh - 88px)',
-            animation: 'bellDropdown 0.18s cubic-bezier(0.16,1,0.3,1)',
-          }}
-        >
-          <style>{`
-            @keyframes bellBadgePop { from { transform: scale(0) } to { transform: scale(1) } }
-            @keyframes bellDropdown { from { opacity:0; transform: translateY(-6px) scale(0.97) } to { opacity:1; transform: translateY(0) scale(1) } }
-          `}</style>
-
-          <div style={{ padding: '12px 16px 10px', borderBottom: '0.5px solid #e2e6ed', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', fontWeight: 700, color: '#1a2233' }}>
+        <div ref={dropdownRef} className="ix-bell-panel" role="dialog" aria-label="Notifications" aria-modal={isPhone || undefined}>
+          {isPhone && <span className="ix-modal-grab" aria-hidden="true" />}
+          <div className="ix-bell-head">
+            <h2 ref={headRef} className="t" tabIndex={-1}>
               Notifications
-              {unreadCount > 0 && (
-                <span style={{ background: '#dc2626', color: 'white', borderRadius: '9999px', fontSize: '10px', fontWeight: 700, padding: '2px 7px' }}>
-                  {unreadCount} new
-                </span>
-              )}
-            </div>
-            <button
-              onClick={markAllRead}
-              style={{ fontSize: '11px', fontWeight: 600, color: '#1a4fa0', background: 'none', border: 'none', cursor: 'pointer' }}
-            >
-              Mark all read
-            </button>
+              {unreadCount > 0 && <span className="ix-badge danger sm">{unreadCount} new</span>}
+            </h2>
+            <button type="button" className="ix-link" onClick={markAllRead}>Mark all read</button>
+            {isPhone && <IconButton icon="x" label="Close" className="ix-bell-close" onClick={closeSheet} />}
           </div>
 
-          <div style={{ display: 'flex', gap: '5px', padding: '8px 16px', borderBottom: '0.5px solid #f4f6f9', overflowX: 'auto' }}>
+          <div className="ix-bell-filters" role="group" aria-label="Filter notifications">
             {['all', 'container', 'alert', 'job', 'document', 'ulip'].map(f => (
-              <button
-                key={f}
-                onClick={() => setFilter(f)}
-                style={{
-                  padding: '3px 10px', borderRadius: '9999px', fontSize: '11px', fontWeight: 500,
-                  border: `0.5px solid ${filter === f ? '#1a4fa0' : '#e2e6ed'}`,
-                  background: filter === f ? '#1a4fa0' : 'white',
-                  color: filter === f ? 'white' : '#8a96a8',
-                  cursor: 'pointer', whiteSpace: 'nowrap', transition: 'all 0.12s',
-                }}
-              >
-                {f.charAt(0).toUpperCase() + f.slice(1)}
+              <button key={f} type="button" onClick={() => setFilter(f)} aria-pressed={filter === f}
+                className={`ix-seg-item ${filter === f ? 'on' : ''}`}>
+                {f === 'ulip' ? 'ULIP' : f.charAt(0).toUpperCase() + f.slice(1)}
               </button>
             ))}
           </div>
 
-          <div style={{ overflowY: 'auto', maxHeight: '360px' }}>
+          <div className="ix-bell-list">
             {filteredNotifications.length === 0 ? (
-              <div style={{ padding: '32px 16px', textAlign: 'center' }}>
-                <div style={{ fontSize: '28px', marginBottom: '8px' }}>🎉</div>
-                <p style={{ fontSize: '12px', color: '#8a96a8' }}>All caught up! No notifications.</p>
+              <div className="ix-empty-state compact">
+                <span className="ico"><Icon name="bell-off" /></span>
+                <div className="t">You are up to date</div>
+                <div className="d">New container, customs and job updates will appear here.</div>
               </div>
             ) : (
               Object.entries(groups).map(([day, items]) => {
                 if (items.length === 0) return null
                 return (
                   <div key={day}>
-                    <div style={{ padding: '6px 16px 4px', fontSize: '9px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#8a96a8', background: '#f8f9fb', borderBottom: '0.5px solid #f4f6f9', position: 'sticky', top: 0 }}>
-                      {day}
-                    </div>
+                    <div className="ix-bell-day">{day}</div>
                     {items.map((n, i) => {
                       const isUnread = !lastSeen || new Date(n.created_at) > new Date(lastSeen)
                       const t = n.type || n.action || ''
                       const tagCls = t === 'detention_alert' ? 'alert' : t.includes('container') ? 'container' : t.includes('job') || t.includes('stage') ? 'job' : t.includes('upload') || t.includes('document') ? 'document' : t === 'be_status_check' || t === 'ooc_granted' || t.includes('ulip') ? 'ulip' : 'default'
-                      const ts = tagStyles[tagCls] || tagStyles.default
                       return (
-                        <div
-                          key={n.id || i}
-                          onClick={() => handleItemClick(n)}
-                          style={{
-                            padding: '10px 16px', display: 'flex', gap: '8px', alignItems: 'flex-start',
-                            borderBottom: '0.5px solid #f4f6f9', cursor: 'pointer',
-                            background: isUnread ? '#f0f5ff' : 'white',
-                            transition: 'background 0.1s',
-                          }}
-                          onMouseEnter={e => e.currentTarget.style.background = isUnread ? '#e6eeff' : '#f8f9fb'}
-                          onMouseLeave={e => e.currentTarget.style.background = isUnread ? '#f0f5ff' : 'white'}
-                        >
-                          <div style={{ flex: 1, minWidth: 0 }}>
-                            <div style={{ fontSize: '12px', fontWeight: 500, color: '#1a2233', lineHeight: 1.4, marginBottom: '3px' }}>
-                              {n.title || n.action || 'Update'}
-                            </div>
-                            <div style={{ fontSize: '11px', color: '#8a96a8', display: 'flex', alignItems: 'center', gap: '5px', flexWrap: 'wrap' }}>
-                              <span style={{ display: 'inline-flex', padding: '1px 6px', borderRadius: '9999px', fontSize: '10px', fontWeight: 600, background: ts.bg, color: ts.color, border: `0.5px solid ${ts.border}` }}>
-                                {(n.type || n.action)?.replace(/_/g, ' ') || 'update'}
-                              </span>
-                              {n.job_no && <span style={{ fontFamily: 'monospace', color: '#185FA5' }}>{n.job_no}</span>}
+                        <button type="button" key={n.id || i} onClick={() => handleItemClick(n)} className={`ix-bell-item ${isUnread ? 'unread' : ''}`}>
+                          <span className="body">
+                            <span className="title">{n.title || n.action || 'Update'}</span>
+                            <span className="meta">
+                              <span className={`ix-badge sm ${TAG_TONE[tagCls]}`}>{typeLabel(n.type || n.action)}</span>
+                              {n.job_no && <span className="mono">{n.job_no}</span>}
                               {n.done_by_name && <span>· {n.done_by_name}</span>}
-                            </div>
-                          </div>
-                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px', flexShrink: 0 }}>
-                            <span style={{ fontSize: '10px', color: '#8a96a8', whiteSpace: 'nowrap' }}>{formatNotifTime(n.created_at)}</span>
-                            {isUnread && <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#1a4fa0' }} />}
-                          </div>
-                        </div>
+                            </span>
+                          </span>
+                          <span className="side">
+                            <span className="time">{formatNotifTime(n.created_at)}</span>
+                            {isUnread && <span className="dot" aria-label="New" />}
+                          </span>
+                        </button>
                       )
                     })}
                   </div>

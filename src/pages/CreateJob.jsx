@@ -10,6 +10,7 @@ import { readPdf, describeDocuments } from '../utils/docReader'
 import { boxOwnerHint } from '../../supabase/functions/_shared/portal/shippingLines.js'
 import { availableTypes, typesFoundInside, docTypeLabel } from '../utils/docTypes'
 import { isLineNotShip } from '../../supabase/functions/_shared/portal/shippingLines.js'
+import { loadPdfjs } from '../utils/pdfjs'
 
 const MODES = ['Sea FCL', 'Sea LCL', 'Air', 'BPT/MBPT']
 // sea jobs carry containers (LCL: the shared consolidation box, which LDB tracks to the CFS)
@@ -279,9 +280,7 @@ export default function CreateJob({ isModal = false, onCancel, onCreated, initia
         setExtractedFields({ _error: true, _message: 'Only PDF soft copies can be read automatically. Please fill the fields by hand.' })
         return
       }
-      const pdfjs = await import('pdfjs-dist')
-      const workerUrl = new URL('pdfjs-dist/build/pdf.worker.mjs', import.meta.url)
-      pdfjs.GlobalWorkerOptions.workerSrc = workerUrl.href
+      const pdfjs = await loadPdfjs()
       setExtractProgress(40)
       setExtractStatus('Reading pages...')
       const result = await readPdf(pdfjs, new Uint8Array(await file.arrayBuffer()))

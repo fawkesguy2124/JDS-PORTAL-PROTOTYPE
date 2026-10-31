@@ -1,7 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { parseContainerNos } from '../utils/jobHelpers'
 import { useJourney } from './JourneyContext'
-import { Icon, phaseChip } from './ui'
+import { phaseChip } from './ui'
+import { Icon } from '../ui/Icon'
+import { Kbd } from '../ui/Feedback'
+import { lockScroll, pushLayer, trapTab } from '../ui/hooks'
 import { truckNos } from '../services/journey'
 import { recentJobIds } from './recentJobs'
 
@@ -16,8 +19,28 @@ function Palette({ onClose, pages, onGo, onOpenJob, onLookup }) {
   const [q, setQ] = useState('')
   const [hl, setHl] = useState(0)
   const inputRef = useRef(null)
+  const listRef = useRef(null)
+  const palRef = useRef(null)
+  const closeRef = useRef(onClose)
+  useEffect(() => { closeRef.current = onClose })
+  const uid = useId()
 
-  useEffect(() => { inputRef.current?.focus() }, [])
+  // focus the box, lock the page behind, give focus back on close. Esc closes
+  // wherever focus is, but only while the palette is the top overlay.
+  useEffect(() => {
+    const prev = document.activeElement
+    const unlock = lockScroll()
+    const layer = pushLayer(Symbol('palette'))
+    const onEsc = (e) => { if (e.key === 'Escape' && layer.isTop()) { e.preventDefault(); closeRef.current() } }
+    document.addEventListener('keydown', onEsc, true)
+    inputRef.current?.focus()
+    return () => {
+      document.removeEventListener('keydown', onEsc, true)
+      layer.release()
+      unlock()
+      if (prev && typeof prev.focus === 'function' && document.contains(prev)) prev.focus({ preventScroll: true })
+    }
+  }, [])
 
   const items = useMemo(() => {
     const needle = q.trim().toLowerCase().replace(/\s+/g, '')
@@ -54,23 +77,34 @@ function Palette({ onClose, pages, onGo, onOpenJob, onLookup }) {
     if (e.key === 'ArrowDown') { e.preventDefault(); setHl((h) => Math.min(items.length - 1, h + 1)) }
     if (e.key === 'ArrowUp') { e.preventDefault(); setHl((h) => Math.max(0, h - 1)) }
     if (e.key === 'Enter' && items[hl]) { e.preventDefault(); pick(items[hl]) }
-    if (e.key === 'Escape') onClose()
   }
+  useEffect(() => {
+    listRef.current?.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: 'nearest' })
+  }, [hl, items])
+
   const jobItems = items.filter((i) => i.type === 'job')
+  const optId = (idx) => `${uid}-o${idx}`
   const pageItems = items.filter((i) => i.type === 'page')
 
   return (
     <div className="ix-pal-bg" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose() }}>
-      <div className="ix-pal" role="dialog" aria-label="Search">
-        <input ref={inputRef} value={q} onChange={(e) => { setQ(e.target.value); setHl(0) }} onKeyDown={onKey}
-          placeholder="Type a job no, client, BE, BL, container or truck…" autoComplete="off" />
-        <div className="ix-pal-res">
-          {jobItems.length > 0 && <div className="ix-pal-group">{jobItems[0].recent ? 'Recent' : 'Jobs'}</div>}
+      <div className="ix-pal" ref={palRef} role="dialog" aria-modal="true" aria-label="Search" onKeyDown={(e) => trapTab(e, palRef.current)}>
+        <div className="ix-pal-input">
+          <Icon name="search" />
+          <input ref={inputRef} value={q} onChange={(e) => { setQ(e.target.value); setHl(0) }} onKeyDown={onKey}
+            placeholder="Job no, client, BE, BL, container or truck" autoComplete="off" spellCheck={false}
+            role="combobox" aria-expanded="true" aria-controls={`${uid}-list`} aria-autocomplete="list"
+            aria-activedescendant={items[hl] ? optId(hl) : undefined} />
+          <Kbd>Esc</Kbd>
+          <button type="button" className="ix-pal-cancel" onClick={onClose}>Cancel</button>
+        </div>
+        <div className="ix-pal-res" ref={listRef} id={`${uid}-list`} role="listbox" aria-label="Results">
+          {jobItems.length > 0 && <div className="ix-pal-group" role="presentation">{jobItems[0].recent ? 'Recent' : 'Jobs'}</div>}
           {jobItems.map((it) => {
             const idx = items.indexOf(it)
             const c = phaseChip(it.job, it.j)
             return (
-              <div key={it.id} className={`ix-pal-item ${idx === hl ? 'hl' : ''}`} onMouseEnter={() => setHl(idx)} onClick={() => pick(it)}>
+              <div key={it.id} id={optId(idx)} role="option" aria-selected={idx === hl} className={`ix-pal-item ${idx === hl ? 'hl' : ''}`} onMouseEnter={() => setHl(idx)} onClick={() => pick(it)}>
                 <Icon name="package" /><b className="mono">{it.job.job_no}</b>
                 <span className="c">{it.job.client}</span>
                 <span className="k">{it.hit ? `${it.hit[0]} ${it.hit[1]}` : c.label}</span>
@@ -80,23 +114,31 @@ function Palette({ onClose, pages, onGo, onOpenJob, onLookup }) {
           {items.filter((i) => i.type === 'lookup').map((it) => {
             const idx = items.indexOf(it)
             return (
-              <div key={it.id} className={`ix-pal-item ${idx === hl ? 'hl' : ''}`} onMouseEnter={() => setHl(idx)} onClick={() => pick(it)}>
-                <Icon name="world-search" />Look up <b className="mono">{it.q}</b> on ULIP<span className="k">BE, container, truck…</span>
+              <div key={it.id} id={optId(idx)} role="option" aria-selected={idx === hl} className={`ix-pal-item ${idx === hl ? 'hl' : ''}`} onMouseEnter={() => setHl(idx)} onClick={() => pick(it)}>
+                <Icon name="world-search" /><span>Look up <b className="mono">{it.q}</b> on ULIP</span><span className="k">BE, container, truck…</span>
               </div>
             )
           })}
-          {pageItems.length > 0 && <div className="ix-pal-group">Go to</div>}
+          {pageItems.length > 0 && <div className="ix-pal-group" role="presentation">Go to</div>}
           {pageItems.map((it) => {
             const idx = items.indexOf(it)
             return (
-              <div key={it.id} className={`ix-pal-item ${idx === hl ? 'hl' : ''}`} onMouseEnter={() => setHl(idx)} onClick={() => pick(it)}>
+              <div key={it.id} id={optId(idx)} role="option" aria-selected={idx === hl} className={`ix-pal-item ${idx === hl ? 'hl' : ''}`} onMouseEnter={() => setHl(idx)} onClick={() => pick(it)}>
                 <Icon name={it.icon} />{it.label}<span className="k">Page</span>
               </div>
             )
           })}
-          {items.length === 0 && <div className="ix-empty">Nothing matches “{q}”.</div>}
+          {items.length === 0 && (
+            <div className="ix-empty-state compact">
+              <span className="ico"><Icon name="search" /></span>
+              <div className="t">Nothing matches “{q}”</div>
+              <div className="d">Try a job number, client name, BE, BL, container or truck number.</div>
+            </div>
+          )}
         </div>
-        <div className="ix-pal-foot"><span>↑ ↓ to move</span><span>Enter to open</span><span>Esc to close</span></div>
+        <div className="ix-pal-foot" aria-hidden="true">
+          <span><Kbd>↑</Kbd><Kbd>↓</Kbd>to move</span><span><Kbd>Enter</Kbd>to open</span><span><Kbd>Esc</Kbd>to close</span>
+        </div>
       </div>
     </div>
   )

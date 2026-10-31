@@ -3,8 +3,9 @@ import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import '@maplibre/maplibre-gl-leaflet'
-import { vesselOf, shipIdOf } from '../../supabase/functions/_shared/portal/ships.js'
+import { nm, shortDate, voyage, shortPort, viaText, TONE_COLOR, toneOf } from './shipInfo'
 import { Icon } from './ui'
+import { iconSvg } from '../ui/iconSvg'
 
 // Ships on the portal's own map (Jose, 24 Oct 2026: "remove VesselFinder, we have
 // our own map and Safecube… make it like VesselFinder's tracker"). A sea chart:
@@ -17,19 +18,8 @@ import { Icon } from './ui'
 // ships: [{ key, label (IMO, shown only in the card), jobs, clients, line, pos: [lat, lng], at, from, eta, where,
 //           polName, polDate, podName, arrived, route, track }]
 
-// which ship a job is on and its numbers: shared with the WhatsApp bot
-export { shipKey, vesselsOf, vesselOf, shipIdOf } from '../../supabase/functions/_shared/portal/ships.js'
+// ship facts without map code (vesselOf, voyage, toneOf…) live in shipInfo.js
 
-// (kept for older callers) the IMO of the job's first ship
-export const imoOf = (job, data) => shipIdOf(job, vesselOf(job, data), data).imo
-
-// Where a ship is: Safecube's position (the job's tracking), else the finder's
-// last-heard position for that ship name. { pos, at, from } or null
-export function shipPosition(sea, found) {
-  if (sea && !sea.error && typeof sea.lat === 'number' && typeof sea.lng === 'number') return { pos: [sea.lat, sea.lng], at: sea.position_at || sea.fetched_at, from: 'tracking' }
-  if (found && typeof found.lat === 'number' && typeof found.lon === 'number') return { pos: [found.lat, found.lon], at: found.seen_at, from: 'ship radio (AIS)', heading: found.heading ?? found.cog ?? null }
-  return null
-}
 
 // ── the sea chart ──
 // A calm, dashboard-style chart (Jose, 25 Oct 2026: "very professional"): light grey
@@ -68,76 +58,6 @@ function addSeaChart(m) {
   L.tileLayer('https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png', { minZoom: 10, maxZoom: 18, opacity: 0.8, attribution: '© <a href="https://www.openseamap.org" target="_blank">OpenSeaMap</a>' }).addTo(m)
 }
 
-// ── geometry (small numbers, flat-earth is fine for picking points) ──
-const R_NM = 3440.065
-const rad = (d) => (d * Math.PI) / 180
-function nm(a, b) {
-  const dLat = rad(b[0] - a[0]), dLon = rad(b[1] - a[1])
-  const h = Math.sin(dLat / 2) ** 2 + Math.cos(rad(a[0])) * Math.cos(rad(b[0])) * Math.sin(dLon / 2) ** 2
-  return 2 * R_NM * Math.asin(Math.min(1, Math.sqrt(h)))
-}
-function bearing(a, b) {
-  const y = Math.sin(rad(b[1] - a[1])) * Math.cos(rad(b[0]))
-  const x = Math.cos(rad(a[0])) * Math.sin(rad(b[0])) - Math.sin(rad(a[0])) * Math.cos(rad(b[0])) * Math.cos(rad(b[1] - a[1]))
-  return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360
-}
-// one line through the route's pieces, unwrapped across the date line
-function routeLine(route) {
-  const out = []
-  for (const seg of route?.segments || []) for (const [la, lo] of seg) {
-    const prev = out[out.length - 1]
-    let x = lo
-    if (prev) { while (x - prev[1] > 180) x -= 360; while (prev[1] - x > 180) x += 360 }
-    out.push([la, x])
-  }
-  return out
-}
-// The voyage around the ship: the route split where the ship is, its heading and progress
-export function voyage(s) {
-  const line = routeLine(s.route)
-  const pos = s.pos
-  if (!pos) return null
-  let p = [pos[0], pos[1]]
-  if (line.length >= 2) {
-    let k = 0, best = Infinity
-    line.forEach((q, i) => { const d = (q[0] - p[0]) ** 2 + ((q[1] - p[1]) * Math.cos(rad(p[0]))) ** 2; if (d < best) { best = d; k = i } })
-    // keep the ship's longitude on the same "copy" of the world as the route
-    while (p[1] - line[k][1] > 180) p = [p[0], p[1] - 360]
-    while (line[k][1] - p[1] > 180) p = [p[0], p[1] + 360]
-    // the route point just ahead of the ship (the nearest one may be behind it)
-    let next = k
-    if (k < line.length - 1 && k > 0) next = nm(line[k - 1], line[k + 1]) > nm(line[k - 1], p) ? k + 1 : k
-    if (next === k && k < line.length - 1 && nm(p, line[k]) < 5) next = k + 1
-    const sailed = [...line.slice(0, next), p]
-    const ahead = [p, ...line.slice(next)]
-    const len = (pts) => pts.slice(1).reduce((t, q, i) => t + nm(pts[i], q), 0)
-    const done = len(sailed), left = len(ahead)
-    const aim = ahead.find((q) => nm(p, q) > 3) || line[line.length - 1]
-    return { pos: p, sailed, ahead, heading: s.heading ?? (aim ? bearing(p, aim) : null), done, left, pct: done + left > 0 ? Math.round((done / (done + left)) * 100) : null }
-  }
-  // no route: point the ship along its last two known positions
-  const tr = (s.track || []).filter((t) => typeof t[0] === 'number')
-  const a = tr[tr.length - 2], b = tr[tr.length - 1]
-  return { pos: p, sailed: [], ahead: [], heading: s.heading ?? (a && b && nm(a, b) > 1 ? bearing(a, b) : null), done: null, left: null, pct: null }
-}
-
-// "Ningbo, CN" → "Ningbo"; the line's dates are port time (shown as given)
-export const shortPort = (n) => String(n || '').replace(/,\s*[A-Z]{2}$/, '').replace(/^Jawaharlal Nehru$/i, 'Nhava Sheva')
-const shortDate = (iso) => {
-  const d = new Date(iso)
-  if (isNaN(d)) return ''
-  return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', ...(d.getUTCFullYear() !== new Date().getFullYear() ? { year: 'numeric' } : {}), timeZone: 'UTC' })
-}
-// "Change ship at Ningbo · stops at Busan, Shekou, Singapore, Colombo"
-export function viaText(route) {
-  const via = route?.via || []
-  if (!via.length) return null
-  const change = via.filter((p) => p.change).map((p) => shortPort(p.name))
-  const stops = via.filter((p) => !p.change).map((p) => shortPort(p.name))
-  return [change.length && `Change ship at ${change.join(', ')}`, stops.length && `stops at ${stops.join(', ')}`].filter(Boolean).join(' · ').replace(/^stops/, 'Stops')
-}
-
-const STALE_HOURS = 24
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]))
 const ago = (v) => {
   const h = (Date.now() - new Date(v).getTime()) / 3600e3
@@ -157,12 +77,6 @@ const fit = (m, bounds, maxZoom = 7, card = false) => {
 }
 // the vessel mark ship trackers use: a slim arrow, bow up, turned to the heading
 const hull = (color) => `<svg viewBox="0 0 16 26" width="16" height="26" aria-hidden="true"><path d="M8 1.5 L14.5 23.5 L8 19.8 L1.5 23.5 Z" fill="${color}" stroke="#ffffff" stroke-width="1.6" stroke-linejoin="round"/></svg>`
-export const TONE_COLOR = { sea: '#15803d', port: '#c2410c', old: '#94a3b8' }
-export const toneOf = (s) => {
-  const stale = s.at && Date.now() - new Date(s.at).getTime() > STALE_HOURS * 3600e3
-  // at the port (confirmed, or already within reach of it) beats an old position
-  return s.waiting ? 'old' : s.arrived || s.atPod ? 'port' : stale ? 'old' : 'sea'
-}
 // "Arabian Sea, near Nhava Sheva" → "near Nhava Sheva"
 const placeOf = (where) => {
   const m = /,\s*((?:near|at) .+)$/.exec(String(where || ''))
@@ -245,7 +159,7 @@ export default function ShipMap({ ships = [], selectedKey, onSelect, height = 42
         if (!Array.isArray(p.pos)) continue
         const dates = [p.arrive && `${p.arrived ? 'Arrived' : 'Arrives'} ${shortDate(p.arrive)}`, p.leave && `${p.left ? 'Left' : 'Leaves'} ${shortDate(p.leave)}`].filter(Boolean).join(' · ')
         if (p.change) {
-          const html = `<div class="ix-via"><span class="dot"><i class="ti ti-transfer"></i></span><span class="lbl">${esc(shortPort(p.name))} · change ship</span></div>`
+          const html = `<div class="ix-via"><span class="dot">${iconSvg('transfer')}</span><span class="lbl">${esc(shortPort(p.name))} · change ship</span></div>`
           L.marker(p.pos, { icon: L.divIcon({ className: 'ix-tpin', iconSize: [0, 0], html }), zIndexOffset: 500 })
             .bindTooltip(`<b>${esc(p.name)}</b> · change ship${p.inShip ? `<br>${esc(p.inShip)} → ${esc(p.outShip)}` : ''}${dates ? `<br>${esc(dates)}` : ''}`, { direction: 'top', offset: [0, -14] }).addTo(layer.current)
         } else {
@@ -357,7 +271,7 @@ export default function ShipMap({ ships = [], selectedKey, onSelect, height = 42
     for (const { g, p } of portTags) {
       const sub = g.inbound ? `${g.inbound} inbound` : g.here ? `${g.here} in port` : ''
       const [dx, dy] = placeTag(p, tagW(g.name, sub), 24, 15)
-      const html = `<div class="ix-portmk"><i class="ti ti-anchor"></i></div><div class="ix-tag port-tag" style="left:${dx}px;top:${dy}px"><b>${esc(g.name)}</b>${sub ? `<span>${esc(sub)}</span>` : ''}</div>`
+      const html = `<div class="ix-portmk">${iconSvg('anchor')}</div><div class="ix-tag port-tag" style="left:${dx}px;top:${dy}px"><b>${esc(g.name)}</b>${sub ? `<span>${esc(sub)}</span>` : ''}</div>`
       L.marker(g.pos, { icon: L.divIcon({ className: 'ix-tpin', iconSize: [0, 0], html }), zIndexOffset: -100, interactive: false }).addTo(layer.current)
     }
     lastBounds.current = bounds

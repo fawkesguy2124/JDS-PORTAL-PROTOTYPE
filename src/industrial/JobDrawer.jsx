@@ -1,14 +1,16 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useEffectEvent, useMemo, useRef, useState } from 'react'
 import { supabase } from '../supabase'
 import { parseContainerNos, getContainerSize } from '../utils/jobHelpers'
 import { portLabel } from '../utils/ports'
 import { useJourney } from './JourneyContext'
 import { containerFinishedOn, deliveryBy } from '../services/journey'
 import { Chip, FreeDays, Icon, PhaseChip, fmtDate, initials, jobOwnerName, timeAgo } from './ui'
-import { vesselOf, shipIdOf } from './ShipMap'
+import { vesselOf, shipIdOf } from './shipInfo'
 import { isLineNotShip } from '../../supabase/functions/_shared/portal/shippingLines.js'
 import { openDoc, downloadDoc } from '../services/docFiles'
 import PdfPreview from '../components/PdfPreview'
+import { Button, Modal } from '../ui'
+import { lockScroll, pushLayer, trapTab } from '../ui/hooks'
 import SeaTracking, { portTime } from './SeaTracking'
 import BeStage from './BeStage'
 import AirCargo from './AirCargo'
@@ -44,11 +46,31 @@ export default function JobDrawer({ jobId, initialTab = 'overview', onClose, onO
     return () => { cancelled = true }
   }, [jobId])
 
+  // a real dialog: Esc closes (only when it is the top overlay), Tab stays
+  // inside, page scroll is locked, focus moves in and goes back on close
+  const asideRef = useRef(null)
+  const close = useEffectEvent(() => onClose())
+  const shown = !!job
   useEffect(() => {
-    const onKey = (e) => { if (e.key === 'Escape') onClose() }
+    if (!shown) return undefined
+    const prev = document.activeElement
+    const unlock = lockScroll()
+    const layer = pushLayer(Symbol('job-drawer'))
+    const raf = requestAnimationFrame(() => asideRef.current?.focus({ preventScroll: true }))
+    const onKey = (e) => {
+      if (!layer.isTop()) return
+      if (e.key === 'Escape') close()
+      else if (e.key === 'Tab') trapTab(e, asideRef.current)
+    }
     window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [onClose])
+    return () => {
+      cancelAnimationFrame(raf)
+      window.removeEventListener('keydown', onKey)
+      layer.release()
+      unlock()
+      if (prev && typeof prev.focus === 'function' && document.contains(prev)) prev.focus({ preventScroll: true })
+    }
+  }, [shown])
 
   const containers = useMemo(() => {
     if (!job) return []
@@ -186,7 +208,7 @@ export default function JobDrawer({ jobId, initialTab = 'overview', onClose, onO
   return (
     <>
       <div className="ix-backdrop" onClick={onClose} />
-      <aside className="ix-drawer" aria-label={`Job ${job.job_no}`}>
+      <aside ref={asideRef} className="ix-drawer" role="dialog" aria-modal="true" tabIndex={-1} aria-label={`Job ${job.job_no}`}>
         <div className="ix-dr-head">
           <div className="ix-dr-title">
             <h2>{job.job_no}</h2>
@@ -263,7 +285,7 @@ export default function JobDrawer({ jobId, initialTab = 'overview', onClose, onO
                   <div className="v">
                     {containers.length === 0 ? '—'
                       : containers.length === 1 ? <span className="mono">{containers[0].no}</span>
-                      : <><b>{containers.length}</b> containers<button type="button" className="ix-link" onClick={() => setTab('containers')}>See all →</button></>}
+                      : <><b>{containers.length}</b> containers<button type="button" className="ix-link" onClick={() => setTab('containers')}>See all<Icon name="chevron-right" /></button></>}
                   </div>
                 </div>
                 <div><div className="k">Goods</div><div className="v">{job.goods || '—'}</div></div>
@@ -291,7 +313,7 @@ export default function JobDrawer({ jobId, initialTab = 'overview', onClose, onO
                     ))}
                     {!isExport && j.oocDone && j.onwardMode !== 'rail' && (
                       <button type="button" className="ix-link" style={{ margin: 0 }} onClick={() => onOpenTruck(job.id)}>
-                        {(j.trucks || []).length ? 'Add / manage trucks →' : 'Assign truck →'}
+                        {(j.trucks || []).length ? 'Add / manage trucks' : 'Assign truck'}<Icon name="chevron-right" />
                       </button>
                     )}
                   </div>
@@ -328,7 +350,7 @@ export default function JobDrawer({ jobId, initialTab = 'overview', onClose, onO
                       <div className="m"><span className={`ix-src ${e.src}`}>{e.src}</span>{fmtDate(e.at)}{e.by ? ` · ${e.by}` : ''}</div>
                     </div>
                   ))}
-                  {shownEvents.length > 4 && <button type="button" className="ix-link" style={{ margin: 0 }} onClick={() => setTab('timeline')}>See the full timeline →</button>}
+                  {shownEvents.length > 4 && <button type="button" className="ix-link" style={{ margin: 0 }} onClick={() => setTab('timeline')}>See the full timeline<Icon name="chevron-right" /></button>}
                 </div>
               ) : <div className="ix-empty" style={{ padding: 0 }}>No events yet.</div>}
             </>
@@ -393,22 +415,16 @@ export default function JobDrawer({ jobId, initialTab = 'overview', onClose, onO
             </>
           )}
           {/* a PDF, drawn by the portal itself (works on every browser and phone) */}
-          {viewDoc && (
-            <div role="dialog" aria-label={viewDoc.file_name} onClick={() => setViewDoc(null)}
-              style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,.55)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-              <div onClick={(e) => e.stopPropagation()}
-                style={{ background: '#fff', borderRadius: 12, width: 'min(900px, 100%)', maxHeight: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', borderBottom: '1px solid var(--line, #e2e6ed)' }}>
-                  <b style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{viewDoc.doc_type ? `${viewDoc.doc_type} · ` : ''}{viewDoc.file_name}</b>
-                  <button type="button" className="ix-btn sm" onClick={() => downloadDoc(viewDoc).catch((e) => showToast?.(`Could not download: ${e.message}`, 'error'))}><Icon name="download" />Download</button>
-                  <button type="button" className="ix-btn sm" onClick={() => setViewDoc(null)}>Close</button>
-                </div>
-                <div style={{ overflow: 'auto', padding: 12, background: '#f4f6f9' }}>
-                  <PdfPreview doc={viewDoc} />
-                </div>
-              </div>
-            </div>
-          )}
+          <Modal open={!!viewDoc} onClose={() => setViewDoc(null)} size="lg" className="ix-pdf-modal"
+            title={viewDoc ? `${viewDoc.doc_type ? `${viewDoc.doc_type} · ` : ''}${viewDoc.file_name}` : ''}
+            footer={viewDoc && (
+              <>
+                <Button onClick={() => setViewDoc(null)}>Close</Button>
+                <Button variant="primary" icon="download" onClick={() => downloadDoc(viewDoc).catch((e) => showToast?.(`Could not download: ${e.message}`, 'error'))}>Download</Button>
+              </>
+            )}>
+            {viewDoc && <PdfPreview doc={viewDoc} />}
+          </Modal>
 
           {tab === 'notes' && (
             notes.length === 0

@@ -1,5 +1,6 @@
 import { readPdf } from '../utils/docReader'
 import { isNotShipName } from '../../supabase/functions/_shared/portal/shippingLines.js'
+import { loadPdfjs } from '../utils/pdfjs'
 
 // The ship name (and voyage) from a BL PDF, with the portal's own PDF reader (no AI,
 // nothing leaves the browser). Returns "MSC AURORA / 543W", or null.
@@ -7,8 +8,7 @@ import { isNotShipName } from '../../supabase/functions/_shared/portal/shippingL
 // can follow the ship from the pre-alert, long before the IGM.
 export async function vesselFromBl(file) {
   if (!file || !/\.pdf$/i.test(file.name || '') && file.type !== 'application/pdf') return null
-  const pdfjs = await import('pdfjs-dist')
-  pdfjs.GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.mjs', import.meta.url).href
+  const pdfjs = await loadPdfjs()
   const result = await readPdf(pdfjs, new Uint8Array(await file.arrayBuffer()))
   const f = result?.fields || {}
   // an address line read as the ship (J-644: "ANDHERI EAST.MUMBAI. PINCODE / 400099") is dropped

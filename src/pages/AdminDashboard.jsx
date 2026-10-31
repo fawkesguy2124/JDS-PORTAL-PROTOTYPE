@@ -5,7 +5,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { getStageName, isEtaThisWeek } from '../utils/jobHelpers'
 import lazyPage from '../utils/lazyPage'
 import { loadDocs } from '../services/docCache'
-import '../industrial/industrial.css'
+// .ix-* styles are global now (src/ui/components.css via src/main.jsx)
 import { JourneyProvider, useJourney } from '../industrial/JourneyContext'
 import { rememberJob } from '../industrial/recentJobs'
 import Shell from '../industrial/Shell'
@@ -32,6 +32,8 @@ const DetentionPage = lazyPage(() => import('./v2/DetentionPage'))
 const BotPreviewPage = lazyPage(() => import('./v2/BotPreviewPage'))
 const CreateJob = lazyPage(() => import('./CreateJob'))
 
+// legacy: true = the page is not on the design system yet; the Shell shows it
+// light whatever theme is saved (Shell `lightOnly`). Remove it once migrated.
 const NAV_SECTIONS = [
   { label: 'TODAY', items: [{ id: 'today', label: 'Today', icon: 'home' }] },
   // in work order (Jose, 25 Oct 2026): the jobs, then where the cargo is as it moves
@@ -39,27 +41,27 @@ const NAV_SECTIONS = [
   { label: 'JOBS', items: [{ id: 'jobs', label: 'All jobs', icon: 'list-details' }] },
   { label: 'TRACKING', items: [
     { id: 'vessels', label: 'Vessels', icon: 'ship' },
-    { id: 'containers', label: 'Containers', icon: 'box' },
+    { id: 'containers', label: 'Containers', icon: 'box', legacy: true },
     { id: 'trucks', label: 'Trucks', icon: 'truck' },
   ] },
   { label: 'CUSTOMS & PAPERS', items: [
     { id: 'customs', label: 'BE & OOC', icon: 'file-certificate' },
-    { id: 'documents', label: 'Documents', icon: 'files' },
+    { id: 'documents', label: 'Documents', icon: 'files', legacy: true },
   ] },
   { label: 'MONEY', items: [
-    { id: 'payments', label: 'Payments', icon: 'currency-rupee' },
-    { id: 'detention', label: 'Detention', icon: 'clock-exclamation', alert: true },
+    { id: 'payments', label: 'Payments', icon: 'currency-rupee', legacy: true },
+    { id: 'detention', label: 'Detention', icon: 'clock-exclamation', legacy: true, alert: true },
   ] },
   { label: 'RECORDS', items: [
-    { id: 'clients', label: 'Clients', icon: 'users' },
-    { id: 'compliance', label: 'BIS & Licences', icon: 'certificate' },
+    { id: 'clients', label: 'Clients', icon: 'users', legacy: true },
+    { id: 'compliance', label: 'BIS & Licences', icon: 'certificate', legacy: true },
   ] },
   { label: 'ADMIN', items: [
-    { id: 'overview', label: 'Team & stages', icon: 'chart-bar' },
-    { id: 'bot', label: 'WhatsApp bot', icon: 'brand-whatsapp' },
+    { id: 'overview', label: 'Team & stages', icon: 'chart-bar', legacy: true },
+    { id: 'bot', label: 'WhatsApp bot', icon: 'brand-whatsapp', legacy: true },
     { id: 'health', label: 'System health', icon: 'heart-rate-monitor' },
     // reached from Ctrl K → "Look up on ULIP" (Jose, 25 Oct 2026: one search box, not two)
-    { id: 'search', label: 'ULIP lookup', icon: 'search', hidden: true },
+    { id: 'search', label: 'ULIP lookup', icon: 'search', legacy: true, hidden: true },
   ] },
 ]
 
@@ -778,6 +780,7 @@ function AdminDashboardInner() {
       onCreateJob={() => setShowCreateJob(true)}
       onLogout={handleLogout}
       profile={profile}
+      lightOnly={!!fullJob || !!NAV_ITEMS.find(n => n.id === activeNav)?.legacy}
       onBellNavigate={(action) => {
         // the alert's own page, with its job picked (alertLinks.js)
         if (action.url) { setSelectedJob(null); navigate(action.url); return }
@@ -861,7 +864,7 @@ function AdminDashboardInner() {
 
       {showCreateJob && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 backdrop-blur-sm px-4 py-6">
-          <div className="w-full max-w-5xl overflow-hidden rounded-xl bg-white shadow-2xl border border-[#e2e6ed]">
+          <div className="ix-light w-full max-w-5xl overflow-hidden rounded-xl bg-white shadow-2xl border border-[#e2e6ed]">
             <CreateJob
               isModal
               initialFilePath={createFromFile}

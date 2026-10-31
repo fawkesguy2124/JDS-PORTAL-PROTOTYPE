@@ -5,8 +5,7 @@ import { fetchAllTracking } from '../services/trackingService'
 import { useAuth } from '../contexts/AuthContext'
 import { getStageName, parseContainerNos } from '../utils/jobHelpers'
 import CreateJob from './CreateJob'
-import * as XLSX from 'xlsx'
-import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
+import { loadPdfjs } from '../utils/pdfjs'
 import { readJobDocuments, toExtractFields, unreadableMessage } from '../utils/docReaderMap'
 import NotificationBell from '../components/NotificationBell'
 import ContainerTrackingSection from '../components/ContainerTrackingSection'
@@ -1241,8 +1240,10 @@ export default function EmployeeDashboard() {
     setExtractFiles([])
   }
 
-  const downloadExcel = () => {
+  const downloadExcel = async () => {
     const job = extractModal.job
+    let XLSX
+    try { XLSX = await import('xlsx') } catch (e) { showToast(`Could not prepare the Excel file: ${e.message}`, 'error'); return }
     const headers = [
       'Job No','Client','BL No','BL Date','Vessel','Voyage','Containers',
       'Port of Loading','Port of Discharge','Shipper','Consignee','Notify Party',
@@ -1270,8 +1271,7 @@ export default function EmployeeDashboard() {
 
     try {
       // Read straight from the text inside each PDF, in the browser. Nothing is sent to any outside service.
-      const pdfjs = await import('pdfjs-dist')
-      pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerUrl
+      const pdfjs = await loadPdfjs()
       const read = await readJobDocuments(pdfjs, docs, (msg) => setExtractProgress(msg))
       setExtractFiles(read.files)
 

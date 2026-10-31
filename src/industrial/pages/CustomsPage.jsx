@@ -9,6 +9,7 @@ import { useAutoChecks, checkCustoms, isDue, COOLDOWN_MIN } from '../autoChecks'
 import AutoStatus from '../AutoStatus'
 import BeStage from '../BeStage'
 import { Icon, fmtDate, timeAgo, Skeleton } from '../ui'
+import { Segmented } from '../../ui'
 
 // BE & OOC desk. Imports: pick a job on the left, see and run all its customs
 // checks on the right (BE, OOC, cargo, IGM …). Exports: SB & LEO queues.
@@ -57,7 +58,7 @@ function FiledForm({ initialNo, numLabel, dateLabel, busy, onSave, onCancel }) {
       <input value={no} onChange={(e) => setNo(e.target.value.replace(/\D/g, '').slice(0, 7))} inputMode="numeric" maxLength={7}
         placeholder={numLabel} aria-label={numLabel} autoFocus />
       <input type="date" max={new Date().toISOString().slice(0, 10)} value={date} onChange={(e) => setDate(e.target.value)}
-        aria-label={dateLabel} title={dateLabel} style={{ fontFamily: 'Inter, sans-serif' }} />
+        aria-label={dateLabel} title={dateLabel} />
       <button type="button" className="ix-btn sm primary" disabled={busy} onClick={() => onSave(no, date)}>{busy ? 'Saving…' : 'Save'}</button>
       <button type="button" className="ix-btn sm ghost" disabled={busy} onClick={onCancel}>Cancel</button>
     </div>
@@ -203,12 +204,10 @@ export default function CustomsPage({ currentUserName, onOpenJob, showToast, can
     sub: <>SB <span className="mono">{j.sbNo}</span> · LEO given {fmtDate(j.leoDate)}</>,
   })
 
-  const kindBtn = (id, label, icon) => (
-    <button type="button" className={`ix-btn sm ${kind === id ? 'primary' : ''}`} aria-pressed={kind === id}
-      onClick={() => { setKind(id); setFormFor(null); setLeoFor(null) }}>
-      <Icon name={icon} />{label}
-    </button>
-  )
+  const KINDS = [
+    { value: 'import', label: 'Imports: BE & OOC', icon: 'package' },
+    { value: 'export', label: 'Exports: SB & LEO', icon: 'ship' },
+  ]
 
   return (
     <div className="ix-page">
@@ -218,8 +217,8 @@ export default function CustomsPage({ currentUserName, onOpenJob, showToast, can
           <p>File in LiveImpex, record it here, then follow {kind === 'import' ? 'OOC' : 'LEO'}</p>
         </div>
         <div className="right">
-          {kindBtn('import', 'Imports — BE & OOC', 'package')}
-          {kindBtn('export', 'Exports — SB & LEO', 'ship')}
+          <Segmented options={KINDS} value={kind} label="Imports or exports"
+            onChange={(id) => { setKind(id); setFormFor(null); setLeoFor(null) }} />
           <button type="button" className="ix-btn sm ghost" onClick={refresh} disabled={loading}><Icon name="refresh" />{loading ? 'Loading…' : 'Refresh'}</button>
         </div>
       </div>

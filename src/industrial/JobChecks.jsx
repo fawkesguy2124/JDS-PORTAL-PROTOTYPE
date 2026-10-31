@@ -6,6 +6,7 @@ import CustomsStatusCard from '../components/CustomsStatusCard'
 import UlipSection from '../components/ulip/UlipSection'
 import { useJourney } from './JourneyContext'
 import { Icon, PhaseChip } from './ui'
+import { SearchInput } from '../ui'
 import { truckNos } from '../services/journey'
 
 // Left: find a job (search + short lists). Right: that job's government checks.
@@ -32,8 +33,7 @@ export function JobPicker({ title, rows, selectedId, onSelect, lists = [], place
     <div className="ix-card ix-picker">
       <div className="ix-card-head"><Icon name="search" style={{ color: 'var(--navy)' }} /><h2>{title}</h2></div>
       <div style={{ padding: '10px 12px', borderBottom: '1px solid var(--line)' }}>
-        <input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder={placeholder || 'Job no, client, BE, container…'}
-          style={{ width: '100%', height: 34, border: '1px solid var(--line)', borderRadius: 8, padding: '0 10px', font: '13px Inter, sans-serif' }} />
+        <SearchInput value={q} onValueChange={setQ} placeholder={placeholder || 'Job no, client, BE, container…'} label={`${title}: search`} />
       </div>
       <div className="ix-pick-list">
         {hits ? (

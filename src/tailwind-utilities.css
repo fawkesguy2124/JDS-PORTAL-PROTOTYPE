@@ -1,0 +1,17 @@
+/* Tailwind utilities: imported last in src/main.jsx (see src/index.css). */
+@tailwind utilities;
+
+@layer utilities {
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background: var(--line-strong);
+    border: 0;
+    border-radius: 6px;
+  }
+}

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Icon } from '../ui/Icon'
 import { ALERT_KINDS, ALL_KINDS, disablePush, enablePush, pushState, setPushKinds } from '../services/desktopApp'
 
 // "Desktop alerts" at the bottom of the notifications panel (Jose, 24 Oct 2026):
@@ -20,40 +21,36 @@ export default function DesktopAlerts({ profile }) {
   const kinds = state.kinds || ALL_KINDS
   const toggleKind = (id) => run(() => setPushKinds({ ...kinds, [id]: !kinds[id] }))
 
-  const row = { display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', color: '#1a2233', padding: '3px 0', cursor: 'pointer' }
   return (
-    <div style={{ borderTop: '0.5px solid #e4e8ef', padding: '10px 16px', background: '#fafbfd' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-        <i className="ti ti-device-desktop" style={{ fontSize: '16px', color: '#1a4fa0' }} aria-hidden="true" />
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: '12px', fontWeight: 600, color: '#1a2233' }}>Desktop alerts</div>
-          <div style={{ fontSize: '11px', color: '#8a96a8' }}>
+    <div className="ix-bell-foot">
+      <div className="row">
+        <Icon name="device-desktop" className="lead" />
+        <div className="txt">
+          <div className="t">Desktop alerts</div>
+          <div className="s">
             {!state.supported ? 'This browser cannot show them.'
               : state.on ? 'On for this computer: they pop up even when the portal is closed.'
               : 'Get OOC, free-day and container alerts as Windows notifications.'}
           </div>
         </div>
         {state.supported && (state.on
-          ? <button type="button" onClick={() => setOpen((v) => !v)} style={linkBtn}>{open ? 'Done' : 'Choose'}</button>
-          : <button type="button" disabled={busy} onClick={() => run(() => enablePush(profile))} style={mainBtn}>{busy ? 'Turning on…' : 'Turn on'}</button>)}
+          ? <button type="button" className="ix-btn sm ghost" onClick={() => setOpen((v) => !v)}>{open ? 'Done' : 'Choose'}</button>
+          : <button type="button" className="ix-btn sm primary" disabled={busy} onClick={() => run(() => enablePush(profile))}>{busy ? 'Turning on…' : 'Turn on'}</button>)}
       </div>
       {state.on && open && (
-        <div style={{ marginTop: '8px', paddingLeft: '24px' }}>
+        <div className="kinds">
           {ALERT_KINDS.map((k) => (
-            <label key={k.id} style={row}>
+            <label key={k.id} className="ix-check">
               <input type="checkbox" checked={!!kinds[k.id]} disabled={busy} onChange={() => toggleKind(k.id)} />
               {k.label}
             </label>
           ))}
-          <button type="button" disabled={busy} onClick={() => run(disablePush)} style={{ ...linkBtn, color: '#b42318', marginTop: '6px', padding: 0 }}>
+          <button type="button" className="ix-link danger" disabled={busy} onClick={() => run(disablePush)}>
             Turn off on this computer
           </button>
         </div>
       )}
-      {problem && <div style={{ marginTop: '6px', fontSize: '11px', color: '#b42318' }}>{problem}</div>}
+      {problem && <div className="ix-field-error">{problem}</div>}
     </div>
   )
 }
-
-const linkBtn = { fontSize: '11px', fontWeight: 600, color: '#1a4fa0', background: 'none', border: 'none', cursor: 'pointer' }
-const mainBtn = { fontSize: '11px', fontWeight: 600, color: '#fff', background: '#1a4fa0', border: 'none', borderRadius: '6px', padding: '5px 10px', cursor: 'pointer', whiteSpace: 'nowrap' }

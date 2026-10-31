@@ -15,9 +15,9 @@ const PHASE_VIEW = { ooc: 'ooc', release: 'truck', truck: 'onroad' }
 const PHASE_ICON = { arrival: 'ship', docs: 'file-text', ooc: 'hourglass', release: 'circle-check', truck: 'truck', delivered: 'flag' }
 const FEED_ICON = {
   ooc_granted: ['circle-check', 'var(--green-bg)', 'var(--green)'],
-  be_filed: ['file-certificate', '#fdf4ff', '#86198f'],
-  sb_filed: ['file-certificate', '#fdf4ff', '#86198f'],
-  truck_dispatched: ['truck', '#fff7ed', '#9a3412'],
+  be_filed: ['file-certificate', 'var(--info-bg)', 'var(--info-fg)'],
+  sb_filed: ['file-certificate', 'var(--info-bg)', 'var(--info-fg)'],
+  truck_dispatched: ['truck', 'var(--warning-bg)', 'var(--warning-fg)'],
   stage_update: ['arrow-big-right-lines', 'var(--navy-50)', 'var(--navy)'],
   note: ['message-circle', 'var(--grey-bg)', 'var(--text-2)'],
 }

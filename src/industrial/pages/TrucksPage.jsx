@@ -10,6 +10,7 @@ import { useJourney, useFreshOnOpen } from '../JourneyContext'
 import { useAutoChecks, checkTruck, isDue, COOLDOWN_MIN } from '../autoChecks'
 import AutoStatus from '../AutoStatus'
 import { Icon, Chip, fmtDate, timeAgo, Skeleton } from '../ui'
+import { Select } from '../../ui'
 // the map (and its map library) loads only when this page opens
 const TruckMap = lazy(() => import('../TruckMap'))
 import { truckPoints } from '../truckPoints'
@@ -253,15 +254,14 @@ export default function TrucksPage({ currentUserName, onOpenJob, showToast, canU
         <input value={f.truckNo || ''} placeholder="Truck no, like MH04AB1234" aria-label={`Truck number for ${job.job_no}`} disabled={anyBusy}
           onChange={(e) => setForm(job.id, { truckNo: e.target.value.toUpperCase(), error: '' })} />
         {boxes.length > 0 ? (
-          <select value={f.container || ''} aria-label={`Container on this truck for ${job.job_no} (optional)`} disabled={anyBusy}
-            onChange={(e) => setForm(job.id, { container: e.target.value, error: '' })}
-            style={{ height: 32, border: '1px solid var(--line)', borderRadius: 8, padding: '0 8px', font: '13px Inter, sans-serif', background: '#fff', color: 'var(--text)', minWidth: 0 }}>
+          <Select block value={f.container || ''} aria-label={`Container on this truck for ${job.job_no} (optional)`} disabled={anyBusy}
+            onChange={(e) => setForm(job.id, { container: e.target.value, error: '' })}>
             <option value="">Container (optional)</option>
             {boxes.map((no) => <option key={no} value={no}>{no}</option>)}
-          </select>
+          </Select>
         ) : (
           <input value={f.dlNo || ''} placeholder="Driver licence (optional)" aria-label={`Driver licence for ${job.job_no} (optional)`} disabled={anyBusy}
-            onChange={(e) => setForm(job.id, { dlNo: e.target.value.toUpperCase(), error: '' })} style={{ fontFamily: 'Inter, sans-serif' }} />
+            onChange={(e) => setForm(job.id, { dlNo: e.target.value.toUpperCase(), error: '' })} />
         )}
         <button type="button" className="ix-btn sm primary" disabled={anyBusy || !f.truckNo} onClick={() => assign(job)}>
           {busyId === job.id ? 'Saving…' : (j.trucks || []).length ? 'Add truck' : 'Assign'}
@@ -325,7 +325,7 @@ export default function TrucksPage({ currentUserName, onOpenJob, showToast, canU
 
   const searchBox = (
     <input type="search" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search truck, job or client" aria-label="Search trucks"
-      style={{ height: 30, border: '1px solid var(--line)', borderRadius: 8, padding: '0 10px', font: '13px Inter, sans-serif', background: '#fff', color: 'var(--text)', width: 240, maxWidth: '100%' }} />
+      style={{ height: 30, border: '1px solid var(--line)', borderRadius: 8, padding: '0 10px', font: '13px var(--font-sans)', background: 'var(--surface)', color: 'var(--text)', width: 240, maxWidth: '100%' }} />
   )
 
   return (

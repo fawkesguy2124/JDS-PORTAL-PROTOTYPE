@@ -3,7 +3,7 @@ import { supabase } from '../supabase'
 import { useJourney } from './JourneyContext'
 import { seaArea } from '../../supabase/functions/_shared/portal/ships.js'
 import { Icon, timeAgo } from './ui'
-import { voyage, viaText } from './ShipMap'
+import { voyage, viaText } from './shipInfo'
 
 // Ship tracking from Safecube on the job (Jose, 24 Oct 2026): what JDS used to
 // look up on each shipping line's website by container number: ETA, the ship

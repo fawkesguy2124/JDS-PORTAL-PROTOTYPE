@@ -1,5 +1,5 @@
 import { kmBetween } from '../../supabase/functions/_shared/portal/seaAreas.js'
-import { shortPort } from './ShipMap'
+import { shortPort } from './shipInfo'
 import { portTime } from './SeaTracking'
 
 // What a professional tracker would point out about a ship (Jose, 25 Oct 2026: "the

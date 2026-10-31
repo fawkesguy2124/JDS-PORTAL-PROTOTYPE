@@ -4,6 +4,7 @@ import 'leaflet/dist/leaflet.css'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import '@maplibre/maplibre-gl-leaflet'
 import { Icon } from './ui'
+import { iconSvg } from '../ui/iconSvg'
 
 // The background map: OpenFreeMap (free, no key, allowed for business use), a
 // clean Google-Maps-like style with place names in English. If the browser
@@ -81,7 +82,7 @@ export default function TruckMap({ trucks, selectedId, onSelect }) {
         }
         route.forEach((p) => bounds.push(p.pos))
       }
-      const html = `<div class="ix-tmark ${stale ? 'stale' : ''} ${isSel ? 'sel' : ''}"><span class="ic"><i class="ti ti-truck"></i></span>${esc(t.no)}<span class="job">${esc(t.job.job_no)}</span></div>`
+      const html = `<div class="ix-tmark ${stale ? 'stale' : ''} ${isSel ? 'sel' : ''}"><span class="ic">${iconSvg('truck')}</span>${esc(t.no)}<span class="job">${esc(t.job.job_no)}</span></div>`
       L.marker(t.last.pos, { icon: L.divIcon({ className: 'ix-tpin', iconSize: [0, 0], html }), zIndexOffset: isSel ? 1000 : 0 })
         .bindTooltip(`<b>${esc(t.no)}</b> · ${esc(t.job.job_no)}<br>${esc(t.last.plaza)}<br>${esc(fmt(t.last.at))}${stale ? ' · <b>no newer crossing</b>' : ''}${t.last.approx ? '<br><i>approximate position</i>' : ''}`, { direction: 'top', offset: [0, -28] })
         .on('click', () => onSelect?.(t.id))

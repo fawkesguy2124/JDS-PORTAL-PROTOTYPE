@@ -118,10 +118,10 @@
   --skel-b: #1E2535;
 }
 
-/* theme "system": follow the OS. useTheme() writes the resolved theme to
-   data-theme; this block covers the moment before it runs. No data-theme
-   attribute at all means light: screens not yet on the design system never
-   turn dark. */
+/* data-theme="system": follow the OS. The app always writes the resolved theme
+   (index.html before React loads on /admin, then useTheme()), so this is only a
+   fallback for a page that sets "system" itself. No data-theme attribute at all
+   means light: screens not yet on the design system never turn dark. */
 @media (prefers-color-scheme: dark) {
   :root[data-theme="system"] {
     color-scheme: dark;

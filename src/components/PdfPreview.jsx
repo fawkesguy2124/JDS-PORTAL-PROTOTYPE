@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { docBlob } from '../services/docFiles'
+import { loadPdfjs } from '../utils/pdfjs'
 
 // Shows a PDF by drawing its pages in the portal itself (pdf.js), so it works in
 // every browser and on phones, which often can't show a PDF inside a page.
@@ -19,8 +20,7 @@ export default function PdfPreview({ doc }) {
     setState({ status: 'loading', pages: 0, shown: 0 })
     ;(async () => {
       try {
-        const pdfjs = await import('pdfjs-dist')
-        pdfjs.GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.mjs', import.meta.url).href
+        const pdfjs = await loadPdfjs()
         const bytes = new Uint8Array(await (await docBlob(doc)).arrayBuffer())
         if (!live) return
         pdf = await pdfjs.getDocument({ data: bytes }).promise
@@ -56,13 +56,13 @@ export default function PdfPreview({ doc }) {
 
   return (
     <div style={{ width: '100%', alignSelf: 'flex-start' }}>
-      {state.status === 'loading' && <p className="text-sm text-[#8a96a8] text-center">Opening…</p>}
+      {state.status === 'loading' && <p className="text-sm text-fg-3 text-center">Opening…</p>}
       {state.status === 'error' && (
-        <p className="text-sm text-[#b91c1c] text-center">This PDF could not be shown here. Use Download to open it.</p>
+        <p className="text-sm text-danger-fg text-center">This PDF could not be shown here. Use Download to open it.</p>
       )}
       <div ref={box} />
       {state.status === 'ok' && state.pages > MAX_PAGES && state.shown === MAX_PAGES && (
-        <p className="text-xs text-[#8a96a8] text-center">Showing the first {MAX_PAGES} of {state.pages} pages. Use Download for the full file.</p>
+        <p className="text-xs text-fg-3 text-center">Showing the first {MAX_PAGES} of {state.pages} pages. Use Download for the full file.</p>
       )}
     </div>
   )

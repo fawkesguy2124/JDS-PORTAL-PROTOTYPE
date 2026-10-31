@@ -6,23 +6,51 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/app/favicon-a-48.png" />
     <link rel="apple-touch-icon" href="/app/apple-touch-icon-a.png" />
     <link rel="manifest" href="/manifest.webmanifest" />
-    <meta name="theme-color" content="#1a4fa0" />
+    <meta name="theme-color" content="#FFFFFF" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#10151F" media="(prefers-color-scheme: dark)" />
+    <meta name="color-scheme" content="light dark" />
     <meta name="application-name" content="JDS Portal" />
     <meta name="apple-mobile-web-app-title" content="JDS Portal" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>JDS Logistics Portal</title>
     <style>
-      /* shown until the app has loaded (the app window opens on this, not on a blank page) */
-      #boot { position: fixed; inset: 0; display: grid; place-items: center; background: #f4f6f9 }
-      #boot .logo { width: 64px; height: 64px; border-radius: 14px; background: #1a4fa0; color: #fff; display: grid; place-items: center; font: 700 20px "Segoe UI", Inter, Arial, sans-serif; animation: boot 1.2s ease-in-out infinite }
-      @keyframes boot { 50% { opacity: .55 } }
+      /* shown until the app has loaded (the app window opens on this, not on a blank page).
+         Colours mirror src/ui/tokens.css: --bg, and the navy logo tile with the amber line. */
+      body { margin: 0 }
+      #boot { position: fixed; inset: 0; display: grid; place-items: center; background: #F6F7F9 }
+      #boot .logo { position: relative; width: 56px; height: 56px; border-radius: 14px; background: #13284F; color: #FFFFFF; display: grid; place-items: center; padding-bottom: 6px; box-sizing: border-box; font: 600 17px/1 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; letter-spacing: .04em; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .10), 0 8px 24px -8px rgba(16, 24, 40, .35); animation: boot 1.4s ease-in-out infinite }
+      #boot .logo::after { content: ''; position: absolute; left: 16px; right: 16px; bottom: 14px; height: 3px; border-radius: 2px; background: #F59E0B }
+      @keyframes boot { 50% { opacity: .6 } }
+      html.boot-dark #boot { background: #0A0E17 }
+      html.boot-dark #boot .logo::after { background: #FBBF24 }
+      @media (prefers-reduced-motion: reduce) { #boot .logo { animation: none } }
     </style>
+    <script>
+      // Theme before React loads (src/ui/hooks.js useTheme, localStorage jds_theme).
+      // Only Shell pages (/admin) are themed: there the resolved theme goes on <html
+      // data-theme> now, so a saved dark theme never flashes light while the app
+      // starts. Every other route (login, employee, field) is light for now.
+      (function () {
+        var root = document.documentElement, t = null
+        try { t = localStorage.getItem('jds_theme') } catch (e) {}
+        // Dark is opt-in while legacy pages exist: nothing saved means light (hooks.js DEFAULT).
+        var dark = t === 'dark' || (t === 'system' && !!window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches)
+        var shell = /^\/admin\/?$/.test(location.pathname)
+        var r = shell && dark ? 'dark' : 'light'
+        root.className = 'boot-' + r
+        if (shell) { root.setAttribute('data-theme', r); root.style.colorScheme = r }
+        var metas = document.querySelectorAll('meta[name="theme-color"]')
+        for (var i = 0; i < metas.length; i++) metas[i].setAttribute('content', r === 'dark' ? '#10151F' : '#FFFFFF')
+      })()
+    </script>
   </head>
   <body>
     <div id="root"><div id="boot"><div class="logo">JDS</div></div></div>
     <script>
-      // Safety net (24 Oct 2026): if the portal hasn't started after 10 s (e.g. a broken
+      // Safety net (24 Oct 2026): if the portal hasn't started after 25 s (e.g. a broken
       // saved copy of its files), clear the app's saved files and reload once.
+      // 25 s, not 10 s, and only when online: on a slow field connection the first
+      // load can take that long, and clearing the cache there only restarts the download.
       (function () {
         var KEY = 'jds-boot-retry'
         setTimeout(function () {
@@ -30,12 +58,13 @@
           try { tried = sessionStorage.getItem(KEY) } catch (e) {}
           if (!document.getElementById('boot')) { try { sessionStorage.removeItem(KEY) } catch (e) {} return }
           if (tried) return
+          if (navigator.onLine === false) return
           try { sessionStorage.setItem(KEY, '1') } catch (e) {}
           var work = []
           if (window.caches) work.push(caches.keys().then(function (k) { return Promise.all(k.map(function (x) { return caches.delete(x) })) }))
           if (navigator.serviceWorker) work.push(navigator.serviceWorker.getRegistrations().then(function (r) { return Promise.all(r.map(function (x) { return x.update().catch(function () {}) })) }))
           Promise.all(work).catch(function () {}).then(function () { location.reload() })
-        }, 10000)
+        }, 25000)
       })()
     </script>
     <script type="module" src="/src/main.jsx"></script>
