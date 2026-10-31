@@ -1,0 +1,231 @@
+/* JDS design tokens: the one source for colour, type, space, radius, elevation
+   and motion (docs/DESIGN.md). Mapped into Tailwind in tailwind.config.js.
+   Use the token, never the raw value. */
+@import '@fontsource-variable/geist';
+@import '@fontsource-variable/geist-mono';
+
+:root,
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  /* surfaces + text */
+  --bg: #F6F7F9;
+  --surface: #FFFFFF;
+  --surface-2: #F9FAFB;
+  --surface-3: #F2F4F7;
+  --line: #E4E7EC;
+  --line-strong: #D0D5DD;
+  --fg: #0F1729;
+  --fg-2: #475467;
+  --fg-3: #667085;
+  --fg-4: #98A2B3;
+
+  /* brand */
+  --brand: #1F4FAE;
+  --brand-hover: #1A4194;
+  --brand-soft: #EEF3FC;
+  --brand-soft-2: #DCE6F8;
+  --brand-fg: #FFFFFF;
+  --accent: #F59E0B;
+  --ring: rgba(31, 79, 174, .35);
+
+  /* status tones: state only, never decoration */
+  --success-fg: #067647; --success-bg: #ECFDF3; --success-line: #ABEFC6; --success-solid: #079455;
+  --warning-fg: #B54708; --warning-bg: #FFFAEB; --warning-line: #FEDF89; --warning-solid: #DC6803;
+  --danger-fg: #B42318;  --danger-bg: #FEF3F2;  --danger-line: #FECDCA;  --danger-solid: #D92D20;
+  --info-fg: #175CD3;    --info-bg: #EFF8FF;    --info-line: #B2DDFF;    --info-solid: #2E90FA;
+  --neutral-fg: #475467; --neutral-bg: #F2F4F7; --neutral-line: #E4E7EC; --neutral-solid: #98A2B3;
+
+  /* elevation: only things that float */
+  --shadow-sm: 0 1px 2px rgba(16, 24, 40, .06);
+  --shadow-lg: 0 16px 40px -8px rgba(16, 24, 40, .18), 0 4px 10px -4px rgba(16, 24, 40, .08);
+  --overlay: rgba(15, 23, 41, .40);
+  --skel-a: #EEF0F3;
+  --skel-b: #F7F8FA;
+}
+
+/* sidebar, radius, type, motion, layout: the same in both themes */
+:root {
+  --nav-bg: #0B1220;
+  --nav-fg: #9AA4B8;
+  --nav-fg-strong: #FFFFFF;
+  --nav-hover: rgba(255, 255, 255, .06);
+  --nav-active: rgba(255, 255, 255, .10);
+  --nav-line: rgba(255, 255, 255, .08);
+  --nav-muted: #5F6B82;
+
+  --r-sm: 6px;
+  --r-md: 8px;
+  --r-lg: 10px;
+  --r-xl: 14px;
+
+  --font-sans: 'Geist Variable', 'Geist', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'Geist Mono Variable', 'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  --ease: cubic-bezier(.2, .8, .2, 1);
+  --dur-1: 120ms;
+  --dur-2: 160ms;
+  --dur-3: 200ms;
+
+  --h-sm: 28px;
+  --h-md: 32px;
+  --h-lg: 40px;
+  --row: 44px;
+
+  --topbar-h: 56px;
+  --nav-w: 240px;
+  --nav-rail: 64px;
+  --tabbar-h: 60px;
+  --page-max: 1600px;
+  --page-pad: 24px;
+
+  --z-sticky: 10;
+  --z-nav: 20;
+  --z-drawer: 60;
+  --z-modal: 70;
+  --z-palette: 80;
+  --z-toast: 90;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0A0E17;
+  --surface: #10151F;
+  --surface-2: #141A26;
+  --surface-3: #1A2130;
+  --line: #222A3A;
+  --line-strong: #2E3850;
+  --fg: #E7EBF3;
+  --fg-2: #B3BCCB;
+  --fg-3: #8590A4;
+  --fg-4: #5D687D;
+  --brand: #5B8DEF;
+  --brand-hover: #7AA3F3;
+  --brand-soft: rgba(91, 141, 239, .14);
+  --brand-soft-2: rgba(91, 141, 239, .24);
+  --brand-fg: #0A0E17;
+  --accent: #FBBF24;
+  --ring: rgba(91, 141, 239, .45);
+  --success-fg: #47CD89; --success-bg: rgba(71, 205, 137, .12);  --success-line: rgba(71, 205, 137, .30); --success-solid: #17B26A;
+  --warning-fg: #FDB022; --warning-bg: rgba(253, 176, 34, .12);  --warning-line: rgba(253, 176, 34, .30); --warning-solid: #F79009;
+  --danger-fg: #F97066;  --danger-bg: rgba(249, 112, 102, .12);  --danger-line: rgba(249, 112, 102, .32); --danger-solid: #F04438;
+  --info-fg: #6CB4FF;    --info-bg: rgba(83, 177, 253, .12);     --info-line: rgba(83, 177, 253, .30);    --info-solid: #2E90FA;
+  --neutral-fg: #B3BCCB; --neutral-bg: rgba(255, 255, 255, .06); --neutral-line: #2E3850;                 --neutral-solid: #5D687D;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, .40);
+  --shadow-lg: 0 20px 48px -8px rgba(0, 0, 0, .60), 0 0 0 1px rgba(255, 255, 255, .05);
+  --overlay: rgba(3, 6, 12, .62);
+  --skel-a: #171D2A;
+  --skel-b: #1E2535;
+}
+
+/* theme "system": follow the OS. useTheme() writes the resolved theme to
+   data-theme; this block covers the moment before it runs. No data-theme
+   attribute at all means light: screens not yet on the design system never
+   turn dark. */
+@media (prefers-color-scheme: dark) {
+  :root[data-theme="system"] {
+    color-scheme: dark;
+    --bg: #0A0E17;
+    --surface: #10151F;
+    --surface-2: #141A26;
+    --surface-3: #1A2130;
+    --line: #222A3A;
+    --line-strong: #2E3850;
+    --fg: #E7EBF3;
+    --fg-2: #B3BCCB;
+    --fg-3: #8590A4;
+    --fg-4: #5D687D;
+    --brand: #5B8DEF;
+    --brand-hover: #7AA3F3;
+    --brand-soft: rgba(91, 141, 239, .14);
+    --brand-soft-2: rgba(91, 141, 239, .24);
+    --brand-fg: #0A0E17;
+    --accent: #FBBF24;
+    --ring: rgba(91, 141, 239, .45);
+    --success-fg: #47CD89; --success-bg: rgba(71, 205, 137, .12);  --success-line: rgba(71, 205, 137, .30); --success-solid: #17B26A;
+    --warning-fg: #FDB022; --warning-bg: rgba(253, 176, 34, .12);  --warning-line: rgba(253, 176, 34, .30); --warning-solid: #F79009;
+    --danger-fg: #F97066;  --danger-bg: rgba(249, 112, 102, .12);  --danger-line: rgba(249, 112, 102, .32); --danger-solid: #F04438;
+    --info-fg: #6CB4FF;    --info-bg: rgba(83, 177, 253, .12);     --info-line: rgba(83, 177, 253, .30);    --info-solid: #2E90FA;
+    --neutral-fg: #B3BCCB; --neutral-bg: rgba(255, 255, 255, .06); --neutral-line: #2E3850;                 --neutral-solid: #5D687D;
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, .40);
+    --shadow-lg: 0 20px 48px -8px rgba(0, 0, 0, .60), 0 0 0 1px rgba(255, 255, 255, .05);
+    --overlay: rgba(3, 6, 12, .62);
+    --skel-a: #171D2A;
+    --skel-b: #1E2535;
+  }
+}
+
+/* Light island: older screens (hard-coded white panels and dark text) keep
+   the light palette inside a dark frame until they are migrated. */
+.ix-light,
+.ix-legacy {
+  color-scheme: light;
+  --bg: #F6F7F9; --surface: #FFFFFF; --surface-2: #F9FAFB; --surface-3: #F2F4F7;
+  --line: #E4E7EC; --line-strong: #D0D5DD;
+  --fg: #0F1729; --fg-2: #475467; --fg-3: #667085; --fg-4: #98A2B3;
+  --brand: #1F4FAE; --brand-hover: #1A4194; --brand-soft: #EEF3FC; --brand-soft-2: #DCE6F8; --brand-fg: #FFFFFF;
+  --accent: #F59E0B; --ring: rgba(31, 79, 174, .35);
+  --success-fg: #067647; --success-bg: #ECFDF3; --success-line: #ABEFC6; --success-solid: #079455;
+  --warning-fg: #B54708; --warning-bg: #FFFAEB; --warning-line: #FEDF89; --warning-solid: #DC6803;
+  --danger-fg: #B42318;  --danger-bg: #FEF3F2;  --danger-line: #FECDCA;  --danger-solid: #D92D20;
+  --info-fg: #175CD3;    --info-bg: #EFF8FF;    --info-line: #B2DDFF;    --info-solid: #2E90FA;
+  --neutral-fg: #475467; --neutral-bg: #F2F4F7; --neutral-line: #E4E7EC; --neutral-solid: #98A2B3;
+  --shadow-sm: 0 1px 2px rgba(16, 24, 40, .06);
+  --shadow-lg: 0 16px 40px -8px rgba(16, 24, 40, .18), 0 4px 10px -4px rgba(16, 24, 40, .08);
+  --skel-a: #EEF0F3; --skel-b: #F7F8FA;
+  color: var(--fg);
+}
+
+/* ── base ─────────────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box }
+
+/* :root beats Tailwind preflight's `html` rule */
+:root {
+  font-family: var(--font-sans);
+  line-height: 1.4286;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 400;
+  font-feature-settings: 'liga' 1, 'calt' 1;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+input, select, textarea, button { font-family: inherit }
+
+code, kbd, samp, pre, .mono { font-family: var(--font-mono); font-feature-settings: normal }
+
+h1, h2, h3, h4 { letter-spacing: -0.01em }
+
+:focus { outline: none }
+:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--ring) }
+/* form fields show their own focus border + ring (components.css) */
+
+::selection { background: var(--brand-soft-2); color: var(--fg) }
+
+/* thin themed scrollbars */
+* { scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent }
+::-webkit-scrollbar { width: 10px; height: 10px }
+::-webkit-scrollbar-track { background: transparent }
+::-webkit-scrollbar-thumb { background: var(--line-strong); border-radius: 10px; border: 3px solid transparent; background-clip: content-box }
+::-webkit-scrollbar-thumb:hover { background-color: var(--fg-4) }
+::-webkit-scrollbar-corner { background: transparent }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
