@@ -152,6 +152,13 @@ const sortRows = (a, b) => (a.free ?? 9999) - (b.free ?? 9999) || (b.sinceDays ?
 
 const savePref = (k, val) => { try { localStorage.setItem(k, val) } catch { /* private mode: the choice just isn't remembered */ } }
 
+// The issue without what the Since column beside it already says (Jose, 31 Oct 2026:
+// "BE filed 9 days ago, OOC not yet" next to "BE 9 d ago" → "OOC not yet")
+function issueWords(text) {
+  const t = plain(text).replace(/^BE filed \d+ days? ago[,—\s]*/i, '').replace(/^OOC done[,—\s]*/i, '')
+  return t ? t.charAt(0).toUpperCase() + t.slice(1) : plain(text)
+}
+
 export default function TodayPage({ onOpenJob, onGo, profile }) {
   const { data, rows, active, facts, loading, error, refresh } = useJourney()
   useFreshOnOpen() // opening the page shows the latest saved data
@@ -339,7 +346,7 @@ export default function TodayPage({ onOpenJob, onGo, profile }) {
                           <td className="cl" title={x.job.client || undefined}>{x.job.client || <Dash />}</td>
                           <td>
                             <div className="ix-td-issue">
-                              <span className="txt" title={x.main ? plain(x.main.text) : undefined}>{x.main ? plain(x.main.text) : <span className="none">Nothing to do</span>}</span>
+                              <span className="txt" title={x.main ? plain(x.main.text) : undefined}>{x.main ? issueWords(x.main.text) : <span className="none">Nothing to do</span>}</span>
                               {x.tags.map((t, i) => <Chip key={i} tone={t.tone} icon={t.icon} title={t.title}>{t.t}</Chip>)}
                             </div>
                           </td>

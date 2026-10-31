@@ -10,7 +10,7 @@ import {
   displayLine, freeTimeFor, tripMilestones, STALE_AFTER_DAYS,
 } from '../services/journey'
 import { seaOf } from '../../supabase/functions/_shared/portal/ships.js'
-import { Button, Chip, Dash, EmptyState, FreeDays, Icon, JobNo, PhaseStatus, Section, Segmented, Status, Tabs, fmtDate, fmtDateTime, fmtINR, fmtTime, initials, jobOwnerName, timeAgo, worst } from './ui'
+import { Button, Chip, Dash, EmptyState, FreeDays, Icon, JobNo, Section, Segmented, Status, Tabs, fmtDate, fmtDateTime, fmtINR, fmtTime, initials, jobOwnerName, timeAgo, worst } from './ui'
 import { vesselOf, shipIdOf } from './ShipMap'
 import { openDoc, downloadDoc } from '../services/docFiles'
 import PdfPreview from '../components/PdfPreview'
@@ -51,7 +51,10 @@ export function boxesText(job, data) {
 export function nextStepText(j) {
   if (!j || j.phase === 'delivered') return null
   const t = String(j.steps?.find((s) => s.current)?.nextText || '').replace(/^Next:\s*/i, '')
-  return t ? t.charAt(0).toUpperCase() + t.slice(1) : null
+  // "Waiting for OOC / arrival" only repeats the status next to it (Jose, 31 Oct 2026):
+  // the next step is shown only when there is something to do
+  if (!t || /^waiting\b/i.test(t)) return null
+  return t.charAt(0).toUpperCase() + t.slice(1)
 }
 
 // How long the job has sat in its stage: '· 5 d' (since OOC / since the BE / since the SB)
@@ -217,7 +220,6 @@ export default function JobDrawer({ jobId, initialTab = 'overview', onClose, onO
   const notes = log.filter((r) => r.type === 'note')
   const ownerName = jobOwnerName(job, profiles)
   const level = worst(j)
-  const next = j.steps.find((s) => s.current)
   const line = displayLine(job.shipping_line)
   const lineMismatch = (j.mismatches || []).find((m) => m.field === 'Shipping line')
 
@@ -267,20 +269,12 @@ export default function JobDrawer({ jobId, initialTab = 'overview', onClose, onO
   else if (isExport && !j.sbNo) cta = { key: 'export', label: 'Record SB no', icon: 'file-plus', run: () => onOpenFull(job.id, isAir ? 'air' : 'export') }
   else if (!isExport && j.phase === 'truck' && !j.truck && j.onwardMode !== 'rail' && deliveryBy(job) === 'jds') cta = { key: 'truck', label: 'Add truck number', icon: 'truck', run: () => onOpenTruck(job.id) }
 
-  // why now: the facts behind the next step ('OOC 5 d ago · free time ends tomorrow, 1 Nov')
-  const why = []
-  if (!delivered) {
-    const sd = stageDays(job, j)
-    if (j.phase === 'release' && sd !== null) why.push(`OOC ${sd ? `${sd} d ago` : 'today'}`)
-    if (j.phase === 'ooc' && sd !== null) why.push(`BE filed ${sd ? `${sd} d ago` : 'today'}`)
-    if (j.phase === 'arrival' && !j.arrivedAt && (sea?.pod_date || job.eta)) why.push(`ETA ${sea?.pod_date ? portTime(sea.pod_date, false) : fmtDate(job.eta)}`)
-    if (j.freeTill) why.push(j.freeDaysLeft < 0 ? `detention since ${fmtDate(nextDay(j.freeTill))}` : `free time ends ${j.freeDaysLeft === 0 ? 'today' : j.freeDaysLeft === 1 ? 'tomorrow' : ''}${j.freeDaysLeft > 1 ? '' : ', '}${fmtDate(j.freeTill)}`)
-    if (j.beStage && j.phase === 'ooc') why.push(j.beStage.short)
-  }
-
   // ── alerts, each with its own action (never the same as the primary one) ──
   const alerts = j.attention
-    .filter((a) => !(a.action === 'truck' && j.readyForTruck && /^OOC done/.test(a.text)))
+    // (an alert that only restates the current step — "BE filed 9 days ago, OOC not yet",
+    // "OOC done, arrange truck" — is left out: the step bar shows it; Jose, 31 Oct 2026)
+    .filter((a) => !(a.action === 'truck' && /^OOC done/.test(a.text)))
+    .filter((a) => !(a.action === 'customs' && /^BE filed \d+ days? ago/.test(a.text)))
     .map((a) => {
       const m = (j.mismatches || []).find((x) => a.text.startsWith(`Check the ${x.field.toLowerCase()}`))
       let title = a.text
@@ -392,32 +386,23 @@ export default function JobDrawer({ jobId, initialTab = 'overview', onClose, onO
     facts.push({ k: 'LEO', v: j.leoDate && fmtDate(j.leoDate) })
     facts.push({ k: 'EGM', v: j.egmNo, mono: true })
   } else {
-    if (j.arrivedAt) facts.push({ k: 'Arrived', v: fmtDate(j.arrivedAt) })
-    else if (j.steps[0]?.id === 'arrival' && j.steps[0].done) facts.push({ k: 'Arrived', v: null, title: 'Arrived, date not recorded' })
-    else {
-      const eta = sea?.pod_date ? portTime(sea.pod_date, false) : job.eta ? fmtDate(job.eta) : null
-      facts.push({ k: 'ETA', v: eta, title: sea?.pod_date ? 'From ship tracking' : undefined })
-    }
-    facts.push({ k: 'BE', v: job.be_no, mono: true, small: job.be_date && fmtDate(job.be_date) })
-    const od = j.oocDate ? daysAgo(j.oocDate) : null
-    facts.push(j.oocDate ? { k: 'OOC', v: fmtDate(j.oocDate), small: od ? `${od} d ago` : 'today' }
-      : j.oocDone ? { k: 'OOC', v: 'Done', small: 'no date', tone: 'amber', title: 'OOC is done but no date was saved' }
-        : { k: 'OOC', v: null })
+    // (arrival / ETA, BE and OOC are on the step bar right below; not repeated here)
     facts.push({
       k: 'Free till', v: j.freeTill && fmtDate(j.freeTill), small: freeWord(j.freeDaysLeft),
       tone: j.freeDaysLeft !== null && j.freeDaysLeft <= 2 ? 'red' : undefined,
       title: j.freeBox ? `Runs out first: ${j.freeBox}` : undefined,
     })
   }
-  facts.push({ k: 'Boxes', v: boxesText(job, data) })
+  // (boxes go on the line under the job name; a strip with only them looked empty)
   // (no owner can be set anywhere in the portal yet, so no "Assign" link that leads nowhere)
-  facts.push({ k: 'Owner', v: ownerName || <span className="muted">Unassigned</span> })
+  if (ownerName) facts.push({ k: 'Owner', v: ownerName })
 
   // ── details, only what the job has ──
   const igm = job.ulip_refs?.igm_no
   const kv = [
     ['Client', job.client],
-    ['Port', job.port_code ? <>{portLabel?.(job.port_code) || job.port_code}{portLabel?.(job.port_code) && portLabel(job.port_code) !== job.port_code ? <span className="mono muted"> {job.port_code}</span> : null}</> : null],
+    // (the port name already ends with its code, e.g. "JNPT / Nhava Sheva (INNSA1)")
+    ['Port', job.port_code ? portLabel?.(job.port_code) || job.port_code : null],
     [isAir ? 'Airline' : 'Shipping line', line ? <>{line}{lineMismatch && <span className="flag"><Icon name="info-circle" /> tracking says {lineMismatch.tracking}</span>}</> : null],
     [isAir ? 'AWB' : 'BL', job.bl_no ? <span className="mono">{job.bl_no}</span> : null],
     ['IGM', igm ? <><span className="mono">{igm}</span>{job.ulip_refs?.igm_date ? <span className="muted"> · {fmtDate(job.ulip_refs.igm_date)}</span> : null}</> : null],
@@ -444,7 +429,6 @@ export default function JobDrawer({ jobId, initialTab = 'overview', onClose, onO
     { id: 'notes', label: 'Notes', count: notes.length || undefined },
   ]
   const shown = tabs.some((t) => t.id === tab) ? tab : 'overview'
-  const nextTone = delivered ? 'green' : level === 'red' ? 'red' : level === 'amber' ? 'amber' : ''
   const sd = stageDays(job, j)
   const stageSince = sd === null ? null : j.phase === 'release' ? `· ${sd} d since OOC` : j.phase === 'ooc' ? `· ${sd} d since BE` : `· ${sd} d`
 
@@ -508,10 +492,10 @@ export default function JobDrawer({ jobId, initialTab = 'overview', onClose, onO
           <div className="ix-jp-row1">
             <JobNo no={job.job_no} size="lg" />
             {job.client && <><span className="sep">·</span><span className="cl" title={job.client}>{job.client}</span></>}
-            <PhaseStatus job={job} j={j} pill sub={stageSince} />
             {String(job.priority).toLowerCase() === 'urgent' && <Chip tone="red" icon="flame">Urgent</Chip>}
             <div className="right">
               {cta && <Button variant="primary" urgent={level === 'red' && cta.key === 'truck'} icon={cta.icon} onClick={cta.run}>{cta.label}</Button>}
+              {alt && <Button icon={alt.icon} onClick={alt.run}>{alt.label}</Button>}
               <Button icon="upload" onClick={upload}>Upload</Button>
               <span className="vr hide-m" />
               <button type="button" className="ix-icon-btn" onClick={copyLink} title="Copy link to this job" aria-label="Copy link to this job"><Icon name="link" /></button>
@@ -526,25 +510,27 @@ export default function JobDrawer({ jobId, initialTab = 'overview', onClose, onO
           </div>
           <div className="ix-jp-meta">
             {job.mode && <Chip>{job.mode}</Chip>}
+            {boxesText(job, data) && boxesText(job, data) !== job.mode?.replace(/^Sea\s+/i, '') && <Chip>{boxesText(job, data)}</Chip>}
             <Chip>{isExport ? 'Export' : 'Import'}</Chip>
             {line && <span>{line}</span>}
             {job.port_code && <><span className="sep">·</span><span>{portLabel?.(job.port_code) || job.port_code}</span></>}
             {job.created_at && <><span className="sep">·</span><span title={fmtDateTime(job.created_at)}>Opened {fmtDate(job.created_at)}</span></>}
           </div>
 
-          <div className="ix-jp-facts">
-            {facts.map((f) => (
+          {facts.some((f) => f.v) && <div className="ix-jp-facts">
+            {facts.filter((f) => f.v).map((f) => (
               <div key={f.k} className={`ix-jp-fact${f.tone ? ` ${f.tone}` : ''}`} title={f.title}>
                 <div className="k">{f.k}</div>
                 <div className={`v${f.mono && f.v ? ' mono' : ''}`}>{f.v || <Dash />}{f.v && f.small ? <small>{f.small}</small> : null}</div>
               </div>
             ))}
-          </div>
+          </div>}
 
           <div className="ix-jp-stepwrap">
             <div className="ix-jp-steps" style={{ gridTemplateColumns: `repeat(${j.steps.length}, minmax(0, 1fr))` }}>
               {j.steps.map((s) => {
-                const sub = s.sub ? plain(s.sub) : (s.id === 'delivered' && !s.done && !isExport ? (deliveryBy(job) === 'client' ? 'Client collects' : 'JDS delivers') : null)
+                const since = s.current && stageSince ? stageSince.replace(/^·\s*/, '') : null
+                const sub = since || (s.sub ? plain(s.sub) : (s.id === 'delivered' && !s.done && !isExport ? (deliveryBy(job) === 'client' ? 'Client collects' : 'JDS delivers') : null))
                 return (
                   <div key={s.id} className={`ix-jp-step ${s.done ? 'done' : s.current ? 'now' : 'todo'}`}>
                     <span className="dot">{s.done && <Icon name="check" />}</span>
@@ -562,15 +548,6 @@ export default function JobDrawer({ jobId, initialTab = 'overview', onClose, onO
         <div className="ix-jp-body">
           {shown === 'overview' && (
             <>
-              <div className={`ix-jp-next${nextTone ? ` ${nextTone}` : ''}`}>
-                <Icon name={delivered ? 'circle-check' : level === 'red' ? 'alert-octagon' : 'arrow-big-right-lines'} />
-                <p>
-                  <b>{delivered ? (isExport ? 'Job finished: shipped' : 'Job finished: delivered') : next?.nextText || 'Nothing left to do'}</b>
-                  {why.length > 0 && <small>{why.join(' · ')}</small>}
-                </p>
-                {alt && <Button size="sm" icon={alt.icon} onClick={alt.run}>{alt.label}</Button>}
-              </div>
-
               {alerts.length > 0 && (
                 <div className="ix-jp-alerts">
                   {alerts.map((a, i) => (

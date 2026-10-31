@@ -47,7 +47,7 @@ export default function BeStage({ job, userName, showToast, compact = false }) {
         <div className="hd">
           <Icon name="building-bank" />
           <span className="t">Customs stage</span>
-          <span className="s">{now ? `${now.label}${now.by ? ` · ${now.by}` : ''}${now.at ? ` · ${fmtDateTime(now.at)}` : ''}` : 'Not set: tap where the BE is now (as seen in LiveImpex)'}</span>
+          <span className="s">{now ? `${now.label}${now.by ? ` · ${now.by}` : ''}${now.at ? ` · ${fmtDateTime(now.at)}` : ''}` : 'Not set'}</span>
         </div>
       )}
       <div className="chips" role="group" aria-label={`Customs stage of ${job.job_no}`}>
