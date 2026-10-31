@@ -262,12 +262,12 @@ export default function JobDrawer({ jobId, initialTab = 'overview', onClose, onO
   let cta = null
   let alt = null
   if (!isExport && j.readyForTruck) {
-    cta = { key: 'truck', label: 'Assign truck', icon: 'truck', run: () => onOpenTruck(job.id) }
+    cta = { key: 'truck', step: 'truck', label: 'Assign truck', icon: 'truck', run: () => onOpenTruck(job.id) }
     if (!j.onwardMode) alt = { label: 'Goes by rail', icon: 'train', run: () => setMeta('onward_mode', 'rail', 'Saved: goes by rail') }
-  } else if (!isExport && j.phase === 'ooc') cta = { key: 'customs', label: 'Check OOC', icon: 'file-certificate', run: () => onOpenFull(job.id, 'customs') }
-  else if (!isExport && (j.phase === 'docs' || j.phase === 'arrival') && !job.be_no) cta = { key: 'customs', label: 'Record BE no', icon: 'file-plus', run: () => onOpenFull(job.id, 'customs') }
-  else if (isExport && !j.sbNo) cta = { key: 'export', label: 'Record SB no', icon: 'file-plus', run: () => onOpenFull(job.id, isAir ? 'air' : 'export') }
-  else if (!isExport && j.phase === 'truck' && !j.truck && j.onwardMode !== 'rail' && deliveryBy(job) === 'jds') cta = { key: 'truck', label: 'Add truck number', icon: 'truck', run: () => onOpenTruck(job.id) }
+  } else if (!isExport && j.phase === 'ooc') cta = { key: 'customs', step: 'ooc', label: 'Check OOC', icon: 'file-certificate', run: () => onOpenFull(job.id, 'customs') }
+  else if (!isExport && (j.phase === 'docs' || j.phase === 'arrival') && !job.be_no) cta = { key: 'customs', step: 'be', label: 'Record BE no', icon: 'file-plus', run: () => onOpenFull(job.id, 'customs') }
+  else if (isExport && !j.sbNo) cta = { key: 'export', step: 'sb', label: 'Record SB no', icon: 'file-plus', run: () => onOpenFull(job.id, isAir ? 'air' : 'export') }
+  else if (!isExport && j.phase === 'truck' && !j.truck && j.onwardMode !== 'rail' && deliveryBy(job) === 'jds') cta = { key: 'truck', step: 'truck', label: 'Add truck number', icon: 'truck', run: () => onOpenTruck(job.id) }
 
   // ── alerts, each with its own action (never the same as the primary one) ──
   const alerts = j.attention
@@ -494,9 +494,6 @@ export default function JobDrawer({ jobId, initialTab = 'overview', onClose, onO
             {job.client && <><span className="sep">·</span><span className="cl" title={job.client}>{job.client}</span></>}
             {String(job.priority).toLowerCase() === 'urgent' && <Chip tone="red" icon="flame">Urgent</Chip>}
             <div className="right">
-              {cta && <Button variant="primary" urgent={level === 'red' && cta.key === 'truck'} icon={cta.icon} onClick={cta.run}>{cta.label}</Button>}
-              {alt && <Button icon={alt.icon} onClick={alt.run}>{alt.label}</Button>}
-              <Button icon="upload" onClick={upload}>Upload</Button>
               <span className="vr hide-m" />
               <button type="button" className="ix-icon-btn" onClick={copyLink} title="Copy link to this job" aria-label="Copy link to this job"><Icon name="link" /></button>
               <button type="button" className="ix-icon-btn" onClick={() => onOpenFull(job.id, 'details')} title="Open full job" aria-label="Open full job"><Icon name="external-link" /></button>
@@ -536,6 +533,14 @@ export default function JobDrawer({ jobId, initialTab = 'overview', onClose, onO
                     <span className="dot">{s.done && <Icon name="check" />}</span>
                     <b>{s.label}</b>
                     <div className="w">{s.when}{sub && <span>{sub}</span>}</div>
+                    {/* the step's own action, only while the step is still to do (e.g. Check OOC
+                        until OOC is granted) */}
+                    {cta && !s.done && (cta.step || (s.current && s.id)) === s.id && (
+                      <div className="act">
+                        <Button size="sm" variant="primary" urgent={level === 'red' && cta.key === 'truck'} icon={cta.icon} onClick={cta.run}>{cta.label}</Button>
+                        {alt && <Button size="sm" variant="ghost" icon={alt.icon} onClick={alt.run}>{alt.label}</Button>}
+                      </div>
+                    )}
                   </div>
                 )
               })}
