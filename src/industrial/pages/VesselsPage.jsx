@@ -4,7 +4,7 @@ import { isDelivered, isExportJob, displayLine } from '../../services/journey'
 import { useJourney, useFreshOnOpen } from '../JourneyContext'
 import ShipMap, { vesselsOf, shipIdOf, shipPosition, voyage, toneOf } from '../ShipMap'
 import { cargoOnShip, seaOf } from '../../../supabase/functions/_shared/portal/ships.js'
-import { Icon, Skeleton, fmtDate, PageHead, JobNo, Status, Panel, Button, EmptyState, Dash } from '../ui'
+import { Icon, Skeleton, fmtDate, fmtTime, PageHead, JobNo, Status, Panel, Button, EmptyState, Dash } from '../ui'
 import { shipChecks, realMs } from '../shipChecks'
 import { polText, seaWhere, portName, notSailed, moveText, nextStop, atPort } from '../SeaTracking'
 import '../styles/tracking.css'
@@ -99,7 +99,16 @@ export default function VesselsPage({ onOpenJob, showToast, onGo }) {
     // ship tracking is already on it (it follows the BL / container and brings the IMO
     // itself): nothing to type (Jose, 1 Nov 2026)
     const sea = seaOfShip(s)
-    if (sea?.error) return 'Ship tracking is on · waiting for the shipping line’s first update (checked every hour)'
+    // what the line said, in plain words, and when it was last asked (Jose, 1 Nov 2026: J-1001
+    // "still can't see the tracking": the line had no record of the box yet)
+    if (sea?.error) {
+      const line = lineOf(s) || 'The line'
+      const box = sea.number_type === 'CT' ? `container ${sea.number}` : `BL ${sea.number}`
+      const said = /HASNT_PROVIDE|NOT_FOUND|NO_DATA/i.test(sea.error) ? `${line} has no record of ${box} yet (usually until it is loaded on the ship)`
+        : /previous trip/i.test(sea.error) ? `${line} still shows this container’s previous trip`
+          : `${line} did not answer for ${box}`
+      return `${said} · asked again every hour${sea.fetched_at ? `, last at ${fmtTime(sea.fetched_at)}` : ''}`
+    }
     if (sea) return 'Ship tracking is on · looking up the ship'
     const igm = igmOf(job)
     return `IMO not known yet${igm ? ` · IGM ${igm}${job.ulip_refs?.igm_date ? ` (${fmtDate(job.ulip_refs.igm_date)})` : ''}` : ''}`
