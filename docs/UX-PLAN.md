@@ -1,114 +1,116 @@
-# JDS Portal: simplified flow (proposal)
+# JDS Portal: simplified flow (proposal v2)
 
-## The idea
+## Principles (from how leading freight software is built)
 
-People don't come to the portal to browse pages. They come to answer one
-question: **"What do I need to do now?"** Then they do it and leave.
+1. **The job list is home.** Each row says, in plain words, where the job is and
+   what's pending. Sorted so urgent jobs come first. No separate task page.
+2. **One job page, organised by milestones.** A shipment is a sequence of steps
+   (arrival → documents → BE → OOC → transport → delivered). The page follows
+   that sequence. Each step shows its own data, and the action for a step
+   appears *on that step* when it's pending ("Record OOC" sits on the OOC step).
+3. **Show only what applies.** Air jobs don't show containers; exports show SB/LEO
+   instead of BE/OOC; steps not reached yet stay collapsed.
+4. **Details on demand.** Raw ULIP results, every field, full history: one click
+   away, never on the main view.
+5. **Automations stay in the background.** No "Refresh all" or "Check now"
+   buttons in daily use; just "updated 5 min ago".
 
-So the portal becomes three things:
-
-1. **My work**: a short list of the jobs that need *me* today, each with the one
-   next step as a button. When it's done, the item disappears.
-2. **One job page**: everything about a job in one place (containers, customs,
-   trucks, documents, history). No more separate Containers, Vessels, Trucks,
-   BE & OOC and Documents pages showing slices of the same job.
-3. **Search**: type any job no, client, container, BE, BL or truck number and go
-   straight to it.
-
-Everything the automations already do (container tracking, ship positions,
-customs status, ULIP checks) runs in the background and only shows up when
-something needs a person.
+References: Flexport shipment page (central milestone timeline, customs as
+milestones, documents/details/history in a side menu, sections hidden when not
+relevant), Logixboard/CargoWise (status bar + current-milestone summary,
+per-container milestones, documents/notes/activity tabs), Shippabo (Details /
+Activities / Documents tabs), ERPNext and Odoo freight modules (list → record).
 
 ## Navigation
 
-| Role | Today: menu items | Proposed |
+| Role | Today | Proposed |
 |---|---|---|
-| Desk staff | 9 | **My work · Jobs · Clients** (+ Create job, Search) |
-| Field ops | 5 | **Today · Jobs · Upload** (phone tabs) |
-| Owner | 15 | **Overview · My work · Jobs · Clients** + a small **Manage** area |
+| Desk staff | 9 items | **Jobs · Clients** |
+| Field ops (phone) | 5 items | **Trucks · Jobs** |
+| Owner | 15 items | **Dashboard · Jobs · Clients · Manage** |
 
-Removed from the menu (still reachable where needed):
-
-| Current page | Where it goes |
-|---|---|
-| Today (two versions) | **My work** (staff) / **Overview** (owner) |
-| Containers, Vessels | Job page → *Containers & ship* section. Jobs list view "At sea / at port". Ship map stays as one card on Overview. |
-| Trucks | Field: **Today**. Desk: job page → *Trucks*, Jobs view "On the road". |
-| BE & OOC | **My work** (Record BE, Mark OOC appear there) + Jobs view "Waiting OOC" |
-| Documents | Job page → *Documents* (upload, preview, extract). Field: **Upload** tab. |
-| Detention | Jobs view "Detention risk" + Overview card |
-| Search anything / ULIP lookup | The search bar (Ctrl K). Raw ULIP lookup → Manage. |
-| Team & stages | Overview → *Team* card |
-| WhatsApp bot, System health | **Manage** (owner only) |
-| Payments, BIS & Licences | **Removed.** They are placeholders with sample data and "Coming soon". They come back when they are real. |
-| Density toggle, Install app, Refresh-all buttons | User menu (install), automatic (refresh). Density toggle removed. |
-
-Old links (alerts, WhatsApp bot messages, bookmarks with `?tab=...`) keep working
-and land on the new place.
+Always available: search bar (Ctrl K: job, client, container, BE, BL, truck),
+**Create job**, notifications bell.
 
 ## Screens
 
-### My work (desk staff home)
-- Two groups: **Today** and **Coming up**. Nothing else on the page.
-- Each row: dot (red/amber) · **J-709 · TRW** · what's needed ("Customs query,
-  reply needed", "2 free days left", "OOC received, arrange truck") · **one
-  button** (Record BE / Mark OOC / Assign truck / Open).
-- Only *my* jobs by default; a small toggle "Everyone" for cover.
-- Empty state: "You're clear. New tasks show up here automatically."
+### Jobs (home for desk staff)
+- Views as tabs: **Active** (default) · **Mine** · **Waiting OOC** · **On the
+  road** · **Detention risk** · **Closed**.
+- Columns: Job · Client · Status · Free days · ETA · Owner.
+- **Status** is one plain sentence that includes what's pending: "BE filed 4 d
+  ago · waiting OOC", "Customs query, reply needed", "OOC received · no truck".
+  A red/amber dot marks rows needing action; those sort to the top.
+- One search box and a mode filter (Sea / Air / Export). Export to Excel in a menu.
+- Click a row: job page as a side panel (desktop) or full screen (phone).
 
-### Overview (owner home)
-- One line: 12 active · 3 at detention risk · 5 waiting OOC (each clickable).
-- **Needs attention across the team** (same rows as My work, with the owner's name).
-- **Team**: who has how many open jobs and anything overdue.
-- **Ships at sea**: small map card, collapsed by default.
-- That's all. Five KPI tiles, the pipeline chart and the latest-updates feed go;
-  the feed lives in each job's history.
+### Job page
+**Header:** J-709 · TRW · Sea FCL · owner · free days countdown · plain status
+line. Under it a slim 6-step stage bar.
 
-### Jobs
-- One table. Saved views as tabs: **Needs action · Mine · Waiting OOC · On the
-  road · Detention risk · All**.
-- Six columns only: Job · Client · Stage · Next step · Free days · Owner.
-- One search box and one filter (Import / Export / Air). Excel export in a menu.
-- Clicking a row opens the job page as a side panel (desktop) or full screen
-  (phone). On phone the table becomes simple rows with 3 facts.
+**Tabs (4):**
+1. **Progress** (default): the milestone timeline.
+   - Done steps: one line each (date, key number, who).
+   - Current step: expanded with its data and its action button.
+   - Future steps: greyed, one line.
+   - Steps hold their details: *Arrival* expands to vessel, ETA and each
+     container's status; *BE* to BE no, duty, assessment and ULIP checks
+     (folded); *Transport* to trucks, driver, FASTag location.
+2. **Documents:** list with type and date, preview, upload (camera on phone),
+   extract.
+3. **Details:** all job fields, editable by permission.
+4. **History:** every change, automatic and manual, searchable.
 
-### Job page (the canonical record)
-- **Header:** job no, client, mode, owner, free days. A 6-step progress line
-  (Arrival → Documents → BE → OOC → Transport → Delivered).
-- **Next step card:** the one action for the current stage, big and obvious.
-- **Sections** (tabs): Overview (key fields, editable by permission) ·
-  Containers & ship · Customs (BE, duty, OOC; ULIP checks folded away) ·
-  Trucks · Documents · History (every change, automatic and manual).
-- Replaces both today's job drawer and the separate full job page.
+On desktop a narrow right column keeps the essentials visible on every tab: BL,
+BE, containers (number + status), shipping line, CFS.
 
-### Field app (phone first)
-- **Today:** my moves and trucks for today as big cards: truck no, container,
-  from → to, and two big buttons (*Left CFS*, *Delivered*). Works with one thumb.
-- **Jobs:** search and the same job page.
-- **Upload:** pick the job, take a photo (EIR, LR, challan), done.
+### Trucks (home for field ops, phone first)
+- Today's moves as cards: truck no · container · from → to · status.
+- Big buttons on each card: **Left CFS**, **Delivered**, **Add photo** (EIR,
+  LR, challan go straight into that job's documents).
+- Tap the card for the job page.
+
+### Dashboard (owner only)
+- A strip of counts that are links into Jobs views: Active · Waiting OOC ·
+  On the road · Detention risk.
+- **At risk:** jobs with ≤ 2 free days or stuck OOC (same rows as Jobs).
+- **Team:** open jobs per person, overdue count.
+- **Ships at sea:** small map, collapsed by default.
+
+### Clients
+Client list → client's jobs (existing Clients page, simplified).
 
 ### Manage (owner only)
-Users and permissions overview, WhatsApp bot preview, system health, raw ULIP
-lookup. Out of everyone's way.
+WhatsApp bot preview, system health, raw ULIP lookup, team.
 
-## Key flows: before → after
+## Where today's pages go
+
+| Current | New home |
+|---|---|
+| Today (admin + employee) | Jobs (Active view) / Dashboard (owner) |
+| Containers, Vessels | Job page → Arrival step; Dashboard ship map |
+| Trucks | Field: Trucks. Desk: Jobs "On the road" + job page → Transport step |
+| BE & OOC (both versions) | Jobs "Waiting OOC" + job page → BE / OOC steps |
+| Documents | Job page → Documents |
+| Detention | Jobs "Detention risk" + Dashboard |
+| Search anything | Search bar (Ctrl K) |
+| Team & stages | Dashboard → Team |
+| WhatsApp bot, System health, ULIP lookup | Manage |
+| Payments, BIS & Licences | Removed (placeholders with sample data) |
+| Job drawer + full job page | One job page |
+
+## Flows: before → after
 
 | Task | Before | After |
 |---|---|---|
-| Owner's morning check | Today → Detention → BE & OOC → Trucks → Containers (5 pages) | Overview (1 page) |
-| Record OOC | BE & OOC page → find job → open → change stage | My work → **Mark OOC** (1 click + confirm) |
-| Find a container | Containers page → scroll/filter | Ctrl K → type number → job page |
-| Field marks delivered | Menu → Trucks → find row → button | Today → **Delivered** |
-| Upload a document from phone | Menu → Documents → find job → upload | Upload tab → job → photo |
+| Owner's morning check | 5 pages | Dashboard |
+| Record OOC | BE & OOC page → find → open → stage | Jobs "Waiting OOC" → job → **Record OOC** on the step |
+| Find a container | Containers page → filter | Ctrl K → number |
+| Field marks delivered | Menu → Trucks → find → button | Trucks → **Delivered** |
+| Photo of a document | Menu → Documents → job → upload | Trucks card → **Add photo** |
 
-## What stays exactly the same
+## Unchanged
 
-Data, permissions (who can record BE, change stages, extract documents),
-automations, WhatsApp bot, alerts, the job number formats and all business rules.
-This is a change to how the app is organised, not to what it does.
-
-## Rollout
-
-1. Build behind the same login on the `redesign` branch; preview link for review.
-2. Old `?tab=` links redirect to the new places.
-3. Go live after the owner and one desk user have tried it for a day.
+Data, permissions (who records BE, changes stages, extracts documents),
+automations, WhatsApp bot, alerts, business rules. Old `?tab=` links redirect to
+the new places.
