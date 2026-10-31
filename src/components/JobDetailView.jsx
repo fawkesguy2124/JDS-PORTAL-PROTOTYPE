@@ -3,7 +3,7 @@ import { supabase } from '../supabase'
 import { getStageName, parseContainerNos, getContainerSize } from '../utils/jobHelpers'
 import { useJourney } from '../industrial/JourneyContext'
 import { daysAgo, deliveryBy, displayLine, effectiveStage } from '../services/journey'
-import { seaOf } from '../../supabase/functions/_shared/portal/ships.js'
+import { seaOf, shipIdOf, vesselOf } from '../../supabase/functions/_shared/portal/ships.js'
 import { isLineNotShip } from '../../supabase/functions/_shared/portal/shippingLines.js'
 import { Button, Chip, Dash, Icon, JobNo, Panel, PhaseStatus, Status, Tabs, fmtDate, fmtDateTime, fmtINR, timeAgo } from '../industrial/ui'
 import CustomsStatusCard from './CustomsStatusCard'
@@ -43,6 +43,7 @@ const FIELD_LABELS = {
   containers: 'Containers',
   shipping_line: 'Shipping line',
   vessel: 'Vessel / flight',
+  imo: 'IMO number',
   eta: 'ETA',
   cfs_name: 'CFS name',
   be_no: 'BE number',
@@ -78,6 +79,7 @@ const FIELD_PERMS = {
   containers: { can: ['Uphadhya', 'Akshyani', 'Durgesh'] },
   shipping_line: { can: ['Uphadhya', 'Akshyani', 'Durgesh'] },
   vessel: { can: ['Uphadhya', 'Akshyani', 'Durgesh'] },
+  imo: { can: ['Uphadhya', 'Akshyani', 'Durgesh'] },
   eta: { can: ['Uphadhya', 'Akshyani', 'Durgesh'] },
   cfs_name: { can: ['Uphadhya', 'Akshyani', 'Durgesh'] },
   be_no: { can: ['Akshyani', 'Trupti'] },
@@ -103,10 +105,10 @@ const SECTIONS = [
   { id: 'job', title: 'Job details', keys: ['job_no', 'client', 'mode', 'job_type', 'port_code', 'priority', 'goods'] },
   { id: 'customs', title: 'Customs', keys: ['be_no', 'be_date', 'hs_code', 'rms_status', 'bg_required'] },
   { id: 'cfs', title: 'CFS', keys: ['cfs_name', 'cfs_amount', 'free_days', 'detention_risk'] },
-  { id: 'transport', title: 'Transport', keys: ['bl_no', 'shipping_line', 'vessel', 'eta', 'containers'] },
+  { id: 'transport', title: 'Transport', keys: ['bl_no', 'shipping_line', 'vessel', 'imo', 'eta', 'containers'] },
   { id: 'delivery', title: 'Delivery', keys: ['destination', 'delay_reason'] },
 ]
-const MONO = ['bl_no', 'be_no', 'hs_code']
+const MONO = ['bl_no', 'be_no', 'hs_code', 'imo']
 
 function parseContainersWithSizes(containers, containerSizes) {
   const nos = parseContainerNos(containers)
@@ -115,6 +117,18 @@ function parseContainersWithSizes(containers, containerSizes) {
 }
 
 const empty = (v) => v === null || v === undefined || String(v).trim() === ''
+// The ship's IMO number (Jose, 31 Oct 2026) is kept in ulip_refs.imo_code, where the IGM
+// check also puts it; the form edits it as 'imo'. A real IMO number is 7 digits whose
+// last digit checks the first six (9896983: 9×7 + 8×6 + 9×5 + 6×4 + 9×3 + 8×2 = 223 → 3).
+const onlyDigits = (v) => String(v || '').replace(/\D/g, '')
+const formOf = (job) => ({ ...job, imo: onlyDigits(job.ulip_refs?.imo_code) })
+function imoProblem(raw) {
+  const d = onlyDigits(raw)
+  if (!d) return null
+  if (d.length !== 7) return 'An IMO number has 7 digits (for example 9896983).'
+  const sum = [...d.slice(0, 6)].reduce((t, c, i) => t + Number(c) * (7 - i), 0)
+  return sum % 10 === Number(d[6]) ? null : `${d} is not a valid IMO number. Check the digits on MarineTraffic or the BL.`
+}
 const cap = (v) => (empty(v) ? null : String(v).charAt(0).toUpperCase() + String(v).slice(1))
 const RMS_TEXT = { pending: 'Pending', rms: 'RMS', apr: 'APR', acl: 'ACL', check: 'Check', hold: 'On hold' }
 const rmsLabel = (v) => (empty(v) ? null : RMS_TEXT[String(v).toLowerCase()] || cap(v))
@@ -187,7 +201,7 @@ function JobDetailView({ job, profiles = {}, currentUserName, isAdmin, canUpdate
   const [stageUpdating, setStageUpdating] = useState(false)
   const [showFullAccountability, setShowFullAccountability] = useState(false)
   const [detailTab, setDetailTab] = useState(hashTab)
-  const [form, setForm] = useState(() => ({ ...job }))
+  const [form, setForm] = useState(() => formOf(job))
   const [hasUnsavedNotes, setHasUnsavedNotes] = useState(false)
   const [shownId, setShownId] = useState(job.id)
   const meta = useMemo(() => (job.field_meta && typeof job.field_meta === 'object' ? job.field_meta : {}), [job.field_meta])
@@ -199,7 +213,7 @@ function JobDetailView({ job, profiles = {}, currentUserName, isAdmin, canUpdate
     setSaving(false)
     setStageUpdating(false)
     setHasUnsavedNotes(false)
-    setForm({ ...job })
+    setForm(formOf(job))
     setDetailTab(hashTab())
   }
 
@@ -300,10 +314,17 @@ function JobDetailView({ job, profiles = {}, currentUserName, isAdmin, canUpdate
       notify(`"${vesselTyped}" is a shipping line, not a ship. Type the ship's own name from the BL (for example EVER LUCID), or leave Vessel empty.`, 'error')
       return
     }
+    const imoBad = imoProblem(form.imo)
+    if (imoBad) { notify(imoBad, 'error'); return }
     setSaving(true)
     try {
       const updates = {}
       const newMeta = { ...(meta || {}) }
+      // IMO: saved inside ulip_refs
+      if (canEditField('imo') && onlyDigits(form.imo) !== onlyDigits(job.ulip_refs?.imo_code)) {
+        updates.ulip_refs = { ...(job.ulip_refs || {}), imo_code: onlyDigits(form.imo) || null }
+        newMeta.imo = { by: currentUserName, ts: Date.now() }
+      }
       const candidates = ['job_no','client','mode','job_type','port_code','bl_no','containers','shipping_line','vessel','eta','cfs_name','be_no','be_date','hs_code','rms_status','bg_required','cfs_amount','destination','priority','goods','free_days','detention_risk','delay_reason','notes']
       candidates.forEach((k) => {
         if (!canEditField(k)) return
@@ -377,7 +398,7 @@ function JobDetailView({ job, profiles = {}, currentUserName, isAdmin, canUpdate
     window.history.replaceState(null, '', window.location.pathname + window.location.search + '#' + id)
   }
   const startEdit = () => { if (detailTab !== 'details') goTab('details'); setEditMode(true) }
-  const cancelEdit = () => { setEditMode(false); setForm({ ...job }) }
+  const cancelEdit = () => { setEditMode(false); setForm(formOf(job)) }
 
   // a textarea that grows with its text
   const grow = (el) => { if (el) { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px' } }
@@ -440,6 +461,15 @@ function JobDetailView({ job, profiles = {}, currentUserName, isAdmin, canUpdate
       case 'cfs_amount': return empty(v) ? null : fmtINR(v)
       case 'free_days': return empty(v) ? null : `${v} days`
       case 'shipping_line': return empty(v) ? null : line || v
+      case 'imo': {
+        if (isAir) return null
+        // the job's own (typed or from the IGM), else the one ship tracking found
+        if (form.imo && !editMode) return <span className="mono">{form.imo}</span>
+        const found = shipIdOf(job, vesselOf(job, journey?.data), journey?.data)
+        return found.imo
+          ? <><span className="mono">{found.imo}</span><span className="muted"> · {found.from === 'tracking' ? 'from ship tracking' : found.from === 'igm' ? 'from the IGM' : 'found by ship name'}</span></>
+          : null
+      }
       default: return empty(v) ? null : (MONO.includes(k) ? <span className="mono">{String(v)}</span> : String(v))
     }
   }
@@ -484,6 +514,7 @@ function JobDetailView({ job, profiles = {}, currentUserName, isAdmin, canUpdate
         </select>
       )
       case 'free_days': case 'cfs_amount': return <input type="text" inputMode="numeric" className="ix-fj-in" value={val} onChange={onChange} />
+      case 'imo': return <input type="text" inputMode="numeric" maxLength={10} className="ix-fj-in mono" value={val} onChange={onChange} placeholder="7 digits, e.g. 9896983" />
       default: return <input type="text" className={`ix-fj-in${MONO.includes(k) ? ' mono' : ''}`} value={val} onChange={onChange} />
     }
   }

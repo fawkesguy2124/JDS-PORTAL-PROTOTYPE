@@ -303,6 +303,8 @@ export default function JobDrawer({ jobId, onClose, onOpenFull, onOpenTruck, cur
   const askTruck = !isExport && j.attention.some((a) => a.action === 'truck' && /add the truck number/.test(a.text))
   if (!cta && askTruck) cta = { key: 'truck', step: 'truck', label: 'Add truck number', icon: 'truck', run: () => onOpenTruck(job.id), onDone: true }
 
+  // where the BE is now, after filing: the Customs stage card (one tap)
+  const showBeStage = !isExport && j.beFiled && !j.oocDone && !delivered
   // ── alerts, each with its own action (never the same as the primary one) ──
   const alerts = j.attention
     // (an alert that only restates the current step — "BE filed 9 days ago, OOC not yet",
@@ -310,6 +312,9 @@ export default function JobDrawer({ jobId, onClose, onOpenFull, onOpenTruck, cur
     .filter((a) => !(a.action === 'truck' && /^OOC done/.test(a.text)))
     .filter((a) => !(a.action === 'customs' && /^BE filed \d+ days? ago/.test(a.text)))
     .filter((a) => !(a.action === 'truck' && /add the truck number/.test(a.text)))
+    // while the Customs stage card is shown, it already says where the BE is ("BE assessed —
+    // pay the duty", "Customs query raised" …): no second copy as an alert (Jose, 31 Oct 2026)
+    .filter((a) => !(showBeStage && a.action === 'customs'))
     .map((a) => {
       const m = (j.mismatches || []).find((x) => a.text.startsWith(`Check the ${x.field.toLowerCase()}`))
       let title = a.text
@@ -433,6 +438,7 @@ export default function JobDrawer({ jobId, onClose, onOpenFull, onOpenTruck, cur
   const igm = job.ulip_refs?.igm_no
   const kv = [
     ['Client', job.client],
+    ['Job', [job.mode, isExport ? 'export' : 'import'].filter(Boolean).join(' ') + (job.created_at ? ` · opened ${fmtDate(job.created_at)}` : '')],
     // (the port name already ends with its code, e.g. "JNPT / Nhava Sheva (INNSA1)")
     ['Port', job.port_code ? portLabel?.(job.port_code) || job.port_code : null],
     [isAir ? 'Airline' : 'Shipping line', line ? <>{line}{lineMismatch && <span className="flag"><Icon name="info-circle" /> tracking says {lineMismatch.tracking}</span>}</> : null],
@@ -517,14 +523,7 @@ export default function JobDrawer({ jobId, onClose, onOpenFull, onOpenTruck, cur
               <button type="button" className="ix-icon-btn" onClick={onClose} title="Close (Esc)" aria-label="Close"><Icon name="x" /></button>
             </div>
           </div>
-          <div className="ix-jp-meta">
-            {job.mode && <Chip>{job.mode}</Chip>}
-            {boxesText(job, data) && boxesText(job, data) !== job.mode?.replace(/^Sea\s+/i, '') && <Chip>{boxesText(job, data)}</Chip>}
-            <Chip>{isExport ? 'Export' : 'Import'}</Chip>
-            {line && <span>{line}</span>}
-            {job.port_code && <><span className="sep">·</span><span>{portLabel?.(job.port_code) || job.port_code}</span></>}
-            {job.created_at && <><span className="sep">·</span><span title={fmtDateTime(job.created_at)}>Opened {fmtDate(job.created_at)}</span></>}
-          </div>
+          {/* (no mode / line / port line here: Details below says it once; Jose, 31 Oct 2026) */}
 
           {facts.some((f) => f.v) && <div className="ix-jp-facts">
             {facts.filter((f) => f.v).map((f) => (
@@ -577,7 +576,7 @@ export default function JobDrawer({ jobId, onClose, onOpenFull, onOpenTruck, cur
               )}
 
               {/* where the BE is now, after filing: one tap (Jose, 25 Oct 2026) */}
-              {!isExport && j.beFiled && !j.oocDone && !delivered && (
+              {showBeStage && (
                 <BeStage job={job} userName={currentUserName} showToast={showToast} />
               )}
 

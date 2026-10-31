@@ -203,6 +203,10 @@ function AdminDashboardInner() {
       // 3. Delete job extractions
       await supabase.from('job_extractions').delete().eq('job_id', job.id)
 
+      // 3b. Keep the job's history but unlink it (it still says "J-1002 …"), in case the
+      // database rule that does this by itself (sql/014) is not in place
+      await supabase.from('activity_log').update({ job_id: null }).eq('job_id', job.id)
+
       // 4. Delete the job itself — use .select() to verify the row was actually removed
       const { data: deleted, error } = await supabase
         .from('jobs')
@@ -223,10 +227,23 @@ function AdminDashboardInner() {
         return
       }
 
-      // 5. Update frontend state — remove from jobs list, clear selection
+      // 5. Update frontend state — remove from jobs list, clear selection, and refresh the
+      // shared job list so the job leaves All jobs, Today and the menu counts at once
+      // (Jose, 31 Oct 2026: "delete job is not working" — the job stayed on screen)
       setJobs((prev) => prev.filter((j) => j.id !== job.id))
-      if (selectedJob?.id === job.id) setSelectedJob(null)
-      showToast('Job deleted.', 'success')
+      if (selectedJob?.id === job.id) {
+        setSelectedJob(null)
+        navigate('/admin?tab=jobs', { replace: true })
+      }
+      journey?.refresh()
+      try {
+        await supabase.from('activity_log').insert({
+          type: 'job_deleted', action: 'job_deleted', title: `${job.job_no} — Job deleted`,
+          note: `${job.client || ''} · deleted by ${profile?.name || 'staff'}`, job_no: job.job_no,
+          done_by_name: profile?.name || null, meta: { job_no: job.job_no }, created_at: new Date().toISOString(),
+        })
+      } catch { /* history line is best-effort */ }
+      showToast(`${job.job_no} deleted.`, 'success')
     } catch (e) {
       showToast(e?.message || 'Delete failed.', 'error')
     }

@@ -189,6 +189,14 @@ function vesselVoyage(lines, text) {
     const line = String(text).split('\n').find((l) => /^[A-Z][A-Z .]{4,40}(?:\s+V\.\s*|\s*\/\s*|\s+-\s+)[A-Z0-9]{3,8}\s*$/.test(l.trim()) && !/NHAVA|INDIA|CHINA|PORT/.test(l))
     if (line) { m = line.trim().match(/^(.*?)(?:\s+V\.\s*|\s*\/\s*|\s+-\s+)([A-Z0-9]{3,8})$/); if (m) { vessel = m[1]; voyage = m[2] } }
   }
+  if (!vessel) {
+    // BLs printed on a pre-printed form carry only the values, no "Vessel" label: the
+    // ship's box reads "HMM LIME 0002W", often with the loading port beside it
+    // ("HMM LIME 0002W SHANGHAI"; J-691, 31 Oct 2026). Voyage = digits + a direction.
+    const line = String(text).split('\n').map((l) => l.trim().replace(/\s+/g, ' '))
+      .find((l) => SHIP_VOYAGE_LINE.test(l) && !/NHAVA|INDIA|PORT|SAY|PACKAGE|FREIGHT|HS CODE|INV|ROAD|FLOOR|PLOT|NO\./.test(l))
+    if (line) { m = line.match(SHIP_VOYAGE_LINE); vessel = m[1]; voyage = m[2] }
+  }
   if (vessel) {
     vessel = vessel.replace(/\b(PORT OF DISCHARGE|PLACE OF DELIVERY|COMBINED TRANSPORT).*$/i, '')
     // the port columns and the ship read as one line, ship last: "JIANGMEN NHAVA SHEVA
@@ -199,7 +207,8 @@ function vesselVoyage(lines, text) {
   }
   return { vessel_name: vessel, voyage_no: voyage }
 }
-const SHIP_AFTER_PORT = /\b(?:NHAVA\s*SHEVA|JNPT|MUNDRA|CHENNAI|MUMBAI|KOLKATA|PIPAVAV|HAZIRA)\s+(?!.*\b(?:NHAVA\s*SHEVA|JNPT|MUNDRA|CHENNAI|MUMBAI|KOLKATA|PIPAVAV|HAZIRA)\b)([A-Z][A-Z0-9 .]{2,40})$/i
+const SHIP_VOYAGE_LINE = /^([A-Z]{2,}(?: [A-Z][A-Z0-9.]*){0,4}?) (\d{2,4}[EWNS]|[EWNS]\d{2,4})(?: [A-Z][A-Z ]{2,30})?$/
+const SHIP_AFTER_PORT =/\b(?:NHAVA\s*SHEVA|JNPT|MUNDRA|CHENNAI|MUMBAI|KOLKATA|PIPAVAV|HAZIRA)\s+(?!.*\b(?:NHAVA\s*SHEVA|JNPT|MUNDRA|CHENNAI|MUMBAI|KOLKATA|PIPAVAV|HAZIRA)\b)([A-Z][A-Z0-9 .]{2,40})$/i
 
 const INDIAN_PORTS = /\b(NHAVA\s*SHEVA|JNPT|MUMBAI|MUNDRA|PIPAVAV|HAZIRA|KANDLA|CHENNAI|KATTUPALLI|ENNORE|KOLKATA|HALDIA|VISAKHAPATNAM|VIZAG|COCHIN|KOCHI|TUTICORIN|MANGALORE)\b/i
 // a ports-and-ship line ends with the voyage: "JIANGMEN NHAVA SHEVA SYNERGY OAKLAND/27W"
