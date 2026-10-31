@@ -4,17 +4,22 @@ import JourneyStrip from '../../components/journey/JourneyStrip'
 import UlipCheck from '../../components/ulip/UlipCheck'
 import { LOOKUP_CATEGORIES } from '../../components/ulip/ulipChecks'
 import { useJourney } from '../../industrial/JourneyContext'
+import { PageHead, JobNo } from '../../industrial/ui'
+import '../../industrial/industrial.css'
+import '../../industrial/styles/records.css'
 import { detectNumberType, jobMatches, jobExactlyMatches, cleanNumber } from './search.helpers'
 
-const card = { background: '#fff', border: '1.5px solid #e2e6ed', borderRadius: '14px', padding: '14px', marginBottom: '12px' }
+// blocks on the shared hairline look (Control tower, Jose 31 Oct 2026)
+const card = { background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: 'var(--r-lg)', padding: '12px 16px', marginBottom: '12px' }
 
-// a number typed in Ctrl K → "Look up on ULIP"
+// a number typed in Ctrl K → "Look up on government systems"
 function takeLookup() {
   try { const q = sessionStorage.getItem('ix_lookup') || ''; sessionStorage.removeItem('ix_lookup'); return q } catch { return '' }
 }
 
 export default function SearchPage({ onOpenJob }) {
-  const shared = useJourney()?.data // the admin screens already have every job loaded
+  const journey = useJourney()
+  const shared = journey?.data // the admin screens already have every job loaded
   const [own, setData] = useState(null)
   const data = shared || own
   const [loadError, setLoadError] = useState('')
@@ -57,32 +62,30 @@ export default function SearchPage({ onOpenJob }) {
   const failed = !!(loadError || data?.error)
   const keyBase = cleanNumber(searched)
 
-  return (
-    <div style={{ fontFamily: 'Inter, system-ui, sans-serif', color: '#1a2233', fontSize: '14px', maxWidth: '900px', margin: '0 auto', padding: '16px' }}>
-      <h2 style={{ margin: '0 0 12px', fontSize: '20px' }}>Search anything</h2>
-      <form onSubmit={go} style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+  const page = (
+    <>
+      <PageHead title="Search" sub="Any number: BE, container, truck, IEC, airway bill, job no. Nothing is checked with government systems until you press a button." />
+      <form onSubmit={go} className="rec-search">
         <input
           value={text}
           onChange={(e) => setText(e.target.value)}
           placeholder="Type any number — BE, container, truck, IEC, airway bill, job no…"
-          style={{ flex: '1 1 240px', minWidth: 0, height: '52px', padding: '0 16px', fontSize: '16px', border: '1.5px solid #d0d6e0', borderRadius: '12px', outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box' }}
+          aria-label="Search any number"
         />
-        <button type="submit" style={{ height: '52px', padding: '0 28px', fontSize: '15px', fontWeight: 700, color: '#fff', background: '#1a4fa0', border: 'none', borderRadius: '12px', cursor: 'pointer', flex: '0 0 auto' }}>
-          Search
-        </button>
+        <button type="submit" className="ix-btn primary">Search</button>
       </form>
-      <div style={{ color: '#5b6678', fontSize: '13px', margin: '8px 2px 16px', lineHeight: 1.5 }}>
+      <div className="rec-hint">
         For example: MSKU1234567 (container), MH04AB1234 (truck), 2237841 (BE), 61835488224 (airway bill), or part of a job number or client name.
       </div>
 
-      {failed && <div style={{ ...card, color: '#b91c1c' }}>Could not load the latest data — {loadError || data.error}. Reload the page to try again.</div>}
+      {failed && <div className="ix-error">Could not load the latest data — {loadError || data.error}. Reload the page to try again.</div>}
 
       {searched && (
         <>
-          <div style={{ fontWeight: 700, fontSize: '15px', margin: '4px 0 8px' }}>In our jobs</div>
-          {!data && !failed && <div style={{ ...card, color: '#5b6678' }}>Looking through our jobs…</div>}
+          <div className="rec-h">In our jobs</div>
+          {!data && !failed && <div style={{ ...card, color: 'var(--text-2)' }}>Looking through our jobs…</div>}
           {data && !failed && jobs.length === 0 && (
-            <div style={{ ...card, color: '#5b6678' }}>No job of ours has “{searched}”.</div>
+            <div style={{ ...card, color: 'var(--text-2)' }}>No job of ours has “{searched}”.</div>
           )}
           {jobs.map((job) => {
             const j = journeyFor(job, data)
@@ -96,19 +99,19 @@ export default function SearchPage({ onOpenJob }) {
                 style={{ ...card, cursor: 'pointer' }}
               >
                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', flexWrap: 'wrap', marginBottom: '8px' }}>
-                  <span style={{ fontWeight: 700, fontFamily: 'JetBrains Mono, monospace' }}>{job.job_no}</span>
-                  <span style={{ color: '#5b6678' }}>{job.client}</span>
+                  <JobNo no={job.job_no} />
+                  <span style={{ color: 'var(--text-2)' }}>{job.client}</span>
                 </div>
                 <JourneyStrip steps={j.steps} compact />
               </div>
             )
           })}
-          {jobs.length >= 20 && <div style={{ color: '#8a96a8', fontSize: '13px', marginBottom: '12px' }}>Showing the first 20. Type more of the number to narrow it down.</div>}
+          {jobs.length >= 20 && <div className="rec-hint">Showing the first 20. Type more of the number to narrow it down.</div>}
 
-          <div style={{ fontWeight: 700, fontSize: '15px', margin: '16px 0 8px' }}>Check with the government systems</div>
+          <div className="rec-h">Check with the government systems</div>
           {detected && detected.kind !== 'unknown' && detected.kind !== 'empty' && (
             <>
-              <div style={{ color: '#5b6678', marginBottom: '10px' }}>
+              <div className="rec-hint">
                 {detected.label}. Nothing is checked until you press a button.
               </div>
               {detected.checks.map((c) => (
@@ -116,7 +119,7 @@ export default function SearchPage({ onOpenJob }) {
               ))}
               {detected.also.length > 0 && (
                 <>
-                  <div style={{ fontWeight: 600, color: '#5b6678', margin: '14px 0 8px' }}>Could also be</div>
+                  <div className="rec-h">Could also be</div>
                   {detected.also.map((c) => (
                     <UlipCheck key={`${keyBase}-${c.api}`} check={c} job={firstJob} />
                   ))}
@@ -127,11 +130,7 @@ export default function SearchPage({ onOpenJob }) {
           {detected?.kind === 'unknown' && (
             <div style={card}>
               <div style={{ fontWeight: 600, marginBottom: '6px' }}>Not sure what this number is.</div>
-              <button
-                type="button"
-                onClick={() => setShowAll((v) => !v)}
-                style={{ minHeight: '40px', background: 'none', border: 'none', color: '#1a4fa0', fontWeight: 700, fontSize: '14px', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}
-              >
+              <button type="button" className="ix-link" style={{ marginLeft: 0, minHeight: '32px' }} onClick={() => setShowAll((v) => !v)}>
                 {showAll ? 'Hide all checks' : 'Show all checks'}
               </button>
             </div>
@@ -146,6 +145,10 @@ export default function SearchPage({ onOpenJob }) {
           ))}
         </>
       )}
-    </div>
+    </>
   )
+
+  // inside the shell the frame (padding, background) comes from AdminDashboard;
+  // the staff dashboard shows this page on its own
+  return journey ? page : <div className="ix ix-page rec-standalone">{page}</div>
 }

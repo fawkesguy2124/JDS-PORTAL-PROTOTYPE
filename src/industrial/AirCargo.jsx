@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useJourney } from './JourneyContext'
-import { Icon, timeAgo } from './ui'
+import { Button, Icon, fmtDateTime, timeAgo } from './ui'
 import { refValue, rememberRefs } from '../components/ulip/jobRefs'
 import { runUlipCheck } from '../services/ulip/ulipClient'
 
@@ -8,9 +8,10 @@ import { runUlipCheck } from '../services/ulip/ulipClient'
 // (IGM) yet? ICEGATE/09 by MAWB + airport, through ULIP. The automatic checks ask
 // about every hour until it is; this box shows the answer and lets staff check now.
 // (ICEGATE/10, by HAWB, answered "no records" for a real air job: not used here.)
+// On screen it is plain words only: "Customs", never the system names (Jose's rule).
 
 const AIRPORT = /^[A-Z0-9]{6}$/
-export const airportOf = (job) => (AIRPORT.test(String(job?.port_code || '').toUpperCase()) ? String(job.port_code).toUpperCase() : 'INBOM4')
+const airportOf = (job) => (AIRPORT.test(String(job?.port_code || '').toUpperCase()) ? String(job.port_code).toUpperCase() : 'INBOM4')
 
 export default function AirCargo({ job, showToast }) {
   const { data, patchJob } = useJourney()
@@ -56,9 +57,9 @@ export default function AirCargo({ job, showToast }) {
         <div className="hd">
           <span className="t">Air cargo</span>
           {mawb && !editing && (
-            <button type="button" className="ix-btn sm" onClick={check} disabled={busy} title="Asks Customs (ICEGATE, through ULIP) once">
-              <Icon name="refresh" />{busy ? 'Checking…' : 'Check now'}
-            </button>
+            <Button size="sm" icon="refresh" onClick={check} disabled={busy} title="Asks Customs once, now">
+              {busy ? 'Checking…' : 'Check now'}
+            </Button>
           )}
         </div>
 
@@ -66,8 +67,8 @@ export default function AirCargo({ job, showToast }) {
           <div className="ix-air-edit">
             <input value={typed.mawb} onChange={(e) => setTyped((t) => ({ ...t, mawb: e.target.value.replace(/[^\d -]/g, '') }))} placeholder="MAWB (11 digits)" inputMode="numeric" aria-label="Master air waybill number" />
             <input value={typed.hawb} onChange={(e) => setTyped((t) => ({ ...t, hawb: e.target.value }))} placeholder="HAWB (optional)" aria-label="House air waybill number" />
-            <button type="button" className="ix-btn sm primary" onClick={save} disabled={busy}>Save</button>
-            {mawb && <button type="button" className="ix-btn sm ghost" onClick={() => setEditing(false)}>Cancel</button>}
+            <Button size="sm" onClick={save} disabled={busy}>Save</Button>
+            {mawb && <Button size="sm" variant="ghost" onClick={() => setEditing(false)}>Cancel</Button>}
           </div>
         ) : (
           <div className="nums">
@@ -87,7 +88,7 @@ export default function AirCargo({ job, showToast }) {
                 {field('Gross weight') ? ` · ${field('Gross weight')} kg` : ''}
               </div>
             ) : (
-              <div className="st">Not in the air manifest yet{row.checked_at ? ` · checked ${timeAgo(row.checked_at)}` : ''}</div>
+              <div className="st" title={row.checked_at ? timeAgo(row.checked_at) : undefined}>Not in the air manifest yet{row.checked_at ? ` · checked ${fmtDateTime(row.checked_at)}` : ''}</div>
             )
         )}
       </div>

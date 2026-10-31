@@ -1,0 +1,255 @@
+/* All jobs + the job panel, Control tower look (Jose, 31 Oct 2026).
+   Uses the tokens and shared classes from industrial.css (read DESIGN.md).
+   ix-jb-* = the All jobs page, ix-jp-* = the job panel. */
+
+/* ── All jobs ──────────────────────────────────────────────────────── */
+.ix-jb-panel { overflow: hidden }
+.ix-jb-panel .ix-tabs { padding: 0 8px }
+.ix-jb-panel .ix-tbl-wrap { max-height: calc(100vh - 300px); min-height: 160px }
+.ix-jb-tbl th, .ix-jb-tbl td { padding: 0 8px }
+.ix-jb-tbl tbody tr.cur td { background: var(--surface-3) }
+.ix-jb-tbl tbody tr.cur.sel td, .ix-jb-tbl tbody tr.sel td { background: var(--navy-50) }
+.ix-jb-tbl tbody tr.cur td:nth-child(2) { box-shadow: inset 2px 0 0 var(--navy) }
+.ix-jb-tbl th.sort .hint { margin-left: 2px }
+.ix-jb-tbl td .ix-chip { margin-left: 6px; vertical-align: 1px }
+.ix-jb-flag { display: inline-flex; flex-shrink: 0; margin-left: 4px; color: var(--navy); font-size: 13px; cursor: help }
+
+/* Fit at 1366-1440px without sideways scroll (round-1 review): long text is cut
+   with '…' (the full text is in the cell's title), and Next step takes whatever
+   room is left. Inner wrappers carry the widths, so it does not depend on how a
+   browser treats max-width on table cells. */
+.ix-jb-ell { display: block; max-width: 170px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.ix-jb-line { display: inline-flex; align-items: center; max-width: 120px; vertical-align: middle }
+.ix-jb-line .ix-jb-ell { min-width: 0 }
+.ix-jb-where { color: var(--text-2) }
+.ix-jb-where .ix-jb-ell { max-width: 180px }
+.ix-jb-tbl .ix-jb-next { width: 100% }
+/* a floor for Next step: never narrower than this, even when every column shows */
+.ix-jb-tbl td.ix-jb-next::after { content: ''; display: block; width: 170px; height: 0 }
+/* width 0 + min-width 100%: adds nothing to the column's own width, then fills it */
+.ix-jb-nx { display: flex; align-items: center; gap: 6px; width: 0; min-width: 100%; overflow: hidden }
+.ix-jb-nx .t { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.ix-jb-tbl .ix-jb-nx .ix-chip { margin-left: 0; flex-shrink: 0 }
+.ix-jb-next.dim { color: var(--muted) }
+.ix-jb-sub { display: none }
+.ix-jb-red { color: var(--red) }
+.ix-jb-foot kbd { margin: 0 1px }
+
+/* the stage cell: a tinted status pill over a slim 6-segment bar (navy done, amber now) */
+.ix-jb-stage { display: inline-flex; flex-direction: column; gap: 3px; vertical-align: middle }
+.ix-stagebar { display: flex; gap: 2px; width: 100%; min-width: 64px }
+.ix-stagebar i { flex: 1; height: 3px; border-radius: 2px; background: var(--line) }
+.ix-stagebar i.done { background: var(--navy) }
+.ix-stagebar i.now { background: var(--amber-dot) }
+
+/* ── job panel ─────────────────────────────────────────────────────── */
+.ix .ix-drawer.ix-jp { width: min(880px, 100vw) }
+.ix-jp-top { padding: 14px 20px 0; border-bottom: 1px solid var(--line); flex-shrink: 0 }
+.ix-jp-row1 { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; min-width: 0 }
+.ix-jp-row1 .cl { font-size: var(--fs-lg); font-weight: 600; min-width: 0; max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.ix-jp-row1 .sep { color: var(--faint) }
+.ix-jp-row1 .right { margin-left: auto; display: flex; gap: 6px; align-items: center; flex-wrap: wrap }
+.ix-jp-row1 .vr { width: 1px; height: 20px; background: var(--line); margin: 0 2px }
+.ix-jp-row1 .pg { font-size: var(--fs-sm); color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums }
+.ix-jp-meta { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 6px; font-size: var(--fs-sm); color: var(--text-2) }
+.ix-jp-meta .sep { color: var(--faint) }
+
+/* fact strip: one hairline box, cells split by lines */
+.ix-jp-facts { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); border: 1px solid var(--line); border-radius: var(--r-lg); margin: 12px 0 14px; overflow: hidden }
+.ix-jp-fact { padding: 7px 12px 8px; border-right: 1px solid var(--line); min-width: 0 }
+.ix-jp-fact:last-child { border-right: 0 }
+.ix-jp-fact .k { font-size: var(--fs-xs); font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--muted) }
+.ix-jp-fact .v { font-size: var(--fs-md); font-weight: 600; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+.ix-jp-fact .v small { font-weight: 400; color: var(--muted); font-size: var(--fs-sm); margin-left: 4px; font-family: var(--font) }
+.ix-jp-fact .v.mono { font: 600 12px var(--mono) }
+.ix-jp-fact.red { background: var(--red-bg) }
+.ix-jp-fact.red .v, .ix-jp-fact.red .v small { color: var(--red) }
+.ix-jp-fact.amber .v { color: var(--amber) }
+.ix-jp-fact .ix-link { margin: 0; font-size: var(--fs-md) }
+
+/* stepper with sub-lines */
+.ix-jp-steps { display: grid; margin: 2px 0 14px }
+.ix-jp-step { position: relative; padding: 24px 10px 0 0; min-width: 0 }
+.ix-jp-step::before { content: ''; position: absolute; top: 8px; left: 18px; right: 0; height: 2px; background: var(--line) }
+.ix-jp-step:last-child::before { display: none }
+.ix-jp-step.done::before { background: var(--navy) }
+.ix-jp-step .dot { position: absolute; top: 0; left: 0; width: 18px; height: 18px; border-radius: 50%; display: grid; place-items: center; background: var(--surface); box-shadow: inset 0 0 0 2px var(--line-2); font-size: 11px; color: #fff }
+.ix-jp-step.done .dot { background: var(--navy); box-shadow: none }
+.ix-jp-step.now .dot { box-shadow: inset 0 0 0 2px var(--amber-dot), 0 0 0 4px var(--amber-bg) }
+.ix-jp-step.now .dot::after { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--amber-dot) }
+.ix-jp-step b { display: block; font-size: var(--fs-md); font-weight: 600; margin-top: 6px }
+.ix-jp-step.todo b { color: var(--muted); font-weight: 500 }
+.ix-jp-step .w { font-size: var(--fs-sm); color: var(--text-2); margin-top: 1px; line-height: 1.35; overflow-wrap: anywhere }
+.ix-jp-step .w span { display: block; color: var(--muted) }
+.ix-jp-step.now .w { color: var(--amber) }
+
+.ix-jp-tabs.ix-tabs { border-bottom: 0; margin: 0 -8px }
+.ix-jp-body { flex: 1; overflow-y: auto; padding: 14px 20px 20px; background: var(--surface) }
+
+/* the next-step bar (what happens next, and why now) */
+.ix-jp-next { display: grid; grid-template-columns: 20px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 9px 12px; border: 1px solid var(--line); border-left: 3px solid var(--navy); border-radius: var(--r-lg); margin-bottom: 12px }
+.ix-jp-next > i { font-size: 18px; color: var(--navy) }
+.ix-jp-next.red { border-left-color: var(--red) } .ix-jp-next.red > i { color: var(--red) }
+.ix-jp-next.amber { border-left-color: var(--amber-dot) } .ix-jp-next.amber > i { color: var(--amber-dot) }
+.ix-jp-next.green { border-left-color: var(--green) } .ix-jp-next.green > i { color: var(--green) }
+.ix-jp-next p { margin: 0 }
+.ix-jp-next p b { font-weight: 600 }
+.ix-jp-next p small { display: block; color: var(--text-2); font-size: var(--fs-sm) }
+
+/* alerts, each with its own action */
+.ix-jp-alerts { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: var(--r-lg); margin-bottom: 14px; overflow: hidden }
+.ix-jp-al { display: grid; grid-template-columns: 20px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 8px 12px; border-bottom: 1px solid var(--line) }
+.ix-jp-al:last-child { border-bottom: 0 }
+.ix-jp-al > i { font-size: 17px; color: var(--navy) }
+.ix-jp-al.red { background: var(--red-bg) } .ix-jp-al.red > i { color: var(--red) }
+.ix-jp-al.amber > i { color: var(--amber-dot) }
+.ix-jp-al p { margin: 0 }
+.ix-jp-al p b { font-weight: 600 }
+.ix-jp-al p small { display: block; color: var(--text-2); font-size: var(--fs-sm) }
+
+.ix-jp-grid { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 20px; align-items: start }
+.ix-jp-body .ix-bestage { margin-bottom: 14px }
+
+/* a table inside the panel */
+.ix-jp-inner { border: 1px solid var(--line); border-radius: var(--r-lg); overflow: auto; margin-bottom: 8px }
+.ix-jp-inner .ix-tbl th { position: static }
+.ix-jp-inner .ix-tbl td.box { font: 600 12px var(--mono) }
+.ix-jp-inner tr.ms td { height: auto; padding: 6px 10px 8px 22px; background: var(--surface-2); white-space: normal; cursor: default }
+.ix-jp-ms { margin: 0; padding: 0; list-style: none; font-size: var(--fs-sm); color: var(--text-2) }
+.ix-jp-ms li { padding: 2px 0 }
+.ix-jp-ms li span { color: var(--muted) }
+.ix-jp-more { font-size: var(--fs-sm); color: var(--muted); margin-bottom: 16px }
+.ix-jp-more .ix-link { font-size: var(--fs-sm) }
+
+/* key / value details */
+.ix-jp-kv { display: grid; grid-template-columns: 140px minmax(0, 1fr); border-top: 1px solid var(--line); margin-bottom: 16px }
+.ix-jp-kv > div { padding: 6px 0; border-bottom: 1px solid var(--line); font-size: var(--fs-md); min-width: 0; overflow-wrap: anywhere }
+.ix-jp-kv > div:nth-child(odd) { color: var(--text-2); padding-right: 8px }
+.ix-jp-kv .mono { font-size: 12px }
+.ix-jp-kv .flag { color: var(--navy); font-size: var(--fs-sm); margin-left: 6px; white-space: nowrap }
+.ix-jp-kv .trucks { display: flex; gap: 6px; flex-wrap: wrap; align-items: center }
+.ix-jp-kv .ix-plate { font-size: 12px; border-width: 1px }
+.ix-jp-kv .ix-link { margin: 0; font-size: var(--fs-sm) }
+
+/* ship card (ship name and IMO only here) */
+.ix-jp-ship { border: 1px solid var(--line); border-radius: var(--r-lg); padding: 10px 12px; display: grid; grid-template-columns: 32px minmax(0, 1fr) auto; gap: 10px; align-items: center; margin-bottom: 16px }
+.ix-jp-ship .ic { width: 32px; height: 32px; border-radius: var(--r-md); background: var(--teal-bg); color: var(--teal); display: grid; place-items: center; font-size: 18px }
+.ix-jp-ship .ic.sea { background: var(--navy-50); color: var(--navy) }
+.ix-jp-ship .ic.grey { background: var(--grey-bg); color: var(--muted) }
+.ix-jp-ship b { font-weight: 600 }
+.ix-jp-ship small { display: block; color: var(--muted); font-size: var(--fs-sm) }
+.ix-jp-ship .ix-link { font-size: var(--fs-sm); white-space: nowrap }
+
+/* arrangements: segmented controls, not navy buttons */
+.ix-jp-arr { display: grid; grid-template-columns: 140px minmax(0, 1fr); border-top: 1px solid var(--line); margin-bottom: 16px }
+.ix-jp-arr > div { padding: 6px 0; border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-height: 40px }
+.ix-jp-arr > div:nth-child(odd) { color: var(--text-2) }
+.ix-jp-arr small { color: var(--muted); font-size: var(--fs-sm) }
+
+/* papers checklist */
+.ix-jp-papers { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 16px }
+.ix-jp-paper { display: inline-flex; align-items: center; gap: 4px; height: 24px; padding: 0 8px; border-radius: var(--r-sm); font-size: var(--fs-sm); font-weight: 500; border: 1px solid var(--green-line); background: var(--green-bg); color: var(--green); white-space: nowrap }
+.ix-jp-paper > i { font-size: 13px }
+button.ix-jp-paper { cursor: pointer }
+.ix-jp-paper.miss { border: 1px dashed var(--line-2); background: var(--surface); color: var(--muted) }
+button.ix-jp-paper.miss:hover { border-color: var(--navy-200); color: var(--navy); background: var(--navy-50) }
+
+/* timeline: day groups, plain-word sources, upcoming on top */
+.ix-jp-tl .day { font-size: var(--fs-xs); font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); padding: 10px 0 4px }
+.ix-jp-tl .day:first-child { padding-top: 2px }
+.ix-jp-ev { display: grid; grid-template-columns: 14px minmax(0, 1fr); gap: 10px; padding: 4px 0 6px; position: relative }
+.ix-jp-ev::before { content: ''; position: absolute; left: 6px; top: 16px; bottom: -4px; width: 1px; background: var(--line) }
+.ix-jp-ev:last-child::before { display: none }
+.ix-jp-ev .d { width: 9px; height: 9px; border-radius: 50%; margin: 5px 0 0 2px; background: var(--faint) }
+.ix-jp-ev .d.customs { background: var(--navy) } .ix-jp-ev .d.port { background: var(--teal) } .ix-jp-ev .d.toll { background: var(--navy-200) }
+.ix-jp-ev .d.whatsapp { background: var(--green) } .ix-jp-ev .d.bad { background: var(--red) }
+.ix-jp-ev p { margin: 0; font-size: var(--fs-md); line-height: 1.4; min-width: 0; overflow-wrap: anywhere }
+.ix-jp-ev p small { display: flex; gap: 6px; align-items: center; color: var(--muted); font-size: var(--fs-sm) }
+.ix-jp-ev p small .ti { font-size: 13px }
+.ix-jp-ev .ix-link { margin: 0; text-align: left }
+.ix-jp-up { border: 1px dashed var(--line-2); border-radius: var(--r-lg); padding: 4px 12px 6px; margin-bottom: 6px; background: var(--surface-2) }
+.ix-jp-up .ix-jp-ev::before { display: none }
+.ix-jp-up .ix-jp-ev .d { background: none; box-shadow: inset 0 0 0 2px var(--faint) }
+.ix-jp-up .ix-jp-ev .d.red { box-shadow: inset 0 0 0 2px var(--red) }
+
+/* documents tab */
+.ix-jp-docs .ix-tbl td.ok { color: var(--green) }
+.ix-jp-docs .ix-tbl td .ti { vertical-align: -2px }
+.ix-jp-file { display: flex; align-items: center; gap: 10px; padding: 7px 12px; border: 1px solid var(--line); border-radius: var(--r-lg); margin-bottom: 6px }
+.ix-jp-file > i { font-size: 18px; color: var(--navy) }
+.ix-jp-file .n { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.ix-jp-file .s { font-size: var(--fs-sm); color: var(--muted) }
+.ix-jp-file .ix-btn { margin-left: auto }
+
+/* PDF viewer over the panel */
+.ix-jp-viewer { position: fixed; inset: 0; background: rgba(16, 24, 40, .55); z-index: 1000; display: flex; align-items: center; justify-content: center; padding: 16px }
+.ix-jp-viewer > div { background: var(--surface); border-radius: var(--r-lg); width: min(900px, 100%); max-height: 100%; display: flex; flex-direction: column; overflow: hidden; box-shadow: var(--shadow-pop) }
+.ix-jp-viewer .hd { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--line) }
+.ix-jp-viewer .hd b { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600 }
+.ix-jp-viewer .bd { overflow: auto; padding: 12px; background: var(--bg) }
+
+/* ship tracking card (SeaTracking.jsx), in the panel's look */
+.ix .ix-seacard { box-shadow: none; padding: 10px 12px; margin: 0 0 16px; font-size: var(--fs-md); background: var(--surface) }
+.ix .ix-seacard .hd { gap: 10px }
+.ix .ix-seacard .ic { width: 32px; height: 32px; border-radius: var(--r-md); font-size: 18px }
+.ix .ix-seacard .ic.sea { background: var(--navy-50); color: var(--navy) }
+.ix .ix-seacard .ic.grey { background: var(--grey-bg); color: var(--muted) }
+.ix .ix-seacard .k { font-size: var(--fs-xs) }
+.ix .ix-seacard .t { font-weight: 600; font-size: var(--fs-md) }
+.ix .ix-seacard .t .mono { font-weight: 400; font-size: var(--fs-sm); color: var(--muted); margin-left: 6px }
+.ix .ix-seacard .eta { font-weight: 600; font-size: var(--fs-lg) }
+.ix .ix-seacard .note { font-size: var(--fs-sm) }
+.ix .ix-seacard .legs .d, .ix .ix-seacard .prog, .ix .ix-seacard .via { font-size: var(--fs-sm) }
+.ix .ix-seacard .bar { height: 4px; background: var(--line) }
+.ix .ix-seacard .bar span { background: var(--navy) }
+.ix .ix-seacard .via i { color: var(--muted) }
+.ix .ix-seacard .upd { font-size: var(--fs-sm) }
+.ix .ix-seacard .ship { display: flex; align-items: center; gap: 8px; margin: 0 0 10px; padding-bottom: 8px; border-bottom: 1px solid var(--line); font-size: var(--fs-sm); color: var(--text-2) }
+.ix .ix-seacard .ship b { color: var(--text); font-weight: 600; font-size: var(--fs-md) }
+.ix .ix-seacard .ship .ix-link { margin-left: auto; font-size: var(--fs-sm) }
+
+/* air cargo box (AirCargo.jsx) */
+.ix .ix-air { background: var(--surface); border-color: var(--line); border-radius: var(--r-lg); font-size: var(--fs-md) }
+.ix .ix-air > i { font-size: 18px }
+.ix .ix-air .st.muted { font-size: var(--fs-sm) }
+.ix .ix-air-edit input { border-color: var(--line-2); border-radius: var(--r-md); font-size: 12px }
+.ix .ix-air-edit input:focus-visible { outline: none; border-color: var(--accent); box-shadow: var(--focus) }
+
+/* ── narrower screens ──────────────────────────────────────────────── */
+/* All jobs columns that drop out as the screen narrows (sidebar open, page
+   max 1500px). Job, Client, Status, Where now, Free days and Next step stay;
+   Updated is in the Job cell's tooltip, Boxes in the Where now tooltip, the
+   BE no in the job panel and search. */
+@media (max-width: 1699px) {
+  .ix-jb-tbl .c-line, .ix-jb-tbl .c-upd { display: none }
+}
+@media (max-width: 1499px) {
+  .ix-jb-tbl .c-box, .ix-jb-tbl .c-be { display: none }
+  .ix-jb-tbl .ix-jb-ell, .ix-jb-where .ix-jb-ell { max-width: 150px }
+}
+@media (max-width: 1279px) {
+  .ix-jb-tbl .c-arr { display: none }
+}
+/* tablet and phone: the client moves under the job number */
+@media (max-width: 1180px) {
+  .ix-jb-tbl .c-cl { display: none }
+  .ix-jb-sub { display: block; max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-sm); color: var(--text-2); line-height: 1.3 }
+  .ix-jb-tbl td.jobc { padding-top: 5px; padding-bottom: 5px }
+}
+@media (max-width: 900px) {
+  .ix-jp-grid { grid-template-columns: minmax(0, 1fr) }
+}
+@media (max-width: 760px) {
+  .ix-jb-panel .ix-tbl-wrap { max-height: none }
+  .ix-jb-where .ix-jb-ell { max-width: 120px }
+  .ix-jb-tbl td.ix-jb-next::after { width: 140px }
+  .ix-jp-top { padding: 12px 12px 0 }
+  .ix-jp-body { padding: 12px 12px 20px }
+  .ix-jp-row1 .right { margin-left: 0; width: 100% }
+  .ix-jp-row1 .right .grow { flex: 1 }
+  .ix-jp-facts { grid-auto-flow: row; grid-template-columns: repeat(3, minmax(0, 1fr)) }
+  .ix-jp-fact { border-right: 0; box-shadow: 1px 0 0 var(--line), 0 1px 0 var(--line) }
+  .ix-jp-stepwrap { overflow-x: auto; margin: 0 -12px; padding: 0 12px }
+  .ix-jp-steps { min-width: 560px }
+  .ix-jp-kv, .ix-jp-arr { grid-template-columns: 110px minmax(0, 1fr) }
+}

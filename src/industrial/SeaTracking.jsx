@@ -1,25 +1,32 @@
+/* eslint-disable react-refresh/only-export-components -- VesselsPage and shipChecks import these formatters from here */
 import { useState } from 'react'
 import { supabase } from '../supabase'
 import { useJourney } from './JourneyContext'
-import { seaArea } from '../../supabase/functions/_shared/portal/ships.js'
-import { Icon, timeAgo } from './ui'
+import { seaArea, seaOf } from '../../supabase/functions/_shared/portal/ships.js'
+import { Button, Chip, Icon, fmtDateTime, timeAgo } from './ui'
 import { voyage, viaText } from './ShipMap'
 
-// Ship tracking from Safecube on the job (Jose, 24 Oct 2026): what JDS used to
-// look up on each shipping line's website by container number: ETA, the ship
-// (IMO), where it is and the latest move. The sea-track function fills it every
-// 3 hours for new sea jobs; older jobs start with "Track this ship". The free
-// trial has 50 shipments, so starting one asks first.
-const SHIP_STATUS = { PLANNED: 'Not sailed yet', IN_TRANSIT: 'At sea', DELIVERED: 'Arrived / delivered', UNKNOWN: 'Status not given' }
+// Ship tracking on the job (Jose, 24 Oct 2026): what JDS used to look up on each
+// shipping line's website by container number: ETA, the ship (IMO), where it is
+// and the latest move. The sea-track function fills it every 3 hours for new sea
+// jobs; older jobs start with "Track this ship". The trial has 50 shipments, so
+// starting one asks first. (No vendor name on screen; Jose's rule.)
+const SHIP_STATUS = { PLANNED: 'Not sailed yet', IN_TRANSIT: 'At sea', DELIVERED: 'Arrived', UNKNOWN: 'Status not given' }
 
-// The line's dates are the port's local time: shown as given, not converted. The
-// year is added when it isn't this year (J-674: ETA 23 Jan 2027)
+// The line's dates are the port's local time: shown as given, not converted.
+// '19 Nov, 18:30' (24 h, 'Sep' never 'Sept'); the year only when it isn't this year
+// (J-674: ETA 23 Jan 2027); a date with no time of day (midnight) shows as the date alone.
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+const pad = (n) => String(n).padStart(2, '0')
 export const portTime = (iso, withTime = true) => {
   if (!iso) return '—'
   const d = new Date(iso)
   if (isNaN(d)) return String(iso)
-  const year = d.getUTCFullYear() !== new Date().getFullYear() ? { year: 'numeric' } : {}
-  return d.toLocaleString('en-IN', { day: 'numeric', month: 'short', ...year, ...(withTime ? { hour: 'numeric', minute: '2-digit' } : {}), timeZone: 'UTC' })
+  const year = d.getUTCFullYear() !== new Date().getFullYear() ? ` ${d.getUTCFullYear()}` : ''
+  const date = `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]}${year}`
+  const h = d.getUTCHours()
+  const m = d.getUTCMinutes()
+  return !withTime || (h === 0 && m === 0) ? date : `${date}, ${pad(h)}:${pad(m)}`
 }
 
 // The cargo hasn't sailed yet: the line plans the sailing later, or the latest
@@ -50,13 +57,15 @@ export function seaWhere(sea) {
   return sea.last_event?.where ? `Last at ${sea.last_event.where}` : null
 }
 
-export default function SeaTracking({ job, showToast }) {
+// The job panel's ship card. shipName / imo (optional) head the card: the ship's
+// name and IMO appear only here (Jose, 31 Oct 2026). onVessels opens the map.
+export default function SeaTracking({ job, showToast, shipName, imo, onVessels }) {
   const { data, patchSea } = useJourney()
   const [busy, setBusy] = useState(false)
-  const sea = data?.seaByJob?.[job.id] || null
+  const sea = seaOf(job, data)
 
   const run = async (start) => {
-    if (start && !window.confirm(`Start tracking the ship of ${job.job_no}?\n\nThis uses 1 of the 50 free trial shipments. Only do it for a ship that hasn't arrived yet.`)) return
+    if (start && !window.confirm(`Start tracking the ship of ${job.job_no}?\n\nThis uses 1 of the 50 trial shipments. Only do it for a ship that hasn't arrived yet.`)) return
     setBusy(true)
     try {
       const { data: res, error } = await supabase.functions.invoke('sea-track', { body: { jobId: job.id, start } })
@@ -72,17 +81,26 @@ export default function SeaTracking({ job, showToast }) {
     setBusy(false)
   }
 
-  // not tracked: offer it (a sea import only)
+  const head = shipName ? (
+    <div className="ship">
+      <b>{shipName}</b>{imo ? <span className="mono">IMO {imo}</span> : null}
+      {onVessels && <button type="button" className="ix-link" onClick={onVessels}>Vessels <Icon name="arrow-right" /></button>}
+    </div>
+  ) : null
+
+  // not tracked: offer it (a sea import only). Secondary: the panel's one primary
+  // button is the job's next step.
   if (!sea) {
     return (
       <div className="ix-seacard">
+        {head}
         <div className="hd">
           <span className="ic grey"><Icon name="ship" /></span>
           <div style={{ minWidth: 0, flex: 1 }}>
             <div className="t">Ship tracking</div>
-            <div className="note" style={{ margin: 0 }}>Not tracked yet. New jobs are tracked by themselves; this one needs a tap (uses 1 of the 50 free shipments).</div>
+            <div className="note" style={{ margin: 0 }}>Not tracked yet. New jobs are tracked by themselves; this one needs a tap (uses 1 of the 50 trial shipments).</div>
           </div>
-          <button type="button" className="ix-btn sm primary" disabled={busy} onClick={() => run(true)}>{busy ? 'Checking…' : 'Track this ship'}</button>
+          <Button size="sm" icon="ship" disabled={busy} onClick={() => run(true)}>{busy ? 'Checking…' : 'Track this ship'}</Button>
         </div>
       </div>
     )
@@ -97,7 +115,8 @@ export default function SeaTracking({ job, showToast }) {
   if (sea.error) {
     return (
       <div className="ix-seacard">
-        <div className="hd"><span className="ic grey"><Icon name="ship" /></span><div className="t">Ship tracking</div>{refresh}</div>
+        {head}
+        <div className="hd"><span className="ic grey"><Icon name="ship" /></span><div className="t" style={{ flex: 1 }}>Ship tracking</div>{refresh}</div>
         <div className="note">Could not track {sea.number_type === 'BL' ? 'BL' : 'container'} <span className="mono">{sea.number}</span>: {sea.error}</div>
       </div>
     )
@@ -105,17 +124,19 @@ export default function SeaTracking({ job, showToast }) {
   // the voyage: progress along the route and the distance left (same as the map's card)
   const v = typeof sea.lat === 'number' ? voyage({ pos: [sea.lat, sea.lng], route: sea.route, track: sea.track }) : null
   const waiting = notSailed(sea)
+  // at port = teal (calm), at sea = navy (moving), not sailed = grey (audit, 31 Oct 2026)
   const tone = sea.pod_actual ? 'port' : waiting ? 'grey' : 'sea'
   return (
     <div className="ix-seacard">
+      {head}
       <div className="hd">
-        <span className={`ic ${tone}`}><Icon name="ship" /></span>
+        <span className={`ic ${tone}`}><Icon name={sea.pod_actual ? 'anchor' : 'ship'} /></span>
         <div style={{ minWidth: 0, flex: 1 }}>
           <div className="k">{sea.pod_actual ? 'Arrived' : 'ETA'} · {portName(sea.pod) || 'port'}</div>
           <div className="eta">{portTime(sea.pod_date)}</div>
         </div>
-        <span className={`ix-chip ${tone === 'sea' ? 'blue' : tone === 'port' ? 'amber' : 'grey'}`}>{sea.pod_actual ? 'At port' : waiting ? 'Not sailed yet' : SHIP_STATUS[sea.status] || 'At sea'}</span>
-        {sea.fetched_at && <span className="upd" title={new Date(sea.fetched_at).toLocaleString('en-IN')}>Updated {timeAgo(sea.fetched_at)}</span>}
+        <Chip tone={tone === 'sea' ? 'blue' : tone === 'port' ? 'teal' : 'grey'}>{sea.pod_actual ? 'At port' : waiting ? 'Not sailed yet' : SHIP_STATUS[sea.status] || 'At sea'}</Chip>
+        {sea.fetched_at && <span className="upd" title={timeAgo(sea.fetched_at)}>Checked {fmtDateTime(sea.fetched_at)}</span>}
         {refresh}
       </div>
       {sea.pol && (
@@ -137,7 +158,7 @@ export default function SeaTracking({ job, showToast }) {
       )}
       <div className="facts">
         {sea.sealine_name && <div><div className="k">Line</div><div className="v">{sea.sealine_name}</div></div>}
-        {seaWhere(sea) && <div><div className="k">Where now</div><div className="v">{seaWhere(sea)}{sea.position_at && !waiting && <span className="muted"> · {timeAgo(sea.position_at)}</span>}</div></div>}
+        {seaWhere(sea) && <div><div className="k">Where now</div><div className="v">{seaWhere(sea)}{sea.position_at && !waiting && <span className="muted" title={timeAgo(sea.position_at)}> · {fmtDateTime(sea.position_at)}</span>}</div></div>}
         {ev.what && atPort(sea) && <div><div className="k">Last move</div><div className="v">{moveText(ev, false)}</div></div>}
         {nextStop(sea) && atPort(sea) && <div><div className="k">Next stop</div><div className="v">{nextStop(sea)}</div></div>}
       </div>

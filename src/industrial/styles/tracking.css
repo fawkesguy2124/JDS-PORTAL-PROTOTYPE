@@ -1,0 +1,153 @@
+/* Tracking pages: Vessels and Trucks, Control tower look (Jose, 31 Oct 2026).
+   Loaded by VesselsPage and TrucksPage (the ship and truck maps only appear there).
+   Tokens come from industrial.css (.ix). The older .ix-vt / .ix-vrow / .ix-vt-alert /
+   .ix-truck-row rules in industrial.css are no longer used by these pages; the map
+   overrides below are prefixed with .ix so they win over the older map rules. */
+
+/* ── alert rows ("needs a look"): one hairline box, one 36px row per item ── */
+.ix-trk-alerts { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); margin-bottom: var(--s3); overflow: hidden }
+.ix-trk-al { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; align-items: center; gap: 10px; min-height: 36px; padding: 5px 8px 5px 12px; border-bottom: 1px solid var(--line); font-size: var(--fs-md) }
+.ix-trk-al:last-child { border-bottom: 0 }
+.ix-trk-al > i { font-size: 16px; color: var(--muted) }
+.ix-trk-al.red { background: var(--red-bg) } .ix-trk-al.red > i { color: var(--red) }
+.ix-trk-al.amber > i { color: var(--amber-dot) }
+.ix-trk-al p { margin: 0; min-width: 0; display: flex; align-items: baseline; gap: 4px 10px; flex-wrap: wrap }
+.ix-trk-al p .t { color: var(--text-2) }
+.ix-trk-al p .jobs, .ix-trk-jobs { display: inline-flex; flex-wrap: wrap; gap: 2px 8px }
+.ix-trk-al.on { box-shadow: inset 3px 0 0 var(--navy) }
+
+/* ── Vessels: ship list beside the map, in one panel ── */
+.ix-trk-console { display: grid; grid-template-columns: 360px minmax(0, 1fr); overflow: hidden; margin-bottom: var(--s3) }
+.ix-trk-list { display: flex; flex-direction: column; min-width: 0; min-height: 0; max-height: var(--vt-h, calc(100vh - 220px)); border-right: 1px solid var(--line); background: var(--surface) }
+.ix-trk-list .ix-tabs { padding: 0 6px; flex-shrink: 0 }
+.ix-trk-list .ix-tab { padding: 0 8px }
+.ix-trk-rows { flex: 1; min-width: 0; min-height: 0; overflow-y: auto; overflow-x: hidden }
+.ix-trk-map { position: relative; min-width: 0 }
+.ix .ix-trk-map .ix-realmap, .ix .ix-trk-panel .ix-realmap { border-radius: 0; border-bottom: 0 }
+.ix .ix-trk-panel .ix-realmap { border-bottom: 1px solid var(--line) }
+
+.ix-vl-row { position: relative; box-sizing: border-box; width: 100%; min-width: 0; padding: 8px 12px 9px 14px; border-bottom: 1px solid var(--line); cursor: pointer; font-size: var(--fs-sm); color: var(--text-2) }
+.ix-vl-row:hover { background: var(--surface-2) }
+.ix-vl-row:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(--accent) }
+.ix-vl-row.sel { background: var(--navy-50); box-shadow: inset 3px 0 0 var(--navy) }
+.ix-vl-row .top { display: flex; align-items: center; gap: 8px; min-height: 20px }
+.ix-vl-row .jobs { display: flex; flex-wrap: wrap; gap: 2px 8px; min-width: 0 }
+.ix-vl-row .top .ix-st { margin-left: auto; flex-shrink: 0 }
+.ix-vl-row .l2 { margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+.ix-vl-row .l2 .m { color: var(--muted) }
+.ix-vl-row .l3 { display: flex; align-items: center; flex-wrap: wrap; gap: 2px 8px; margin-top: 3px; color: var(--muted); font-variant-numeric: tabular-nums }
+.ix-vl-row .l3 b { font-weight: 500; color: var(--text) }
+.ix-vl-row .warn { display: flex; align-items: flex-start; gap: 5px; margin-top: 4px; line-height: 1.35 }
+.ix-vl-row .warn i { font-size: 13px; margin-top: 1px; flex-shrink: 0 }
+.ix-vl-row .warn.red { color: var(--red) } .ix-vl-row .warn.amber { color: var(--amber) }
+.ix-vl-row .bar { height: 3px; margin-top: 6px; border-radius: 2px; background: var(--surface-3); overflow: hidden }
+.ix-vl-row .bar span { display: block; height: 100%; border-radius: 2px; background: var(--navy) }
+.ix-vl-row.port .bar span { background: var(--teal) } .ix-vl-row.old .bar span { background: var(--faint) }
+
+/* ── tables on these pages ── */
+.ix-trk-panel { margin-bottom: var(--s3) }
+.ix-trk-panel .ix-card-head > i { font-size: 16px; color: var(--muted) }
+.ix-trk-panel .ix-card-head .n { min-width: 20px; height: 18px; padding: 0 6px; border-radius: 9px; background: var(--surface-3); color: var(--text-2); font-size: var(--fs-xs); font-weight: 600; line-height: 18px; text-align: center }
+.ix-trk-panel .ix-card-head .n.amber { background: var(--amber-bg); color: var(--amber) }
+.ix-trk-panel .ix-card-head .n.red { background: var(--red-bg); color: var(--red) }
+.ix .ix-trk-panel .ix-tbl tbody tr { cursor: default }
+.ix-tbl td.two { padding-top: 5px; padding-bottom: 5px; line-height: 1.3 }
+.ix-tbl td .sub { display: block; font-size: var(--fs-sm); color: var(--muted); font-family: var(--font); letter-spacing: 0 }
+.ix-tbl td .sub .mono { font-size: 11.5px }
+.ix-tbl td.act { text-align: right }
+.ix-tbl td.act > div { display: inline-flex; align-items: center; gap: 4px; justify-content: flex-end }
+.ix-tbl tr.hl td { background: var(--navy-50) }
+.ix-tbl tr.grp td i { font-size: 13px; vertical-align: -2px; margin-right: 4px; color: var(--muted) }
+.ix-tbl tr.grp td .hint { text-transform: none; letter-spacing: 0; font-weight: 400; color: var(--muted); margin-left: 8px }
+/* the row under a row: the assign form, or a truck check */
+.ix-tbl tr.ix-trk-sub td { height: auto; padding: 0; white-space: normal; background: var(--surface-2) }
+.ix-tbl tr.ix-trk-sub:hover td { background: var(--surface-2) }
+.ix-trk-sub .in { padding: 10px 12px 12px 16px }
+.ix-trk-form { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 12px 8px 16px }
+.ix-trk-form .lbl { font-size: var(--fs-sm); color: var(--text-2); margin-right: 2px }
+.ix-trk-form input, .ix-trk-form select { height: 30px; border: 1px solid var(--line-2); border-radius: var(--r-md); padding: 0 10px; font: 400 var(--fs-md) var(--font); background: var(--surface); color: var(--text); min-width: 0 }
+.ix-trk-form input { width: 170px }
+.ix-trk-form input.plate { text-transform: uppercase; letter-spacing: .02em }
+.ix-trk-form input:focus-visible, .ix-trk-form select:focus-visible { outline: none; border-color: var(--accent); box-shadow: var(--focus) }
+.ix-trk-form .err { flex-basis: 100%; display: flex; align-items: center; gap: 6px; color: var(--red); font-size: var(--fs-sm) }
+
+/* number plate */
+.ix .ix-plate { display: inline-flex; align-items: center; height: 20px; padding: 0 6px; border: 1px solid var(--text-2); border-radius: var(--r-sm); background: var(--surface); color: var(--text); font: 600 12px var(--mono); letter-spacing: .02em; white-space: nowrap }
+.ix button.ix-plate { cursor: pointer }
+.ix button.ix-plate:hover { border-color: var(--navy); color: var(--navy) }
+.ix button.ix-plate:focus-visible { outline: none; box-shadow: var(--focus) }
+.ix .ix-plate.none { border-style: dashed; border-color: var(--line-2); color: var(--muted); font: 500 var(--fs-xs) var(--font) }
+/* papers chip as a button */
+.ix-trk-chipbtn { border: 0; background: none; padding: 0; text-align: left }
+.ix-trk-chipbtn:focus-visible { outline: none; box-shadow: var(--focus); border-radius: var(--r-sm) }
+.ix-trk-place { display: inline-flex; align-items: center; gap: 4px }
+.ix-trk-place > i { font-size: 13px; color: var(--navy) }
+
+/* checks tab (truck & driver checks) */
+.ix-trk-tabs { margin-bottom: var(--s3) }
+
+/* ── maps: colours in the Control tower set (at sea navy, at port teal) ── */
+.ix .ix-tag { border-color: var(--line-2); border-left-color: var(--navy); border-radius: var(--r-md); font-family: var(--font) }
+.ix .ix-tag b { font: 600 12px var(--mono); letter-spacing: -.02em; color: var(--text) }
+.ix .ix-tag.port { border-left-color: var(--teal) } .ix .ix-tag.old { border-left-color: var(--faint) }
+.ix .ix-tag.sel { border-color: var(--navy); border-left-color: var(--accent); box-shadow: 0 0 0 3px rgba(245, 165, 36, .3), 0 2px 8px rgba(16, 24, 40, .18) }
+.ix .ix-tag.port-tag { border-left-color: var(--navy); background: var(--surface-2) }
+.ix .ix-tag.port-tag b { font-family: var(--font); color: var(--navy) }
+.ix .ix-cluster { background: var(--navy); box-shadow: 0 0 0 4px rgba(26, 79, 160, .2), 0 1px 4px rgba(0, 0, 0, .35) }
+.ix .ix-cluster.port { background: var(--teal); box-shadow: 0 0 0 4px rgba(15, 118, 110, .2), 0 1px 4px rgba(0, 0, 0, .35) }
+.ix .ix-cluster.old { background: var(--faint); box-shadow: 0 0 0 4px rgba(182, 191, 204, .3), 0 1px 4px rgba(0, 0, 0, .35) }
+.ix .ix-portmk { background: var(--navy); border-radius: var(--r-md) }
+.ix .ix-ship.sel .hull { filter: drop-shadow(0 0 2px #fff) drop-shadow(0 0 5px var(--accent)) }
+.ix .ix-via .dot { background: var(--navy-700) }
+.ix .ix-via .lbl { color: var(--navy-700); border-color: var(--navy-200); border-radius: var(--r-md) }
+.ix .ix-seacard .via i, .ix .ix-voyage .via i { color: var(--navy) }
+.ix .ix-map-all { border-radius: var(--r-md); font: 500 var(--fs-sm) var(--font); height: 28px; box-shadow: var(--shadow-pop) }
+.ix .ix-realmap-legend { border-radius: var(--r-md); font-size: var(--fs-xs); color: var(--text-2) }
+.ix .ix-realmap-legend i.hollow { background: var(--surface) !important; box-shadow: inset 0 0 0 1.5px var(--navy) }
+.ix .ix-realmap-expand { border-radius: var(--r-md); box-shadow: none }
+.ix .ix-realmap-msg { border-radius: var(--r-lg); box-shadow: var(--shadow-pop); font-size: var(--fs-md) }
+.ix .ix-realmap-msg .s { font-size: var(--fs-sm); color: var(--muted); margin-top: 4px }
+.ix .ix-realmap.big { box-shadow: var(--shadow-panel) }
+
+/* the voyage card on the sea map (it floats: shadow-pop) */
+.ix .ix-voyage { border-radius: var(--r-lg); box-shadow: var(--shadow-pop); font-size: var(--fs-sm) }
+.ix .ix-voyage .hd .ic { width: 30px; height: 30px; border-radius: var(--r-md); background: var(--navy-50); color: var(--navy); font-size: 17px }
+.ix .ix-voyage .hd .ic.port { background: var(--teal-bg); color: var(--teal) }
+.ix .ix-voyage .hd .ic.old { background: var(--grey-bg); color: var(--text-2) }
+.ix .ix-voyage .hd .t { font: 600 15px var(--mono); letter-spacing: -.02em }
+.ix .ix-voyage .hd .s { font-size: var(--fs-sm) }
+.ix .ix-voyage .legs .k, .ix .ix-voyage .moves .k { font-size: var(--fs-xs) }
+.ix .ix-voyage .legs .d, .ix .ix-voyage .prog, .ix .ix-voyage .foot { font-size: var(--fs-sm) }
+.ix .ix-voyage .bar { height: 4px; background: var(--surface-3) }
+.ix .ix-voyage .bar span { background: var(--navy) }
+.ix .ix-flag { border-radius: var(--r-md) }
+.ix .ix-flag.red { color: var(--red) } .ix .ix-flag.amber { color: var(--amber) } .ix .ix-flag.info { color: var(--navy) }
+/* ETA moved: later = amber, earlier = plain (green is only for done) */
+.ix .ix-delay { border-radius: var(--r-sm); font-size: var(--fs-xs); font-weight: 600 }
+.ix .ix-delay.late { background: var(--amber-bg); color: var(--amber) }
+.ix .ix-delay.early { background: var(--grey-bg); color: var(--text-2) }
+
+/* truck pins */
+.ix .ix-tmark { border: 1.5px solid var(--navy); font: 600 11.5px var(--mono); box-shadow: var(--shadow-pop) }
+.ix .ix-tmark .ic { width: 24px; height: 24px; background: var(--navy); font-size: 15px }
+.ix .ix-tmark::after { border-top-color: var(--navy) }
+.ix .ix-tmark .job { font: 600 11px var(--mono); color: var(--navy); background: var(--navy-50); letter-spacing: -.02em }
+.ix .ix-tmark.stale { border-color: var(--red) } .ix .ix-tmark.stale .ic { background: var(--red) } .ix .ix-tmark.stale::after { border-top-color: var(--red) }
+.ix .ix-tmark.stale .job { color: var(--red); background: var(--red-bg) }
+/* moving by container tracking, no truck number: hollow pin */
+.ix .ix-tmark.hollow { border-style: dashed; color: var(--text-2); font-family: var(--font); font-weight: 500 }
+.ix .ix-tmark.hollow .ic { background: var(--surface); color: var(--navy); box-shadow: inset 0 0 0 1.5px var(--navy) }
+.ix .ix-tmark.sel { outline: 2px solid var(--accent); outline-offset: 2px }
+
+@media (max-width: 900px) {
+  /* minmax(0, 1fr), not 1fr: a plain 1fr track grows to the rows' longest
+     unbroken line, which made the rows 2px wider than a 375px screen */
+  .ix-trk-console { grid-template-columns: minmax(0, 1fr) }
+  .ix-trk-list { max-height: 320px; border-right: 0; border-bottom: 1px solid var(--line) }
+}
+@media (max-width: 760px) {
+  .ix-trk-al { grid-template-columns: 18px minmax(0, 1fr); padding-right: 12px }
+  .ix-trk-al > .ix-btn { grid-column: 2; justify-self: start }
+  .ix-trk-form input, .ix-trk-form select { height: 42px; flex: 1 1 160px }
+  .ix-trk-form .ix-btn { flex: 0 0 auto }
+}

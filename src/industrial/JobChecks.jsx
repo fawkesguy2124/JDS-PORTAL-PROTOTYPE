@@ -5,71 +5,77 @@ import { getStageName, parseContainerNos } from '../utils/jobHelpers'
 import CustomsStatusCard from '../components/CustomsStatusCard'
 import UlipSection from '../components/ulip/UlipSection'
 import { useJourney } from './JourneyContext'
-import { Icon, PhaseChip } from './ui'
-import { truckNos } from '../services/journey'
+import { Icon, JobNo, PhaseStatus, Status, Chip, FreeDays, Dash, Button, SearchBox, EmptyState, fmtDate, fmtDateTime } from './ui'
+import BeStage from './BeStage'
+import { truckNos, daysAgo } from '../services/journey'
+import './styles/customs.css'
 
 // Left: find a job (search + short lists). Right: that job's government checks.
 // Used by BE & OOC (customs checks) and Trucks (truck & driver checks).
+// Control tower look (Jose, 31 Oct 2026): dense rows, job number first, client on one line.
 
-export function JobPicker({ title, rows, selectedId, onSelect, lists = [], placeholder }) {
+// lists = [{ title, rows, empty, sub(r), note, tag(r) → node, level(r) → 'red' | 'amber' | '' }]
+// (icon / color are still accepted from older callers; the group head is a plain caps line)
+export function JobPicker({ title, rows, selectedId, onSelect, lists = [], placeholder, className = '' }) {
   const [q, setQ] = useState('')
   const needle = q.trim().toLowerCase().replace(/\s+/g, '')
   const hits = needle
     ? rows.filter(({ job }) => [job.job_no, job.client, job.be_no, job.bl_no, ...truckNos(job), job.ulip_refs?.igm_no, ...parseContainerNos(job.containers)]
       .filter(Boolean).some((x) => String(x).toLowerCase().replace(/\s+/g, '').includes(needle))).slice(0, 30)
     : null
-  const item = ({ job, j }, sub) => (
-    <button key={job.id} type="button" onClick={() => onSelect(job.id)}
-      className="ix-pick-row" aria-current={selectedId === job.id}>
-      <div style={{ minWidth: 0, flex: 1 }}>
-        <div><b className="mono">{job.job_no}</b> <span style={{ color: 'var(--text-2)' }}>· {job.client || '—'}</span></div>
-        <div className="s">{sub ? sub({ job, j }) : (job.be_no ? `BE ${job.be_no}` : 'No BE yet')}</div>
-      </div>
-      <PhaseChip job={job} j={j} />
-    </button>
-  )
+  const item = (r, l) => {
+    const { job, j } = r
+    const level = l?.level ? l.level(r) : ''
+    return (
+      <button key={job.id} type="button" onClick={() => onSelect(job.id)}
+        className={`cu-row${level ? ` ${level}` : ''}`} aria-current={selectedId === job.id}>
+        <span className="t"><JobNo no={job.job_no} /><span className="cl">{job.client || 'No client'}</span></span>
+        <span className="m">{l?.sub ? l.sub(r) : (job.be_no ? <>BE <span className="mono">{job.be_no}</span></> : 'No BE yet')}</span>
+        <span className="tg">{l?.tag ? l.tag(r) : <PhaseStatus job={job} j={j} />}</span>
+      </button>
+    )
+  }
   return (
-    <div className="ix-card ix-picker">
-      <div className="ix-card-head"><Icon name="search" style={{ color: 'var(--navy)' }} /><h2>{title}</h2></div>
-      <div style={{ padding: '10px 12px', borderBottom: '1px solid var(--line)' }}>
-        <input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder={placeholder || 'Job no, client, BE, container…'}
-          style={{ width: '100%', height: 34, border: '1px solid var(--line)', borderRadius: 8, padding: '0 10px', font: '13px Inter, sans-serif' }} />
+    <section className={`ix-card cu-list${className ? ` ${className}` : ''}`} aria-label={title}>
+      <div className="cu-list-top">
+        <SearchBox value={q} onChange={setQ} placeholder={placeholder || 'Job no, client, BE, container…'} />
       </div>
-      <div className="ix-pick-list">
+      <div className="cu-list-body">
         {hits ? (
-          hits.length ? hits.map((r) => item(r)) : <div className="ix-empty">No job matches “{q}”.</div>
+          hits.length
+            ? <><div className="cu-grp">Matches<span className="n">{hits.length}</span></div>{hits.map((r) => item(r))}</>
+            : <EmptyState line icon="search" title={`No job matches “${q}”.`} />
         ) : lists.map((l) => (
           <div key={l.title}>
-            <div className="ix-att-group" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <Icon name={l.icon} style={{ color: l.color }} />{l.title} · {l.rows.length}
-            </div>
-            {l.note && <div style={{ padding: '6px 12px', fontSize: 12, color: 'var(--muted)' }}>{l.note}</div>}
-            {l.rows.length === 0 ? <div className="ix-empty" style={{ padding: '8px 12px' }}>{l.empty}</div> : l.rows.map((r) => item(r, l.sub))}
+            <div className="cu-grp">{l.title}<span className="n">{l.rows.length}</span></div>
+            {l.note && <div className="cu-grp-note">{l.note}</div>}
+            {l.rows.length === 0 ? <div className="cu-none">{l.empty}</div> : l.rows.map((r) => item(r, l))}
           </div>
         ))}
       </div>
-    </div>
+    </section>
   )
 }
 
 export function NoJobChosen({ text }) {
   return (
-    <div className="ix-card" style={{ padding: 40, textAlign: 'center', color: 'var(--muted)' }}>
-      <Icon name="hand-click" style={{ fontSize: 36 }} />
-      <div style={{ marginTop: 8 }}>{text}</div>
+    <div className="ix-card">
+      <EmptyState icon="hand-click" title="Pick a job">{text}</EmptyState>
     </div>
   )
 }
 
-function JobHead({ job, j, onOpenJob, children }) {
+// Title row of the job on the right: job number first, then client, mode and port
+function JobHead({ job, j, onOpenJob, onClose, children }) {
   return (
-    <div className="ix-card-head" style={{ flexWrap: 'wrap' }}>
-      <b className="mono" style={{ fontSize: 16 }}>{job.job_no}</b>
-      <span style={{ color: 'var(--text-2)' }}>{job.client || '—'} · {job.mode || '—'}</span>
-      <PhaseChip job={job} j={j} />
-      <div className="right" style={{ display: 'flex', gap: 6 }}>
+    <div className="ix-card-head">
+      <JobNo no={job.job_no} size="lg" />
+      <span className="cl">{[job.client || 'No client', job.mode, job.port].filter(Boolean).join(' · ')}</span>
+      <PhaseStatus job={job} j={j} />
+      <div className="right">
         {children}
-        <button type="button" className="ix-btn sm" onClick={() => onOpenJob(job.id)}><Icon name="layout-sidebar-right" />Job summary</button>
+        <Button size="sm" icon="layout-sidebar-right" onClick={() => onOpenJob(job.id)}>Job summary</Button>
+        {onClose && <button type="button" className="ix-icon-btn sm" onClick={onClose} aria-label="Back to the list" title="Back to the list"><Icon name="x" /></button>}
       </div>
     </div>
   )
@@ -81,50 +87,91 @@ async function reloadJob(id, patchJob) {
   if (data) patchJob(data)
 }
 
-export function CustomsWorkspace({ jobId, onOpenJob, canEditBE, canUpdateStage, currentUserName, showToast, groups }) {
+// BE age as a tag: 'Day 9' red after 7 days, amber from 4, grey before (audit, 31 Oct 2026)
+export function DayTag({ since }) {
+  const d = since ? daysAgo(since) : null
+  if (d === null || d === undefined || isNaN(d)) return null
+  const n = Math.max(0, d)
+  return <Chip tone={n > 7 ? 'red' : n >= 4 ? 'amber' : 'grey'} title={`Filed ${n === 0 ? 'today' : n === 1 ? '1 day ago' : `${n} days ago`}`}>Day {n}</Chip>
+}
+
+// The customs facts of one import job, all from the saved data (a missing fact is a dash)
+function CustomsFacts({ job, j }) {
+  const ooc = j.steps?.find((s) => s.id === 'ooc')
+  const out = j.steps?.find((s) => s.id === 'out')
+  const boxes = j.containers?.nos?.length || 0
+  const stage = j.beStage
+  return (
+    <dl className="cu-facts">
+      <div><dt>BE</dt><dd>{job.be_no ? <span className="mono">{job.be_no}</span> : <Dash />}{job.be_date && <span className="x">{fmtDate(job.be_date)}</span>}{j.beFiled && !j.oocDone && <DayTag since={job.be_date} />}</dd></div>
+      {/* OOC granted = the job's phase as the rest of the portal shows it (amber 'To move', green only when delivered) */}
+      <div><dt>Customs stage</dt><dd>{j.oocDone ? <PhaseStatus job={job} j={j} /> : stage ? <Status tone={stage.tone}>{stage.short}</Status> : j.beFiled ? <span className="x">Not set</span> : <Dash />}</dd></div>
+      <div><dt>OOC</dt><dd>{j.oocDate ? <>{fmtDate(j.oocDate)}{j.customs?.ooc_no && <span className="x mono">{j.customs.ooc_no}</span>}</> : j.oocDone ? <span className="x">{ooc?.sub || 'Recorded by staff'}</span> : <Dash />}</dd></div>
+      <div><dt>Last checked</dt><dd>{j.customs?.checked_at ? fmtDateTime(j.customs.checked_at) : j.beFiled ? <span className="x">Not yet</span> : <Dash />}</dd></div>
+      <div><dt>{j.arrivedAt ? 'Arrived' : 'ETA'}</dt><dd>{j.arrivedAt ? fmtDate(j.arrivedAt) : job.eta ? fmtDate(job.eta) : <Dash />}</dd></div>
+      <div><dt>Containers</dt><dd>{boxes ? <>{boxes}{out?.sub && <span className="x">{out.sub}</span>}</> : <Dash />}</dd></div>
+      <div><dt>Free days</dt><dd><FreeDays value={j.freeDaysLeft} till={j.freeTill && fmtDate(j.freeTill)} /></dd></div>
+    </dl>
+  )
+}
+
+// onClose (optional): an X in the head that goes back to the list
+export function CustomsWorkspace({ jobId, onOpenJob, canEditBE, canUpdateStage, currentUserName, showToast, groups, onClose }) {
   const { byId, patchJob, refresh } = useJourney()
   const row = byId[jobId]
   if (!row) return <NoJobChosen text="That job is not in the list any more." />
   const { job, j } = row
+  const next = j.steps?.find((s) => s.current)
   return (
-    <div className="ix-card">
-      <JobHead job={job} j={j} onOpenJob={onOpenJob} />
-      <div style={{ padding: 16 }}>
-        <CustomsStatusCard
-          key={job.id}
-          job={job}
-          canEditBE={canEditBE}
-          canUpdateStage={canUpdateStage}
-          onMoveToStage={async (stage) => {
-            const res = await setStage(job, Number(stage), getStageName(Number(stage)), currentUserName)
-            if (res.ok) { patchJob(res.job); showToast?.(`${job.job_no} moved to ${getStageName(Number(stage))}`, 'success') }
-            else showToast?.(res.error, 'error')
-          }}
-          onSaved={async () => { await reloadJob(job.id, patchJob); refresh() }}
-          toast={showToast}
-        />
-        <div style={{ marginTop: 20 }}>
+    <section className="ix-card cu-detail">
+      <JobHead job={job} j={j} onOpenJob={onOpenJob} onClose={onClose} />
+      <div className="cu-detail-body">
+        <CustomsFacts job={job} j={j} />
+        {next && j.phase !== 'delivered' && (
+          <div className="ix-next">
+            <Icon name="arrow-right" />
+            <div><div className="t">{next.nextText || next.label}</div>{next.sub && <div className="s">{next.sub}</div>}</div>
+          </div>
+        )}
+        {/* where the BE is now: one tap (Jose, 25 Oct 2026) */}
+        {j.beFiled && !j.oocDone && <BeStage job={job} userName={currentUserName} showToast={showToast} />}
+        <div className="cu-legacy">
+          <CustomsStatusCard
+            key={job.id}
+            job={job}
+            canEditBE={canEditBE}
+            canUpdateStage={canUpdateStage}
+            onMoveToStage={async (stage) => {
+              const res = await setStage(job, Number(stage), getStageName(Number(stage)), currentUserName)
+              if (res.ok) { patchJob(res.job); showToast?.(`${job.job_no} moved to ${getStageName(Number(stage))}`, 'success') }
+              else showToast?.(res.error, 'error')
+            }}
+            onSaved={async () => { await reloadJob(job.id, patchJob); refresh() }}
+            toast={showToast}
+          />
+        </div>
+        <div className="cu-legacy">
           <UlipSection key={job.id} job={job} groups={groups} onJobChange={() => reloadJob(job.id, patchJob)} />
         </div>
       </div>
-    </div>
+    </section>
   )
 }
 
-export function TruckWorkspace({ jobId, onOpenJob, groups }) {
+export function TruckWorkspace({ jobId, onOpenJob, groups, onClose }) {
   const { byId, patchJob } = useJourney()
   const row = byId[jobId]
   if (!row) return <NoJobChosen text="That job is not in the list any more." />
   const { job, j } = row
   return (
-    <div className="ix-card">
-      <JobHead job={job} j={j} onOpenJob={onOpenJob}>
+    <section className="ix-card cu-detail">
+      <JobHead job={job} j={j} onOpenJob={onOpenJob} onClose={onClose}>
         {truckNos(job).map((t) => <span key={t} className="ix-plate" style={{ fontSize: 12 }}>{t}</span>)}
       </JobHead>
-      <div style={{ padding: 16 }}>
-        {!truckNos(job).length && <div className="ix-next" style={{ marginBottom: 16 }}><Icon name="info-circle" /><div><div className="t">No truck assigned yet</div><div className="s">Type the truck number in a check below, or assign it from the list.</div></div></div>}
+      <div className="cu-detail-body">
+        {!truckNos(job).length && <div className="ix-next"><Icon name="info-circle" /><div><div className="t">No truck assigned yet</div><div className="s">Type the truck number in a check below, or assign it from the list.</div></div></div>}
         <UlipSection key={job.id} job={job} groups={groups} onJobChange={() => reloadJob(job.id, patchJob)} />
       </div>
-    </div>
+    </section>
   )
 }

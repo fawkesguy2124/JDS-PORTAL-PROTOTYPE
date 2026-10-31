@@ -1,3 +1,5 @@
+// (the map helpers stay next to the map because the pages and the job panel import them from here)
+/* eslint-disable react-refresh/only-export-components */
 import { useEffect, useRef, useState } from 'react'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
@@ -157,7 +159,11 @@ const fit = (m, bounds, maxZoom = 7, card = false) => {
 }
 // the vessel mark ship trackers use: a slim arrow, bow up, turned to the heading
 const hull = (color) => `<svg viewBox="0 0 16 26" width="16" height="26" aria-hidden="true"><path d="M8 1.5 L14.5 23.5 L8 19.8 L1.5 23.5 Z" fill="${color}" stroke="#ffffff" stroke-width="1.6" stroke-linejoin="round"/></svg>`
-export const TONE_COLOR = { sea: '#15803d', port: '#c2410c', old: '#94a3b8' }
+// Control tower colours (Jose, 31 Oct 2026): at sea navy (moving), at port teal (calm),
+// not sailed / old position grey. They mirror --navy, --teal and --faint (map layers
+// cannot read CSS variables).
+export const TONE_COLOR = { sea: '#1a4fa0', port: '#0f766e', old: '#b6bfcc' }
+const SAILED = '#1a4fa0', AHEAD = '#475467'
 export const toneOf = (s) => {
   const stale = s.at && Date.now() - new Date(s.at).getTime() > STALE_HOURS * 3600e3
   // at the port (confirmed, or already within reach of it) beats an old position
@@ -227,17 +233,17 @@ export default function ShipMap({ ships = [], selectedKey, onSelect, height = 42
     if (sel && v) {
       if (v.sailed.length > 1) {
         L.polyline(v.sailed, { color: '#ffffff', weight: 6, opacity: 0.8, interactive: false }).addTo(layer.current)
-        L.polyline(v.sailed, { color: '#15803d', weight: 3, opacity: 0.95, interactive: false }).addTo(layer.current)
+        L.polyline(v.sailed, { color: SAILED, weight: 3, opacity: 0.95, interactive: false }).addTo(layer.current)
       }
-      if (v.ahead.length > 1) L.polyline(v.ahead, { color: '#1a4fa0', weight: 2.5, opacity: 0.75, dashArray: '1 7', lineCap: 'round', interactive: false }).addTo(layer.current)
+      if (v.ahead.length > 1) L.polyline(v.ahead, { color: AHEAD, weight: 2.5, opacity: 0.7, dashArray: '1 7', lineCap: 'round', interactive: false }).addTo(layer.current)
       for (const t of (sel.track || []).slice(0, -1)) {
         if (typeof t[0] !== 'number') continue
-        L.circleMarker([t[0], t[1]], { radius: 2.5, color: '#15803d', weight: 1, fillColor: '#fff', fillOpacity: 1 })
+        L.circleMarker([t[0], t[1]], { radius: 2.5, color: SAILED, weight: 1, fillColor: '#fff', fillOpacity: 1 })
           .bindTooltip(`Position ${esc(ago(t[2]))}`).addTo(layer.current)
       }
       const pol = sel.route?.pol
       if (pol) {
-        L.circleMarker(pol, { radius: 5, color: '#15803d', weight: 2, fillColor: '#fff', fillOpacity: 1 })
+        L.circleMarker(pol, { radius: 5, color: SAILED, weight: 2, fillColor: '#fff', fillOpacity: 1 })
           .bindTooltip(`<b>${esc(sel.polName || 'Port of loading')}</b>${sel.polDate ? `<br>${esc(sel.polDate)}` : ''}`).addTo(layer.current)
       }
       // ports on the way: where the cargo changes ship (labelled), and where its ship just calls
@@ -388,7 +394,7 @@ export default function ShipMap({ ships = [], selectedKey, onSelect, height = 42
         {!placed.length && (
           <div className="ix-realmap-msg">
             <Icon name="ship" /> {ships.length ? 'No ship position yet.' : 'No ship is carrying our cargo right now.'}
-            {ships.length > 0 && <div style={{ fontSize: 12, marginTop: 4 }}>Positions come with ship tracking (open the job → Track this ship).</div>}
+            {ships.length > 0 && <div className="s">Positions come with ship tracking (open the job → Track this ship).</div>}
           </div>
         )}
         {sel && (
@@ -440,7 +446,7 @@ export default function ShipMap({ ships = [], selectedKey, onSelect, height = 42
           <span><i style={{ background: TONE_COLOR.sea }} />At sea</span>
           <span><i style={{ background: TONE_COLOR.port }} />At port</span>
           <span><i style={{ background: TONE_COLOR.old }} />Not sailed / old position</span>
-          {sel && <span><b style={{ color: '#15803d' }}>━</b> Sailed <b style={{ color: '#1a4fa0', marginLeft: 6 }}>┅</b> Ahead</span>}
+          {sel && <span><b style={{ color: SAILED }}>━</b> Sailed <b style={{ color: AHEAD, marginLeft: 6 }}>┅</b> Ahead</span>}
         </div>
         <button type="button" className="ix-realmap-expand" onClick={() => setBig((b) => !b)}
           title={big ? 'Make the map small again (Esc)' : 'Full screen'} aria-label={big ? 'Make the map small again' : 'Full screen map'}>

@@ -1,9 +1,11 @@
+// (addBaseMap stays next to the map that uses it; other maps import it from here)
+/* eslint-disable react-refresh/only-export-components */
 import { useEffect, useRef, useState } from 'react'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import '@maplibre/maplibre-gl-leaflet'
-import { Icon } from './ui'
+import { Icon, fmtDateTime } from './ui'
 
 // The background map: OpenFreeMap (free, no key, allowed for business use), a
 // clean Google-Maps-like style with place names in English. If the browser
@@ -26,11 +28,17 @@ export function addBaseMap(m) {
 }
 
 // A real street map of the trucks on the road. A truck's
-// position is its last FASTag toll crossing; nothing here calls ULIP — it only
-// draws answers already saved when staff pressed "Where is it?".
-// trucks: [{ id, no, job, points }] — one pin per truck (a job can have several).
+// position is its last toll crossing; nothing here calls a government system — it
+// only draws answers already saved (automatic look-ups or "Where is it?").
+// trucks: [{ id, no, job, points, hollow, mode }] — one pin per truck (a job can have
+// several). hollow = container tracking shows the box on the road / rail but the job has
+// no truck number: a dashed pin at that place (Jose, 31 Oct 2026).
+// message: { title, sub } shown when no pin can be placed, so the map says the same as
+// the page's "on the road" list.
 
-const fmt = (v) => { if (!v) return ''; const d = new Date(v); return isNaN(d) ? String(v) : d.toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }) }
+const fmt = (v) => (v ? fmtDateTime(v) : '')
+// colours as the --navy / --red tokens (map layers cannot read CSS variables)
+const NAVY = '#1a4fa0', RED = '#c81e1e'
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]))
 const STALE_HOURS = 6
 // the map may have been closed in the meantime (page changed)
@@ -41,7 +49,7 @@ const fit = (m, bounds) => {
   else if (bounds.length) m.fitBounds(L.latLngBounds(bounds).pad(0.25))
 }
 
-export default function TruckMap({ trucks, selectedId, onSelect }) {
+export default function TruckMap({ trucks, selectedId, onSelect, message }) {
   const box = useRef(null)
   const map = useRef(null)
   const layer = useRef(null)
@@ -69,21 +77,24 @@ export default function TruckMap({ trucks, selectedId, onSelect }) {
       if (!t.last) continue
       const isSel = t.id === selectedId
       const lastAt = new Date(t.last.at)
-      const stale = !isNaN(lastAt) && Date.now() - lastAt.getTime() > STALE_HOURS * 3600e3
+      const stale = !t.hollow && !isNaN(lastAt) && Date.now() - lastAt.getTime() > STALE_HOURS * 3600e3
       const route = t.points.filter((p) => p.pos)
       if (isSel && route.length > 1) {
-        L.polyline(route.map((p) => p.pos), { color: stale ? '#b91c1c' : '#1a4fa0', weight: 5, opacity: 0.85 }).addTo(layer.current)
+        L.polyline(route.map((p) => p.pos), { color: stale ? RED : NAVY, weight: 4, opacity: 0.85 }).addTo(layer.current)
       }
       if (isSel) {
         for (const p of route.slice(0, -1)) {
-          L.circleMarker(p.pos, { radius: 5, color: '#1a4fa0', weight: 2, fillColor: '#fff', fillOpacity: 1 })
+          L.circleMarker(p.pos, { radius: 5, color: NAVY, weight: 2, fillColor: '#fff', fillOpacity: 1 })
             .bindTooltip(`${esc(p.plaza)}<br>${esc(fmt(p.at))}${p.approx ? '<br><i>approximate position</i>' : ''}`).addTo(layer.current)
         }
         route.forEach((p) => bounds.push(p.pos))
       }
-      const html = `<div class="ix-tmark ${stale ? 'stale' : ''} ${isSel ? 'sel' : ''}"><span class="ic"><i class="ti ti-truck"></i></span>${esc(t.no)}<span class="job">${esc(t.job.job_no)}</span></div>`
+      // job number first on the pin; a hollow pin says no truck number is known yet
+      const icon = t.mode === 'rail' ? 'train' : 'truck'
+      const html = `<div class="ix-tmark ${stale ? 'stale' : ''} ${t.hollow ? 'hollow' : ''} ${isSel ? 'sel' : ''}"><span class="ic"><i class="ti ti-${icon}"></i></span><span class="job">${esc(t.job.job_no)}</span>${esc(t.hollow ? (t.mode === 'rail' ? 'On rail' : 'No truck no.') : t.no)}</div>`
+      const what = t.hollow ? `${t.mode === 'rail' ? 'On rail' : 'On the road'} by container tracking, no truck number yet` : esc(t.no)
       L.marker(t.last.pos, { icon: L.divIcon({ className: 'ix-tpin', iconSize: [0, 0], html }), zIndexOffset: isSel ? 1000 : 0 })
-        .bindTooltip(`<b>${esc(t.no)}</b> · ${esc(t.job.job_no)}<br>${esc(t.last.plaza)}<br>${esc(fmt(t.last.at))}${stale ? ' · <b>no newer crossing</b>' : ''}${t.last.approx ? '<br><i>approximate position</i>' : ''}`, { direction: 'top', offset: [0, -28] })
+        .bindTooltip(`<b>${esc(t.job.job_no)}</b> · ${what}<br>${esc(t.last.plaza)}<br>${esc(fmt(t.last.at))}${stale ? ' · <b>no newer crossing</b>' : ''}${t.last.approx ? '<br><i>approximate position</i>' : ''}`, { direction: 'top', offset: [0, -28] })
         .on('click', () => onSelect?.(t.id))
         .addTo(layer.current)
       if (!bounds.length && !selectedId) bounds.push(t.last.pos)
@@ -118,14 +129,15 @@ export default function TruckMap({ trucks, selectedId, onSelect }) {
       <div ref={box} className="ix-realmap-canvas" role="img" aria-label="Map of trucks on the road" />
       {!shown.length && (
         <div className="ix-realmap-msg">
-          <Icon name="map-pin" /> {trucks.length ? 'No toll crossing with a known position yet.' : 'No trucks on the road right now.'}
-          {trucks.length > 0 && <div style={{ fontSize: 12, marginTop: 4 }}>Press “Where is it?” on a truck below to ask FASTag.</div>}
+          <Icon name="map-pin" /> {message?.title || (trucks.length ? 'No toll crossing with a known position yet.' : 'No truck on the road.')}
+          {(message ? message.sub : trucks.length > 0 && 'Press “Where is it?” on a truck below.') && <div className="s">{message ? message.sub : 'Press “Where is it?” on a truck below.'}</div>}
         </div>
       )}
       <div className="ix-realmap-legend">
-        <span><i style={{ background: '#1a4fa0' }} />Last toll crossing</span>
-        <span><i style={{ background: '#b91c1c' }} />No crossing for {STALE_HOURS} h+</span>
-        {unplaced.length > 0 && <span style={{ color: 'var(--muted)' }}>{unplaced.length} truck{unplaced.length === 1 ? '' : 's'} at a plaza we can’t place</span>}
+        <span><i style={{ background: NAVY }} />Last toll crossing</span>
+        <span><i style={{ background: RED }} />No crossing for {STALE_HOURS} h+</span>
+        {trucks.some((t) => t.hollow) && <span><i className="hollow" />Moving, no truck number</span>}
+        {unplaced.length > 0 && <span style={{ color: 'var(--muted)' }}>{unplaced.length} {unplaced.length === 1 ? 'place' : 'places'} we can’t put on the map</span>}
       </div>
       <button type="button" className="ix-realmap-expand" onClick={() => setBig((b) => !b)}
         title={big ? 'Make the map small again (Esc)' : 'Expand the map'} aria-label={big ? 'Make the map small again' : 'Expand the map'}>

@@ -1,0 +1,78 @@
+/* Containers page (Control tower, Jose 31 Oct 2026). Only the pieces the shared
+   industrial.css does not have; every colour, size and radius is a token from .ix. */
+
+/* table: container numbers are the page's main data, so mono 12px at full weight */
+.ix-cn-tbl .ix-cn-no { font: 600 12px var(--mono); letter-spacing: -.01em; color: var(--text) }
+/* long text is cut with '…' (full text in the cell's title); inner wrappers carry
+   the widths so the table fits at 1366-1440px (round-1 review) */
+.ix-cn-ell { display: block; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.ix-cn-tbl td.ix-cn-line { color: var(--text-2) }
+.ix-cn-tbl td.ix-cn-line .ix-cn-ell { max-width: 130px }
+.ix-cn-tbl .ix-cn-where .ix-st { max-width: 220px }
+.ix-cn-tbl .ix-cn-where .ix-st .x { flex-shrink: 0 }
+.ix-cn-wt { min-width: 0; overflow: hidden; text-overflow: ellipsis }
+.ix-cn-ev { display: inline-flex; align-items: baseline; gap: 6px }
+.ix-cn-ev .at { color: var(--muted); font-size: var(--fs-sm); font-variant-numeric: tabular-nums }
+.ix-cn-tbl tr.done td { color: var(--muted) }
+.ix-cn-tbl tr.done .ix-cn-no { color: var(--text-2) }
+.ix-cn-wrap { max-height: calc(100vh - 330px); min-height: 160px }
+
+/* the ?job= filter from an alert link, drawn like a set filter chip */
+.ix-cn-jobchip { display: inline-flex; align-items: center; gap: 4px; height: 28px; padding: 0 3px 0 10px; border: 1px solid var(--navy-200); border-radius: var(--r-md); background: var(--navy-50); color: var(--navy); font-size: var(--fs-sm); white-space: nowrap }
+.ix-cn-jobchip b { font: 600 12px var(--mono) }
+.ix-cn-jobchip button { width: 22px; height: 22px; border: 0; border-radius: var(--r-sm); background: none; color: var(--navy); display: grid; place-items: center; font-size: 14px }
+.ix-cn-jobchip button:hover { background: var(--navy-100) }
+.ix-cn-jobchip button:focus-visible { outline: none; box-shadow: var(--focus) }
+
+/* side panel: narrower than the job panel, with a fixed action row at the bottom */
+.ix-cn-drawer { width: min(460px, 100vw) }
+.ix-cn-client { color: var(--text-2); font-size: var(--fs-md); font-weight: 500; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.ix-cn-pos { font-size: var(--fs-sm); color: var(--muted); font-variant-numeric: tabular-nums; margin-right: 2px }
+.ix-cn-hero { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 8px }
+.ix-cn-hero .no { font: 600 15px var(--mono); letter-spacing: -.01em; color: var(--text) }
+.ix-cn-hero .size { font-size: var(--fs-sm); color: var(--text-2) }
+.ix-cn-facts { grid-template-columns: repeat(var(--n, 4), minmax(0, 1fr)) }
+.ix-cn-facts .v.red { color: var(--red) }
+.ix-cn-facts .v small { display: block; margin-top: 1px; font-size: var(--fs-sm); font-weight: 400; color: var(--muted) }
+.ix-cn-facts .v.red small { color: var(--red) }
+.ix-cn-note.amber { border-color: var(--amber-line); background: var(--amber-bg) }
+.ix-cn-note.amber > i { color: var(--amber-dot) }
+.ix-cn-note.grey { background: var(--surface-2) }
+.ix-cn-note.grey > i { color: var(--muted) }
+.ix-cn-meta { color: var(--muted); font-size: var(--fs-sm) }
+
+/* trip timeline: a heading per day; upcoming dates as hollow rings */
+.ix-cn-day { position: relative; z-index: 1; margin: 2px 0 8px -22px; padding: 1px 0; background: var(--surface); font-size: var(--fs-xs); font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--muted) }
+.ix-cn-upcoming { margin-bottom: 6px }
+.ix-cn-upcoming::before { display: none }
+.ix-cn-upcoming .ix-tl::before { background: none; box-shadow: inset 0 0 0 2px var(--red) }
+.ix-cn-upcoming .ix-tl.n::before { box-shadow: inset 0 0 0 2px var(--faint) }
+.ix-cn-drawer .ix-tl .m > i { font-size: 13px }
+
+/* the job's other containers, to jump between them */
+.ix-cn-sibs { display: flex; flex-wrap: wrap; gap: 6px }
+.ix-cn-sib { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 8px; border: 1px solid var(--line-2); border-radius: var(--r-sm); background: var(--surface); color: var(--text-2); font: 500 12px var(--mono) }
+.ix-cn-sib:hover { background: var(--surface-2) }
+.ix-cn-sib:focus-visible { outline: none; box-shadow: var(--focus) }
+.ix-cn-sib.on { border-color: var(--navy-200); background: var(--navy-50); color: var(--navy); font-weight: 600 }
+
+.ix-cn-foot { display: flex; gap: 8px; flex-wrap: wrap; padding: 10px 20px; border-top: 1px solid var(--line); background: var(--surface) }
+
+/* columns that drop out as the screen narrows (sidebar open, page max 1500px);
+   size, line and last check are also in the container panel */
+@media (max-width: 1599px) { .ix-cn-tbl .c-upd { display: none } }
+@media (max-width: 1499px) {
+  .ix-cn-tbl .c-size { display: none }
+  .ix-cn-tbl td.cl .ix-cn-ell { max-width: 150px }
+}
+@media (max-width: 1365px) { .ix-cn-tbl .c-line { display: none } }
+@media (max-width: 1279px) { .ix-cn-tbl .c-ev { display: none } }
+@media (max-width: 1180px) { .ix-cn-tbl .c-cl { display: none } }
+
+@media (max-width: 760px) {
+  .ix-cn-wrap { max-height: none }
+  .ix-cn-tbl .ix-cn-where .ix-st { max-width: 170px }
+  .ix-cn-facts { grid-template-columns: repeat(2, minmax(0, 1fr)) }
+  .ix-cn-foot { padding: 10px 12px calc(10px + env(safe-area-inset-bottom, 0px)) }
+  .ix-cn-foot .ix-btn { flex: 1 1 auto; justify-content: center }
+}

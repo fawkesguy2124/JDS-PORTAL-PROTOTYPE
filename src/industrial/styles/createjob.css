@@ -1,0 +1,134 @@
+/* Create job modal, Control tower look (Jose, 31 Oct 2026).
+   Tokens come from .ix in industrial.css (read DESIGN.md); every class here starts
+   with ix-cj- so it cannot leak into other pages. The dark overlay and the white
+   modal box around it are drawn by AdminDashboard / EmployeeDashboard. */
+
+/* ── frame: title row, scrolling body, sticky footer ── */
+.ix-cj-root.page { min-height: 100vh; background: var(--bg); padding: var(--s6) var(--s4) }
+.ix-cj { display: flex; flex-direction: column; min-width: 0; background: var(--surface); color: var(--text) }
+.ix-cj-root.modal .ix-cj { max-height: 88vh; max-height: min(88vh, calc(100dvh - 48px)) }
+.ix-cj-root.page .ix-cj { max-width: 960px; margin: 0 auto; max-height: calc(100vh - 48px); border: 1px solid var(--line); border-radius: var(--r-lg); overflow: hidden }
+
+.ix-cj-head { flex-shrink: 0; display: flex; align-items: flex-start; gap: var(--s3); padding: 14px var(--s4) 12px var(--s5); border-bottom: 1px solid var(--line) }
+.ix-cj-title { flex: 1; min-width: 0 }
+.ix-cj-title h2 { margin: 0; font-size: var(--fs-xl); font-weight: 600; letter-spacing: -.015em; line-height: 1.25 }
+.ix-cj-title p { margin: 2px 0 0; font-size: var(--fs-sm); color: var(--muted) }
+.ix-cj .req { margin-left: 2px; color: var(--red); font-weight: 600 }
+
+.ix-cj-form { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column }
+.ix-cj-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: var(--s4) var(--s5) var(--s5) }
+.ix-cj-foot { flex-shrink: 0; display: flex; align-items: center; flex-wrap: wrap; gap: var(--s2) var(--s3); padding: 10px var(--s5); border-top: 1px solid var(--line); background: var(--surface-2) }
+.ix-cj-foot-err { flex: 1 1 240px; min-width: 0; margin: 0; display: flex; align-items: flex-start; gap: 6px; font-size: var(--fs-sm); color: var(--red); line-height: 1.35 }
+.ix-cj-foot-err > i { font-size: 14px; margin-top: 1px; flex-shrink: 0 }
+.ix-cj-actions { margin-left: auto; display: flex; gap: var(--s2) }
+.ix-cj-spin { animation: ixSpin .8s linear infinite }
+
+/* ── fill from a document: a quiet dashed panel, navy while a file is dragged over ── */
+.ix-cj-drop { padding: var(--s3) var(--s4); border: 1px dashed var(--line-2); border-radius: var(--r-lg); background: var(--surface-2); transition: border-color .15s, background-color .15s }
+.ix-cj-drop.over { border-color: var(--navy); background: var(--navy-50) }
+.ix-cj-drop-head { display: flex; align-items: flex-start; gap: 10px }
+.ix-cj-drop-head > i { font-size: 20px; color: var(--muted); margin-top: 1px; flex-shrink: 0 }
+.ix-cj-drop-head .txt { min-width: 0; display: flex; flex-direction: column; gap: 1px }
+.ix-cj-drop-head b { font-size: var(--fs-md); font-weight: 600 }
+.ix-cj-drop-head span { font-size: var(--fs-sm); color: var(--text-2) }
+.ix-cj-drop-row { display: flex; flex-wrap: wrap; gap: var(--s2); margin-top: 10px }
+.ix-cj-drop-row select.ix-cj-in { flex: 0 1 240px; width: 240px }
+
+.ix-cj-docs { list-style: none; margin: 10px 0 0; padding: 0; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface) }
+.ix-cj-doc { display: flex; align-items: center; flex-wrap: wrap; gap: 6px var(--s2); min-height: 40px; padding: 5px 6px 5px 10px }
+.ix-cj-doc + .ix-cj-doc { border-top: 1px solid var(--line) }
+.ix-cj-doc .ic { font-size: 18px; color: var(--text-2); flex-shrink: 0 }
+.ix-cj-doc .nm { flex: 1 1 160px; min-width: 0; display: flex; flex-direction: column; line-height: 1.3 }
+.ix-cj-doc .fn { overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.ix-cj-doc .sz { font-size: var(--fs-xs); color: var(--muted) }
+.ix-cj-doc select.ix-cj-in { width: auto; max-width: 190px }
+
+.ix-cj-prog { margin-top: 10px }
+.ix-cj-prog .row { display: flex; justify-content: space-between; margin-bottom: 4px; font-size: var(--fs-xs); color: var(--navy) }
+.ix-cj-prog .bar { height: 4px; border-radius: 2px; background: var(--navy-100); overflow: hidden }
+.ix-cj-prog .bar i { display: block; height: 100%; background: var(--navy); transition: width .4s ease }
+
+.ix-cj-msg { display: flex; align-items: flex-start; gap: 8px; margin: 10px 0 0; padding: 8px 10px; border: 1px solid; border-radius: var(--r-md); font-size: var(--fs-sm); line-height: 1.4 }
+.ix-cj-msg > i { font-size: 15px; margin-top: 1px; flex-shrink: 0 }
+.ix-cj-msg.red { color: var(--red); background: var(--red-bg); border-color: var(--red-line) }
+.ix-cj-msg.amber { color: var(--amber); background: var(--amber-bg); border-color: var(--amber-line) }
+.ix-cj-msg .mono { font-size: var(--fs-sm) }
+
+.ix-cj-applied { margin-top: 10px; padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface) }
+.ix-cj-applied .t { margin: 0; display: flex; align-items: center; flex-wrap: wrap; gap: 4px 6px; font-size: var(--fs-sm); font-weight: 600; color: var(--navy) }
+.ix-cj-applied .t > i { font-size: 14px }
+.ix-cj-applied .t .muted { font-weight: 400 }
+.ix-cj-applied .sub { margin: 4px 0 0; font-size: var(--fs-sm); color: var(--text-2); overflow-wrap: anywhere }
+.ix-cj-applied .sub.amber { color: var(--amber) }
+.ix-cj-applied .keys { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px }
+
+/* ── sections: sentence-case heading over a dense two-column grid ── */
+.ix-cj-sec { padding-top: var(--s5) }
+.ix-cj-sec-t { margin: 0 0 var(--s3); padding-bottom: 6px; border-bottom: 1px solid var(--line); font-size: var(--fs-md); font-weight: 600; color: var(--text) }
+.ix-cj-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px var(--s4) }
+.ix-cj-field { min-width: 0; display: flex; flex-direction: column; gap: 4px }
+.ix-cj-field.wide { grid-column: 1 / -1 }
+.ix-cj-label { font-size: var(--fs-sm); font-weight: 500; color: var(--text-2); line-height: 1.3 }
+.ix-cj-label .lbl-note { font-weight: 400; color: var(--muted) }
+.ix-cj-hint { margin: 0; font-size: var(--fs-xs); color: var(--muted); line-height: 1.35 }
+.ix-cj-err { margin: 0; display: flex; align-items: flex-start; gap: 5px; font-size: var(--fs-sm); color: var(--red); line-height: 1.35 }
+.ix-cj-err > i { font-size: 14px; margin-top: 1px; flex-shrink: 0 }
+.ix-cj-err.top { margin-top: 6px }
+.ix-cj-note { margin: 0; min-height: 32px; display: flex; align-items: center; font-size: var(--fs-sm); color: var(--muted) }
+
+/* ── inputs: 32px, 1px line-2 border, amber focus ring (same as the toolbar fields) ── */
+.ix-cj-in, .ix-cj-affix { width: 100%; min-width: 0; height: 32px; border: 1px solid var(--line-2); border-radius: var(--r-md); background: var(--surface); color: var(--text); font-size: var(--fs-md) }
+.ix-cj-in { padding: 0 10px }
+select.ix-cj-in { padding-right: 4px; cursor: pointer }
+input[type=date].ix-cj-in { padding-right: 6px }
+.ix-cj-in.sm { height: 26px; padding: 0 4px 0 8px; font-size: var(--fs-sm); border-radius: var(--r-sm) }
+.ix-cj-in.mono { font-family: var(--mono); letter-spacing: .01em }
+.ix-cj-in::placeholder, .ix-cj-affix input::placeholder { color: var(--faint) }
+.ix-cj-in:hover, .ix-cj-affix:hover { border-color: var(--faint) }
+.ix-cj-in:focus { outline: none; border-color: var(--accent); box-shadow: var(--focus) }
+.ix-cj-in:disabled { background: var(--surface-3); color: var(--muted); cursor: default }
+/* filled from the document: a navy tint so it can be checked (green is for done only) */
+.ix-cj-in.filled { background: var(--navy-50); border-color: var(--navy-200) }
+.ix-cj-field.bad .ix-cj-in, .ix-cj-field.bad .ix-cj-affix { border-color: var(--red) }
+
+/* job number with the fixed J- in front */
+.ix-cj-affix { display: flex; align-items: stretch; overflow: hidden }
+.ix-cj-affix > span { display: flex; align-items: center; padding: 0 8px 0 10px; background: var(--surface-2); border-right: 1px solid var(--line); font: 600 var(--fs-md) var(--mono); color: var(--muted) }
+.ix-cj-affix input { flex: 1; min-width: 0; height: auto; border: 0; padding: 0 10px; background: none; font: 600 var(--fs-md) var(--mono); color: var(--text); outline: none }
+.ix-cj-affix:focus-within { border-color: var(--accent); box-shadow: var(--focus) }
+
+/* text field + "List" button (client / shipping line typed by hand) */
+.ix-cj-pair { display: flex; gap: 6px; min-width: 0 }
+.ix-cj-pair .ix-cj-in { flex: 1 }
+
+/* ── containers: a small table of rows inside the field ── */
+.ix-cj-boxes { border: 1px solid var(--line); border-radius: var(--r-md); overflow: hidden; background: var(--surface) }
+.ix-cj-box { display: grid; grid-template-columns: minmax(0, 1fr) minmax(84px, 150px) 26px; align-items: center; gap: 6px; padding: 5px 6px 5px 8px; border-top: 1px solid var(--line) }
+.ix-cj-box.head { height: var(--row-head); padding-top: 0; padding-bottom: 0; border-top: 0; background: var(--surface-2); font-size: var(--fs-xs); font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--muted) }
+.ix-cj-box .ix-cj-in { height: 28px }
+.ix-cj-box-foot { display: flex; align-items: center; flex-wrap: wrap; gap: 4px var(--s3); padding: 6px 8px; border-top: 1px solid var(--line); background: var(--surface-2) }
+.ix-cj-box-foot .ix-link { margin-left: 0; display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-sm) }
+
+/* ── phones: finger-sized fields, one column, full-width footer buttons ── */
+@media (max-width: 760px) {
+  .ix-cj-in, .ix-cj-affix, .ix-cj-box .ix-cj-in { height: 42px }
+  .ix-cj-in.sm { height: 36px }
+  /* the shared phone rule gives text inputs min-height 42px; the wrapper already has it */
+  .ix .ix-cj-affix input[type=text] { min-height: 0 }
+  .ix-cj-box { grid-template-columns: minmax(0, 1fr) minmax(76px, 110px) 36px }
+  .ix-cj .ix-icon-btn.sm { width: 36px; height: 36px }
+}
+@media (max-width: 560px) {
+  .ix-cj-root.page { padding: 0 }
+  /* full screen, so the footer still sits at the bottom while the body scrolls */
+  .ix-cj-root.page .ix-cj { max-height: none; height: 100vh; height: 100dvh; border: 0; border-radius: 0 }
+  .ix-cj-head { padding: 12px var(--s3) 10px var(--s4) }
+  .ix-cj-body { padding: var(--s3) var(--s4) var(--s4) }
+  .ix-cj-drop { padding: var(--s3) }
+  .ix-cj-drop-row select.ix-cj-in { flex: 1 1 100%; width: 100% }
+  .ix-cj-drop-row .ix-btn { flex: 1 1 100% }
+  .ix-cj-grid { grid-template-columns: minmax(0, 1fr) }
+  .ix-cj-foot { padding: 10px var(--s4) calc(10px + env(safe-area-inset-bottom, 0px)) }
+  .ix-cj-actions { width: 100% }
+  .ix-cj-actions .ix-btn { flex: 1 }
+}

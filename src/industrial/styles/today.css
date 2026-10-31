@@ -1,0 +1,136 @@
+/* Today page (Control tower, Jose 31 Oct 2026). Tokens come from .ix in industrial.css;
+   every class here starts with ix-td- so it cannot leak into other pages. */
+
+/* ── pipeline: one cell per stage, job-number chips ── */
+.ix-td-flow { display: grid; grid-template-columns: var(--cols, repeat(6, minmax(0, 1fr))); background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); margin-bottom: var(--s3); overflow: hidden }
+.ix-td-flow .stage { position: relative; min-width: 0; padding: 10px 14px 12px; border-right: 1px solid var(--line) }
+.ix-td-flow .stage:last-child { border-right: 0; background: var(--surface-2) }
+/* a small arrow on each divider: the stages flow left to right */
+.ix-td-flow .stage:not(:last-child)::after { content: ''; position: absolute; right: -6px; top: 16px; width: 10px; height: 10px; background: var(--surface); border-top: 1px solid var(--line); border-right: 1px solid var(--line); transform: rotate(45deg); z-index: 1 }
+.ix-td-flow .h { display: flex; align-items: baseline; gap: 8px; width: 100%; padding: 0; border: 0; background: none; color: inherit; text-align: left; white-space: nowrap; min-width: 0 }
+.ix-td-flow button.h { cursor: pointer }
+.ix-td-flow button.h:hover span { color: var(--navy); text-decoration: underline }
+.ix-td-flow button.h:focus-visible { outline: none; box-shadow: var(--focus); border-radius: var(--r-sm) }
+.ix-td-flow .h b { font-size: 18px; font-weight: 600; letter-spacing: -.02em; font-variant-numeric: tabular-nums }
+.ix-td-flow .h span { font-size: var(--fs-sm); font-weight: 500; color: var(--text-2); overflow: hidden; text-overflow: ellipsis }
+.ix-td-flow .h em { margin-left: auto; font-style: normal; font-size: var(--fs-xs); color: var(--muted); overflow: hidden; text-overflow: ellipsis }
+.ix-td-flow .bar { height: 3px; margin: 7px 0 8px; border-radius: 2px; background: var(--surface-3); overflow: hidden }
+.ix-td-flow .bar i { display: block; height: 100%; background: var(--navy-200) }
+.ix-td-flow .stage.hot .bar i { background: var(--amber-dot) }
+.ix-td-flow .stage.done .bar i { background: var(--green-line) }
+.ix-td-flow .jobs { display: flex; flex-wrap: wrap; gap: 4px; align-items: center }
+.ix-td-flow .jobs .none { font-size: var(--fs-sm); color: var(--muted) }
+.ix-td-flow .jobs .more { margin-left: 2px; font-size: var(--fs-sm) }
+
+.ix-td-jt { display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 0 6px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface); color: var(--text); font: 600 11px var(--mono); letter-spacing: -.02em; cursor: pointer; white-space: nowrap }
+.ix-td-jt:hover { border-color: var(--navy-200); color: var(--navy) }
+.ix-td-jt:focus-visible { outline: none; box-shadow: var(--focus) }
+.ix-td-jt i { width: 5px; height: 5px; border-radius: 50%; background: var(--faint); flex-shrink: 0 }
+.ix-td-jt.red { border-color: var(--red-line); background: var(--red-bg) } .ix-td-jt.red i { background: var(--red) }
+.ix-td-jt.amber i { background: var(--amber-dot) }
+.ix-td-jt.navy i { background: var(--navy) }
+.ix-td-jt.green i { background: var(--green) }
+
+/* ── needs action table ── */
+.ix-td-action .ix-tbl-wrap { max-height: calc(100vh - 330px); min-height: 120px }
+.ix-td-tbl .ix-td-issue { display: flex; align-items: center; gap: 6px; min-width: 0; max-width: 460px }
+.ix-td-tbl .ix-td-issue .txt { min-width: 0; overflow: hidden; text-overflow: ellipsis }
+.ix-td-tbl .ix-td-issue .none { color: var(--muted) }
+.ix-td-tbl .ix-td-issue .ix-chip { flex-shrink: 0 }
+.ix-td-tbl .ix-td-since { color: var(--text-2) }
+.ix-td-tbl .ix-td-since b { font-weight: 600; color: var(--text) }
+.ix-td-tbl .ix-td-where { color: var(--text-2); max-width: 240px; overflow: hidden; text-overflow: ellipsis }
+.ix-td-tbl tr.grp .ix-st { font-size: var(--fs-xs) }
+
+/* 'Also watching, no action needed' under the table */
+.ix-td-watch { border-top: 1px solid var(--line); background: var(--surface-2); padding: 4px 0 6px; border-radius: 0 0 var(--r-lg) var(--r-lg) }
+.ix-td-watch .h { padding: 6px 16px 2px; font-size: var(--fs-xs); font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--muted) }
+.ix-td-watch .h .n { font-weight: 500; margin-left: 4px }
+.ix-td-watch .row { display: grid; grid-template-columns: 64px minmax(0, 170px) minmax(0, 1fr) auto; gap: 10px; align-items: center; min-height: 30px; padding: 2px 16px; font-size: var(--fs-md); cursor: pointer }
+.ix-td-watch .row:hover { background: var(--surface-3) }
+.ix-td-watch .row .cl { color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.ix-td-watch .row .txt { color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.ix-td-watch .row .ix-link { margin: 0; font-size: var(--fs-sm); white-space: nowrap }
+
+/* ── runway + latest updates ── */
+.ix-td-grid { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: var(--s3); margin-top: var(--s3); align-items: start }
+.ix-td-grid.one { grid-template-columns: minmax(0, 1fr) }
+.ix-td-grid .ix-panel + .ix-panel { margin-top: 0 }
+
+.ix-td-runway .runway { padding: 6px 16px 12px }
+.ix-td-runway .rw-row { display: grid; grid-template-columns: 170px minmax(0, 1fr); align-items: center; height: 26px }
+.ix-td-runway .rw-row.click { cursor: pointer }
+.ix-td-runway .rw-row.click:hover .who span { color: var(--text) }
+.ix-td-runway .who { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: var(--fs-sm); color: var(--text-2) }
+.ix-td-runway .who span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.ix-td-runway .rw-head { height: 30px; margin-bottom: 4px; border-bottom: 1px solid var(--line) }
+.ix-td-runway .rw-head .who { font-size: var(--fs-xs); font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--muted) }
+.ix-td-runway .rw-track { position: relative; display: grid; grid-template-columns: repeat(14, minmax(0, 1fr)); align-items: center; height: 100% }
+.ix-td-runway .rw-head .rw-track div { text-align: center; font-size: var(--fs-xs); color: var(--muted); line-height: 1.15 }
+.ix-td-runway .rw-head .rw-track div b { display: block; font-size: 12px; font-weight: 600; color: var(--text-2) }
+/* brand amber marks today (accent only, never a warning) */
+.ix-td-runway .rw-head .rw-track div.today b { color: var(--accent-600) }
+.ix-td-runway .rw-body { position: relative }
+.ix-td-runway .rw-under { position: absolute; inset: 0; height: auto; pointer-events: none }
+.ix-td-runway .rw-bg { position: relative; display: grid; grid-template-columns: repeat(14, minmax(0, 1fr)); align-self: stretch; height: 100% }
+.ix-td-runway .rw-bg div { border-left: 1px dashed var(--line) }
+.ix-td-runway .rw-bg div.we { background: repeating-linear-gradient(135deg, transparent 0 4px, rgba(135, 146, 165, .07) 4px 8px) }
+.ix-td-runway .rw-bg div.today { border-left: 2px solid var(--accent) }
+.ix-td-runway .rw-bar { position: relative; display: flex; align-items: center; justify-content: flex-end; height: 14px; margin-left: 2px; padding-right: 5px; border-radius: 3px; background: var(--navy-100); color: var(--navy); font-size: var(--fs-xs); font-weight: 600; white-space: nowrap; overflow: visible; min-width: 0 }
+.ix-td-runway .rw-bar span { overflow: hidden; text-overflow: clip }
+.ix-td-runway .rw-bar.red { background: var(--red-bg); box-shadow: inset 0 0 0 1px var(--red-line); color: var(--red) }
+.ix-td-runway .rw-bar.amber { background: var(--amber-bg); box-shadow: inset 0 0 0 1px var(--amber-line); color: var(--amber) }
+.ix-td-runway .rw-bar::after { content: ''; position: absolute; right: -1px; top: -3px; bottom: -3px; width: 2px; border-radius: 1px; background: currentColor }
+.ix-td-runway .rw-eta { position: relative; justify-self: center; width: 10px; height: 10px; transform: rotate(45deg); border: 2px solid var(--navy); background: var(--surface) }
+.ix-td-runway .rw-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--line); font-size: var(--fs-sm); color: var(--muted) }
+.ix-td-runway .rw-foot .later { margin-left: auto }
+.ix-td-runway .rw-foot .later .ix-jobno { color: var(--text-2) }
+
+.ix-td-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: var(--fs-sm); color: var(--muted) }
+.ix-td-legend span { display: inline-flex; align-items: center; gap: 5px }
+.ix-td-legend i { display: inline-block; width: 12px; height: 8px; border-radius: 2px }
+.ix-td-legend i.red { background: var(--red-bg); box-shadow: inset 0 0 0 1px var(--red-line) }
+.ix-td-legend i.amber { background: var(--amber-bg); box-shadow: inset 0 0 0 1px var(--amber-line) }
+.ix-td-legend i.navy { background: var(--navy-100) }
+.ix-td-legend i.eta { width: 8px; height: 8px; transform: rotate(45deg); border: 2px solid var(--navy); background: var(--surface); border-radius: 0 }
+
+.ix-td-feed { padding: 2px 0 6px; max-height: 460px; overflow-y: auto }
+.ix-td-feed .day { padding: 10px 16px 4px; font-size: var(--fs-xs); font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--muted) }
+.ix-td-feed .ev { display: grid; grid-template-columns: 40px 18px minmax(0, 1fr); gap: 8px; align-items: start; padding: 5px 16px }
+.ix-td-feed .ev.click { cursor: pointer }
+.ix-td-feed .ev.click:hover { background: var(--surface-2) }
+.ix-td-feed .ev time { padding-top: 1px; font: 500 12px var(--mono); color: var(--muted); font-variant-numeric: tabular-nums }
+.ix-td-feed .ev .ic { display: grid; place-items: center; width: 18px; height: 18px; border-radius: var(--r-sm); background: var(--surface-3); color: var(--text-2); font-size: 12px }
+.ix-td-feed .ev .ic.cus { background: var(--navy-50); color: var(--navy) }
+.ix-td-feed .ev .ic.port { background: var(--teal-bg); color: var(--teal) }
+.ix-td-feed .ev .ic.bad { background: var(--red-bg); color: var(--red) }
+.ix-td-feed .ev .ic.ok { background: var(--green-bg); color: var(--green) }
+.ix-td-feed .ev p { margin: 0; font-size: var(--fs-md); line-height: 1.4; color: var(--text); min-width: 0; overflow-wrap: anywhere }
+.ix-td-feed .ev p small { display: block; font-size: var(--fs-sm); color: var(--muted) }
+.ix-td-feed .ev p small.boxno { font-family: var(--mono); font-size: 12px }
+
+/* ── narrower screens ── */
+@media (max-width: 1180px) {
+  .ix-td-grid { grid-template-columns: minmax(0, 1fr) }
+}
+@media (max-width: 900px) {
+  /* the stages wrap two per row; the flow arrows no longer line up, so they go */
+  .ix-td-flow { grid-template-columns: repeat(2, minmax(0, 1fr)) }
+  .ix-td-flow .stage { border-bottom: 1px solid var(--line) }
+  .ix-td-flow .stage:nth-child(2n) { border-right: 0 }
+  .ix-td-flow .stage:not(:last-child)::after { display: none }
+}
+@media (max-width: 760px) {
+  .ix-td-action .ix-tbl-wrap { max-height: none }
+  .ix-td-watch .row { grid-template-columns: 56px minmax(0, 1fr) auto; row-gap: 0; padding: 4px 12px }
+  .ix-td-watch .row .txt { grid-column: 2 / 4; grid-row: 2; white-space: normal; font-size: var(--fs-sm) }
+  .ix-td-watch .h { padding: 6px 12px 2px }
+  .ix-td-runway .runway { padding: 6px 10px 10px }
+  .ix-td-runway .rw-row { grid-template-columns: 64px minmax(0, 1fr) }
+  .ix-td-runway .who span { display: none }
+  .ix-td-runway .rw-head .rw-track div { font-size: 9px }
+  .ix-td-runway .rw-head .rw-track div b { font-size: 11px }
+  .ix-td-runway .rw-bar { font-size: 10px; padding-right: 4px }
+  .ix-td-feed { max-height: none }
+  .ix-td-feed .ev { padding: 5px 12px }
+}

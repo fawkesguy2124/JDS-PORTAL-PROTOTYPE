@@ -1,0 +1,123 @@
+/* Customs status card and the button-press government checks (UlipSection / UlipCheck).
+   Control tower look (Jose, 31 Oct 2026): hairlines, 13px type, mono for numbers, tokens only.
+   Shared classes (.ix-card, .ix-btn, .ix-st, .ix-error …) come from industrial.css. */
+
+/* The staff dashboard (EmployeeDashboard) still renders these cards outside the .ix shell,
+   so the tokens are given here too when there is no .ix around them (same values). */
+.ix-uc:not(.ix *) {
+  --navy: #1a4fa0; --navy-700: #153f80; --navy-50: #eef3fb; --navy-100: #dce6f6; --navy-200: #b8cbec;
+  --accent: #f5a524;
+  --bg: #f3f5f8; --surface: #fff; --surface-2: #f8f9fb; --surface-3: #eff2f6;
+  --line: #e3e7ed; --line-2: #d3d9e2;
+  --text: #101828; --text-2: #475467; --muted: #8792a5; --faint: #b6bfcc;
+  --green: #16803c; --green-bg: #ebf7ef; --green-line: #bfe3cc;
+  --amber: #b45309; --amber-dot: #e38a09; --amber-bg: #fff6e8; --amber-line: #f5d6a3;
+  --red: #c81e1e; --red-bg: #fdefef; --red-line: #f3c3c3;
+  --teal: #0f766e; --teal-bg: #e8f4f3; --teal-line: #b7ddd8;
+  --blue: var(--navy); --blue-bg: var(--navy-50); --blue-line: var(--navy-200);
+  --grey: #8792a5; --grey-bg: #f1f3f6; --grey-line: #dde2e9;
+  --font: Inter, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --mono: ui-monospace, 'Cascadia Mono', 'SF Mono', Consolas, monospace;
+  --fs-xs: 11px; --fs-sm: 12px; --fs-md: 13px; --fs-lg: 15px;
+  --r-sm: 4px; --r-md: 6px; --r-lg: 8px;
+  --s1: 4px; --s2: 8px; --s3: 12px; --s4: 16px;
+  --focus: 0 0 0 3px rgba(245, 165, 36, .35);
+  font: 400 var(--fs-md) / 1.45 var(--font);
+  font-feature-settings: "tnum" 1;
+  color: var(--text);
+}
+.ix-uc, .ix-uc *, .ix-uc *::before, .ix-uc *::after { box-sizing: border-box }
+.ix-uc .mono { font-family: var(--mono); font-size: 12px; letter-spacing: -.01em }
+.ix-uc .ix-error { margin: var(--s3) 0 0; font-size: var(--fs-md) }
+.ix-uc .ix-error > i { margin-right: 4px }
+.uc-spin { display: inline-block; animation: ixSpin .8s linear infinite }
+
+/* ── label / value grid: hairline cells, caps label over the value ── */
+.uc-kv { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); margin: var(--s3) 0 0; border: 1px solid var(--line); border-radius: var(--r-lg); overflow: hidden }
+.uc-kv > div { padding: 7px 12px; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); margin-right: -1px; margin-bottom: -1px; min-width: 0 }
+.uc-kv dt { margin: 0 0 2px; font-size: var(--fs-xs); font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--muted) }
+.uc-kv dd { margin: 0; font-size: var(--fs-md); color: var(--text); overflow-wrap: anywhere }
+.uc-kv dd.mono { font-weight: 600 }
+.uc-kv .ix-dash, .uc-dash { color: var(--faint) }
+
+/* small muted lines: sources, "last checked", notes */
+.uc-meta { margin-top: var(--s2); font-size: var(--fs-sm); color: var(--muted); line-height: 1.6 }
+.uc-meta b { font-weight: 500; color: var(--text-2) }
+.uc-meta.warn { color: var(--amber) }
+
+/* an answer or a state, as one tinted line with a status dot */
+.uc-answer { display: flex; align-items: flex-start; gap: 8px; padding: 8px 12px; border: 1px solid var(--grey-line); background: var(--grey-bg); border-radius: var(--r-lg); font-size: var(--fs-md); font-weight: 600; color: var(--text) }
+.uc-answer::before { content: ''; flex-shrink: 0; width: 7px; height: 7px; margin-top: 6px; border-radius: 50%; background: var(--faint) }
+.uc-answer .x { display: block; font-weight: 400; font-size: var(--fs-sm); color: var(--text-2); margin-top: 1px }
+.uc-answer .act { margin-left: auto; align-self: center; flex-shrink: 0 }
+.uc-answer.green { background: var(--green-bg); border-color: var(--green-line); color: var(--green) } .uc-answer.green::before { background: var(--green) }
+.uc-answer.amber { background: var(--amber-bg); border-color: var(--amber-line); color: var(--amber) } .uc-answer.amber::before { background: var(--amber-dot) }
+.uc-answer.red { background: var(--red-bg); border-color: var(--red-line); color: var(--red) } .uc-answer.red::before { background: var(--red) }
+.uc-answer.teal { background: var(--teal-bg); border-color: var(--teal-line); color: var(--teal) } .uc-answer.teal::before { background: var(--teal) }
+.uc-note { margin: 0 0 var(--s2); padding: 7px 12px; border: 1px solid var(--amber-line); background: var(--amber-bg); border-radius: var(--r-lg); font-size: var(--fs-sm); color: var(--amber) }
+
+/* fields: 32px boxes, mono for numbers, amber focus ring */
+.uc-form { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--s2); margin-top: var(--s3) }
+.uc-field { display: flex; flex-direction: column; gap: 4px; flex: 1 1 180px; min-width: 0 }
+.uc-field.date { flex: 0 1 170px }
+.uc-field > span { font-size: var(--fs-xs); font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--muted) }
+.uc-input { width: 100%; height: 32px; padding: 0 10px; border: 1px solid var(--line-2); border-radius: var(--r-md); background: var(--surface); color: var(--text); font: 400 var(--fs-md) var(--font) }
+.uc-input.mono { font-family: var(--mono); font-size: var(--fs-md) }
+.uc-input::placeholder { color: var(--faint); font-family: var(--font) }
+.uc-input:focus { outline: none; border-color: var(--accent); box-shadow: var(--focus) }
+.uc-form > .ix-btn { flex-shrink: 0 }
+
+/* ── Customs status card ── */
+.uc-customs .ix-card-head { flex-wrap: wrap; row-gap: 4px; padding-top: 4px; padding-bottom: 4px }
+.uc-customs .ix-card-head .sub { flex: 1 1 120px }
+.uc-customs .uc-intro { font-size: var(--fs-sm); color: var(--muted); margin: 0 0 var(--s3) }
+.uc-customs .uc-kv:first-child { margin-top: 0 }
+.uc-customs .uc-answer { margin-top: var(--s3) }
+.uc-empty { padding: var(--s3) 0 var(--s1); font-size: var(--fs-sm); color: var(--muted) }
+.uc-loading { display: flex; align-items: center; gap: 8px; padding: var(--s3) 0 var(--s1); font-size: var(--fs-sm); color: var(--muted) }
+
+/* trucks seen at the port gate */
+.uc-sub { margin-top: var(--s3); font-size: var(--fs-xs); font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--muted) }
+.uc-gate { margin-top: 6px; border: 1px solid var(--line); border-radius: var(--r-lg); overflow: hidden }
+.uc-gate > div { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 16px; padding: 6px 12px; border-bottom: 1px solid var(--line); font-size: var(--fs-sm); color: var(--text-2) }
+.uc-gate > div:last-child { border-bottom: 0 }
+.uc-gate .ix-plate { font-size: 12px }
+.uc-gate .mono { color: var(--text) }
+
+/* ── one check (UlipCheck): a hairline box on its own, a row inside a group ── */
+.uc-check { padding: var(--s3) var(--s4); background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); min-width: 0 }
+.uc-check.compact { padding: 10px 12px }
+.uc-check-t { font-size: var(--fs-md); font-weight: 600; color: var(--text) }
+.uc-check-d { margin-top: 2px; font-size: var(--fs-sm); color: var(--text-2) }
+.uc-check .uc-busy { margin-top: 6px; font-size: var(--fs-sm); color: var(--muted) }
+.uc-result { margin-top: var(--s3) }
+.uc-result .uc-meta:first-of-type { margin-top: 6px }
+
+/* ── a set of checks (UlipSection): one panel per group ── */
+.uc-section { display: flex; flex-direction: column; gap: var(--s3); min-width: 0 }
+.uc-section > .uc-intro { font-size: var(--fs-sm); color: var(--text-2) }
+.uc-group { min-width: 0 }
+.uc-group .ix-card-head h2, .uc-customs .ix-card-head h2 { white-space: normal; min-width: 0 }
+.uc-group .ix-card-head .sub { flex: 0 0 auto }
+.uc-group-note { padding: 8px var(--s4); border-bottom: 1px solid var(--line); font-size: var(--fs-sm); color: var(--text-2); background: var(--surface-2) }
+.uc-group .uc-check { border: 0; border-radius: 0; border-bottom: 1px solid var(--line) }
+.uc-group .uc-check:last-child { border-bottom: 0; border-radius: 0 0 var(--r-lg) var(--r-lg) }
+.uc-more { display: flex; align-items: flex-start; gap: 8px; width: 100%; padding: 10px var(--s4); border: 1px dashed var(--line-2); border-radius: var(--r-lg); background: var(--surface); color: var(--text); font: inherit; text-align: left; cursor: pointer }
+.uc-more:hover { background: var(--navy-50); border-color: var(--navy-200) }
+.uc-more:focus-visible { outline: none; box-shadow: var(--focus) }
+.uc-more > i { font-size: 16px; color: var(--navy); margin-top: 1px }
+.uc-more .t { font-weight: 600; color: var(--navy) }
+.uc-more .t .n { font-weight: 400; color: var(--muted) }
+.uc-more .d { display: block; margin-top: 1px; font-size: var(--fs-sm); color: var(--text-2) }
+
+/* phone: no sideways scroll; the button takes its own full-width line */
+@media (max-width: 760px) {
+  .uc-check { padding: var(--s3) }
+  .uc-field, .uc-field.date { flex: 1 1 100% }
+  .uc-form > .ix-btn { width: 100% }
+  .uc-input { height: 42px }
+  .uc-kv { grid-template-columns: repeat(2, minmax(0, 1fr)) }
+  .uc-answer { flex-wrap: wrap }
+  .uc-answer .act { margin-left: 15px; width: 100% }
+  .uc-answer .act .ix-btn { width: 100% }
+}

@@ -13,8 +13,10 @@
     <title>JDS Logistics Portal</title>
     <style>
       /* shown until the app has loaded (the app window opens on this, not on a blank page) */
-      #boot { position: fixed; inset: 0; display: grid; place-items: center; background: #f4f6f9 }
-      #boot .logo { width: 64px; height: 64px; border-radius: 14px; background: #1a4fa0; color: #fff; display: grid; place-items: center; font: 700 20px "Segoe UI", Inter, Arial, sans-serif; animation: boot 1.2s ease-in-out infinite }
+      #boot { position: fixed; inset: 0; display: grid; place-items: center; background: #f3f5f8 }
+      /* the same mark as the sidebar logo: navy squircle, JDS, amber bar (Control tower, 31 Oct 2026) */
+      #boot .logo { position: relative; width: 64px; height: 64px; border-radius: 18px; background: #1a4fa0; color: #fff; display: grid; place-items: center; padding-bottom: 6px; box-sizing: border-box; font: 700 21px/1 Inter, "Segoe UI", Arial, sans-serif; letter-spacing: .02em; box-shadow: inset 0 0 0 1px rgba(255,255,255,.14); animation: boot 1.2s ease-in-out infinite }
+      #boot .logo::after { content: ""; position: absolute; left: 50%; bottom: 14px; width: 26px; height: 4px; margin-left: -13px; border-radius: 2px; background: #f5a524 }
       @keyframes boot { 50% { opacity: .55 } }
     </style>
   </head>

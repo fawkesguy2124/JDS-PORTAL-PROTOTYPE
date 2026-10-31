@@ -15,7 +15,7 @@
 //   BOT_SENDING           must be "on" to really send. Anything else = dry run (returns what it would send)
 //   WHATSAPP_TEMPLATE_LANG optional, default "en"
 import { adminClient, json } from '../_shared/ulip.ts'
-import { buildJourneyData } from '../_shared/portal/journeyCore.js'
+import { buildJourneyData, buildSeaByJob } from '../_shared/portal/journeyCore.js'
 import { morningSummary, instantAlerts, answer, teamFromProfiles, BOT_NUMBERS, missingDetails, allowed, LEVELS, LEVEL_LABEL } from '../_shared/portal/botMessages.js'
 import { askAssistant, groqInfo } from './assistant.ts'
 import { applyChange, confirmText, isNo, isYes, PENDING_MINUTES, prepareChange, type Pending } from './actions.ts'
@@ -83,7 +83,8 @@ async function loadData(admin: Admin) {
   data.shipIds = Object.fromEntries(ships.map((r: any) => [r.name, r]))
   // ETA, ship and position from Safecube (sea-track function)
   const sea = await readAll(() => admin.from('sea_tracking').select('*').order('job_id')).catch(() => [])
-  data.seaByJob = Object.fromEntries(sea.map((r: any) => [r.job_id, r]))
+  // shared rule, as in the portal: rows about an older voyage of the ship are left out
+  data.seaByJob = buildSeaByJob(sea, jobs)
   data.activity = activity
   data.documents = documents
   data.people = Object.fromEntries(people.map((p: any) => [p.id, p.name]))

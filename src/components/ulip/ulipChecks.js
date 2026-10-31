@@ -1,4 +1,6 @@
-// Where every ULIP check appears in the portal, with plain titles for staff.
+// Where every government check (ULIP) appears in the portal, with plain titles for staff.
+// Titles, buttons and descriptions are on screen: no system names (ICEGATE, FASTag, VAHAN,
+// PCS …), Jose 31 Oct 2026. The api codes are for the code only.
 // Job tabs show only what fits that job (import/export, sea/air, which port).
 // Quick Lookup lists every approved check, grouped by what you have in hand.
 import { ALL_APIS } from '../../../supabase/functions/ulip/apis/index.ts'
@@ -17,7 +19,7 @@ const portCodeOf = (job) => job?.port_code || ''
 // The "Customs status" card (OOC + JNPT record) sits above these.
 const CUSTOMS_GROUPS = [
   {
-    title: 'More from Customs (ICEGATE)',
+    title: 'More from Customs',
     checks: [
       {
         api: 'ICEGATE/02', title: 'Cargo details on the Bill of Entry',
@@ -54,13 +56,13 @@ const CUSTOMS_GROUPS = [
     ],
   },
   {
-    title: 'Port Community System (works for every port)',
+    title: 'Backup port records (any port)',
     description: 'Backup checks. Use these if the checks above have no record yet.',
     collapsed: true,
     checks: [
-      { api: 'PCS/05', title: 'Out of charge (PCS)', button: 'Check OOC in PCS', refs: { boeNumber: 'be_no' } },
-      { api: 'PCS/04', title: 'Bill of Entry details (PCS)', button: 'Check BE in PCS', refs: { boeNumber: 'be_no' } },
-      { api: 'PCS/01', title: 'Containers on the IGM (PCS)', showIf: (job) => !isAir(job), button: 'Check IGM in PCS', refs: { igmNumber: 'igm_no' } },
+      { api: 'PCS/05', title: 'Out of charge (backup record)', button: 'Check OOC (backup)', refs: { boeNumber: 'be_no' } },
+      { api: 'PCS/04', title: 'Bill of Entry details (backup record)', button: 'Check BE (backup)', refs: { boeNumber: 'be_no' } },
+      { api: 'PCS/01', title: 'Containers on the IGM (backup record)', showIf: (job) => !isAir(job), button: 'Check IGM (backup)', refs: { igmNumber: 'igm_no' } },
     ],
   },
   {
@@ -70,7 +72,7 @@ const CUSTOMS_GROUPS = [
     checks: [
       {
         api: 'DGFT/01', title: 'Is the client\'s IEC valid?',
-        description: 'Checks the importer-exporter code with DGFT.',
+        description: 'Checks the importer-exporter code with the foreign trade office.',
         button: 'Check IEC', refs: { iecnumber: 'iec_no' },
       },
       {
@@ -126,8 +128,8 @@ const EXPORT_GROUPS = [
         refs: { shippingBillNo: 'sb_no', shippingBillDate: 'sb_date' },
         fixed: { portCode: portCodeOf }, fixedHint: 'Please set the job\'s Port in Job Details first.',
       },
-      { api: 'PCS/03', title: 'LEO and rotation (PCS, any port)', button: 'Check in PCS', refs: { sbNumber: 'sb_no' } },
-      { api: 'PCS/02', title: 'Shipping bill details (PCS, any port)', button: 'Check in PCS', refs: { sbNumber: 'sb_no' } },
+      { api: 'PCS/03', title: 'LEO and rotation (backup record, any port)', button: 'Check backup', refs: { sbNumber: 'sb_no' } },
+      { api: 'PCS/02', title: 'Shipping bill details (backup record, any port)', button: 'Check backup', refs: { sbNumber: 'sb_no' } },
     ],
   },
   {
@@ -142,7 +144,7 @@ const EXPORT_GROUPS = [
 // ── Job tab: Air (air jobs) ─────────────────────────────────────────────────
 const AIR_GROUPS = [
   {
-    title: 'Air cargo with Customs (ICEGATE)',
+    title: 'Air cargo with Customs',
     checks: [
       { api: 'ICEGATE/09', title: 'Air import manifest (IGM)', showIf: isImport, button: 'Check air IGM', refs: { mawbNumber: 'mawb_no', custSite: 'port_code' }, labels: { custSite: 'Airport code (INBOM4 for Mumbai)' } },
       { api: 'ICEGATE/10', title: 'House airway bill (HAWB)', showIf: isImport, button: 'Check HAWB', refs: { mawbNumber: 'mawb_no', hawbNumber: 'hawb_no' } },
@@ -158,10 +160,10 @@ const AIR_GROUPS = [
     title: 'Cargo at the airport terminal',
     description: 'Two terminal systems are connected. If one has no record, try the other.',
     checks: [
-      { api: 'ACMES/02', title: 'Import cargo at terminal (ACMES)', showIf: isImport, button: 'Check terminal', refs: { awbnumber: 'mawb_no', hawb: 'hawb_no' } },
-      { api: 'AAICLAS/02', title: 'Import cargo at terminal (AAICLAS)', showIf: isImport, button: 'Check terminal', refs: { awbNumber: 'mawb_no', hawb: 'hawb_no' }, defaults: { location: airportCode }, labels: { location: 'Airport (3 letters, e.g. BOM)' } },
-      { api: 'ACMES/01', title: 'Export cargo at terminal (ACMES)', showIf: isExport, button: 'Check terminal', refs: { awbnumber: 'mawb_no' } },
-      { api: 'AAICLAS/01', title: 'Export cargo at terminal (AAICLAS)', showIf: isExport, button: 'Check terminal', refs: { awbNumber: 'mawb_no' }, defaults: { location: airportCode }, labels: { location: 'Airport (3 letters, e.g. BOM)' } },
+      { api: 'ACMES/02', title: 'Import cargo at the terminal (system A)', showIf: isImport, button: 'Check terminal', refs: { awbnumber: 'mawb_no', hawb: 'hawb_no' } },
+      { api: 'AAICLAS/02', title: 'Import cargo at the terminal (system B)', showIf: isImport, button: 'Check terminal', refs: { awbNumber: 'mawb_no', hawb: 'hawb_no' }, defaults: { location: airportCode }, labels: { location: 'Airport (3 letters, e.g. BOM)' } },
+      { api: 'ACMES/01', title: 'Export cargo at the terminal (system A)', showIf: isExport, button: 'Check terminal', refs: { awbnumber: 'mawb_no' } },
+      { api: 'AAICLAS/01', title: 'Export cargo at the terminal (system B)', showIf: isExport, button: 'Check terminal', refs: { awbNumber: 'mawb_no' }, defaults: { location: airportCode }, labels: { location: 'Airport (3 letters, e.g. BOM)' } },
     ],
   },
 ]
@@ -170,17 +172,24 @@ const AIR_GROUPS = [
 // Input keys follow supabase/functions/ulip/apis/road.ts
 const TRUCK_GROUPS = [
   {
-    title: 'Where is the truck?',
+    title: 'Truck location',
     checks: [
-      { api: 'FASTAG/01', title: 'Truck location from FASTag toll crossings', button: 'Find truck', refs: { vehiclenumber: 'vehicle_no' }, labels: { vehiclenumber: 'Truck number' } },
-      { api: 'FASTAG/02', title: 'FASTag status of the truck', button: 'Check FASTag', refs: { vehiclenumber: 'vehicle_no' }, labels: { vehiclenumber: 'Truck number' } },
+      { api: 'FASTAG/01', title: 'Where is the truck (toll crossings)', description: 'Toll plazas this truck crossed in the last 72 hours.', button: 'Find truck', refs: { vehiclenumber: 'vehicle_no' }, labels: { vehiclenumber: 'Truck number' } },
+      {
+        api: 'FASTAG/02', title: 'Toll tag status', description: 'Is the truck’s toll tag active? Give the truck number or the tag ID.', button: 'Check toll tag',
+        refs: { vehiclenumber: 'vehicle_no' }, labels: { vehiclenumber: 'Truck number', tagid: 'Toll tag ID' },
+        hints: {
+          vehiclenumber: 'Truck number, like MH04AB1234 (give this OR the tag ID)',
+          tagid: 'Tag ID from the tag, up to 25 letters/digits (give this OR the truck number)',
+        },
+      },
     ],
   },
   {
-    title: 'Truck and driver papers',
+    title: 'Vehicle and driver papers',
     checks: [
-      { api: 'VAHAN/04', title: 'Truck registration, fitness and insurance', button: 'Check truck papers', refs: { vehiclenumber: 'vehicle_no' }, labels: { vehiclenumber: 'Truck number' } },
-      { api: 'SARATHI/02', title: 'Driver\'s licence', button: 'Check licence', refs: { dlnumber: 'dl_no' } },
+      { api: 'VAHAN/04', title: 'Vehicle papers', description: 'Registration, fitness and insurance from vehicle records.', button: 'Check vehicle papers', refs: { vehiclenumber: 'vehicle_no' }, labels: { vehiclenumber: 'Truck number' } },
+      { api: 'SARATHI/02', title: 'Driving licence', button: 'Check licence', refs: { dlnumber: 'dl_no' } },
       { api: 'ECHALLAN/01', title: 'Pending traffic fines on the truck', button: 'Check fines', refs: { vehicleNumber: 'vehicle_no' }, labels: { vehicleNumber: 'Truck number' } },
       { api: 'EWAYBILL/01', title: 'E-way bill validity', button: 'Check e-way bill', refs: { ewbNo: 'ewb_no' } },
     ],
@@ -188,8 +197,8 @@ const TRUCK_GROUPS = [
   {
     title: 'If the checks above give no answer',
     checks: [
-      { api: 'VAHAN/05', title: 'Truck papers by chassis number', description: 'ULIP changed what this check needs on 16 Oct 2026, so it may not answer until we update it.', button: 'Check by chassis', refs: { chasisnumber: 'chassis_no' } },
-      { api: 'SARATHI/01', title: 'Driver’s licence, full details', description: 'Needs the driver’s date of birth.', button: 'Check licence', refs: { dlnumber: 'dl_no' } },
+      { api: 'VAHAN/05', title: 'Vehicle papers by chassis number', description: 'The government changed what this check needs on 16 Oct 2026, so it may not answer until we update it.', button: 'Check by chassis', refs: { chasisnumber: 'chassis_no' } },
+      { api: 'SARATHI/01', title: 'Driving licence, full details', description: 'Needs the driver’s date of birth.', button: 'Check licence', refs: { dlnumber: 'dl_no' } },
     ],
   },
   {
@@ -225,13 +234,22 @@ const CATEGORY_APIS = [
 
 // Plainer titles where the registry name is technical
 const LOOKUP_TEXT = {
-  'VAHAN/04': { title: 'Truck papers (RC, fitness, insurance) — by truck number' },
-  'VAHAN/05': { title: 'Truck papers — by chassis number' },
-  'SARATHI/02': { title: 'Driver’s licence' },
-  'SARATHI/01': { title: 'Driver’s licence, full details (needs date of birth)' },
-  'PCS/05': { title: 'Out of charge (PCS, any port)' },
-  'PCS/04': { title: 'Bill of Entry details (PCS, any port)' },
-  'PCS/01': { title: 'Containers on the IGM (PCS, any port)' },
+  'FASTAG/01': { title: 'Where is the truck (toll crossings)' },
+  'FASTAG/02': { title: 'Toll tag status', labels: { tagid: 'Toll tag ID' }, hints: { vehiclenumber: 'Truck number, like MH04AB1234 (give this OR the tag ID)', tagid: 'Tag ID from the tag, up to 25 letters/digits (give this OR the truck number)' } },
+  'VAHAN/04': { title: 'Vehicle papers (RC, fitness, insurance) by truck number' },
+  'VAHAN/05': { title: 'Vehicle papers by chassis number' },
+  'SARATHI/02': { title: 'Driving licence' },
+  'SARATHI/01': { title: 'Driving licence, full details (needs date of birth)' },
+  'PCS/05': { title: 'Out of charge (backup record, any port)' },
+  'PCS/04': { title: 'Bill of Entry details (backup record, any port)' },
+  'PCS/01': { title: 'Containers on the IGM (backup record, any port)' },
+  'PCS/02': { title: 'Shipping bill details (backup record, any port)' },
+  'PCS/03': { title: 'Shipping bill rotation and LEO (backup record, any port)' },
+  'ACMES/01': { title: 'Air export cargo at the terminal (system A)' },
+  'ACMES/02': { title: 'Air import cargo at the terminal (system A)' },
+  'AAICLAS/01': { title: 'Air export cargo at the terminal (system B)' },
+  'AAICLAS/02': { title: 'Air import cargo at the terminal (system B)' },
+  'LDB/01': { title: 'Track a container' },
   'ICEGATE/04': { description: 'Needs the port code, the vessel’s IMO number, vessel code and expected arrival date.' },
   'IPORTMAN/01': { description: 'For ports other than JNPT and Mumbai Port. Port code example: INMUN1 (Mundra).' },
   'IPORTMAN/02': { description: 'For ports other than JNPT and Mumbai Port. Port code example: INMUN1 (Mundra).' },

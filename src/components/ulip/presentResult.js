@@ -41,7 +41,7 @@ function igm(parsed, job) {
     tone,
     fields,
     tables,
-    note: 'ICEGATE does not say which company owns each container (it gives one importer name for the whole ship), so the client shown is the one on this job, matched by container number.',
+    note: 'Customs does not say which company owns each container (it gives one importer name for the whole ship), so the client shown is the one on this job, matched by container number.',
   }
 }
 

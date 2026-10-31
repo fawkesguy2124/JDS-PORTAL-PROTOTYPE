@@ -1,16 +1,19 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../supabase'
-import { Chip, Icon, Skeleton, timeAgo } from '../ui'
+import { PageHead, KpiStrip, Kpi, Panel, Status, Chip, Button, Dash, EmptyState, Skeleton, fmtTime, fmtDateTime, timeAgo } from '../ui'
+import { healthTones, autoCheckLine } from '../AutoStatus'
+import '../styles/records.css'
 
 // System health (Jose, 25 Oct 2026): is every background service running?
-// One database call (system_health) — green / amber / red cards, refreshed every minute.
+// One database call (system_health), re-read every minute. Reading it never starts a
+// government check. The green / amber / red rules are shared with the sidebar dots
+// (healthTones in AutoStatus.jsx), so the page and the sidebar always agree.
 
 const MIN = 60000
-const ageMin = (iso, now) => (iso ? (now - new Date(iso).getTime()) / MIN : Infinity)
 
-// plain names for the schedules
+// plain names for the schedules (no system or vendor names on screen, Jose 31 Oct 2026)
 const CRON_NAMES = {
-  'auto-check': ['Automatic ULIP checks', 'every 5 minutes'],
+  'auto-check': ['Automatic checks', 'every 5 minutes'],
   'sea-track': ['Ship tracking', 'every hour'],
   'vessel-track': ['Ship positions (old)', ''],
   'refresh-containers-every-30-min': ['Container tracking', 'every 30 minutes'],
@@ -19,43 +22,24 @@ const CRON_NAMES = {
   'wa-bot-morning': ['8:00 morning summary', ''],
   'weekly-backup': ['Weekly backup', ''],
 }
-const KIND_NAMES = { ooc: 'OOC check', truck: 'Truck FASTag', papers: 'Truck papers' }
-const KIND_MANY = { ooc: 'OOC checks', truck: 'trucks on FASTag', papers: 'truck paper checks' }
+const KIND_NAMES = { ooc: 'OOC check', truck: 'Truck at tolls', papers: 'Truck papers' }
+const KIND_MANY = { ooc: 'OOC checks', truck: 'trucks at tolls', papers: 'truck paper checks' }
 const API_NAMES = {
   'ICEGATE/01': 'Customs (BE status)', 'ICEGATE/02': 'Customs (BE details)', 'ICEGATE/03': 'Customs (OOC)', 'PCS/01': 'Port (container in/out)', 'ICEGATE/07': 'Customs (shipping bill)',
-  'LDB/01': 'Container movement', 'FASTAG/01': 'FASTag tolls', 'VAHAN/04': 'Truck papers',
+  'LDB/01': 'Container movement', 'FASTAG/01': 'Toll plazas (trucks)', 'VAHAN/04': 'Truck papers',
 }
+const TONE_WORD = { green: 'Running', amber: 'Needs a look', red: 'Problem' }
 
-const nextIn = (iso, now) => {
-  if (!iso) return '—'
-  const m = Math.round((new Date(iso).getTime() - now) / MIN)
-  return m <= 0 ? 'due now' : m < 60 ? `in ${m} min` : `in ${Math.round(m / 60)} h`
-}
-
-const TONE_ICON = { green: 'circle-check', amber: 'alert-triangle', red: 'alert-octagon' }
-
-function Service({ icon, title, tone, status, facts }) {
-  return (
-    <div className={`ix-card ix-health ${tone}`}>
-      <div className="top">
-        <span className="ico"><Icon name={icon} /></span>
-        <b>{title}</b>
-        <Chip tone={tone} icon={TONE_ICON[tone]}>{tone === 'green' ? 'Running' : tone === 'amber' ? 'Check' : 'Problem'}</Chip>
-      </div>
-      <div className="status">{status}</div>
-      <div className="facts">
-        {facts.filter(Boolean).map(([k, v]) => <div key={k}><span>{k}</span><b>{v}</b></div>)}
-      </div>
-    </div>
-  )
-}
+// an absolute IST time on screen, the "x min ago" in the tooltip
+const When = ({ iso, empty = 'not yet' }) => (iso
+  ? <span title={timeAgo(iso)}>{fmtDateTime(iso)}</span>
+  : <span className="muted">{empty}</span>)
 
 export default function HealthPage() {
   const [h, setH] = useState(null)
   const [err, setErr] = useState(null)
   const [busy, setBusy] = useState(false)
-
-  const [tick, setTick] = useState(0) // "Check now" asks again
+  const [tick, setTick] = useState(0) // "Check now" reads it again
 
   useEffect(() => {
     let off = false
@@ -71,160 +55,166 @@ export default function HealthPage() {
     return () => { off = true; clearInterval(t) }
   }, [tick])
 
+  const checkNow = <Button icon="refresh" onClick={() => { setBusy(true); setTick((n) => n + 1) }} disabled={busy}>{busy ? 'Checking…' : 'Check now'}</Button>
+
   if (!h) {
     return (
-      <div className="ix-page">
-        <div className="ix-page-head"><div><h1>System health</h1><p>Checking every background service…</p></div></div>
+      <>
+        <PageHead title="System health" sub="Checking every background service…" actions={err ? checkNow : null} />
         {err ? <div className="ix-error">Could not check — {err}</div> : <div className="ix-card"><Skeleton rows={6} /></div>}
-      </div>
+      </>
     )
   }
 
   const now = new Date(h.now).getTime()
+  const t = healthTones(h)
   const cron = h.cron || []
-  const cronOf = (name) => cron.find((c) => c.name === name)
-  const cronBad = (c) => c && c.active && c.last_status && c.last_status !== 'succeeded'
 
-  // automatic checks
   const a = h.auto || {}
-  const autoAge = ageMin(a.last_run, now)
-  const paused = a.paused_until && new Date(a.paused_until).getTime() > now
-  const autoTone = paused || cronBad(cronOf('auto-check')) ? 'red'
-    : a.watching && autoAge > 90 ? 'amber' : a.failing ? 'amber' : 'green'
   const kinds = Object.entries(a.by_kind || {}).map(([k, n]) => `${n} ${(n === 1 ? KIND_NAMES : KIND_MANY)[k] || k}`).join(' · ')
-
-  // ships
   const s = h.ships || {}
-  const shipAge = ageMin(s.last_update, now)
-  const shipTone = cronBad(cronOf('sea-track')) ? 'red'
-    : s.tracked && shipAge > 90 ? 'amber' : s.refresh_errors || s.errors ? 'amber' : 'green'
-
-  // containers
   const c = h.containers || {}
-  const boxAge = ageMin(c.last_refresh, now)
-  const boxTone = cronBad(cronOf('refresh-containers-every-30-min')) ? 'red' : c.tracked && boxAge > 90 ? 'amber' : 'green'
-
-  // WhatsApp
   const w = h.whatsapp_24h || {}
-  const sumAge = ageMin(h.last_summary, now)
-  const waTone = cronBad(cronOf('wa-bot-alerts')) ? 'red' : w.failed ? 'amber' : sumAge > 26 * 60 ? 'amber' : 'green'
+  const gov = Object.entries(h.ulip_24h || {}).sort((x, y) => x[0].localeCompare(y[0]))
+  const govOk = gov.reduce((n, [, u]) => n + (u.ok || 0), 0)
+  const govFailed = gov.reduce((n, [, u]) => n + (u.failed || 0), 0)
+  const govLast = gov.map(([, u]) => u.last).filter(Boolean).sort().at(-1) || null
+  const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`
 
-  const ulip = Object.entries(h.ulip_24h || {}).sort((x, y) => x[0].localeCompare(y[0]))
-  const ulipTone = ulip.some(([, u]) => u.failed && !u.ok) ? 'red' : ulip.some(([, u]) => u.failed) ? 'amber' : 'green'
-
-  const tones = [autoTone, shipTone, boxTone, waTone, ulipTone]
-  const overall = tones.includes('red') ? 'red' : tones.includes('amber') ? 'amber' : 'green'
-  const headline = overall === 'green' ? 'Everything is running normally.'
-    : overall === 'amber' ? 'Running, but something needs a look.' : 'Something has stopped — see the red card.'
+  const services = [
+    {
+      id: 'auto', name: 'Automatic checks', tone: t.auto, last: a.last_run, next: a.next_due,
+      status: t.paused ? `Paused after errors until ${fmtTime(a.paused_until)}` : a.watching ? `Watching ${plural(a.watching, 'item', 'items')}` : 'Nothing to watch right now',
+      details: [kinds, a.failing ? `${a.failing} with errors` : null],
+    },
+    {
+      id: 'ships', name: 'Ship tracking', tone: t.ships, last: s.last_update,
+      status: s.tracked ? `${plural(s.tracked, 'ship', 'ships')} on the way` : 'No ships being tracked',
+      details: [`${h.safecube_used || 0} of 45 tracked shipments used this month`,
+        s.refresh_errors ? `last refresh failed (${s.refresh_errors}), showing the last good data` : null,
+        s.errors ? `could not track ${s.errors}` : null],
+    },
+    { id: 'boxes', name: 'Container tracking', tone: t.boxes, last: c.last_refresh, status: plural(c.tracked || 0, 'container', 'containers'), details: [] },
+    {
+      id: 'wa', name: 'WhatsApp & alerts', tone: t.whatsapp, last: w.last_sent,
+      status: `${plural(w.sent || 0, 'message', 'messages')} sent in the last 24 hours`,
+      details: [h.last_summary ? `morning summary ${fmtDateTime(h.last_summary)}` : 'no morning summary yet',
+        `${w.held || 0} held (outside the 24 h window)`, w.failed ? `${w.failed} failed` : null,
+        `desktop alerts ${w.desktop || 0} sent · ${plural(h.desktop_computers || 0, 'computer', 'computers')}`],
+    },
+    { id: 'gov', name: 'Government lookups', tone: t.gov, last: govLast, status: `${govOk} answered · ${govFailed} failed in 24 hours`, details: [] },
+  ]
+  const headline = t.overall === 'green' ? 'Everything is running normally'
+    : t.overall === 'amber' ? 'Running, but something needs a look' : 'Something has stopped, see the red row'
+  const tone = (x) => (x === 'green' ? undefined : x)
 
   return (
-    <div className="ix-page ix-health-page">
-      <div className="ix-page-head">
-        <div>
-          <h1>System health</h1>
-          <p>Background services that keep the portal, alerts and WhatsApp up to date · checked {timeAgo(h.now)}</p>
-        </div>
-        <div className="right">
-          <button type="button" className="ix-btn" onClick={() => { setBusy(true); setTick((n) => n + 1) }} disabled={busy}><Icon name="refresh" />{busy ? 'Checking…' : 'Check now'}</button>
-        </div>
-      </div>
+    <>
+      <PageHead title="System health"
+        sub={[<Status key="o" tone={t.overall}>{headline}</Status>, `checked ${fmtTime(h.now)} IST`, 'background services that keep the portal, alerts and WhatsApp up to date']}
+        actions={checkNow} />
       {err && <div className="ix-error">Last check failed — {err}. Showing the previous result.</div>}
 
-      <div className={`ix-health-banner ${overall}`}>
-        <Icon name={TONE_ICON[overall]} /><b>{headline}</b>
-      </div>
+      <KpiStrip>
+        <Kpi label="Automatic checks" dot={t.auto} tone={tone(t.auto)} value={a.watching || 0} unit="watching"
+          sub={autoCheckLine(h) || 'not run yet'} />
+        <Kpi label="Ship tracking" dot={t.ships} tone={tone(t.ships)} value={s.tracked || 0} unit={s.tracked === 1 ? 'ship' : 'ships'}
+          sub={s.last_update ? `updated ${fmtTime(s.last_update)}` : 'not updated yet'} />
+        <Kpi label="Container tracking" dot={t.boxes} tone={tone(t.boxes)} value={c.tracked || 0} unit="boxes"
+          sub={c.last_refresh ? `refreshed ${fmtTime(c.last_refresh)}` : 'not refreshed yet'} />
+        <Kpi label="WhatsApp & alerts" dot={t.whatsapp} tone={tone(t.whatsapp)} value={w.sent || 0} unit="sent in 24 h"
+          sub={w.failed ? `${w.failed} failed` : `${w.held || 0} held`} />
+        <Kpi label="Government lookups" dot={t.gov} tone={tone(t.gov)} value={govOk + govFailed} unit="in 24 h"
+          sub={govFailed ? `${govFailed} failed` : 'none failed'} />
+      </KpiStrip>
 
-      <div className="ix-health-grid">
-        <Service icon="robot" title="Automatic checks" tone={autoTone}
-          status={paused ? `Paused after errors until ${new Date(a.paused_until).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' })}`
-            : a.watching ? `Watching ${a.watching} item${a.watching === 1 ? '' : 's'}` : 'Nothing to watch right now'}
-          facts={[
-            ['Last check', a.last_run ? timeAgo(a.last_run) : 'not yet'],
-            ['Next check', nextIn(a.next_due, now)],
-            kinds && ['Watching', kinds],
-            a.failing ? ['With errors', a.failing] : null,
-          ]} />
-        <Service icon="ship" title="Ship tracking" tone={shipTone}
-          status={s.tracked ? `${s.tracked} ship${s.tracked === 1 ? '' : 's'} on the way` : 'No ships being tracked'}
-          facts={[
-            ['Last update', s.last_update ? timeAgo(s.last_update) : 'not yet'],
-            ['Shipments used this month', `${h.safecube_used || 0} of 45`],
-            s.refresh_errors ? ['Last refresh failed', `${s.refresh_errors} (showing last good data)`] : null,
-            s.errors ? ['Could not track', s.errors] : null,
-          ]} />
-        <Service icon="box" title="Container tracking" tone={boxTone}
-          status={`${c.tracked || 0} containers`}
-          facts={[['Last refresh', c.last_refresh ? timeAgo(c.last_refresh) : 'not yet']]} />
-        <Service icon="brand-whatsapp" title="WhatsApp & alerts" tone={waTone}
-          status={`${w.sent || 0} message${w.sent === 1 ? '' : 's'} sent in the last 24 hours`}
-          facts={[
-            ['Morning summary', h.last_summary ? timeAgo(h.last_summary) : 'not yet'],
-            ['Last message sent', w.last_sent ? timeAgo(w.last_sent) : '—'],
-            ['Held (outside 24 h window)', w.held || 0],
-            w.failed ? ['Failed', w.failed] : null,
-            ['Desktop alerts', `${w.desktop || 0} sent · ${h.desktop_computers || 0} computer${h.desktop_computers === 1 ? '' : 's'}`],
-          ]} />
-      </div>
-
-      <div className="ix-grid-2">
-        <div className="ix-card">
-          <div className="ix-card-head"><Icon name="history" style={{ color: 'var(--navy)' }} /><h2>Recent automatic checks</h2></div>
-          {(h.auto_recent || []).length === 0 ? <div className="ix-empty">No automatic checks have run yet.</div> : (
-            <div className="ix-tbl-wrap"><table className="ix-table ix-table-plain">
-              <thead><tr><th>Check</th><th>Result</th><th>When</th><th>Next</th></tr></thead>
-              <tbody>
-                {h.auto_recent.map((r, i) => (
-                  <tr key={i}>
-                    <td><b>{KIND_NAMES[r.kind] || r.kind}</b> <span className="muted">{r.label}</span></td>
-                    <td className="ix-ellipsis" title={r.result || ''}>{r.fails ? <Chip tone="red">error</Chip> : null} {r.result || '—'}</td>
-                    <td>{timeAgo(r.last_run)}</td>
-                    <td className="muted">{r.next_due ? new Date(r.next_due).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' }) : '—'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table></div>
-          )}
+      <Panel title="Services" className="rec-panel">
+        <div className="ix-tbl-wrap">
+          <table className="ix-tbl rec-tbl">
+            <thead><tr><th className="lvl" /><th>Service</th><th>State</th><th>Now</th><th>Last</th><th>Next</th><th>Details</th></tr></thead>
+            <tbody>
+              {services.map((x) => (
+                <tr key={x.id} className={x.tone === 'green' ? '' : x.tone}>
+                  <td className="lvl" />
+                  <td><b className="rec-n">{x.name}</b></td>
+                  <td><Status tone={x.tone}>{TONE_WORD[x.tone]}</Status></td>
+                  <td>{x.status}</td>
+                  <td className="dim"><When iso={x.last} /></td>
+                  <td className="dim">{x.next ? (new Date(x.next).getTime() <= now ? 'due now' : fmtTime(x.next)) : <Dash />}</td>
+                  <td className="dim wide" title={x.details.filter(Boolean).join(' · ')}>{x.details.filter(Boolean).join(' · ') || <Dash />}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
+      </Panel>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <div className="ix-card">
-            <div className="ix-card-head"><Icon name="api" style={{ color: 'var(--navy)' }} /><h2>ULIP, last 24 hours</h2></div>
-            {ulip.length === 0 ? <div className="ix-empty">No ULIP lookups in the last 24 hours.</div> : (
-              <div className="ix-tbl-wrap"><table className="ix-table ix-table-plain">
-                <thead><tr><th>Service</th><th>OK</th><th>Failed</th><th>Last</th></tr></thead>
-                <tbody>
-                  {ulip.map(([api, u]) => (
-                    <tr key={api}>
-                      <td>{API_NAMES[api] || api}</td>
-                      <td className="num">{u.ok}</td>
-                      <td className="num" style={u.failed ? { color: 'var(--red)', fontWeight: 600 } : undefined}>{u.failed}</td>
-                      <td className="muted">{timeAgo(u.last)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table></div>
+      <div className="rec-health-grid">
+        <div>
+          <Panel title="Recent automatic checks" meta={kinds || null} className="rec-panel">
+            {(h.auto_recent || []).length === 0 ? <EmptyState line icon="history" title="No automatic checks have run yet." /> : (
+              <div className="ix-tbl-wrap">
+                <table className="ix-tbl rec-tbl narrow">
+                  <thead><tr><th>Check</th><th>Result</th><th>When</th><th>Next</th></tr></thead>
+                  <tbody>
+                    {h.auto_recent.map((r, i) => (
+                      <tr key={i}>
+                        <td><b className="rec-n">{KIND_NAMES[r.kind] || r.kind}</b>{r.label ? <span className="rec-x">{r.label}</span> : null}</td>
+                        <td className="wide" title={r.result || ''}>{r.fails ? <><Chip tone="red">error</Chip> </> : null}{r.result || <Dash />}</td>
+                        <td className="dim"><When iso={r.last_run} empty="—" /></td>
+                        <td className="dim">{r.next_due ? fmtTime(r.next_due) : <Dash />}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             )}
-          </div>
+          </Panel>
+        </div>
 
-          <div className="ix-card">
-            <div className="ix-card-head"><Icon name="calendar-time" style={{ color: 'var(--navy)' }} /><h2>Schedules</h2></div>
-            <div className="ix-tbl-wrap"><table className="ix-table ix-table-plain">
-              <tbody>
-                {cron.filter((j) => j.active).map((j) => {
-                  const [name, every] = CRON_NAMES[j.name] || [j.name, j.schedule]
-                  const ok = !j.last_status || j.last_status === 'succeeded'
-                  return (
-                    <tr key={j.name} title={j.last_message || ''}>
-                      <td><span className={`ix-dot ${ok ? 'green' : 'red'}`} /> {name} <span className="muted">{every}</span></td>
-                      <td className="muted" style={{ textAlign: 'right' }}>{j.last_start ? `ran ${timeAgo(j.last_start)}` : 'not run yet'}{ok ? '' : ' · failed'}</td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table></div>
-          </div>
+        <div>
+          <Panel title="Government lookups" meta="last 24 hours" className="rec-panel">
+            {gov.length === 0 ? <EmptyState line icon="building-bank" title="No lookups in the last 24 hours." /> : (
+              <div className="ix-tbl-wrap">
+                <table className="ix-tbl rec-tbl narrow">
+                  <thead><tr><th>Source</th><th className="r">OK</th><th className="r">Failed</th><th>Last</th></tr></thead>
+                  <tbody>
+                    {gov.map(([api, u]) => (
+                      <tr key={api} className={u.failed && !u.ok ? 'red' : ''}>
+                        <td>{API_NAMES[api] || 'Other government lookup'}</td>
+                        <td className="r">{u.ok || <Dash />}</td>
+                        <td className="r">{u.failed ? <b className="rec-bad">{u.failed}</b> : <Dash />}</td>
+                        <td className="dim"><When iso={u.last} empty="—" /></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </Panel>
+
+          <Panel title="Schedules" className="rec-panel">
+            <div className="ix-tbl-wrap">
+              <table className="ix-tbl rec-tbl narrow">
+                <thead><tr><th>Schedule</th><th>How often</th><th>Last run</th></tr></thead>
+                <tbody>
+                  {cron.filter((j) => j.active).map((j) => {
+                    const [name, every] = CRON_NAMES[j.name] || [j.name, j.schedule]
+                    const ok = !j.last_status || j.last_status === 'succeeded'
+                    return (
+                      <tr key={j.name} title={j.last_message || ''}>
+                        <td><Status tone={ok ? 'green' : 'red'}>{name}</Status></td>
+                        <td className="dim">{every || <Dash />}</td>
+                        <td className="dim">{j.last_start ? <When iso={j.last_start} /> : 'not run yet'}{ok ? '' : ' · failed'}</td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </Panel>
         </div>
       </div>
-    </div>
+    </>
   )
 }

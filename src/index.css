@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -19,8 +19,9 @@
 }
 
 @layer utilities {
+  /* the design's system mono stack (JetBrains Mono is no longer loaded) */
   .font-mono {
-    font-family: 'JetBrains Mono', monospace;
+    font-family: ui-monospace, 'Cascadia Mono', 'SF Mono', Consolas, monospace;
   }
   
   .scrollbar-thin::-webkit-scrollbar {

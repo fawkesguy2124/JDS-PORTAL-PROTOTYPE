@@ -3,29 +3,36 @@ import { journeyFor, isExportJob } from '../../services/journey'
 import { markBeFiled, markSbFiled } from '../../services/jobActions'
 import UlipCheck from '../../components/ulip/UlipCheck'
 import { CUSTOMS_TAB_GROUPS, SHIP_GROUPS } from '../../components/ulip/ulipChecks'
-import { JobPicker, CustomsWorkspace, NoJobChosen } from '../JobChecks'
+import { JobPicker, CustomsWorkspace, DayTag } from '../JobChecks'
 import { useJourney, useFreshOnOpen } from '../JourneyContext'
 import { useAutoChecks, checkCustoms, isDue, COOLDOWN_MIN } from '../autoChecks'
 import AutoStatus from '../AutoStatus'
-import BeStage from '../BeStage'
-import { Icon, fmtDate, timeAgo, Skeleton } from '../ui'
+import { Icon, JobNo, Status, PhaseStatus, Chip, FreeDays, Dash, Button, Segmented, PageHead, Panel, EmptyState, Skeleton, worst, fmtDate, fmtDateTime } from '../ui'
+import '../styles/customs.css'
 
-// BE & OOC desk. Imports: pick a job on the left, see and run all its customs
-// checks on the right (BE, OOC, cargo, IGM …). Exports: SB & LEO queues.
+// BE & OOC desk (Control tower, Jose 31 Oct 2026). Imports: the work list on the
+// left (waiting for OOC oldest BE first, OOC granted, BE to file), and on the right
+// the picked job's customs facts and checks, or the whole queue as a table when no
+// job is picked. Exports: SB & LEO queues.
 // Opening the page checks customs by itself for import jobs still waiting for
 // OOC (see autoChecks.js for the limits). Once OOC is granted a job is never
-// checked again.
+// checked again. Every other check runs only when its button is pressed.
 
 const SHOW_FIRST = 20
 const LEO_CHECK = { api: 'ICEGATE/06', title: 'Has LEO been given?', button: 'Check LEO', refs: { sbNo: 'sb_no', sbDt: 'sb_date' } }
 
-const daysSince = (v) => {
-  if (!v) return null
-  const d = new Date(String(v).length <= 10 ? `${v}T00:00:00` : v)
-  return isNaN(d) ? null : Math.max(0, Math.floor((Date.now() - d.getTime()) / 86400000))
-}
-const filedText = (v) => { const n = daysSince(v); return n === null ? '' : n === 0 ? 'filed today' : n === 1 ? 'filed 1 day ago' : `filed ${n} days ago` }
 const plainSaveError = (msg) => (/permission|policy|row-level|not allowed|denied|no permission/i.test(msg || '') ? "You don't have permission to change this job." : msg)
+// oldest first, a missing date last
+const byDate = (get) => (a, b) => {
+  const x = get(a), y = get(b)
+  if (!x) return y ? 1 : 0
+  if (!y) return -1
+  return String(x).localeCompare(String(y))
+}
+// the row's 3px edge: the job's worst problem (same rule as Today)
+const levelOf = ({ j }) => { const w = worst(j); return w === 'red' || w === 'amber' ? w : '' }
+const oocText = (j) => (j.oocDate ? `OOC ${fmtDate(j.oocDate)}` : j.steps?.find((s) => s.id === 'ooc')?.sub || 'OOC recorded by staff')
+const whereText = (j) => j.steps?.find((s) => s.id === 'out')?.sub || null
 
 // Answers from checks made on this page, laid over the loaded data until the next full load
 function useOverlay(data, rows) {
@@ -57,40 +64,88 @@ function FiledForm({ initialNo, numLabel, dateLabel, busy, onSave, onCancel }) {
       <input value={no} onChange={(e) => setNo(e.target.value.replace(/\D/g, '').slice(0, 7))} inputMode="numeric" maxLength={7}
         placeholder={numLabel} aria-label={numLabel} autoFocus />
       <input type="date" max={new Date().toISOString().slice(0, 10)} value={date} onChange={(e) => setDate(e.target.value)}
-        aria-label={dateLabel} title={dateLabel} style={{ fontFamily: 'Inter, sans-serif' }} />
-      <button type="button" className="ix-btn sm primary" disabled={busy} onClick={() => onSave(no, date)}>{busy ? 'Saving…' : 'Save'}</button>
-      <button type="button" className="ix-btn sm ghost" disabled={busy} onClick={onCancel}>Cancel</button>
+        aria-label={dateLabel} title={dateLabel} />
+      <Button size="sm" variant="primary" disabled={busy} onClick={() => onSave(no, date)}>{busy ? 'Saving…' : 'Save'}</Button>
+      <Button size="sm" variant="ghost" disabled={busy} onClick={onCancel}>Cancel</Button>
     </div>
   )
 }
 
-function Queue({ title, icon, color, items, empty, note, render }) {
+// Exports: one queue (shipping bill to file, waiting for LEO, LEO given)
+function Queue({ title, items, empty, note, render }) {
   const [all, setAll] = useState(false)
   const shown = all ? items : items.slice(0, SHOW_FIRST)
   return (
-    <div className="ix-card">
-      <div className="ix-card-head">
-        <Icon name={icon} style={{ color }} />
-        <h2>{title}</h2>
-        <span className="ix-chip grey" style={{ marginLeft: 6 }}>{items.length}</span>
-      </div>
-      {note && <div style={{ padding: '8px 16px', fontSize: 12, color: 'var(--muted)', borderBottom: '1px solid var(--line)' }}>{note}</div>}
-      <div className="ix-q-list">
-        {items.length === 0 && <div className="ix-empty">{empty}</div>}
-        {shown.map(render)}
+    <Panel title={title} meta={String(items.length)} className="cu-q">
+      {note && items.length > 0 && <div className="cu-grp-note">{note}</div>}
+      <div className="cu-qbody">
+        {items.length === 0 ? <EmptyState line icon="circle-check" title={empty} /> : shown.map(render)}
       </div>
       {items.length > SHOW_FIRST && (
         <button type="button" className="ix-more" onClick={() => setAll((v) => !v)}>{all ? 'Show fewer' : `Show all ${items.length}`}</button>
       )}
-    </div>
+    </Panel>
+  )
+}
+
+// No job picked: the whole import queue as one table, a row per job
+function QueueTable({ groups, onSelect }) {
+  const total = groups.reduce((n, g) => n + g.rows.length, 0)
+  if (!total) {
+    return (
+      <Panel title="Customs queue">
+        <EmptyState icon="circle-check" tone="green" title="Nothing waiting at customs">
+          No BE to file, no BE waiting for OOC and no job with OOC granted still to move.
+        </EmptyState>
+      </Panel>
+    )
+  }
+  return (
+    <Panel title="Customs queue" meta="Pick a job to see its BE, OOC and checks" className="cu-queue">
+      <div className="ix-tbl-wrap">
+        <table className="ix-tbl click">
+          <thead><tr>
+            <th className="lvl" /><th>Job</th><th>Client</th><th>BE no</th><th>BE date</th>
+            <th className="r">Since BE</th><th>Customs stage</th><th>Last checked</th><th>OOC</th>
+          </tr></thead>
+          <tbody>
+            {groups.filter((g) => g.rows.length).map((g) => [
+              <tr key={`g-${g.title}`} className="grp"><td className="lvl" /><td colSpan={8}>{g.title}<span className="n">{g.rows.length}</span></td></tr>,
+              ...g.rows.map((r) => {
+                const { job, j } = r
+                const waiting = j.beFiled && !j.oocDone
+                return (
+                  <tr key={job.id} className={levelOf(r)} onClick={() => onSelect(job.id)} tabIndex={0}
+                    onKeyDown={(e) => { if (e.key === 'Enter') onSelect(job.id) }}>
+                    <td className="lvl" />
+                    <td><JobNo no={job.job_no} /></td>
+                    <td className="cl">{job.client || <Dash />}</td>
+                    <td className="mono">{job.be_no || <Dash />}</td>
+                    <td>{job.be_date ? fmtDate(job.be_date) : <Dash />}</td>
+                    <td className="r">{waiting ? <DayTag since={job.be_date} /> : <Dash />}</td>
+                    {/* once OOC is granted the stage reads as everywhere else (amber 'To move';
+                        green only once delivered), the OOC column has the date */}
+                    <td>{j.oocDone ? <PhaseStatus job={job} j={j} />
+                      : j.beStage ? <Status tone={j.beStage.tone}>{j.beStage.short}</Status>
+                        : waiting ? <span className="ix-dash">Not set</span> : <Status tone="grey">BE to file</Status>}</td>
+                    <td className="dim">{j.customs?.checked_at ? fmtDateTime(j.customs.checked_at) : <Dash />}</td>
+                    <td>{j.oocDate ? fmtDate(j.oocDate) : j.oocDone ? <span className="ix-dash">{oocText(j)}</span> : <Dash />}</td>
+                  </tr>
+                )
+              }),
+            ])}
+          </tbody>
+        </table>
+      </div>
+      <div className="ix-tbl-foot">{total} {total === 1 ? 'job' : 'jobs'} at customs or just through it</div>
+    </Panel>
   )
 }
 
 export default function CustomsPage({ currentUserName, onOpenJob, showToast, canEditBE, canUpdateStage }) {
-  const { data, active, loading, error, refresh, patchJob } = useJourney()
+  const { data, active, rows, loading, error, refresh, patchJob } = useJourney()
   const [view, rowsAdd] = useOverlay(data, active)
   const [kind, setKind] = useState('import')
-  const { rows } = useJourney()
   const fresh = useFreshOnOpen()
 
   // jobs waiting for OOC whose last customs answer is older than the cool-down
@@ -103,19 +158,19 @@ export default function CustomsPage({ currentUserName, onOpenJob, showToast, can
       run: async () => { const r = await checkCustoms(job.id); if (r.oocDate) showToast?.(`OOC granted — ${job.job_no}`, 'success') },
     }))
   const auto = useAutoChecks(toCheck, fresh, refresh)
-  const waitingOoc = active.filter(({ job, j }) => !isExportJob(job) && j.phase === 'ooc').length
   const [selId, setSelId] = useState(() => new URLSearchParams(window.location.search).get('job'))
-  const select = (id) => {
-    setSelId(id)
+  const setJobParam = (id) => {
     const params = new URLSearchParams(window.location.search)
-    params.set('job', id)
+    if (id) params.set('job', id)
+    else params.delete('job')
     window.history.replaceState({}, '', `${window.location.pathname}?${params.toString()}`)
   }
+  const select = (id) => { setSelId(id); setJobParam(id) }
+  const unselect = () => { setSelId(null); setJobParam(null) }
   const [busyId, setBusyId] = useState(null)      // the one action running on this page
   const [formFor, setFormFor] = useState(null)    // job id with the BE / SB form open
   const [leoFor, setLeoFor] = useState(null)      // job id with the LEO check open
   const [rowErrors, setRowErrors] = useState({})
-  const [rowNotes] = useState({})
   const lock = useRef(false)
 
   const setErr = (id, msg) => setRowErrors((p) => ({ ...p, [id]: msg }))
@@ -123,8 +178,13 @@ export default function CustomsPage({ currentUserName, onOpenJob, showToast, can
 
   const mine = view.filter((r) => (kind === 'export' ? isExportJob(r.job) : !isExportJob(r.job)))
   const inPhase = (...ids) => mine.filter((r) => ids.includes(r.j.phase))
-  // waiting for OOC, including BEs filed before the ship came in (listed last)
-  const waitingList = [...inPhase('ooc'), ...mine.filter((r) => r.j.phase === 'arrival' && r.j.beFiled)]
+  // imports: oldest BE first, so the longest wait is on top (audit, 31 Oct 2026)
+  const waiting = inPhase('ooc').sort(byDate((r) => r.job.be_date))
+  const toMove = inPhase('release').sort(byDate((r) => r.j.oocDate))
+  const toFile = inPhase('docs').sort(byDate((r) => r.j.arrivedAt))
+  // a BE filed before the ship came in: waits for the ship first (still checked for OOC)
+  const advance = mine.filter((r) => r.j.phase === 'arrival' && r.j.beFiled).sort(byDate((r) => r.job.be_date))
+  const lastCheck = active.filter((r) => !isExportJob(r.job)).map((r) => r.j.customs?.checked_at).filter(Boolean).sort().at(-1)
 
   // ── actions ──
   const saveFiled = async (job, which, values) => {
@@ -144,33 +204,47 @@ export default function CustomsPage({ currentUserName, onOpenJob, showToast, can
     showToast?.(which === 'be' ? `BE saved for ${job.job_no}` : `Shipping bill saved for ${job.job_no}`, 'success')
   }
 
-  // ── rows ──
-  const rowView = ({ job, sub, action, children }) => (
+  // ── import list groups (left list and the queue table share them) ──
+  const groups = [
+    { title: 'Waiting for OOC', rows: waiting, empty: 'No BE waiting for OOC.', level: levelOf,
+      sub: ({ job, j }) => <>BE <span className="mono">{job.be_no}</span> · {fmtDate(job.be_date)}{j.beStage ? ` · ${j.beStage.short}` : ''}</>,
+      tag: ({ job }) => <DayTag since={job.be_date} /> },
+    { title: 'OOC granted — to move', rows: toMove, empty: 'No job with OOC granted still to move.', level: levelOf,
+      sub: ({ j }) => [oocText(j), whereText(j)].filter(Boolean).join(' · '),
+      tag: ({ j }) => <>{j.onwardMode === 'rail' && <Chip>Rail</Chip>}<FreeDays value={j.freeDaysLeft} /></> },
+    { title: 'BE to file', rows: toFile, empty: 'No BE to file.', level: levelOf,
+      sub: ({ job, j }) => [j.arrivedAt ? `Arrived ${fmtDate(j.arrivedAt)}` : job.eta ? `ETA ${fmtDate(job.eta)}` : null, job.mode].filter(Boolean).join(' · ') || 'File in LiveImpex',
+      tag: () => <Chip>LiveImpex</Chip> },
+    { title: 'BE filed — ship not in yet', rows: advance, empty: 'No BE filed ahead of arrival.', level: levelOf,
+      sub: ({ job }) => <>BE <span className="mono">{job.be_no}</span> · {fmtDate(job.be_date)}{job.eta ? ` · ETA ${fmtDate(job.eta)}` : ''}</>,
+      tag: () => <Status tone="blue">Ship due</Status> },
+  ]
+
+  // ── export rows ──
+  const rowView = ({ job, sub, tag, action, children }) => (
     <div key={job.id}>
-      <div className="ix-q-row">
+      <div className="cu-qrow">
         <div className="what" role="button" tabIndex={0} onClick={() => onOpenJob?.(job.id)} onKeyDown={(e) => { if (e.key === 'Enter') onOpenJob?.(job.id) }}>
-          <b>{job.job_no}</b> <span style={{ color: 'var(--text-2)' }}>· {job.client || 'No client'}</span>
-          <div className="s">{sub}</div>
+          <div className="t"><JobNo no={job.job_no} /><span className="cl">{job.client || 'No client'}</span></div>
+          <div className="m">{sub}</div>
         </div>
+        {tag}
         {action}
       </div>
       {children}
-      {busyId === job.id && <div style={{ padding: '0 16px 10px', fontSize: 12, color: 'var(--muted)' }}>Government systems can take up to a minute to answer. Please wait.</div>}
-      {rowNotes[job.id] && busyId !== job.id && <div style={{ padding: '0 16px 10px', fontSize: 13, fontWeight: 600 }}>{rowNotes[job.id]}</div>}
-      {rowErrors[job.id] && <div className="ix-error" style={{ margin: '0 16px 10px' }}><Icon name="alert-triangle" /> {rowErrors[job.id]}</div>}
+      {busyId === job.id && <div className="cu-note">Government systems can take up to a minute to answer. Please wait.</div>}
+      {rowErrors[job.id] && <div className="ix-error"><Icon name="alert-triangle" /> {rowErrors[job.id]}</div>}
     </div>
   )
 
   const renderSbToFile = ({ job }) => rowView({
     job,
     sub: [job.mode, job.port, job.eta ? `ETD/ETA ${fmtDate(job.eta)}` : null].filter(Boolean).join(' · ') || 'Shipping bill not recorded yet',
-    action: !canEditBE ? null : formFor === job.id ? null : (
-      <button type="button" className="ix-btn sm" disabled={anyBusy} onClick={() => { setFormFor(job.id); setErr(job.id, '') }}>
-        <Icon name="plus" />Record SB no
-      </button>
+    action: !canEditBE || formFor === job.id ? null : (
+      <Button size="sm" icon="plus" disabled={anyBusy} onClick={() => { setFormFor(job.id); setErr(job.id, '') }}>Record SB no</Button>
     ),
     children: <>
-      {!canEditBE && <div style={{ padding: '0 16px 10px', fontSize: 12, color: 'var(--muted)' }}>Ask Akshyani or an admin to record the shipping bill.</div>}
+      {!canEditBE && <div className="cu-note">Ask Akshyani or an admin to record the shipping bill.</div>}
       {canEditBE && formFor === job.id && (
         <FiledForm numLabel="Shipping bill number (7 digits)" dateLabel="Shipping bill date" busy={busyId === job.id}
           onCancel={() => setFormFor(null)} onSave={(no, date) => saveFiled(job, 'sb', { sbNo: no, sbDate: date })} />
@@ -180,11 +254,12 @@ export default function CustomsPage({ currentUserName, onOpenJob, showToast, can
 
   const renderWaitingLeo = ({ job, j }) => rowView({
     job,
-    sub: <>SB <span className="mono">{j.sbNo}</span> · {fmtDate(job.ulip_refs?.sb_date)} · {filedText(job.ulip_refs?.sb_date)}</>,
+    sub: <>SB <span className="mono">{j.sbNo}</span> · {fmtDate(job.ulip_refs?.sb_date)}</>,
+    tag: <DayTag since={job.ulip_refs?.sb_date} />,
     action: (
-      <button type="button" className={`ix-btn sm ${leoFor === job.id ? '' : 'primary'}`} disabled={anyBusy} onClick={() => setLeoFor((v) => (v === job.id ? null : job.id))}>
+      <Button size="sm" variant={leoFor === job.id ? 'ghost' : 'secondary'} disabled={anyBusy} onClick={() => setLeoFor((v) => (v === job.id ? null : job.id))}>
         {leoFor === job.id ? 'Close' : 'Check LEO'}
-      </button>
+      </Button>
     ),
     children: leoFor === job.id && (
       <div style={{ padding: '0 16px 12px' }}>
@@ -203,73 +278,61 @@ export default function CustomsPage({ currentUserName, onOpenJob, showToast, can
     sub: <>SB <span className="mono">{j.sbNo}</span> · LEO given {fmtDate(j.leoDate)}</>,
   })
 
-  const kindBtn = (id, label, icon) => (
-    <button type="button" className={`ix-btn sm ${kind === id ? 'primary' : ''}`} aria-pressed={kind === id}
-      onClick={() => { setKind(id); setFormFor(null); setLeoFor(null) }}>
-      <Icon name={icon} />{label}
-    </button>
-  )
+  const switchKind = (k) => { setKind(k); setFormFor(null); setLeoFor(null) }
+  const isImport = kind === 'import'
+  const sub = isImport
+    ? [`${waiting.length} waiting for OOC`, `${toMove.length} OOC granted, to move`, `${toFile.length} BE to file`]
+    : [`${inPhase('sb').length} shipping bills to file`, `${inPhase('leo').length} waiting for LEO`, `${inPhase('sail').length} LEO given`]
 
   return (
-    <div className="ix-page">
-      <div className="ix-page-head">
-        <div>
-          <h1>{kind === 'import' ? 'BE & OOC' : 'Shipping bill & LEO'}</h1>
-          <p>File in LiveImpex, record it here, then follow {kind === 'import' ? 'OOC' : 'LEO'}</p>
-        </div>
-        <div className="right">
-          {kindBtn('import', 'Imports — BE & OOC', 'package')}
-          {kindBtn('export', 'Exports — SB & LEO', 'ship')}
-          <button type="button" className="ix-btn sm ghost" onClick={refresh} disabled={loading}><Icon name="refresh" />{loading ? 'Loading…' : 'Refresh'}</button>
-        </div>
-      </div>
+    <>
+      <PageHead title={isImport ? 'BE & OOC' : 'Shipping bill & LEO'} sub={data ? sub : 'File in LiveImpex, record it here, then follow it'}
+        actions={<>
+          <Segmented label="Imports or exports" value={kind} onChange={switchKind}
+            options={[{ value: 'import', label: 'Imports' }, { value: 'export', label: 'Exports' }]} />
+          <Button size="sm" variant="ghost" icon="refresh" onClick={refresh} disabled={loading}>{loading ? 'Loading…' : 'Refresh'}</Button>
+        </>} />
 
-      {kind === 'import' && <AutoStatus auto={auto} fresh={fresh} what="customs"
-        idle={waitingOoc ? `Customs is checked by itself when you open this page (each job at most every ${COOLDOWN_MIN} min). Jobs with OOC granted are not checked again.` : 'No job is waiting for OOC, so nothing to check.'} />}
+      {/* the honest promise: customs is checked when this page opens, not round the clock (audit, 31 Oct 2026) */}
+      {isImport && <AutoStatus auto={auto} fresh={fresh} what="customs"
+        idle={waiting.length || advance.length
+          ? `Customs is checked when this page opens, each job at most every ${COOLDOWN_MIN} min${lastCheck ? ` · last check ${fmtDateTime(lastCheck)}` : ''}. Jobs with OOC granted are not checked again.`
+          : 'No job is waiting for OOC, so there is nothing to check.'} />}
 
       {error && (
         <div className="ix-error">
           Could not load the latest data — {error}.{' '}
-          <button type="button" className="ix-btn sm" onClick={refresh} style={{ marginLeft: 8 }}>Refresh</button>
+          <Button size="sm" onClick={refresh} style={{ marginLeft: 8 }}>Refresh</Button>
         </div>
       )}
 
       {loading && !data ? (
         <div className="ix-card"><Skeleton rows={6} /></div>
-      ) : error ? null : kind === 'import' ? (
-        <div className="ix-split">
+      ) : error ? null : isImport ? (
+        <div className={`cu-desk${selId ? ' has-sel' : ''}`}>
           <JobPicker
-            title="Find a job"
+            title="Customs work list"
             rows={rows.filter((r) => !isExportJob(r.job))}
             selectedId={selId}
             onSelect={select}
             placeholder="Any import job: job no, client, BE, container…"
-            lists={[
-              { title: 'Waiting for OOC', icon: 'hourglass', color: 'var(--amber)', rows: waitingList, empty: 'No jobs waiting for OOC.',
-                sub: ({ job, j }) => `BE ${job.be_no} · ${j.beStage ? `${j.beStage.short} · ` : ''}${filedText(job.be_date)}${j.phase === 'arrival' ? ' · ship not in yet' : ''} · checked ${j.customs?.checked_at ? timeAgo(j.customs.checked_at) : 'never'}` },
-              { title: 'OOC granted — next steps', icon: 'circle-check', color: 'var(--green)', rows: inPhase('release'), empty: 'No jobs with OOC granted right now.',
-                sub: ({ j }) => `OOC ${j.oocDate ? fmtDate(j.oocDate) : 'recorded by staff'} · truck or rail not arranged` },
-            ]}
+            lists={groups}
           />
           {selId
-            ? <div style={{ minWidth: 0 }}>
-              {/* where the BE is now: one tap (Jose, 25 Oct 2026) */}
-              {(() => { const r = rows.find((x) => x.job.id === selId); return r && r.j.beFiled && !r.j.oocDone ? <BeStage job={r.job} userName={currentUserName} showToast={showToast} /> : null })()}
-              <CustomsWorkspace jobId={selId} onOpenJob={onOpenJob} canEditBE={canEditBE} canUpdateStage={canUpdateStage}
+            ? <CustomsWorkspace jobId={selId} onOpenJob={onOpenJob} canEditBE={canEditBE} canUpdateStage={canUpdateStage} onClose={unselect}
                 currentUserName={currentUserName} showToast={showToast} groups={[...CUSTOMS_TAB_GROUPS, ...SHIP_GROUPS]} />
-            </div>
-            : <NoJobChosen text="Pick a job on the left to see its customs status: BE, OOC, cargo details, IGM and more. Each check asks Customs only when you press its button." />}
+            : <QueueTable groups={groups} onSelect={select} />}
         </div>
       ) : (
         <div className="ix-queues">
-          <Queue title="Shipping bill to file" icon="file-text" color="var(--blue)" items={inPhase('sb')}
+          <Queue title="Shipping bill to file" items={inPhase('sb')}
             empty="No shipping bills waiting to be filed." render={renderSbToFile} />
-          <Queue title="Waiting for LEO" icon="hourglass" color="var(--amber)" items={inPhase('leo')}
+          <Queue title="Waiting for LEO" items={inPhase('leo').sort(byDate((r) => r.job.ulip_refs?.sb_date))}
             note="Each check asks Customs. Check when you expect LEO." empty="No jobs waiting for LEO." render={renderWaitingLeo} />
-          <Queue title="LEO given" icon="circle-check" color="var(--green)" items={inPhase('sail')}
+          <Queue title="LEO given" items={inPhase('sail')}
             empty="No jobs with LEO given right now." render={renderLeoGiven} />
         </div>
       )}
-    </div>
+    </>
   )
 }

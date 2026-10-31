@@ -1,13 +1,15 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../../supabase'
 import { loadJourneyData } from '../../services/journey'
+import { PageHead, Skeleton } from '../../industrial/ui'
 import { morningSummary, instantAlerts, answer, teamFromProfiles, TEMPLATES } from '../../../supabase/functions/_shared/portal/botMessages.js'
 
 // What the JDS WhatsApp bot would send each team member, built from the same
 // saved data and the same rules as the bot itself. Nothing is sent from here.
 const DAY = 24 * 60 * 60 * 1000
-const card = { background: 'white', border: '1.5px solid #e2e6ed', borderRadius: '14px', padding: '14px 16px', marginBottom: '12px' }
-const muted = { color: '#5b6678' }
+// blocks on the shared hairline look (Control tower, Jose 31 Oct 2026)
+const card = { background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: 'var(--r-lg)', padding: '12px 16px', marginBottom: '12px' }
+const muted = { color: 'var(--text-2)' }
 
 // WhatsApp-style text: *bold*, line breaks
 function WaText({ text }) {
@@ -75,14 +77,13 @@ export default function BotPreviewPage() {
   }
 
   return (
-    <div style={{ fontFamily: 'Inter, system-ui, sans-serif', color: '#1a2233', fontSize: '14px', background: '#f4f6f9', padding: '16px', minHeight: '100%', boxSizing: 'border-box' }}>
-      <h1 style={{ fontSize: '20px', fontWeight: 700, margin: 0 }}>WhatsApp bot — preview</h1>
-      <p style={{ ...muted, margin: '4px 0 12px' }}>
-        What the bot would send each team member today. Built from saved portal data only (no AI, no ULIP calls). <b>Nothing is sent from this page.</b>
-      </p>
+    <>
+      {/* the frame (padding, background) comes from AdminDashboard */}
+      <PageHead title="WhatsApp bot"
+        sub={['What the bot would send each team member today', 'built from saved portal data only, no government checks', <b key="n">Nothing is sent from this page</b>]} />
 
-      {error && <div style={{ ...card, background: '#fef2f2', borderColor: '#fecaca', color: '#991b1b', fontWeight: 600 }}>Some data could not be loaded: {error}</div>}
-      {!data && !error && <div style={muted}>Loading…</div>}
+      {error && <div className="ix-error">Some data could not be loaded: {error}</div>}
+      {!data && !error && <div className="ix-card"><Skeleton rows={5} /></div>}
 
       {data && (
         <>
@@ -104,7 +105,7 @@ export default function BotPreviewPage() {
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(300px, 100%), 1fr))', gap: '12px', alignItems: 'start' }}>
             <div style={{ ...card, background: '#efeae2' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', marginBottom: '8px', flexWrap: 'wrap' }}>
-                <div style={{ fontWeight: 600 }}>Morning summary · 9:00</div>
+                <div style={{ fontWeight: 600 }}>Morning summary · 8:00</div>
                 <label style={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
                   <input type="checkbox" checked={asShort} onChange={(e) => setAsShort(e.target.checked)} /> Short version
                 </label>
@@ -145,6 +146,6 @@ export default function BotPreviewPage() {
           </div>
         </>
       )}
-    </div>
+    </>
   )
 }

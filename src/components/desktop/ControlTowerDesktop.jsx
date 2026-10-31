@@ -1,376 +1,124 @@
-import { useMemo } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { getStageName, isEtaThisWeek } from '../../utils/jobHelpers'
+import { daysAgo } from '../../services/journey'
+import { Button, Dash, EmptyState, Icon, JobNo, Owner, Panel, Skeleton, Status, initials } from '../../industrial/ui'
 
-function classNames(...xs) { return xs.filter(Boolean).join(' ') }
+// Team & stages: the two work tables (open jobs per owner, and the stage board).
+// The file name is from the old Tailwind screen; since the Control tower rebuild
+// (Jose, 31 Oct 2026) these render at every width and scroll inside .ix-tbl-wrap on a phone.
 
-function normalizeMetaTs(ts) {
-  if (!ts) return null
-  const n = Number(ts)
-  if (!Number.isFinite(n)) return null
-  return n < 1e12 ? n * 1000 : n
+// a count cell: grey zero, coloured number otherwise (DESIGN: zeros are grey, not red)
+function Count({ n, tone, title }) {
+  return <span className={`tm-n${n ? ` ${tone}` : ' zero'}`} title={n ? title : undefined}>{n}</span>
 }
 
-function timeAgo(ts) {
-  const ms = normalizeMetaTs(ts)
-  if (!ms) return '\u2014'
-  const diff = Math.max(0, Date.now() - ms)
-  const sec = Math.floor(diff / 1000)
-  if (sec < 60) return `${sec}s ago`
-  const min = Math.floor(sec / 60)
-  if (min < 60) return `${min}m ago`
-  const hr = Math.floor(min / 60)
-  if (hr < 24) return `${hr}h ago`
-  const day = Math.floor(hr / 24)
-  if (day < 30) return `${day}d ago`
-  const mo = Math.floor(day / 30)
-  if (mo < 12) return `${mo}mo ago`
-  return `${Math.floor(mo / 12)}y ago`
-}
-
-function getGreeting() {
-  const now = new Date()
-  const utc = now.getTime() + now.getTimezoneOffset() * 60000
-  const ist = new Date(utc + 3600000 * 5.5)
-  const hour = ist.getHours()
-  if (hour >= 21 || hour < 5) return 'Good night'
-  if (hour < 12) return 'Good morning'
-  if (hour < 17) return 'Good afternoon'
-  return 'Good evening'
-}
-
-function dayLabel(days) {
-  if (days === null || days === undefined) return 'No ETA'
-  if (days < 0) return `${Math.abs(days)}d expired`
-  if (days === 0) return 'Today'
-  if (days === 1) return '1 day'
-  return `${days} days`
-}
-
-function progressColor(stage) {
-  const s = Number(stage) || 0
-  if (s <= 3) return 'bg-red-600'
-  if (s <= 6) return 'bg-amber-500'
-  if (s <= 9) return 'bg-blue-600'
-  return 'bg-green-600'
-}
-
-function KpiCard({ label, value, hint, tone, icon }) {
-  const tones = { blue: 'text-blue-600', red: 'text-red-600', amber: 'text-amber-600', green: 'text-green-600', violet: 'text-violet-600' }
+// ── Open jobs per owner; a row click narrows the stage board to that person ──
+export function OwnerTable({ owners, total, dash, selected, none, onPick, onOpenJob }) {
+  const people = owners.filter((o) => o.key !== none).length
   return (
-    <div className="bg-white border-[1.5px] border-[#e2e6ed] rounded-xl p-5 shadow-sm hover:shadow-md hover:border-[#d0d6e0] transition-all">
-      <p className="text-xs font-medium text-[#8a96a8] mb-2">{label}</p>
-      <p className={classNames('text-2xl font-extrabold leading-none', tones[tone] || tones.blue)}>{value}</p>
-      {hint && <p className="text-xs text-[#8a96a8] mt-1.5">{hint}</p>}
-      {icon && <div className={classNames('absolute right-3 top-1/2 -translate-y-1/2 text-3xl opacity-[0.08]', tones[tone] || tones.blue)}>{icon}</div>}
-    </div>
-  )
-}
-
-function TowerCard({ title, subtitle, children }) {
-  return (
-    <section className="bg-white border-[1.5px] border-[#e2e6ed] rounded-xl shadow-sm overflow-hidden">
-      <div className="px-5 py-4 border-b border-[#e2e6ed] flex items-center justify-between gap-3 bg-white">
-        <div className="text-sm font-bold text-[#1a2233] truncate">{title}</div>
-        {subtitle && <div className="text-xs text-[#8a96a8] shrink-0">{subtitle}</div>}
-      </div>
-      {children}
-    </section>
-  )
-}
-
-function EmptyTowerState({ children }) {
-  return <div className="px-4 py-8 text-sm text-center text-[#8a96a8]">{children}</div>
-}
-
-function RiskBadge({ tone = 'blue', children }) {
-  const tones = {
-    red: 'bg-red-100 text-red-800',
-    amber: 'bg-amber-100 text-amber-800',
-    green: 'bg-green-100 text-green-800',
-    blue: 'bg-blue-100 text-blue-800',
-    violet: 'bg-violet-100 text-violet-800',
-  }
-  return <span className={classNames('inline-flex items-center rounded-full px-2 py-0.5 text-xs font-bold whitespace-nowrap', tones[tone] || tones.blue)}>{children}</span>
-}
-
-function TodayPriorityQueue({ items, profiles, onOpen }) {
-  const nav = useNavigate()
-  const modeChip = (m) => {
-    if (m === 'Air') return { text: 'Air', cls: 'bg-[#f5f3ff] text-[#5b21b6] border border-[#ddd6fe]' }
-    if (m === 'BPT/MBPT') return { text: 'BPT', cls: 'bg-purple-100 text-purple-800 border border-[#ddd6fe]' }
-    if (m === 'Sea LCL') return { text: 'LCL', cls: 'bg-[#f0fdfa] text-[#0f766e] border border-[#99f6e4]' }
-    if (m === 'Sea FCL') return { text: 'FCL', cls: 'bg-[#eff6ff] text-[#1e40af] border border-[#bfdbfe]' }
-    return { text: m || '\u2014', cls: 'bg-[#f9fafb] text-[#4a5568] border border-[#d0d6e0]' }
-  }
-  const formatDate = (d) => { if (!d) return '\u2014'; const x = new Date(d); return `${String(x.getDate()).padStart(2,'0')}/${String(x.getMonth()+1).padStart(2,'0')}` }
-  return (
-    <TowerCard title="Priority Queue" subtitle="Urgent and high-risk shipments">
-      {items.length ? (
-        <div className="overflow-x-auto">
-          <table className="w-full table-fixed text-xs">
-            <thead className="bg-[#f8f9fb] text-[#8a96a8]">
-              <tr>
-                <th className="w-[14%] text-left px-4 py-3 font-semibold uppercase tracking-wide text-xs">Job No.</th>
-                <th className="w-[22%] text-left px-4 py-3 font-semibold uppercase tracking-wide text-xs">Client / Goods</th>
-                <th className="w-[16%] text-left px-4 py-3 font-semibold uppercase tracking-wide text-xs">Progress</th>
-                <th className="w-[10%] text-left px-4 py-3 font-semibold uppercase tracking-wide text-xs">Mode</th>
-                <th className="w-[14%] text-left px-4 py-3 font-semibold uppercase tracking-wide text-xs">ETA</th>
-                <th className="w-[24%] text-left px-4 py-3 font-semibold uppercase tracking-wide text-xs">Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map(({ job, issue, tone }) => {
-                const mc = modeChip(job.mode)
-                const stageName = getStageName(Number(job.stage) || 0)
-                return (
-                <tr key={job.id} onClick={() => onOpen(job)} className="border-t border-[#e2e6ed] hover:bg-[#e8eef8] cursor-pointer">
-                  <td className="px-4 py-2 font-extrabold text-[#1a4fa0] font-mono truncate">{job.job_no || '\u2014'}</td>
-                  <td className="px-4 py-2 text-[#4a5568] truncate" title={`${job.client || ''} \u2014 ${job.goods || ''}`}>{job.client || '\u2014'}<span className="text-xs text-[#8a96a8] ml-1">{job.goods ? `\u00b7 ${String(job.goods).slice(0,18)}` : ''}</span></td>
-                  <td className="px-4 py-2"><RiskBadge tone={tone}>{stageName}</RiskBadge></td>
-                  <td className="px-4 py-2"><span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${mc.cls}`}>{mc.text}</span></td>
-                  <td className="px-4 py-2 font-mono text-xs text-[#8a96a8]">{formatDate(job.eta)}</td>
-                  <td className="px-4 py-2 text-xs text-[#1a2233] truncate" title={issue}>{issue}</td>
-                </tr>
-              )})}
-            </tbody>
-          </table>
-        </div>
-      ) : <EmptyTowerState>No urgent operational actions right now.</EmptyTowerState>}
-      {items.length > 0 && (
-        <button type="button" onClick={() => nav('/admin?tab=jobs')}
-          className="w-full px-4 py-2.5 text-xs font-semibold text-[#1a4fa0] hover:text-[#153d82] hover:bg-[#e8eef8] border-t border-[#e2e6ed] text-center transition-colors">View all jobs →</button>
-      )}
-    </TowerCard>
-  )
-}
-
-function FreeDaysRiskPanel({ items, onOpen }) {
-  return (
-    <TowerCard title="Free Days Risk" subtitle="Detention watch">
-      {items.length ? items.map(({ job, days, tone }) => (
-        <button key={job.id} type="button" onClick={() => onOpen(job)} className="w-full px-4 py-3 border-t border-[#e2e6ed] text-left grid grid-cols-[1fr_auto] gap-3 hover:bg-[#e8eef8]">
-          <span className="min-w-0">
-            <span className="block text-sm font-bold text-[#1a2233] truncate">{job.job_no || '\u2014'} · {job.client || '\u2014'}</span>
-            <span className="block text-xs text-[#8a96a8] truncate">{job.containers || 'No containers'} · {job.cfs_name || 'CFS pending'}</span>
-          </span>
-          <RiskBadge tone={tone}>{dayLabel(days)}</RiskBadge>
-        </button>
-      )) : <EmptyTowerState>No free-day risks in the active list.</EmptyTowerState>}
-    </TowerCard>
-  )
-}
-
-function StageBottlenecks({ items, maxCount, onStage }) {
-  return (
-    <TowerCard title="Stage Bottlenecks" subtitle="Click to filter">
-      {items.length ? items.map(({ stage, count }) => {
-        const pct = maxCount ? Math.max(8, Math.round((count / maxCount) * 100)) : 0
-        return (
-          <button key={stage} type="button" onClick={() => onStage(String(stage))} className="w-full px-4 py-3 border-t border-[#e2e6ed] text-left hover:bg-[#e8eef8]">
-            <div className="flex items-center justify-between gap-3 mb-2">
-              <span className="text-sm font-semibold text-[#1a2233] truncate">{getStageName(stage)}</span>
-              <span className="text-xs text-[#8a96a8]">{count} jobs</span>
-            </div>
-            <div className="h-2 bg-[#e2e6ed] border border-[#e2e6ed] rounded-full overflow-hidden">
-              <div className={classNames('h-full rounded-full', progressColor(stage))} style={{ width: `${pct}%` }} />
-            </div>
-          </button>
-        )
-      }) : <EmptyTowerState>No bottlenecks detected.</EmptyTowerState>}
-    </TowerCard>
-  )
-}
-
-function StaleUpdatesPanel({ items, onOpen }) {
-  return (
-    <TowerCard title="Stale Updates" subtitle="No update in 24h+">
-      {items.length ? items.map(({ job, hours, tone }) => (
-        <button key={job.id} type="button" onClick={() => onOpen(job)} className="w-full px-4 py-3 border-t border-[#e2e6ed] text-left grid grid-cols-[1fr_auto] gap-3 hover:bg-[#e8eef8]">
-          <span className="min-w-0">
-            <span className="block text-sm font-bold text-[#1a2233] truncate">{job.job_no || '\u2014'} · {job.client || '\u2014'}</span>
-            <span className="block text-xs text-[#8a96a8] truncate">{getStageName(Number(job.stage) || 0)}</span>
-          </span>
-          <RiskBadge tone={tone}>{hours >= 48 ? `${Math.floor(hours / 24)} days` : `${hours} hours`}</RiskBadge>
-        </button>
-      )) : <EmptyTowerState>All active jobs have recent updates.</EmptyTowerState>}
-    </TowerCard>
-  )
-}
-
-function EmployeeAccountability({ items }) {
-  return (
-    <TowerCard title="Employee Accountability" subtitle="Workload snapshot">
-      {items.length ? items.map((x) => (
-        <div key={x.name} className="px-4 py-3 border-t border-[#e2e6ed] grid grid-cols-[1fr_auto_auto_auto] gap-3 items-center">
-          <div className="text-sm font-bold text-[#1a2233] truncate">{x.name}</div>
-          <div className="text-xs text-[#8a96a8] text-right">{x.active} active</div>
-          <div className="text-xs text-[#8a96a8] text-right">{x.urgent} urgent</div>
-          <RiskBadge tone={x.stale > 1 ? 'red' : x.stale ? 'amber' : 'green'}>{x.stale} stale</RiskBadge>
-        </div>
-      )) : <EmptyTowerState>No assigned active jobs yet.</EmptyTowerState>}
-    </TowerCard>
-  )
-}
-
-export default function ControlTowerDesktop({
-  jobs,
-  profiles,
-  currentUserName,
-  onOpenJob,
-  onStageFilter,
-  showToast,
-  activityLog = [],
-}) {
-  const navigate = useNavigate()
-
-  const pendingApprovals = useMemo(() => {
-    const nav = jobs.filter(j => [6, 8].includes(Number(j.stage)))
-    return nav.map(job => ({ job }))
-  }, [jobs])
-
-  const stats = useMemo(() => ({
-    active: jobs?.length || 0,
-    urgent: jobs?.filter(j => String(j.priority || '').toLowerCase() === 'urgent').length || 0,
-    etasWeek: jobs?.filter(j => isEtaThisWeek(j.eta)).length || 0,
-    freeDaysAtRisk: jobs?.filter(j => j.free_days != null && Number(j.free_days) <= 2).length || 0,
-    paymentsPending: jobs?.filter(j => [6, 8].includes(Number(j.stage))).length || 0,
-    stale: jobs?.filter(j => {
-      if (!j.updated_at) return false
-      const hours = Math.floor(Math.max(0, Date.now() - new Date(j.updated_at).getTime()) / (1000 * 60 * 60))
-      return String(j.priority || '').toLowerCase() === 'urgent' ? hours >= 12 : hours >= 24
-    }).length || 0,
-  }), [jobs])
-
-  return (
-    <>
-      <div className="mb-3 text-[20px] font-semibold leading-tight text-[#1a2233]">
-        {getGreeting()}, <span className="font-semibold text-[#1a2233]">{currentUserName || 'there'}</span>
-      </div>
-
-      {/* Alert Banners */}
-      {(stats.freeDaysAtRisk > 0 || stats.urgent > 0) && (
-        <div className="flex gap-4 mb-4">
-          {stats.freeDaysAtRisk > 0 && (
-            <div className="flex items-center gap-3 p-3.5 rounded-xl bg-[#fffbeb] border-[1.5px] border-[#fde68a] text-[#92400e] text-sm flex-1">
-              <span className="text-lg">&#9888;</span>
-              <span className="flex-1">{stats.freeDaysAtRisk} job(s) approaching free day limit — detention risk increasing.</span>
-              <button type="button" onClick={() => navigate('/admin?tab=jobs')}
-                className="h-8 px-3 text-xs font-semibold rounded-lg bg-[#92400e] text-white hover:bg-[#78350f] transition-colors shrink-0">View Jobs</button>
-            </div>
-          )}
-          {stats.urgent > 0 && (
-            <div className="flex items-center gap-3 p-3.5 rounded-xl bg-[#fef2f2] border-[1.5px] border-[#fecaca] text-[#991b1b] text-sm flex-1">
-              <span className="text-lg">&#9888;</span>
-              <span className="flex-1">{stats.urgent} urgent job(s) have not been updated in 48+ hours.</span>
-              <button type="button" onClick={() => navigate('/admin?tab=jobs')}
-                className="h-8 px-3 text-xs font-semibold rounded-lg bg-[#991b1b] text-white hover:bg-[#7f1d1d] transition-colors shrink-0">Review Now</button>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* KPI Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3 mb-4">
-        <KpiCard label="Active Jobs" value={stats.active} hint="In progress" tone="blue" icon="A" />
-        <KpiCard label="Urgent" value={stats.urgent} hint="Needs attention" tone="red" icon="!" />
-        <KpiCard label="ETAs This Week" value={stats.etasWeek} hint="Upcoming arrivals" tone="amber" icon="~" />
-        <KpiCard label="Free Days At Risk" value={stats.freeDaysAtRisk} hint="0-2 days left" tone="red" icon="D" />
-        <KpiCard label="Payment Blocks" value={stats.paymentsPending} hint="Duty / CFS queue" tone="violet" icon="Rs" />
-        <KpiCard label="Stale Updates" value={stats.stale} hint="Needs follow-up" tone="amber" icon="24" />
-      </div>
-
-      {/* Two-column: Priority Queue + Right sidebar */}
-      <div className="grid grid-cols-1 xl:grid-cols-[1fr_360px] gap-4 mb-4">
-        <TodayPriorityQueue items={[]} profiles={profiles} onOpen={onOpenJob} />
-
-        <div className="flex flex-col gap-4">
-          <TowerCard title="Team Activity" subtitle="Real-time updates from staff">
-            <div className="px-4 py-3 border-t border-[#e2e6ed]">
-              <div className="flex items-center justify-between mb-3">
-                <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-green-600 ml-auto">
-                  <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />Live
-                </span>
-              </div>
-              <div className="space-y-3">
-                {activityLog.length === 0 ? (
-                  <div className="text-xs text-[#8a96a8] py-4 text-center">No recent activity.</div>
-                ) : activityLog.slice(0, 8).map((a, i) => {
-                  const t = a.type || a.action || ''
-                  const dotColor =
-                    t.includes('stage')    ? 'bg-green-500'
-                    : t.includes('upload') || t.includes('document') ? 'bg-blue-500'
-                    : t.includes('payment')? 'bg-amber-500'
-                    : t.includes('delete') ? 'bg-red-500'
-                    : t.includes('create') || t.includes('job_created') ? 'bg-purple-500'
-                    : 'bg-[#8a96a8]'
-
-                  const relTime = (() => {
-                    if (!a.created_at) return ''
-                    const diff = Date.now() - new Date(a.created_at).getTime()
-                    const mins = Math.floor(diff / 60000)
-                    if (mins < 1)  return 'just now'
-                    if (mins < 60) return `${mins}m ago`
-                    const hrs = Math.floor(mins / 60)
-                    if (hrs < 24)  return `${hrs}h ago`
-                    return `${Math.floor(hrs / 24)}d ago`
-                  })()
-
+    <Panel title="Open jobs by owner" className="tm-owners"
+      meta={dash ? null : selected ? 'click the row again to show everyone' : 'click a row to see that person’s jobs by stage'}>
+      {dash ? <Skeleton rows={4} /> : !owners.length ? (
+        <EmptyState icon="circle-check" tone="green" title="No open jobs" />
+      ) : (
+        <>
+          <div className="ix-tbl-wrap">
+            <table className="ix-tbl click tm-own-tbl">
+              <thead><tr>
+                <th className="lvl" /><th>Owner</th><th className="r">Jobs</th><th className="r">Need action</th>
+                <th className="r">Waiting OOC</th><th className="r">To move</th><th>Oldest open</th>
+              </tr></thead>
+              <tbody>
+                {owners.map((o) => {
+                  const isNone = o.key === none
+                  // the row's edge carries its worst level: red problems, or nobody owns the jobs
+                  const lvl = o.red ? 'red' : isNone ? 'amber' : ''
                   return (
-                    <div key={a.id || i} className="flex items-start gap-2.5">
-                      <span className={`w-2 h-2 rounded-full ${dotColor} mt-1.5 shrink-0`} />
-                      <div className="min-w-0">
-                        <p className="text-sm text-[#1a2233]">
-                          {a.done_by_name && <span className="font-semibold">{a.done_by_name} </span>}
-                          {a.title || a.note || a.description || a.action || 'updated a job'}
-                          {a.job_no && <span className="font-mono text-[#1a4fa0]"> {a.job_no}</span>}
-                        </p>
-                        <p className="text-xs text-[#8a96a8] font-mono mt-0.5">{relTime}</p>
-                      </div>
-                    </div>
+                    <tr key={o.key} className={`${lvl}${selected === o.key ? ' sel' : ''}`} tabIndex={0} aria-selected={selected === o.key}
+                      onClick={() => onPick(o.key)}
+                      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onPick(o.key) } }}>
+                      <td className="lvl" />
+                      <td>{isNone ? <span className="tm-noowner"><Icon name="user-question" />Unassigned</span> : <Owner name={o.name} />}</td>
+                      <td className="r tm-jobs-n">{o.jobs.length}</td>
+                      <td className="r"><Count n={o.action} tone={o.red ? 'red' : 'amber'} title={o.red ? `${o.red} to act on today` : 'need action soon'} /></td>
+                      <td className="r"><Count n={o.ooc} tone="amber" title="BE filed, OOC not yet" /></td>
+                      <td className="r"><Count n={o.move} tone="amber" title="OOC granted, cargo still at the port or CFS" /></td>
+                      <td>
+                        {o.oldest
+                          ? <span className="tm-oldest"><JobNo no={o.oldest.job.job_no} onClick={() => onOpenJob(o.oldest.id)} /><span>{o.oldest.age} d</span></span>
+                          : <Dash />}
+                      </td>
+                    </tr>
                   )
                 })}
-              </div>
-            </div>
-          </TowerCard>
+              </tbody>
+            </table>
+          </div>
+          <div className="ix-tbl-foot">
+            <span>{total} open {total === 1 ? 'job' : 'jobs'} · {people} {people === 1 ? 'person' : 'people'}</span>
+            <span className="right">Oldest open = days since the job was opened</span>
+          </div>
+        </>
+      )}
+    </Panel>
+  )
+}
 
-          <TowerCard title="Pending Approvals" subtitle="CFS payments awaiting Jose">
-            <div className="px-4 py-3 border-t border-[#e2e6ed]">
-              <div className="flex items-center justify-between mb-3">
-                <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-bold bg-[#fef2f2] text-[#991b1b] border border-[#fecaca]">{stats.paymentsPending}</span>
-              </div>
-              {pendingApprovals.length > 0 ? (
-                <div className="space-y-2">
-                  {pendingApprovals.slice(0, 4).map(({job}) => (
-                    <div key={job.id} className="flex items-start justify-between gap-2 p-2.5 rounded-lg bg-[#f8f9fb] border border-[#e2e6ed]">
-                      <div className="min-w-0">
-                        <p className="text-xs font-bold text-[#1a4fa0] font-mono">{job.job_no}</p>
-                        <p className="text-xs text-[#8a96a8] truncate">{job.cfs_name || '\u2014'} · {job.assigned_to ? (profiles[job.assigned_to] || '\u2014') : '\u2014'}</p>
-                        {job.cfs_amount && <p className="text-xs font-semibold text-[#1a2233] mt-0.5">&#x20B9;{Number(job.cfs_amount).toLocaleString()}</p>}
-                      </div>
-                      <button type="button" onClick={() => showToast(`Payment approved for ${job.job_no}`, 'success')}
-                        className="h-7 px-2.5 text-xs font-semibold rounded-lg bg-[#f0fdf4] border border-[#bbf7d0] text-[#15803d] hover:bg-[#16a34a] hover:text-white transition-all shrink-0">&#10003; Approve</button>
-                    </div>
+// ── Stage board: each stage with its job numbers (same stages as Today's pipeline) ──
+const CHIP_CAP = 40
+// red / amber problems first; moving stages (ship due, on the move, LEO given) navy
+const chipTone = (x) => (x.level === 'red' ? 'red' : x.level === 'amber' ? 'amber' : ['arrival', 'truck', 'sail'].includes(x.j.phase) ? 'navy' : '')
+
+export function StageBoard({ stages, dash, now, ownerName, showOwner, needIds, roadIds, onClear, onOpenJob, openView }) {
+  const total = stages.reduce((s, x) => s + x.jobs.length, 0)
+  // a short fact under each stage name, from the shared lists (never recounted here)
+  const emOf = (s) => {
+    if (!s.jobs.length) return null
+    if (s.id === 'docs') return 'file in LiveImpex'
+    if (s.id === 'ooc') {
+      const d = s.jobs.map((x) => daysAgo(x.job.be_date, now)).filter((v) => v !== null)
+      return d.length ? `oldest ${Math.max(...d)} d since BE` : null
+    }
+    if (s.id === 'release') { const k = s.jobs.filter((x) => needIds.has(x.id)).length; return k ? `${k} need a truck` : null }
+    if (s.id === 'truck') { const k = s.jobs.filter((x) => roadIds.has(x.id)).length; return k ? `${k} seen on the road` : null }
+    return null
+  }
+
+  return (
+    <Panel title="Jobs by stage" className="tm-board"
+      meta={dash ? null : ownerName ? `${ownerName} · ${total} ${total === 1 ? 'job' : 'jobs'}` : `${total} open ${total === 1 ? 'job' : 'jobs'} · worst problem first`}
+      actions={ownerName ? <Button variant="ghost" size="sm" icon="x" onClick={onClear}>Everyone</Button> : null}>
+      {dash ? <Skeleton rows={5} /> : (
+        <div className="tm-stages">
+          {stages.map((s) => {
+            const em = emOf(s)
+            return [
+              // exports get their own heading under the import stages
+              s.id === 'sb' ? <div key="exports" className="tm-sgrp">Exports</div> : null,
+              <div key={s.id} className={`tm-stage${s.id === 'release' && s.jobs.length ? ' hot' : ''}`}>
+                <button type="button" className="tm-sh" onClick={() => openView(s.view)} title="Open these jobs in All jobs">
+                  <Status tone={s.tone}>{s.label}</Status>
+                  <b>{s.jobs.length}</b>
+                  {em ? <em>{em}</em> : null}
+                </button>
+                <div className="tm-chips">
+                  {s.jobs.slice(0, CHIP_CAP).map((x) => (
+                    <button key={x.id} type="button" className={`tm-jt ${chipTone(x)}`} onClick={() => onOpenJob(x.id)}
+                      title={[x.job.job_no, x.job.client, x.ownerName || 'no owner'].filter(Boolean).join(' · ')}>
+                      <i />{x.job.job_no}
+                      {showOwner && <span className={`o${x.ownerName ? '' : ' none'}`}>{x.ownerName ? initials(x.ownerName) : '?'}</span>}
+                    </button>
                   ))}
+                  {s.jobs.length > CHIP_CAP && <button type="button" className="ix-link" onClick={() => openView(s.view)}>+{s.jobs.length - CHIP_CAP} more</button>}
+                  {!s.jobs.length && <span className="tm-empty">None</span>}
                 </div>
-              ) : (
-                <p className="text-sm text-[#8a96a8] text-center py-4">No pending approvals right now.</p>
-              )}
-              {stats.paymentsPending > 0 && (
-                <button type="button" onClick={() => navigate('/admin?tab=payments')}
-                  className="w-full mt-3 pt-3 border-t border-[#e2e6ed] text-xs font-semibold text-[#1a4fa0] hover:text-[#153d82] text-center">View all {stats.paymentsPending} pending payments →</button>
-              )}
-            </div>
-          </TowerCard>
+              </div>,
+            ]
+          })}
+          <div className="tm-legend">
+            <span><i className="red" />act today</span><span><i className="amber" />needs action</span><span><i className="navy" />moving</span>
+            {showOwner && <span><b className="o">AB</b>owner’s initials · <b className="o none">?</b>no owner</span>}
+          </div>
         </div>
-      </div>
-
-      {/* Three-column: Bottlenecks + Stale Updates + Accountability */}
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 mb-4">
-        <StageBottlenecks items={[]} maxCount={0} onStage={(stage) => { onStageFilter(stage); navigate('/admin?tab=jobs') }} />
-        <StaleUpdatesPanel items={[]} onOpen={onOpenJob} />
-        <EmployeeAccountability items={[]} />
-      </div>
-    </>
+      )}
+    </Panel>
   )
 }

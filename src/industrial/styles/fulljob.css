@@ -1,0 +1,120 @@
+/* The full job page (JobDetailView.jsx), Control tower look (Jose, 31 Oct 2026).
+   The header reuses the job panel's ix-jp-* pieces (jobs.css) so the panel and the
+   page say the same thing the same way. Tokens from industrial.css (read DESIGN.md).
+   ix-fj-* = this page only. */
+
+/* the page brings .ix with it (the employee screen has no portal shell); inside the
+   portal it keeps the compact rows the avatar menu set */
+.ix.compact .ix.ix-fj { --row: 28px; --row-head: 28px }
+.ix-fj { min-width: 0 }
+
+/* ── header ────────────────────────────────────────────────────────── */
+.ix-fj-head { padding: 8px 20px 0; margin-bottom: var(--s3) }
+.ix-fj-back { margin: 0 0 4px -9px }
+.ix-fj-back .ix-btn { color: var(--text-2) }
+.ix-fj-head .ix-jp-row1 .cl { max-width: 360px }
+.ix-fj-headend { height: 2px }
+.ix-fj-acts { gap: 8px }
+
+/* the stage picker, drawn like a filter chip so it does not compete with Edit */
+.ix-fj-stage { position: relative; display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 28px 0 10px; border: 1px solid var(--line-2); border-radius: var(--r-md); background: var(--surface); font-size: var(--fs-sm); color: var(--muted); max-width: 100% }
+.ix-fj-stage:hover { border-color: var(--faint) }
+.ix-fj-stage:focus-within { border-color: var(--accent); box-shadow: var(--focus) }
+.ix-fj-stage select { appearance: none; -webkit-appearance: none; height: 100%; border: 0; padding: 0; margin-right: -22px; padding-right: 22px; background: none; color: var(--text); font-size: var(--fs-md); font-weight: 500; cursor: pointer; outline: none; min-width: 0; max-width: 220px; text-overflow: ellipsis }
+.ix-fj-stage select:disabled { cursor: default; color: var(--text-2) }
+.ix-fj-stage > i { position: absolute; right: 9px; font-size: 14px; color: var(--muted); pointer-events: none }
+
+/* ── body: sections on the left, notes and accountability on the right ── */
+.ix-fj-grid { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: var(--s3); align-items: start }
+.ix-fj-main, .ix-fj-side { min-width: 0 }
+.ix-fj-side .ix-panel + .ix-panel { margin-top: var(--s3) }
+
+/* dense label / value grid: two pairs per row, hairlines between rows */
+.ix-fj-kv { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: var(--s6); padding: 0 var(--s4); overflow: hidden }
+.ix-fj-f { display: grid; grid-template-columns: 130px minmax(0, 1fr); gap: var(--s2); align-items: baseline; padding: 7px 0; border-bottom: 1px solid var(--line); margin-bottom: -1px; min-width: 0 }
+.ix-fj-f.wide { grid-column: 1 / -1 }
+.ix-fj-f.edit { align-items: center; padding: 6px 0 }
+.ix-fj-f.wide.edit { align-items: start }
+.ix-fj-f.wide.edit > .k { padding-top: 6px }
+.ix-fj-f > .k { color: var(--text-2); font-size: var(--fs-md); display: flex; align-items: center; gap: 4px; min-width: 0 }
+.ix-fj-f > .k .lock { font-size: 12px; color: var(--faint) }
+.ix-fj-f > .v { min-width: 0; overflow-wrap: anywhere; font-size: var(--fs-md) }
+.ix-fj-f > .v .mono { font-size: 12px }
+.ix-fj-cn { display: inline-block; margin-right: 8px }
+
+/* who filled a field */
+.ix-fj-prov { display: flex; align-items: center; gap: 4px; margin-top: 2px; font-size: var(--fs-xs); color: var(--muted); line-height: 1.3 }
+.ix-fj-prov > i { font-size: 12px; color: var(--amber-dot) }
+.ix-fj-prov.auto > i { color: var(--teal) }
+
+/* containers: a small table to read, rows to edit */
+.ix-fj-boxes { display: inline-block; max-width: 100%; margin: 0 }
+.ix-fj-boxes .ix-tbl td, .ix-fj-boxes .ix-tbl th { padding: 0 12px }
+.ix-fj-boxedit { display: flex; flex-direction: column; gap: 6px; max-width: 520px }
+.ix-fj-boxedit .hd, .ix-fj-boxedit .row { display: grid; grid-template-columns: minmax(0, 1fr) 130px 28px; gap: var(--s2); align-items: center }
+.ix-fj-boxedit .hd span { font-size: var(--fs-xs); font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--muted) }
+.ix-fj-boxedit .ix-btn.ghost { margin-left: -9px }
+
+/* inputs in edit mode */
+.ix-fj-in { width: 100%; height: 32px; padding: 0 10px; border: 1px solid var(--line-2); border-radius: var(--r-md); background: var(--surface); color: var(--text); font-size: var(--fs-md); min-width: 0 }
+.ix-fj-in.mono { font-family: var(--mono); font-size: 12px }
+.ix-fj-in:hover { border-color: var(--faint) }
+.ix-fj-in:focus-visible, .ix-fj-in:focus { outline: none; border-color: var(--accent); box-shadow: var(--focus) }
+
+/* save bar: stays in view while the form is long */
+.ix-fj-editbar { position: sticky; bottom: 0; z-index: 3; display: flex; align-items: center; gap: var(--s2); margin-top: var(--s3); padding: 10px var(--s4); background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--shadow-pop) }
+.ix-fj-editbar .muted { margin-right: auto; font-size: var(--fs-sm) }
+
+/* notes */
+.ix-fj-notes { padding: var(--s3) var(--s4) }
+.ix-fj-notes textarea { display: block; width: 100%; min-height: 64px; padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface-2); color: var(--text); font-size: var(--fs-md); line-height: 1.5; resize: none; overflow: hidden }
+.ix-fj-notes textarea:hover { border-color: var(--line-2) }
+.ix-fj-notes textarea:focus { outline: none; background: var(--surface); border-color: var(--accent); box-shadow: var(--focus) }
+.ix-fj-notes textarea::placeholder { color: var(--faint) }
+.ix-fj-notes .ix-fj-prov { margin-top: 6px }
+.ix-fj-notetext { margin: 0; white-space: pre-wrap; font-size: var(--fs-md) }
+
+/* field accountability */
+.ix-fj-accwrap { max-height: 330px }
+.ix-fj-acc { width: 100%; table-layout: fixed }
+.ix-fj-acc th:nth-child(1) { width: 38% }
+.ix-fj-acc th:nth-child(2) { width: 27% }
+.ix-fj-acc td { overflow: hidden; text-overflow: ellipsis }
+.ix-fj-acc td.who { font-weight: 500 }
+.ix-fj-danger { margin-top: var(--s3); display: flex; justify-content: flex-end }
+
+/* the full accountability list over the page */
+.ix-fj-modal { position: fixed; inset: 0; z-index: 1000; display: flex; align-items: center; justify-content: center; padding: var(--s4); background: rgba(16, 24, 40, .45) }
+.ix-fj-modal > div { width: min(760px, 100%); max-height: 82vh; display: flex; flex-direction: column; background: var(--surface); border-radius: var(--r-lg); box-shadow: var(--shadow-pop); overflow: hidden }
+.ix-fj-modal .hd { display: flex; align-items: center; gap: var(--s3); padding: 12px var(--s4); border-bottom: 1px solid var(--line) }
+.ix-fj-modal .hd > div { flex: 1; min-width: 0 }
+.ix-fj-modal .hd b { display: block; font-weight: 600 }
+.ix-fj-modal .hd small { color: var(--muted); font-size: var(--fs-sm) }
+.ix-fj-modal .bd { flex: 1; min-height: 0 }
+
+/* check tabs (Customs and BE, Export, Air …) */
+.ix-fj-checks { max-width: 860px; display: flex; flex-direction: column; gap: var(--s3); min-width: 0 }
+
+/* ── narrower screens ──────────────────────────────────────────────── */
+@media (max-width: 1180px) {
+  .ix-fj-grid { grid-template-columns: minmax(0, 1fr) }
+}
+@media (max-width: 900px) {
+  .ix-fj-kv { grid-template-columns: minmax(0, 1fr) }
+}
+@media (max-width: 760px) {
+  /* the job panel's phone rules pad the header 12px; this page matches */
+  .ix-fj-head { padding: 6px 12px 0 }
+  .ix-fj-acts { width: 100% }
+  .ix-fj-stage { flex: 1; height: 42px }
+  .ix-fj-stage select { max-width: none; flex: 1 }
+  .ix-fj-kv { padding: 0 var(--s3) }
+  .ix-fj-f { grid-template-columns: 110px minmax(0, 1fr) }
+  .ix-fj-f.wide.edit { grid-template-columns: minmax(0, 1fr) }
+  .ix-fj-in { height: 42px }
+  .ix-fj-boxedit .hd, .ix-fj-boxedit .row { grid-template-columns: minmax(0, 1fr) 104px 40px }
+  .ix-fj-editbar { flex-wrap: wrap; padding: 10px var(--s3) }
+  .ix-fj-editbar .muted { flex-basis: 100% }
+  .ix-fj-editbar .ix-btn { flex: 1 }
+  .ix-fj-notes { padding: var(--s3) }
+}

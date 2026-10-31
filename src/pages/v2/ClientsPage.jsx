@@ -1,45 +1,78 @@
-import { useEffect, useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useState } from 'react'
 import { supabase } from '../../supabase'
-import { isDelivered } from '../../services/journey'
-import { getStageName } from '../../utils/jobHelpers'
+import { loadJourneyData, journeyFor, activeJobsByClient, clientKey } from '../../services/journey'
+import { useJourney } from '../../industrial/JourneyContext'
+import { PageHead, JobNo, Chip, Dash, EmptyState, Toolbar, Skeleton, Icon, PhaseStatus, Button, fmtDate } from '../../industrial/ui'
 import UlipCheck from '../../components/ulip/UlipCheck'
+import '../../industrial/industrial.css'
+import '../../industrial/styles/records.css'
 
-// Every client JDS works with. Read-only: client details are edited in the existing client screens.
-const norm = (s) => String(s || '').trim().toLowerCase()
-const fmtDate = (iso) => (iso ? new Date(iso).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '')
+// Every client JDS works with. Read-only: nothing here writes client details.
+// Open and total jobs come from the shared journey (activeJobsByClient), so they add
+// up to the same open-job count as the sidebar and All jobs (Jose, 31 Oct 2026).
 
-function iecBadge(row) {
-  if (!row) return { text: 'Not checked', bg: '#f1f3f6', border: '#e2e6ed', color: '#5b6678' }
+function iecStatus(row) {
+  if (!row) return { tone: 'grey', icon: 'circle-dashed', text: 'Not checked' }
   const when = fmtDate(row.checked_at)
   const p = row.parsed || {}
-  if (p.found && p.extra?.iecActive) return { text: `✅ Active (checked ${when})`, bg: '#ecfdf5', border: '#bbf7d0', color: '#065f46' }
+  if (p.found && p.extra?.iecActive) return { tone: 'green', icon: 'circle-check', text: `Active · checked ${when}` }
   const status = p.fields?.find((f) => f.label === 'IEC status')?.value
-  const text = p.found ? (status || 'Not active') : 'Not found'
-  return { text: `❌ ${text} (checked ${when})`, bg: '#fef2f2', border: '#fecaca', color: '#991b1b' }
+  return { tone: 'red', icon: 'circle-x', text: `${p.found ? status || 'Not active' : 'Not found'} · checked ${when}` }
 }
 
-// the last loaded lists, kept for the whole visit
+// the last loaded client list and IEC answers, kept for the whole visit
+// (shown at once from the last visit, then refreshed; Jose, 25 Oct 2026)
 let kept = null
 
+// The staff dashboard shows this page outside the industrial shell (no shared
+// journey there): load the same jobs once and count them with the same helper.
+function useClientFacts() {
+  const shared = useJourney()
+  const inShell = !!shared
+  const [own, setOwn] = useState(null)
+  useEffect(() => {
+    if (inShell) return undefined
+    let cancelled = false
+    ;(async () => {
+      let d = null
+      let err
+      try {
+        d = await loadJourneyData()
+        err = d?.error || null
+      } catch (e) {
+        err = e?.message || 'Something went wrong'
+      }
+      if (cancelled) return
+      const rows = d ? d.jobs.map((job) => ({ job, j: journeyFor(job, d) })) : []
+      setOwn({ error: err, byClient: activeJobsByClient(rows), byId: Object.fromEntries(rows.map((r) => [r.job.id, r])) })
+    })()
+    return () => { cancelled = true }
+  }, [inShell])
+  if (inShell) return { inShell, loading: !shared.data && shared.loading, error: shared.error, byClient: shared.facts.byClient, byId: shared.byId }
+  return { inShell, loading: !own, error: own?.error || null, byClient: own?.byClient || {}, byId: own?.byId || {} }
+}
+
+const jobNoCmp = (a, b) => String(b).localeCompare(String(a), undefined, { numeric: true })
+const newest = (a, b) => String(b.job.created_at || '').localeCompare(String(a.job.created_at || '')) || jobNoCmp(a.job.job_no, b.job.job_no)
+
 export default function ClientsPage({ onOpenJob }) {
-  // shown at once from the last visit, then refreshed (Jose, 25 Oct 2026)
+  const journey = useClientFacts()
   const [master, setMaster] = useState(() => kept?.master || [])
-  const [jobs, setJobs] = useState(() => kept?.jobs || [])
   const [iecRows, setIecRows] = useState(() => kept?.iecRows || {})
   const [loading, setLoading] = useState(() => !kept)
   const [loadError, setLoadError] = useState(null)
   const [search, setSearch] = useState('')
+  const [sort, setSort] = useState('open')
   const [expanded, setExpanded] = useState(null)
   const [checking, setChecking] = useState(null)
 
   useEffect(() => {
     let cancelled = false
     async function load() {
-      let mRes, jRes, rRes
+      let mRes, rRes
       try {
-        [mRes, jRes, rRes] = await Promise.all([
+        [mRes, rRes] = await Promise.all([
           supabase.from('client_master').select('*').order('client_name'),
-          supabase.from('jobs').select('id, job_no, client, stage').order('job_no', { ascending: false }),
           supabase.from('ulip_results').select('api, params, found, parsed, checked_at').eq('api', 'DGFT/01')
             .order('checked_at', { ascending: false, nullsFirst: false }),
         ])
@@ -48,16 +81,15 @@ export default function ClientsPage({ onOpenJob }) {
         return
       }
       if (cancelled) return
-      const err = [mRes, jRes, rRes].find((r) => r.error)?.error
+      const err = [mRes, rRes].find((r) => r.error)?.error
       const byIec = {}
       for (const r of rRes.data || []) {
         const k = r.params?.iecnumber
         if (k && !byIec[k]) byIec[k] = r
       }
       setMaster(mRes.data || [])
-      setJobs(jRes.data || [])
       setIecRows(byIec)
-      if (!err) kept = { master: mRes.data || [], jobs: jRes.data || [], iecRows: byIec }
+      if (!err) kept = { master: mRes.data || [], iecRows: byIec }
       setLoadError(err ? err.message : null)
       setLoading(false)
     }
@@ -65,113 +97,161 @@ export default function ClientsPage({ onOpenJob }) {
     return () => { cancelled = true }
   }, [])
 
+  const { byClient, byId } = journey
   const clients = useMemo(() => {
-    const jobsByName = {}
-    for (const j of jobs) (jobsByName[norm(j.client)] ||= []).push(j)
     const seen = new Set()
+    const pack = (keys) => {
+      const ids = new Set()
+      const openIds = new Set()
+      for (const k of keys) {
+        seen.add(k)
+        for (const id of byClient[k]?.jobIds || []) ids.add(id)
+        for (const id of byClient[k]?.openJobIds || []) openIds.add(id)
+      }
+      const jobs = [...ids].map((id) => byId[id]).filter(Boolean).sort(newest)
+      return { jobs, open: openIds.size, total: ids.size, openIds, last: jobs[0] || null }
+    }
     const list = master.map((c) => {
-      const keys = [norm(c.client_name), norm(c.legal_name)].filter(Boolean)
-      const mine = []
-      for (const k of new Set(keys)) { mine.push(...(jobsByName[k] || [])); seen.add(k) }
-      return { key: `m-${c.id ?? c.client_name}`, name: c.client_name || c.legal_name, legal: c.legal_name, gstin: c.gstin, iec: c.iec || c.importer_iec || '', place: [c.city, c.state].filter(Boolean).join(', '), jobs: mine, inList: true }
+      const keys = [...new Set([clientKey(c.client_name), clientKey(c.legal_name)].filter(Boolean))]
+      return {
+        key: `m-${c.id ?? c.client_name}`, name: c.client_name || c.legal_name, legal: c.legal_name, gstin: c.gstin,
+        iec: String(c.iec || c.importer_iec || '').trim(), place: [c.city, c.state].filter(Boolean).join(', '), inList: true, ...pack(keys),
+      }
     })
-    for (const [k, js] of Object.entries(jobsByName)) {
+    for (const [k, e] of Object.entries(byClient)) {
       if (!k || seen.has(k)) continue
-      list.push({ key: `j-${k}`, name: js[0].client, legal: '', gstin: '', iec: '', place: '', jobs: js, inList: false })
+      list.push({ key: `j-${k}`, name: e.name, legal: '', gstin: '', iec: '', place: '', inList: false, ...pack([k]) })
     }
     return list
-  }, [master, jobs])
+  }, [master, byClient, byId])
 
-  const shown = clients.filter((c) => {
-    const q = norm(search)
-    return !q || [c.name, c.legal, c.iec, c.gstin].some((v) => norm(v).includes(q))
-  })
+  const q = search.trim().toLowerCase()
+  const shown = clients
+    .filter((c) => !q || [c.name, c.legal, c.iec, c.gstin].some((v) => String(v || '').toLowerCase().includes(q)))
+    .sort((a, b) => {
+      const byName = String(a.name || '').localeCompare(String(b.name || ''))
+      if (sort === 'name') return byName
+      if (sort === 'last') return (a.last && b.last ? newest(a.last, b.last) : a.last ? -1 : b.last ? 1 : 0) || byName
+      return (b.open - a.open) || (b.total - a.total) || byName
+    })
 
-  return (
-    <div style={{ fontFamily: 'Inter, system-ui, sans-serif', color: '#1a2233', fontSize: '14px', background: '#f4f6f9', padding: '16px', minHeight: '100%', boxSizing: 'border-box' }}>
-      <h1 style={{ fontSize: '20px', fontWeight: 700, margin: 0 }}>Clients</h1>
-      <p style={{ color: '#5b6678', margin: '4px 0 12px' }}>Everyone JDS works with. To change client details, use the client screens.</p>
-      <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search by name, IEC or GSTIN"
-        style={{ width: '100%', boxSizing: 'border-box', height: '44px', padding: '0 12px', border: '1.5px solid #e2e6ed', borderRadius: '10px', fontSize: '14px', marginBottom: '14px', background: 'white' }} />
-
-      {loading && <div style={{ color: '#5b6678' }}>Loading…</div>}
-      {loadError && (
-        <div style={{ background: '#fef2f2', border: '1.5px solid #fecaca', color: '#991b1b', borderRadius: '12px', padding: '14px 16px', marginBottom: '12px', fontWeight: 600 }}>
-          Could not load the latest data — {loadError}. Press Refresh.
-        </div>
-      )}
-      {!loading && !loadError && shown.length === 0 && (
-        <div style={{ background: 'white', border: '1.5px solid #e2e6ed', borderRadius: '12px', padding: '20px', color: '#5b6678' }}>No clients match your search.</div>
-      )}
-
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-        {shown.map((c) => {
-          const active = c.jobs.filter((j) => !isDelivered(j))
-          const open = expanded === c.key
-          const iec = String(c.iec || '').trim()
-          const iecOk = /^\d{10}$/.test(iec)
-          const badge = iecBadge(iecRows[iec])
-          return (
-            <div key={c.key} style={{ background: 'white', border: '1.5px solid #e2e6ed', borderRadius: '14px', overflow: 'hidden' }}>
-              <button type="button" onClick={() => setExpanded(open ? null : c.key)}
-                style={{ width: '100%', textAlign: 'left', background: 'none', border: 'none', padding: '14px 16px', cursor: 'pointer', font: 'inherit', color: 'inherit', minHeight: '56px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '10px', alignItems: 'flex-start' }}>
-                  <div style={{ minWidth: 0 }}>
-                    <div style={{ fontWeight: 700, fontSize: '15px', wordBreak: 'break-word' }}>{c.name}</div>
-                    {c.legal && c.legal !== c.name && <div style={{ color: '#5b6678', fontSize: '13px' }}>{c.legal}</div>}
-                    {!c.inList && <div style={{ color: '#9a3412', fontSize: '12px', marginTop: '2px' }}>Not in client list yet</div>}
-                    <div style={{ color: '#8a96a8', fontSize: '12px', marginTop: '3px', fontFamily: "'JetBrains Mono', monospace", wordBreak: 'break-word' }}>
-                      {[c.place, c.gstin && `GSTIN ${c.gstin}`, iec && `IEC ${iec}`].filter(Boolean).join(' · ')}
-                    </div>
-                  </div>
-                  <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                    <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: '20px', fontWeight: 700, color: '#1a4fa0' }}>{active.length}</div>
-                    <div style={{ fontSize: '12px', color: '#5b6678' }}>active job{active.length === 1 ? '' : 's'}</div>
-                  </div>
-                </div>
-              </button>
-
-              {c.inList && (
-                <div style={{ padding: '0 16px 12px', display: 'flex', flexWrap: 'wrap', gap: '8px', alignItems: 'center' }}>
-                  {!iec && <span style={{ color: '#8a96a8', fontSize: '13px' }}>No IEC on file</span>}
-                  {iec && !iecOk && <span style={{ color: '#5b6678', fontSize: '13px' }}>This IEC cannot be checked through ULIP (letters)</span>}
-                  {iecOk && (
-                    <>
-                      <span style={{ background: badge.bg, border: `1.5px solid ${badge.border}`, color: badge.color, borderRadius: '999px', padding: '5px 12px', fontSize: '13px', fontWeight: 600 }}>{badge.text}</span>
-                      <button type="button" onClick={() => setChecking(checking === c.key ? null : c.key)}
-                        style={{ height: '40px', padding: '0 16px', background: 'white', color: '#1a4fa0', border: '1.5px solid #1a4fa0', borderRadius: '8px', fontWeight: 700, fontSize: '14px', cursor: 'pointer' }}>
-                        {checking === c.key ? 'Close' : 'Check IEC…'}
-                      </button>
-                    </>
-                  )}
-                </div>
-              )}
-
-              {checking === c.key && iecOk && (
-                <div style={{ padding: '0 16px 14px' }}>
-                  <UlipCheck compact
-                    check={{ api: 'DGFT/01', title: `Is the IEC valid? ${c.name}`, description: 'Checks the importer-exporter code with DGFT.', button: 'Ask DGFT now', defaults: { iecnumber: () => iec } }}
-                    saved={iecRows[iec] || null}
-                    onResult={(row) => setIecRows((prev) => ({ ...prev, [iec]: row }))} />
-                </div>
-              )}
-
-              {open && (
-                <div style={{ borderTop: '1.5px solid #e2e6ed', background: '#f8fafc', padding: '8px 12px 12px' }}>
-                  {c.jobs.length === 0 && <div style={{ color: '#5b6678', padding: '8px 4px' }}>No jobs for this client yet.</div>}
-                  {c.jobs.map((j) => (
-                    <button key={j.id} type="button" onClick={() => onOpenJob?.(j.id, 'details')}
-                      style={{ width: '100%', textAlign: 'left', display: 'flex', justifyContent: 'space-between', gap: '10px', background: 'white', border: '1.5px solid #e2e6ed', borderRadius: '10px', padding: '10px 12px', marginTop: '6px', minHeight: '44px', cursor: 'pointer', font: 'inherit', color: 'inherit' }}>
-                      <span style={{ fontFamily: "'JetBrains Mono', monospace", fontWeight: 700 }}>{j.job_no}</span>
-                      <span style={{ color: '#5b6678' }}>{getStageName(j.stage)}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          )
-        })}
-      </div>
-    </div>
+  const withOpen = clients.filter((c) => c.open > 0).length
+  const notListed = clients.filter((c) => !c.inList).length
+  const busy = (loading && !master.length) || journey.loading
+  const error = loadError || journey.error
+  const sortTh = (id, label, cls = '') => (
+    <th className={`sort${sort === id ? ' sorted' : ''}${cls ? ` ${cls}` : ''}`} onClick={() => setSort(id)} aria-sort={sort === id ? 'descending' : 'none'}>
+      {label} {sort === id ? <Icon name={id === 'name' ? 'arrow-up' : 'arrow-down'} /> : <Icon name="selector" className="hint" />}
+    </th>
   )
+  const COLS = 9
+
+  const page = (
+    <>
+      <PageHead title="Clients"
+        sub={busy ? 'Loading…' : ['Everyone JDS works with', `${clients.length} client${clients.length === 1 ? '' : 's'}`, `${withOpen} with open jobs`, notListed ? `${notListed} not in the client list` : null]} />
+      {error && <div className="ix-error">Could not load the latest data — {error}. Reload the page to try again.</div>}
+
+      <section className="ix-card rec-panel">
+        <Toolbar search={search} onSearch={setSearch} placeholder="Name, IEC or GSTIN" />
+        {busy ? <Skeleton rows={6} /> : shown.length === 0 ? (
+          <EmptyState icon="building" title={q ? 'No clients match your search' : 'No clients yet'}>
+            {q ? 'Try part of the name, the IEC or the GSTIN.' : 'Clients show here once a job is created for them.'}
+          </EmptyState>
+        ) : (
+          <div className="ix-tbl-wrap rec-wrap">
+            <table className="ix-tbl click rec-tbl">
+              <thead>
+                <tr>
+                  {sortTh('name', 'Client')}
+                  {sortTh('open', 'Active jobs', 'r')}
+                  <th className="r">Total</th>
+                  {sortTh('last', 'Last job')}
+                  <th>GSTIN</th><th>IEC</th><th>IEC status</th><th>City</th><th />
+                </tr>
+              </thead>
+              <tbody>
+                {shown.map((c) => {
+                  const open = expanded === c.key
+                  const iecOk = /^\d{10}$/.test(c.iec)
+                  const st = iecOk ? iecStatus(iecRows[c.iec]) : null
+                  const toggleOpen = () => { setExpanded(open ? null : c.key); if (open) setChecking(null) }
+                  return (
+                    <Fragment key={c.key}>
+                      <tr className={open ? 'open' : ''} onClick={toggleOpen} aria-expanded={open}>
+                        <td className="cl wide" title={c.legal && c.legal !== c.name ? `${c.name} · ${c.legal}` : c.name}>
+                          <span className="rec-name">{c.name}</span>
+                          {c.legal && c.legal !== c.name ? <span className="rec-x">{c.legal}</span> : null}
+                          {!c.inList ? <> <Chip tone="grey">Not in client list</Chip></> : null}
+                        </td>
+                        <td className="r">{c.open ? <b className="rec-n">{c.open}</b> : <Dash />}</td>
+                        <td className="r dim">{c.total || <Dash />}</td>
+                        <td>
+                          {c.last
+                            ? <><JobNo no={c.last.job.job_no} onClick={() => onOpenJob?.(c.last.job.id, 'details')} />{c.last.job.created_at ? <span className="rec-x">{fmtDate(c.last.job.created_at)}</span> : null}</>
+                            : <Dash />}
+                        </td>
+                        <td className="mono">{c.gstin || <Dash />}</td>
+                        <td className="mono">{c.iec || <Dash />}</td>
+                        <td>
+                          {!c.iec ? <Dash />
+                            : !iecOk ? <span className="muted" title="This IEC has letters, so it can't be checked online">Can't check online</span>
+                            : <Chip tone={st.tone} icon={st.icon}>{st.text}</Chip>}
+                        </td>
+                        <td className="dim">{c.place || <Dash />}</td>
+                        <td className="r">
+                          {iecOk && c.inList && (
+                            <span className="row-act">
+                              <Button size="sm" variant="ghost" icon="id-badge-2"
+                                onClick={(e) => { e.stopPropagation(); setExpanded(c.key); setChecking(checking === c.key ? null : c.key) }}>
+                                {checking === c.key ? 'Close check' : 'Check IEC'}
+                              </Button>
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                      {open && (
+                        <tr className="rec-more">
+                          <td colSpan={COLS}>
+                            <div className="rec-more-t">Jobs · {c.open} open of {c.total}</div>
+                            {c.jobs.length === 0 ? <span className="muted">No jobs for this client yet.</span> : (
+                              <div className="rec-jobs">
+                                {[...c.jobs].sort((a, b) => (c.openIds.has(b.job.id) - c.openIds.has(a.job.id)) || newest(a, b)).map((r) => (
+                                  <button key={r.job.id} type="button" className="rec-job" onClick={() => onOpenJob?.(r.job.id, 'details')}>
+                                    <JobNo no={r.job.job_no} /><PhaseStatus job={r.job} j={r.j} />
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                            {checking === c.key && iecOk && (
+                              <div className="rec-iec">
+                                {/* runs only when the button inside is pressed: never an automatic check */}
+                                <UlipCheck compact
+                                  check={{ api: 'DGFT/01', title: `Is the IEC valid? ${c.name}`, description: 'Checks the importer-exporter code with DGFT.', button: 'Check IEC now', defaults: { iecnumber: () => c.iec } }}
+                                  saved={iecRows[c.iec] || null}
+                                  onResult={(row) => setIecRows((prev) => ({ ...prev, [c.iec]: row }))} />
+                              </div>
+                            )}
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+        {!busy && shown.length > 0 && (
+          <div className="ix-tbl-foot">
+            <span>{shown.length} client{shown.length === 1 ? '' : 's'}</span>
+            <span className="right muted">Click a client to see its jobs</span>
+          </div>
+        )}
+      </section>
+    </>
+  )
+
+  // inside the shell the frame (padding, background) comes from AdminDashboard
+  return journey.inShell ? page : <div className="ix ix-page rec-standalone">{page}</div>
 }

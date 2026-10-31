@@ -2,12 +2,15 @@ import { useState } from 'react'
 import { supabase } from '../supabase'
 import { useJourney } from './JourneyContext'
 import { BE_STAGES, beStageOf } from '../services/journey'
-import { Icon, timeAgo } from './ui'
+import { Icon, fmtDateTime } from './ui'
+import './styles/customs.css'
 
 // Customs stage after the BE, set with one tap (Jose, 25 Oct 2026). ICEGATE through ULIP
 // only tells the OOC; staff see RMS / AO / query / AC / assessed / duty paid in LiveImpex
 // and mark it here, so the whole team (and the alerts) know where every BE stands.
 // Saved on the job (field_meta.be_stage, for this BE) and in the activity log.
+// (kept next to the chips that use it; other screens may save a stage the same way)
+// eslint-disable-next-line react-refresh/only-export-components
 export async function saveBeStage(job, stageId, byName, note) {
   const def = BE_STAGES.find((s) => s.id === stageId)
   const meta = job.field_meta && typeof job.field_meta === 'object' ? job.field_meta : {}
@@ -22,7 +25,8 @@ export async function saveBeStage(job, stageId, byName, note) {
   return saved
 }
 
-// compact = one row of chips (lists); full = with the label and who set it (job sidebar)
+// compact = one row of chips (lists); full = with the label and who set it (job sidebar).
+// Each chip is a small dot + label; the one set now takes its tone (Control tower, 31 Oct 2026).
 export default function BeStage({ job, userName, showToast, compact = false }) {
   const { patchJob } = useJourney()
   const [busy, setBusy] = useState(null)
@@ -38,12 +42,12 @@ export default function BeStage({ job, userName, showToast, compact = false }) {
     setBusy(null)
   }
   return (
-    <div className={`ix-bestage ${compact ? 'compact' : ''}`} onClick={(e) => e.stopPropagation()}>
+    <div className={`cu-bestage${compact ? ' compact' : ''}`} onClick={(e) => e.stopPropagation()}>
       {!compact && (
         <div className="hd">
           <Icon name="building-bank" />
           <span className="t">Customs stage</span>
-          <span className="s">{now ? `${now.label}${now.by ? ` · ${now.by}` : ''}${now.at ? ` · ${timeAgo(now.at)}` : ''}` : 'Not set: tap where the BE is now (as seen in LiveImpex)'}</span>
+          <span className="s">{now ? `${now.label}${now.by ? ` · ${now.by}` : ''}${now.at ? ` · ${fmtDateTime(now.at)}` : ''}` : 'Not set: tap where the BE is now (as seen in LiveImpex)'}</span>
         </div>
       )}
       <div className="chips" role="group" aria-label={`Customs stage of ${job.job_no}`}>

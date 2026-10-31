@@ -1,0 +1,86 @@
+/* Team & stages (Admin): open jobs per owner, the stage board and the team activity feed.
+   Control tower look (Jose, 31 Oct 2026): hairlines, 13px type, tokens only. The shared
+   classes (.ix-panel, .ix-tbl, .ix-kstrip, .ix-grid-2) do most of the work. */
+
+.tm-page, .tm-grid > *, .tm-col { min-width: 0 }
+
+/* ── open jobs per owner ── */
+.tm-owners .ix-tbl-wrap { max-height: 360px }
+.tm-own-tbl tbody tr:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px }
+.tm-own-tbl .tm-jobs-n { font-weight: 600 }
+.tm-n { font-weight: 600; font-variant-numeric: tabular-nums }
+.tm-n.zero { color: var(--faint); font-weight: 400 }
+.tm-n.red { color: var(--red) }
+.tm-n.amber { color: var(--amber) }
+.tm-noowner { display: inline-flex; align-items: center; gap: 6px; color: var(--amber); font-weight: 500 }
+.tm-noowner i { font-size: 16px }
+.tm-oldest { display: inline-flex; align-items: baseline; gap: 6px }
+.tm-oldest > span { color: var(--muted); font-size: var(--fs-sm); font-variant-numeric: tabular-nums }
+
+/* ── stage board: one row per stage, its job numbers as small tags ── */
+.tm-stage { display: grid; grid-template-columns: 210px minmax(0, 1fr); gap: 6px 12px; align-items: start; padding: 8px 16px; border-bottom: 1px solid var(--line) }
+.tm-stage.hot { box-shadow: inset 3px 0 0 var(--amber-dot) }
+.tm-sh { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; min-width: 0; padding: 2px 0; border: 0; border-radius: var(--r-sm); background: none; color: inherit; font: inherit; text-align: left; cursor: pointer }
+.tm-sh .ix-st { font-size: var(--fs-md) }
+.tm-sh b { font-size: var(--fs-md); font-weight: 600; font-variant-numeric: tabular-nums; color: var(--text) }
+.tm-sh em { flex-basis: 100%; padding-left: 13px; font-style: normal; font-size: var(--fs-sm); color: var(--muted) }
+.tm-sh:hover .ix-st { text-decoration: underline }
+.tm-sh:focus-visible { outline: none; box-shadow: var(--focus) }
+.tm-chips { display: flex; flex-wrap: wrap; gap: 4px; min-width: 0; padding-top: 1px }
+.tm-chips .ix-link { margin-left: 2px; font-size: var(--fs-sm) }
+.tm-empty { font-size: var(--fs-sm); color: var(--faint); line-height: 20px }
+
+.tm-jt { display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 0 6px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface); color: var(--text); font: 600 11px var(--mono); letter-spacing: -.02em; white-space: nowrap; cursor: pointer }
+.tm-jt:hover { border-color: var(--navy-200); color: var(--navy) }
+.tm-jt:focus-visible { outline: none; box-shadow: var(--focus) }
+.tm-jt i { width: 5px; height: 5px; border-radius: 50%; background: var(--faint); flex-shrink: 0 }
+.tm-jt.red { border-color: var(--red-line); background: var(--red-bg) }
+.tm-jt.red i { background: var(--red) }
+.tm-jt.amber i { background: var(--amber-dot) }
+.tm-jt.navy i { background: var(--navy) }
+/* the owner's initials after the job number (only while the board shows everyone) */
+.tm-jt .o, .tm-legend .o { padding-left: 4px; border-left: 1px solid var(--line); font: 600 10px var(--font); letter-spacing: 0; color: var(--muted) }
+.tm-jt .o.none, .tm-legend .o.none { color: var(--amber) }
+
+.tm-sgrp { display: flex; align-items: center; height: 28px; padding: 0 16px; background: var(--surface-2); border-bottom: 1px solid var(--line); font-size: var(--fs-xs); font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--text-2) }
+.tm-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; padding: 8px 16px; font-size: var(--fs-xs); color: var(--muted) }
+.tm-legend > span { display: inline-flex; align-items: center; gap: 5px }
+.tm-legend i { width: 6px; height: 6px; border-radius: 50%; background: var(--faint) }
+.tm-legend i.red { background: var(--red) }
+.tm-legend i.amber { background: var(--amber-dot) }
+.tm-legend i.navy { background: var(--navy) }
+.tm-legend .o { margin-left: 2px }
+
+/* ── team activity feed ── */
+.tm-feed-panel .ix-card-head { flex-wrap: wrap }
+.tm-feed { padding: 2px 0 6px; max-height: calc(100vh - 260px); overflow-y: auto; overscroll-behavior: contain }
+.tm-feed .day { padding: 10px 16px 4px; font-size: var(--fs-xs); font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--muted) }
+.tm-feed .ev { display: grid; grid-template-columns: 40px 18px minmax(0, 1fr); gap: 8px; align-items: start; padding: 5px 16px }
+.tm-feed .ev.click { cursor: pointer }
+.tm-feed .ev.click:hover { background: var(--surface-2) }
+.tm-feed .ev time { padding-top: 1px; font: 500 12px var(--mono); color: var(--muted); font-variant-numeric: tabular-nums }
+.tm-feed .ev .ic { display: grid; place-items: center; width: 18px; height: 18px; border-radius: var(--r-sm); background: var(--surface-3); color: var(--text-2); font-size: 12px }
+.tm-feed .ev .ic.cus { background: var(--navy-50); color: var(--navy) }
+.tm-feed .ev .ic.port { background: var(--teal-bg); color: var(--teal) }
+.tm-feed .ev .ic.bad { background: var(--red-bg); color: var(--red) }
+.tm-feed .ev .ic.warn { background: var(--amber-bg); color: var(--amber) }
+.tm-feed .ev .ic.ok { background: var(--green-bg); color: var(--green) }
+.tm-feed .ev p { margin: 0; min-width: 0; font-size: var(--fs-md); line-height: 1.4; color: var(--text); overflow-wrap: anywhere }
+/* system notices (automatic checks, the bot) read quieter than people's own updates */
+.tm-feed .ev.sys p { color: var(--text-2) }
+.tm-feed .ev p small { display: block; font-size: var(--fs-sm); color: var(--muted) }
+.tm-feed .ev p .x { display: inline-block; height: 16px; margin-left: 6px; padding: 0 5px; border-radius: var(--r-sm); background: var(--surface-3); font-size: var(--fs-xs); font-weight: 600; line-height: 16px; color: var(--text-2); vertical-align: 1px; font-variant-numeric: tabular-nums }
+.tm-feed .more { padding: 6px 16px 4px }
+.tm-feed .more .ix-link { margin-left: 0 }
+
+/* ── phones and narrow windows ── */
+@media (max-width: 760px) {
+  .tm-owners .ix-tbl-wrap { max-height: none }
+  .tm-owners .ix-tbl-foot .right { display: none }
+  .tm-stage { grid-template-columns: minmax(0, 1fr); padding: 8px 12px }
+  .tm-sgrp, .tm-legend { padding-left: 12px; padding-right: 12px }
+  .tm-feed { max-height: none }
+  .tm-feed .day { padding: 10px 12px 4px }
+  .tm-feed .ev { padding: 5px 12px }
+  .tm-feed .more { padding: 6px 12px 4px }
+}

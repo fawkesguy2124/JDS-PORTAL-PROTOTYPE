@@ -319,7 +319,7 @@ function jobCard(job, data) {
   lines.push(j.steps.map((s) => `${s.done ? '✅' : s.current ? '▶️' : '▫️'} ${s.label}${s.when ? ` ${s.when}` : ''}${s.sub && !s.done ? ` (${s.sub})` : s.sub && s.id !== 'arrival' ? ` · ${s.sub}` : ''}`).join('\n'))
   if (next?.nextText) lines.push(`*${next.nextText}*`)
   // the ship, from ship tracking (Jose, 25 Oct 2026)
-  const shipLine = shipLineText(data.seaByJob?.[job.id])
+  const shipLine = shipLineText(data.seaByJob?.[job.id], job)
   if (shipLine) lines.push(shipLine)
   const nos = parseContainerNos(job.containers)
   if (nos.length) {

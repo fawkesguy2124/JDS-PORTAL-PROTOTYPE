@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { parseContainerNos } from '../utils/jobHelpers'
 import { useJourney } from './JourneyContext'
-import { Icon, phaseChip } from './ui'
+import { Icon, JobNo, phaseChip } from './ui'
 import { truckNos } from '../services/journey'
 import { recentJobIds } from './recentJobs'
 
@@ -62,8 +62,11 @@ function Palette({ onClose, pages, onGo, onOpenJob, onLookup }) {
   return (
     <div className="ix-pal-bg" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose() }}>
       <div className="ix-pal" role="dialog" aria-label="Search">
-        <input ref={inputRef} value={q} onChange={(e) => { setQ(e.target.value); setHl(0) }} onKeyDown={onKey}
-          placeholder="Type a job no, client, BE, BL, container or truck…" autoComplete="off" />
+        <div className="ix-pal-in">
+          <Icon name="search" />
+          <input ref={inputRef} value={q} onChange={(e) => { setQ(e.target.value); setHl(0) }} onKeyDown={onKey}
+            placeholder="Type a job no, client, BE, BL, container or truck…" autoComplete="off" aria-label="Search" />
+        </div>
         <div className="ix-pal-res">
           {jobItems.length > 0 && <div className="ix-pal-group">{jobItems[0].recent ? 'Recent' : 'Jobs'}</div>}
           {jobItems.map((it) => {
@@ -71,7 +74,7 @@ function Palette({ onClose, pages, onGo, onOpenJob, onLookup }) {
             const c = phaseChip(it.job, it.j)
             return (
               <div key={it.id} className={`ix-pal-item ${idx === hl ? 'hl' : ''}`} onMouseEnter={() => setHl(idx)} onClick={() => pick(it)}>
-                <Icon name="package" /><b className="mono">{it.job.job_no}</b>
+                <Icon name="package" /><JobNo no={it.job.job_no} />
                 <span className="c">{it.job.client}</span>
                 <span className="k">{it.hit ? `${it.hit[0]} ${it.hit[1]}` : c.label}</span>
               </div>
@@ -81,7 +84,8 @@ function Palette({ onClose, pages, onGo, onOpenJob, onLookup }) {
             const idx = items.indexOf(it)
             return (
               <div key={it.id} className={`ix-pal-item ${idx === hl ? 'hl' : ''}`} onMouseEnter={() => setHl(idx)} onClick={() => pick(it)}>
-                <Icon name="world-search" />Look up <b className="mono">{it.q}</b> on ULIP<span className="k">BE, container, truck…</span>
+                {/* plain words on screen, no system names (Jose, 31 Oct 2026) */}
+                <Icon name="world-search" />Look up <b className="mono">{it.q}</b> on government systems<span className="k">BE, container, truck…</span>
               </div>
             )
           })}
@@ -96,7 +100,7 @@ function Palette({ onClose, pages, onGo, onOpenJob, onLookup }) {
           })}
           {items.length === 0 && <div className="ix-empty">Nothing matches “{q}”.</div>}
         </div>
-        <div className="ix-pal-foot"><span>↑ ↓ to move</span><span>Enter to open</span><span>Esc to close</span></div>
+        <div className="ix-pal-foot"><span><kbd>↑</kbd><kbd>↓</kbd>to move</span><span><kbd>Enter</kbd>to open</span><span><kbd>Esc</kbd>to close</span></div>
       </div>
     </div>
   )

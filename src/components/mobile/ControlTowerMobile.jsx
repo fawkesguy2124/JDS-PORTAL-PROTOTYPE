@@ -1,87 +1,136 @@
-export default function ControlTowerMobile({ jobs, profiles, onOpenJob, activityLog = [] }) {
-  const urgent = (jobs || []).filter(j => j.priority?.toLowerCase() === 'urgent' && Number(j.stage) < 10)
-  const detained = (jobs || []).filter(j => j.free_days != null && Number(j.free_days) <= 2)
-  const stale = (jobs || []).filter(j => {
-    if (!j.updated_at) return false
-    return Math.floor((Date.now() - new Date(j.updated_at).getTime()) / 86400000) >= 5
-  })
+import { useEffect, useMemo, useState } from 'react'
+import { supabase } from '../../supabase'
+import { EmptyState, Icon, JobNo, Panel, Segmented, Skeleton, fmtDate, fmtDateTime, fmtTime } from '../../industrial/ui'
 
-  const Section = ({ title, items, color, emptyText }) => (
-    <div style={{ background:'white', border:'1.5px solid #e2e6ed', borderRadius:'12px', overflow:'hidden', marginBottom:'10px' }}>
-      <div style={{ padding:'12px 16px', borderBottom:'1px solid #e2e6ed', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
-        <span style={{ fontSize:'13px', fontWeight:700, color:'#1a2233' }}>{title}</span>
-        <span style={{ display:'inline-flex', alignItems:'center', padding:'2px 8px', borderRadius:'9999px', fontSize:'11px', fontWeight:700, background:color+'22', color }}>{items.length}</span>
-      </div>
-      {items.length === 0 ? (
-        <div style={{ padding:'16px', textAlign:'center', fontSize:'12px', color:'#8a96a8' }}>{emptyText}</div>
-      ) : items.map(job => (
-        <div key={job.id} onClick={() => onOpenJob(job)}
-          style={{ padding:'12px 16px', borderBottom:'1px solid #f4f6f9', cursor:'pointer', display:'flex', justifyContent:'space-between', alignItems:'center' }}
-        >
-          <div>
-            <div style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:'13px', fontWeight:600, color:'#1a4fa0' }}>{job.job_no}</div>
-            <div style={{ fontSize:'12px', color:'#4a5568', marginTop:'2px' }}>{job.client}</div>
-          </div>
-          <span style={{ fontSize:'11px', color:'#8a96a8' }}>Stage {job.stage} →</span>
-        </div>
-      ))}
-    </div>
-  )
+// Team & stages: the team activity feed. (The file name is from the old Tailwind
+// screen; since the Control tower rebuild, Jose 31 Oct 2026, it renders at every width.)
+// Repeated identical notices on one day ("Automatic checks paused for 2 hours" x 9)
+// collapse into one line with a count, so people's own updates are not buried.
+
+const DAY = 86400000
+const IST = 5.5 * 3600000
+const DAYS = 7 // how far back the feed reads
+const SHOW = 30 // lines shown before "Show all"
+
+// the notes of these types can carry a ship name: rows are never labelled by ship (Jose)
+const NO_NOTE = ['ship_arrived', 'eta_changed']
+const FEED_ICON = {
+  ooc_granted: ['building-bank', 'cus'], be_filed: ['building-bank', 'cus'], sb_filed: ['building-bank', 'cus'],
+  be_stage: ['building-bank', 'cus'], air_igm: ['plane', 'cus'],
+  ship_arrived: ['anchor', 'port'], eta_changed: ['anchor', 'port'],
+  truck_dispatched: ['truck', ''], truck_stuck: ['alert-triangle', 'bad'], truck_papers: ['alert-triangle', 'bad'],
+  detention_alert: ['alert-triangle', 'bad'], job_delivered: ['flag', 'ok'], auto_check_paused: ['player-pause', 'warn'],
+  stage_update: ['arrow-big-right-lines', ''], job_update: ['arrow-big-right-lines', ''], note: ['message-circle', ''],
+  job_created: ['plus', ''], document_upload: ['file-upload', ''],
+}
+
+// vendor and system names never reach the screen: plain words instead
+const plain = (s) => String(s || '')
+  .replace(/\s*\((ICEGATE|LDB|ULIP|FASTag|Safecube|VAHAN)\)/gi, '')
+  .replace(/\bICEGATE\b/gi, 'Customs').replace(/\bLDB\b/g, 'container tracking')
+  .replace(/\bFASTag\b/gi, 'toll').replace(/\bVAHAN\b/gi, 'vehicle records')
+  .replace(/\bULIP\b/g, 'government systems').replace(/\bSafecube\b/gi, 'ship tracking')
+  .replace(/\s+—\s+/g, ', ')
+const reEscape = (s) => s.replace(/[.*+?^${}()|[\]\\-]/g, '\\$&')
+const dayOf = (iso) => Math.floor((new Date(iso).getTime() + IST) / DAY)
+
+// rows come newest first; a repeat of the same notice (same type, job, words and
+// person on the same India day) adds to the first line instead of a new one
+function collapse(rows, staff, staffOnly) {
+  const out = []
+  const seen = new Map()
+  for (const r of rows) {
+    const who = r.done_by_name || null
+    const isStaff = !!who && staff.has(who)
+    if (staffOnly && !isStaff) continue
+    const type = r.type || r.action || ''
+    const no = r.job_no ? String(r.job_no) : null
+    let text = plain(r.title || type.replace(/_/g, ' '))
+    // the job number is shown first on its own, so it comes out of the sentence
+    if (no) text = text.replace(new RegExp(`\\s*${reEscape(no)}\\s*`), ' ').replace(/^[\s,—-]+|[\s,—-]+$/g, '').trim()
+    const key = `${dayOf(r.created_at)}|${type}|${r.job_id || ''}|${text.toLowerCase()}|${who || ''}`
+    const hit = seen.get(key)
+    if (hit) { hit.n += 1; hit.first = r.created_at; continue }
+    const [icon, cls] = FEED_ICON[type] || ['point', '']
+    const e = {
+      key: `l${r.id}`, at: r.created_at, first: r.created_at, n: 1, jobId: r.job_id || null, jobNo: no,
+      text: text || 'Update', note: NO_NOTE.includes(type) ? '' : plain(r.note), who, isStaff, icon, cls,
+    }
+    seen.set(key, e)
+    out.push(e)
+  }
+  return out
+}
+
+export default function TeamFeed({ data, profiles, dash, onOpenJob }) {
+  const [log, setLog] = useState(null) // null = not loaded yet
+  const [readAt, setReadAt] = useState(0) // when the feed was last read ('Today' / 'Yesterday')
+  const [failed, setFailed] = useState(false)
+  const [who, setWho] = useState('all')
+  const [all, setAll] = useState(false)
+
+  // the last 7 days, reread when the shared data reloads and once a minute
+  // (database only; container moves are left out, the Containers page shows them)
+  useEffect(() => {
+    let cancelled = false
+    const load = () => supabase.from('activity_log')
+      .select('id, type, action, title, note, job_id, job_no, done_by_name, created_at')
+      .or('type.is.null,type.neq.container_update')
+      .gte('created_at', new Date(Date.now() - DAYS * DAY).toISOString())
+      .order('created_at', { ascending: false }).limit(400)
+      .then(({ data: got, error }) => {
+        if (cancelled) return
+        setFailed(!!error)
+        if (!error) { setLog(got || []); setReadAt(Date.now()) }
+      })
+    load()
+    const t = setInterval(load, 60000)
+    return () => { cancelled = true; clearInterval(t) }
+  }, [data])
+
+  // staff = the portal's own people; everything else (Auto-check, the bot) is a system notice
+  const staff = useMemo(() => new Set(Object.values(profiles || {}).filter(Boolean)), [profiles])
+  const lines = useMemo(() => collapse(log || [], staff, who === 'staff'), [log, staff, who])
+  const shown = all ? lines : lines.slice(0, SHOW)
+  const folded = lines.reduce((s, e) => s + (e.n - 1), 0)
+  const today = dayOf(readAt)
 
   return (
-    <div>
-      <Section title="Urgent Jobs"       items={urgent}   color="#dc2626" emptyText="No urgent jobs" />
-      <Section title="Detention Risk"     items={detained} color="#f59e0b" emptyText="No detention risks" />
-      <Section title="Stale (5+ days)"   items={stale}    color="#8a96a8" emptyText="All jobs recently updated" />
-
-      {/* Team Activity */}
-      <div style={{ background:'white', border:'1.5px solid #e2e6ed', borderRadius:'12px', overflow:'hidden', marginBottom:'10px' }}>
-        <div style={{ padding:'12px 16px', borderBottom:'1px solid #e2e6ed', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
-          <span style={{ fontSize:'13px', fontWeight:700, color:'#1a2233' }}>Team Activity</span>
-          <span style={{ display:'inline-flex', alignItems:'center', gap:'5px', fontSize:'11px', fontWeight:600, color:'#16a34a' }}>
-            <span style={{ width:'6px', height:'6px', borderRadius:'50%', background:'#16a34a', display:'inline-block' }} />
-            Live
-          </span>
-        </div>
-        <div style={{ padding:'12px 16px' }}>
-          {activityLog.length === 0 ? (
-            <div style={{ textAlign:'center', fontSize:'12px', color:'#8a96a8', padding:'8px 0' }}>No recent activity.</div>
-          ) : activityLog.slice(0, 6).map((a, i) => {
-            const dotColor =
-              a.action?.includes('stage')    ? '#16a34a'
-              : a.action?.includes('upload') ? '#2563eb'
-              : a.action?.includes('payment')? '#f59e0b'
-              : a.action?.includes('delete') ? '#dc2626'
-              : a.action?.includes('create') ? '#7c3aed'
-              : '#8a96a8'
-
-            const relTime = (() => {
-              if (!a.created_at) return ''
-              const diff = Date.now() - new Date(a.created_at).getTime()
-              const mins = Math.floor(diff / 60000)
-              if (mins < 1)  return 'just now'
-              if (mins < 60) return `${mins}m ago`
-              const hrs = Math.floor(mins / 60)
-              if (hrs < 24)  return `${hrs}h ago`
-              return `${Math.floor(hrs / 24)}d ago`
-            })()
-
-            return (
-              <div key={a.id || i} style={{ display:'flex', gap:'10px', alignItems:'flex-start', marginBottom: i < activityLog.slice(0,6).length - 1 ? '12px' : 0 }}>
-                <div style={{ width:'8px', height:'8px', borderRadius:'50%', background:dotColor, marginTop:'5px', flexShrink:0 }} />
-                <div style={{ minWidth:0 }}>
-                  <div style={{ fontSize:'13px', color:'#1a2233', lineHeight:1.4 }}>
-                    {a.user_name && <span style={{ fontWeight:600 }}>{a.user_name} </span>}
-                    {a.description || a.action || 'updated a job'}
-                    {a.job_no && <span style={{ fontFamily:"'JetBrains Mono',monospace", color:'#1a4fa0' }}> {a.job_no}</span>}
+    <Panel title="Team activity" className="tm-feed-panel"
+      meta={log ? `last ${DAYS} days · IST${folded ? ` · ${folded} repeats folded` : ''}` : null}
+      actions={<Segmented label="Whose updates" value={who} onChange={setWho} options={[{ value: 'all', label: 'All' }, { value: 'staff', label: 'Staff only' }]} />}>
+      {failed && !log ? <EmptyState line icon="alert-triangle" tone="red" title="Could not load team activity. Press Refresh." />
+        : dash || !log ? <Skeleton rows={6} />
+          : !lines.length ? <EmptyState line icon="activity" title={who === 'staff' ? `No staff updates in the last ${DAYS} days.` : `No updates in the last ${DAYS} days.`} />
+            : (
+              <div className="tm-feed">
+                {shown.map((e, i) => {
+                  const dn = dayOf(e.at)
+                  const newDay = i === 0 || dayOf(shown[i - 1].at) !== dn
+                  const small = e.n > 1
+                    ? [`${e.n} times, first at ${fmtTime(e.first)}`, e.who].filter(Boolean).join(' · ')
+                    : [e.note, e.who].filter(Boolean).join(' · ')
+                  return [
+                    newDay ? <div className="day" key={`d${dn}`}>{dn === today ? 'Today · ' : dn === today - 1 ? 'Yesterday · ' : ''}{fmtDate(e.at)}</div> : null,
+                    <div key={e.key} className={`ev${e.jobId ? ' click' : ''}${e.isStaff ? '' : ' sys'}`} title={fmtDateTime(e.at)}
+                      onClick={() => e.jobId && onOpenJob(e.jobId)}>
+                      <time>{fmtTime(e.at)}</time>
+                      <span className={`ic ${e.cls}`}><Icon name={e.icon} /></span>
+                      <p>
+                        {e.jobNo && <><JobNo no={e.jobNo} size="sm" /> </>}{e.text}
+                        {e.n > 1 && <span className="x" title={`${e.n} identical updates on this day`}>×{e.n}</span>}
+                        {small ? <small>{small}</small> : null}
+                      </p>
+                    </div>,
+                  ]
+                })}
+                {lines.length > SHOW && (
+                  <div className="more">
+                    <button type="button" className="ix-link" onClick={() => setAll((v) => !v)}>{all ? 'Show fewer' : `Show all ${lines.length}`}</button>
                   </div>
-                  <div style={{ fontSize:'11px', color:'#8a96a8', marginTop:'2px', fontFamily:"'JetBrains Mono',monospace" }}>{relTime}</div>
-                </div>
+                )}
               </div>
-            )
-          })}
-        </div>
-      </div>
-    </div>
+            )}
+    </Panel>
   )
 }

@@ -1,7 +1,7 @@
 // Which ship each job is on, and that ship's numbers (IMO / MMSI). Shared by the
 // portal (Vessels page, job drawer) and the WhatsApp bot, so both say the same.
 // Not ULIP: saved job data, the saved IGM check and the vessel-track finder only.
-import { parseContainerNos, containerTrip, isDelivered } from './journeyCore.js'
+import { parseContainerNos, containerTrip, isDelivered, isOldVoyage } from './journeyCore.js'
 import { isLineNotShip, isNotShipName } from './shippingLines.js'
 
 const digits = (v) => String(v || '').replace(/\D/g, '')
@@ -38,8 +38,13 @@ export function vesselsOf(job, data) {
 }
 export const vesselOf = (job, data) => vesselsOf(job, data)[0] || null
 
-// The job's Safecube tracking row (ETA, ship, position), or null
-export const seaOf = (job, data) => data?.seaByJob?.[job?.id] || null
+// The job's Safecube tracking row (ETA, ship, position), or null. A row about an
+// older voyage (arrival 30+ days before the job was opened) is not this job's
+// (Jose, 31 Oct 2026: J-673 said "Ship arrived 9 Aug")
+export const seaOf = (job, data) => {
+  const row = data?.seaByJob?.[job?.id] || null
+  return row && !isOldVoyage(row, job) ? row : null
+}
 
 // Other jobs filed on the same IGM at the same port (one IGM = one ship's voyage)
 export function igmSiblings(job, data) {
@@ -219,6 +224,8 @@ function untilText(iso) {
 // No portal link in WhatsApp (Jose, 25 Oct 2026)
 export function shipCardText(jobs, sea, extra = {}) {
   const who = jobs.map((j) => `*${j.job_no}* · ${String(j.client || 'No client').trim()}`).join('\n')
+  // tracking that only knows an older voyage says nothing about this cargo (31 Oct 2026)
+  if (jobs.length && jobs.every((j) => isOldVoyage(sea, j))) return [`🚢 ${who}`, '', 'Ship tracking only has an older voyage of this ship, not this cargo. No current position or ETA yet.'].join('\n')
   const v = seaVoyage(sea)
   const notSailed = sea.status === 'PLANNED' || (sea.pol_date && new Date(sea.pol_date) > Date.now() && !sea.pod_actual)
   const lines = [`🚢 ${who}`, `Ship: *${sea.vessel_name || 'name not given'}*${extra.line ? ` (${extra.line})` : ''}${extra.imo ? ` · IMO ${extra.imo}` : ''}`, '']
@@ -247,8 +254,9 @@ export function shipCardText(jobs, sea, extra = {}) {
 }
 
 // one short line for the job reply: "🚢 At sea · ETA 25 Oct, 6:30 pm · ~1,018 km to Nhava Sheva"
-export function shipLineText(sea) {
-  if (!sea || sea.error) return null
+// (job is optional: given, tracking about an older voyage gives no line)
+export function shipLineText(sea, job) {
+  if (!sea || sea.error || (job && isOldVoyage(sea, job))) return null
   const v = seaVoyage(sea)
   if (sea.pod_actual) return `🚢 ${sea.vessel_name || 'Ship'} arrived at ${port(sea.pod)} · ${portClock(sea.pod_date)}`
   const notSailed = sea.status === 'PLANNED' || (sea.pol_date && new Date(sea.pol_date) > Date.now())

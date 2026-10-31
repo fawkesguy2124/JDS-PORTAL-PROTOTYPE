@@ -1,22 +1,41 @@
 import { useMemo, useState } from 'react'
 import { supabase } from '../../supabase'
-import { isDelivered, isExportJob } from '../../services/journey'
+import { isDelivered, isExportJob, displayLine } from '../../services/journey'
 import { useJourney, useFreshOnOpen } from '../JourneyContext'
-import ShipMap, { vesselsOf, shipIdOf, shipPosition, voyage, toneOf, TONE_COLOR } from '../ShipMap'
-import { cargoOnShip } from '../../../supabase/functions/_shared/portal/ships.js'
-import { lineName } from '../../../supabase/functions/_shared/portal/shippingLines.js'
-import { Icon, Skeleton, fmtDate } from '../ui'
-import { shipChecks } from '../shipChecks'
-import { portTime, seaWhere, portName, notSailed, polText, moveText, nextStop, atPort } from '../SeaTracking'
+import ShipMap, { vesselsOf, shipIdOf, shipPosition, voyage, toneOf } from '../ShipMap'
+import { cargoOnShip, seaOf } from '../../../supabase/functions/_shared/portal/ships.js'
+import { Icon, Skeleton, fmtDate, PageHead, KpiStrip, Kpi, JobNo, Status, Tabs, Panel, Button, EmptyState, Dash } from '../ui'
+import { shipChecks, realMs } from '../shipChecks'
+import { polText, seaWhere, portName, notSailed, moveText, nextStop, atPort } from '../SeaTracking'
+import '../styles/tracking.css'
 
 const TONE_ORDER = { sea: 0, port: 1, old: 2 }
+const RANK = { red: 0, amber: 1, grey: 2, info: 3 }
+const pad = (n) => String(n).padStart(2, '0')
 
-// Vessels: every ship that still carries our cargo, on the portal's own map with
-// Safecube's positions (VesselFinder removed 24 Oct 2026), one row per ship with
-// all its jobs (Jose, 22 Oct 2026). Once the cargo is
-// unloaded (cargoOnShip) the ship leaves this page. Staff type the IMO once
-// (saved on every job of that ship); behind the scenes the IGM check and the
-// vessel-track finder may also supply it (never shown on screen). Not ULIP.
+// The line's ETA as a date (audit, 31 Oct 2026: every ETA ended in "6:30 pm"). A value
+// at exactly 18:30 UTC is a date-only ETA at India midnight, so it shows as that India
+// date alone; 00:00 UTC is a date alone too. Any other time is port time, as given.
+const etaParts = (iso) => {
+  if (!iso) return null
+  const d = new Date(iso)
+  if (isNaN(d)) return { day: String(iso), time: '' }
+  const h = d.getUTCHours(), mi = d.getUTCMinutes(), whole = !d.getUTCSeconds() && !d.getUTCMilliseconds()
+  if (whole && h === 18 && mi === 30) return { day: fmtDate(iso), time: '' } // fmtDate prints the India date
+  const day = fmtDate(d.toISOString().slice(0, 10))
+  return { day, time: whole && !h && !mi ? '' : `${pad(h)}:${pad(mi)}` }
+}
+const portEta = (iso) => { const p = etaParts(iso); return p ? (p.time ? `${p.day}, ${p.time}` : p.day) : null }
+// how far the line moved the ETA since tracking started: later is amber, earlier is plain
+const delayText = (d) => (d.days > 0 ? `ETA +${d.days} d` : `ETA ${-d.days} d earlier`)
+const statusOf = (r) => (r.m.waiting ? ['grey', 'Not sailed'] : r.m.arrived || r.m.atPod ? ['teal', 'At port'] : r.tone === 'old' ? ['grey', 'Old position'] : ['blue', 'At sea'])
+
+// Vessels: every ship that still carries our cargo, on the portal's own map, one row
+// per ship with all its jobs (Jose, 22 Oct 2026). Rows, pins and tags are labelled by
+// job number, never by ship name (Jose, 31 Oct 2026). Once the cargo is unloaded
+// (cargoOnShip) the ship leaves this page. Staff type the IMO once (saved on every job
+// of that ship); behind the scenes the IGM check and the vessel-track finder may also
+// supply it. Nothing here calls a government system.
 export default function VesselsPage({ onOpenJob, showToast, onGo }) {
   const { data, active, loading, patchJob } = useJourney()
   useFreshOnOpen()
@@ -24,12 +43,13 @@ export default function VesselsPage({ onOpenJob, showToast, onGo }) {
   const [selected, setSelected] = useState(() => { const j = new URLSearchParams(window.location.search).get('job'); return j ? `link:${j}` : null })
   const [typing, setTyping] = useState({}) // row key -> IMO being typed
   const [saving, setSaving] = useState(null)
-  const [filter, setFilter] = useState('all') // ship list: all / at sea / at port
+  const [filter, setFilter] = useState('all') // ship list: all / sea / port / attn
+  const [openedAt] = useState(() => Date.now()) // 'next arrival' is counted from when the page opened
 
   const igmOf = (job) => { const n = String(job.ulip_refs?.igm_no || '').replace(/\D/g, ''); return n.length >= 5 && !/^0+$/.test(n) ? n : null }
 
   // one row per ship: same IMO (or radio number, or name) = same ship; a job
-  // whose ship isn't known yet gets its own row, to type the ship name. Only
+  // whose ship isn't known yet gets its own row, to type the IMO. Only
   // ships with our cargo still on board.
   const ships = useMemo(() => {
     const groups = new Map()
@@ -43,7 +63,7 @@ export default function VesselsPage({ onOpenJob, showToast, onGo }) {
         const igm = igmOf(job)
         const key = id.imo ? `imo:${id.imo}` : igm ? `igm:${job.port_code}:${igm}` : `job:${job.id}`
         const g = groups.get(key) || { key, name: null, imo: id.imo, mmsi: null, jobs: [] }
-        if (!g.jobs.some((x) => x.job.id === job.id)) g.jobs.push({ job, arrived: j.arrivedAt, first: true })
+        if (!g.jobs.some((x) => x.job.id === job.id)) g.jobs.push({ job, j, arrived: j.arrivedAt, first: true })
         groups.set(key, g)
         continue
       }
@@ -53,7 +73,7 @@ export default function VesselsPage({ onOpenJob, showToast, onGo }) {
         const key = id.imo ? `imo:${id.imo}` : id.mmsi ? `mmsi:${id.mmsi}` : `name:${name}`
         const g = groups.get(key) || { key, name, imo: id.imo, mmsi: id.mmsi, jobs: [] }
         g.name ||= name // a row made from an IMO alone gets the name once a job knows it
-        if (!g.jobs.some((x) => x.job.id === job.id)) g.jobs.push({ job, arrived: j.arrivedAt, first: i === 0 })
+        if (!g.jobs.some((x) => x.job.id === job.id)) g.jobs.push({ job, j, arrived: j.arrivedAt, first: i === 0 })
         groups.set(key, g)
       })
     }
@@ -64,22 +84,22 @@ export default function VesselsPage({ onOpenJob, showToast, onGo }) {
     }).sort((a, b) => (!!a.arrived - !!b.arrived) || String(b.arrived || '').localeCompare(String(a.arrived || '')))
   }, [active, data])
 
-  // a ship is on the map once its position is known (Safecube, else the finder)
+  // the ship tracking of one of the ship's jobs (the one on this IMO first); old voyages are skipped by seaOf
+  const seaOfShip = (s) => {
+    const rows = s.jobs.map((x) => seaOf(x.job, data)).filter(Boolean)
+    return rows.find((r) => s.imo && r.vessel_imo === s.imo) || rows[0] || null
+  }
+  // a ship is on the map once its position is known (ship tracking, else the finder)
   const positionOf = (s) => shipPosition(seaOfShip(s), s.name ? data?.shipIds?.[s.name] : null)
   const shown = (s) => !!positionOf(s)
-  // the shipping line of a ship's jobs ("MSC", "HUNGA A LINE"): with the IMO that is
-  // all JDS needs; the ship's own name is not asked for (Jose, 24 Oct 2026)
-  const lineOf = (s) => { const j = s.jobs.find((x) => x.job.shipping_line)?.job; return j ? lineName(j.shipping_line) || j.shipping_line : null }
+  // the shipping line of a ship's jobs: with the IMO that is all JDS needs; the
+  // ship's own name is not asked for (Jose, 24 Oct 2026)
+  const lineOf = (s) => { const j = s.jobs.find((x) => x.job.shipping_line)?.job; return j ? displayLine(j.shipping_line) || j.shipping_line : null }
   // a ship the map cannot show yet: what is known, and how to get the IMO
   const unknownHint = (s) => {
     const job = s.jobs[0].job
-    const known = [igmOf(job) && `IGM ${igmOf(job)}${job.ulip_refs?.igm_date ? ` (${fmtDate(job.ulip_refs.igm_date)})` : ''}`].filter(Boolean)
-    return `IMO not known yet${known.length ? ` · ${known.join(' · ')}` : ''}. Check the IGM or type the IMO.`
-  }
-  // the Safecube tracking of one of the ship's jobs (the one on this IMO first)
-  const seaOfShip = (s) => {
-    const rows = s.jobs.map((x) => data?.seaByJob?.[x.job.id]).filter(Boolean)
-    return rows.find((r) => s.imo && r.vessel_imo === s.imo) || rows[0] || null
+    const igm = igmOf(job)
+    return `IMO not known yet${igm ? ` · IGM ${igm}${job.ulip_refs?.igm_date ? ` (${fmtDate(job.ulip_refs.igm_date)})` : ''}` : ''}`
   }
   // nothing chosen at first: the map opens on all the ships
   const linked = typeof selected === 'string' && selected.startsWith('link:') ? selected.slice(5) : null
@@ -93,7 +113,7 @@ export default function VesselsPage({ onOpenJob, showToast, onGo }) {
       key: s.key, label: s.imo ? `IMO ${s.imo}` : null, jobs: s.jobs.map((x) => x.job.job_no).join(', '),
       clients: [...new Set(s.jobs.map((x) => x.job.client).filter(Boolean))].join(', '), line: lineOf(s),
       pos: p?.pos || null, at: p?.at || null, from: p?.from || null, track: ok ? sea.track : null,
-      eta: ok && sea.pod_date ? `${sea.pod_actual ? 'Arrived' : 'ETA'} ${portTime(sea.pod_date)}` : null, arrived: !!s.arrived || !!(ok && sea.pod_actual),
+      eta: ok && sea.pod_date ? `${sea.pod_actual ? 'Arrived' : 'ETA'} ${portEta(sea.pod_date)}` : null, arrived: !!s.arrived || !!(ok && sea.pod_actual),
       where: ok ? seaWhere(sea) : null, route: ok ? sea.route : null,
       lastMove: ok && atPort(sea) ? moveText(sea.last_event, false) : null, nextStop: ok && atPort(sea) ? nextStop(sea) : null,
       polName: ok ? portName(sea.pol) : null, polDate: ok ? polText(sea) : null, waiting: notSailed(sea), podName: ok ? portName(sea.pod) : null,
@@ -102,7 +122,8 @@ export default function VesselsPage({ onOpenJob, showToast, onGo }) {
     // at the port before the line confirms it, ETA passed, delays (shipChecks)
     const sea = seaOfShip(ships[i])
     const c = shipChecks(sea && !sea.error ? sea : null, m, voyage(m))
-    return { ...m, atPod: c.atPod, delay: c.delay, flags: c.flags }
+    // one wording for an ETA change in the row and in the map card
+    return { ...m, atPod: c.atPod, delay: c.delay ? { ...c.delay, text: delayText(c.delay) } : null, flags: c.flags }
   })
 
   // one IMO for the ship, saved on every job on it
@@ -125,156 +146,167 @@ export default function VesselsPage({ onOpenJob, showToast, onGo }) {
     showToast?.(`IMO ${no} saved on ${s.jobs.map((x) => x.job.job_no).join(', ')}`, 'success')
   }
 
-  // (no "Ship has left" button any more: Safecube says when the ship arrives and the
+  // (no "Ship has left" button any more: ship tracking says when the ship arrives and the
   // ship leaves this list by itself two days later; Jose, 24 Oct 2026)
 
-  // the tracking console (Jose, 25 Oct 2026: "a professional map tracking for vessels"):
-  // the ship list on the left, the map beside it, a few figures on top
+  // the tracking console (Jose, 25 Oct 2026): the ship list on the left, the map beside
+  // it, the figures on top
   const rows = ships.filter(shown).map((s) => {
     const m = mapShips.find((x) => x.key === s.key)
     const sea = seaOfShip(s)
-    return { s, m, sea, tone: toneOf(m), trip: voyage(m), podAt: sea && !sea.error && !sea.pod_actual ? sea.pod_date : null }
+    const serious = m.flags.filter((f) => f.tone === 'red' || f.tone === 'amber')
+    return { s, m, sea, serious, tone: toneOf(m), trip: voyage(m), podAt: sea && !sea.error && !sea.pod_actual ? sea.pod_date : null }
   }).sort((a, b) => (TONE_ORDER[a.tone] - TONE_ORDER[b.tone]) || String(a.podAt || '9').localeCompare(String(b.podAt || '9')))
   const inPort = (r) => r.m.arrived || r.m.atPod
-  const count = (t) => rows.filter((r) => (t === 'port' ? inPort(r) : t === 'sea' ? r.tone === 'sea' : true)).length
-  const listed = rows.filter((r) => filter === 'all' || (filter === 'port' ? inPort(r) : r.tone === 'sea'))
-  // everything worth a look, most serious first (Jose, 25 Oct 2026)
-  const RANK = { red: 0, amber: 1, grey: 2, info: 3 }
-  const alerts = rows.flatMap((r) => r.m.flags.map((f) => ({ ...f, key: r.s.key, jobs: r.m.jobs }))).sort((a, b) => RANK[a.tone] - RANK[b.tone])
-  const serious = alerts.filter((a) => a.tone === 'red' || a.tone === 'amber').length
-  // the next ship due (port time, written as UTC; Nhava Sheva is India time)
-  const next = rows.filter((r) => r.podAt && r.tone === 'sea' && new Date(r.podAt).getTime() - 5.5 * 3600e3 > Date.now())
+  const inGroup = (r, t) => (t === 'port' ? inPort(r) : t === 'sea' ? r.tone === 'sea' : t === 'attn' ? r.serious.length > 0 : true)
+  const count = (t) => rows.filter((r) => inGroup(r, t)).length
+  const listed = rows.filter((r) => inGroup(r, filter))
+  // what needs a look, most serious first (Jose, 25 Oct 2026); the calm notes
+  // (arriving soon, changes ship) stay on the row and in the map card
+  const alerts = rows.flatMap((r) => r.serious.map((f) => ({ ...f, key: r.s.key, jobs: r.s.jobs }))).sort((a, b) => RANK[a.tone] - RANK[b.tone])
+  const anyRed = alerts.some((a) => a.tone === 'red')
+  // the next ship due (the line's port time; Nhava Sheva is India time)
+  const next = rows.filter((r) => r.podAt && r.tone === 'sea' && realMs(r.podAt, r.sea?.pod) > openedAt)
     .sort((a, b) => String(a.podAt).localeCompare(String(b.podAt)))[0]
+  const nextEta = next ? etaParts(next.podAt) : null
   const noPosition = ships.filter((s) => !shown(s))
-  const mapH = typeof window !== 'undefined' ? (window.innerWidth < 900 ? 420 : Math.max(560, window.innerHeight - 190)) : 560
-  const statusText = (r) => (r.m.waiting ? 'Not sailed' : r.m.arrived ? 'At port' : r.m.atPod ? 'At port' : r.tone === 'old' ? 'Old position' : 'At sea')
+  const mapH = typeof window !== 'undefined' ? (window.innerWidth < 900 ? 420 : Math.max(520, window.innerHeight - 250)) : 560
+  const pickFilter = (id) => setFilter((f) => (f === id && id !== 'all' ? 'all' : id))
+  const jobNos = (jobs) => jobs.map(({ job }) => <JobNo key={job.id} no={job.job_no} onClick={() => onOpenJob?.(job.id)} />)
 
   return (
-    <div className="ix-page ix-page-wide">
-      <div className="ix-page-head">
-        <div>
-          <h1>Vessels</h1>
-          <p>Live position of every ship carrying our cargo · updated every hour</p>
-        </div>
-        <div className="right ix-vt-stats">
-          <div><b>{rows.length}</b><span>ships tracked</span></div>
-          <div><b style={{ color: TONE_COLOR.sea }}>{count('sea')}</b><span>at sea</span></div>
-          <div><b style={{ color: TONE_COLOR.port }}>{count('port')}</b><span>at port</span></div>
-          {next && <div className="wide"><b>{next.s.jobs.map((x) => x.job.job_no).join(', ')}</b><span>next arrival · {portTime(next.podAt)}{next.m.flags.some((f) => f.id === 'early') ? ' (likely later)' : ''}</span></div>}
-        </div>
-      </div>
+    <>
+      <PageHead title="Vessels" sub={['Every ship carrying our cargo, by job', 'positions update by themselves']} />
 
-      {data && rows.length > 0 && (
-        <div className={`ix-card ix-vt-alerts ${serious ? '' : 'ok'}`}>
-          <div className="hd">
-            <Icon name={serious ? 'alert-triangle' : 'circle-check'} />
-            <b>{serious ? `Needs attention · ${serious}` : 'All ships on schedule'}</b>
-          </div>
-          <div className="items">
-            {alerts.map((a) => (
-              <button key={`${a.key}-${a.id}`} type="button" className={`ix-vt-alert ${a.tone} ${sel?.key === a.key ? 'on' : ''}`} onClick={() => setSelected(a.key)} title="Show this ship on the map">
-                <Icon name={a.icon} /><b>{a.jobs}</b><span>{a.text}</span>
-              </button>
-            ))}
-            {!alerts.length && <span className="none">No delays, no missed ETAs, every position is fresh.</span>}
-          </div>
-        </div>
-      )}
+      {loading && !data ? (
+        <div className="ix-card"><Skeleton rows={5} /></div>
+      ) : (
+        <>
+          <KpiStrip>
+            <Kpi label="Ships tracked" value={rows.length} sub={noPosition.length ? `${noPosition.length} without a position yet` : 'All on the map'}
+              onClick={() => setFilter('all')} selected={filter === 'all'} />
+            <Kpi label="At sea" dot="blue" value={count('sea')} onClick={() => pickFilter('sea')} selected={filter === 'sea'} />
+            <Kpi label="At port" dot="teal" value={count('port')} onClick={() => pickFilter('port')} selected={filter === 'port'} />
+            <Kpi label="Next arrival" value={nextEta?.day ?? null}
+              sub={next ? <>{next.s.jobs.map(({ job }, i) => <span key={job.id}>{i > 0 && ', '}<JobNo no={job.job_no} size="sm" /></span>)}{nextEta.time ? ` · ${nextEta.time}` : ''}</> : 'No ship due'}
+              onClick={next ? () => setSelected(next.s.key) : undefined} title={next ? 'Show this ship on the map' : undefined} />
+            <Kpi label="Needs a look" dot={alerts.length ? (anyRed ? 'red' : 'amber') : undefined} tone={alerts.length ? (anyRed ? 'red' : 'amber') : undefined}
+              value={count('attn')} sub={alerts.length ? alerts[0].text : 'All ships on schedule'}
+              onClick={() => pickFilter('attn')} selected={filter === 'attn'} />
+          </KpiStrip>
 
-      <div className="ix-card ix-vt" style={{ "--vt-h": `${mapH}px` }}>
-        <aside className="ix-vt-list">
-          <div className="ix-vt-tabs" role="tablist">
-            {[['all', 'All'], ['sea', 'At sea'], ['port', 'At port']].map(([id, label]) => (
-              <button key={id} type="button" role="tab" aria-selected={filter === id} className={filter === id ? 'on' : ''} onClick={() => setFilter(id)}>
-                {label}<span>{count(id)}</span>
-              </button>
-            ))}
-          </div>
-          <div className="ix-vt-rows">
-            {loading && !data && <Skeleton rows={4} />}
-            {data && !listed.length && <div className="ix-empty">{rows.length ? 'No ship in this group.' : 'No ship is carrying our cargo right now.'}</div>}
-            {listed.map((r) => {
-              const { s, m, sea, trip } = r
-              const pct = m.arrived || m.atPod ? 100 : m.waiting ? 0 : trip?.pct
-              const kmLeft = !m.arrived && !m.atPod && !m.waiting && trip?.left != null ? Math.round(trip.left * 1.852) : null
-              return (
-                <div key={s.key} className={`ix-vrow ${r.tone} ${sel?.key === s.key ? 'sel' : ''}`} role="button" tabIndex={0}
-                  onClick={() => setSelected(sel?.key === s.key ? null : s.key)}
-                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSelected(s.key) } }}>
-                  <div className="top">
-                    <span className="dot" />
-                    <span className="jobs">
-                      {s.jobs.map(({ job }) => (
-                        <button key={job.id} type="button" className="job" title="Open the job" onClick={(e) => { e.stopPropagation(); onOpenJob?.(job.id) }}>{job.job_no}</button>
-                      ))}
-                    </span>
-                    <span className={`st ${r.tone}`}>{statusText(r)}</span>
-                  </div>
-                  <div className="cl">{m.clients || 'No client'}{m.line ? <span> · {m.line}</span> : null}</div>
-                  <div className="meta">
-                    {sea && !sea.error && sea.pod_date && <span><Icon name="flag" />{sea.pod_actual ? 'Arrived' : 'ETA'} {portTime(sea.pod_date)}{m.delay && !m.arrived && <em className={`ix-delay ${m.delay.tone}`}>{m.delay.text}</em>}</span>}
-                    {m.flags.filter((f) => f.tone === 'red' || f.tone === 'amber').slice(0, 1).map((f) => <span key={f.id} className={`warn ${f.tone}`}><Icon name={f.icon} />{f.text}</span>)}
-                    {m.where && <span><Icon name="map-pin" />{m.where}</span>}
-                  </div>
-                  {pct != null && (
-                    <div className="prog">
-                      <div className="bar"><span style={{ width: `${pct}%` }} /></div>
-                      <span className="n">{m.arrived ? 'Arrived' : m.atPod ? 'At the port' : m.waiting ? 'Not sailed yet' : kmLeft != null ? `${kmLeft.toLocaleString('en-IN')} km to go` : `${pct}%`}</span>
-                    </div>
-                  )}
+          {alerts.length > 0 && (
+            <div className="ix-trk-alerts" role="list" aria-label="Ships that need a look">
+              {alerts.map((a) => (
+                <div key={`${a.key}-${a.id}`} role="listitem" className={`ix-trk-al ${a.tone} ${sel?.key === a.key ? 'on' : ''}`}>
+                  <Icon name={a.icon} />
+                  <p><span className="jobs">{jobNos(a.jobs)}</span><span className="t">{a.text}</span></p>
+                  <Button size="sm" variant="ghost" icon="map-pin" onClick={() => setSelected(a.key)}>Show on map</Button>
                 </div>
-              )
-            })}
-          </div>
-        </aside>
-        <div className="ix-vt-map">
-          <ShipMap ships={mapShips} selectedKey={sel?.key || null} onSelect={setSelected} height={mapH} />
-        </div>
-      </div>
-
-      {noPosition.length > 0 && (
-        <div className="ix-card" style={{ marginTop: 16 }}>
-          <div className="ix-card-head">
-            <Icon name="map-pin-off" style={{ color: 'var(--muted)' }} />
-            <h2>Ships without a position yet</h2><span className="ix-chip grey">{noPosition.length}</span>
-            <span className="sub hide-m">Open the job and tap Track this ship, or type the IMO.</span>
-          </div>
-          {noPosition.map((s) => (
-            <div key={s.key} className="ix-ship-row">
-              <div className="who">
-                <span className="ix-ship-ic"><Icon name="ship" /></span>
-                <div style={{ minWidth: 0 }}>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2px 12px' }}>
-                    {s.jobs.map(({ job }) => (
-                      <span key={job.id}>
-                        <button type="button" className="ix-link" style={{ margin: 0 }} onClick={() => onOpenJob?.(job.id)}><b className="mono">{job.job_no}</b></button>
-                        <span style={{ color: 'var(--text-2)' }}> · {job.client || 'No client'}</span>
-                      </span>
-                    ))}
-                  </div>
-                  <div style={{ fontSize: 12, color: 'var(--muted)' }}>
-                    {[lineOf(s), s.imo ? null : unknownHint(s), s.jobs.length === 1 && s.jobs[0].job.eta ? `ETA ${fmtDate(s.jobs[0].job.eta)}` : null].filter(Boolean).join(' · ')}
-                  </div>
-                </div>
-              </div>
-              <div className="act">
-                {!s.imo && igmOf(s.jobs[0].job) && (
-                  <button type="button" className="ix-btn sm" onClick={() => onGo?.(`customs&job=${s.jobs[0].job.id}`)} title="Opens this job's IGM check on the BE & OOC page">
-                    <Icon name="search" />Check IGM
-                  </button>
-                )}
-                {!s.imo && (
-                  <>
-                    <input value={typing[s.key] || ''} onChange={(e) => setTyping((p) => ({ ...p, [s.key]: e.target.value.replace(/\D/g, '').slice(0, 7) }))}
-                      placeholder="IMO (7 digits)" inputMode="numeric" aria-label={`IMO number for ${s.jobs.map((x) => x.job.job_no).join(', ')}`} />
-                    <button type="button" className="ix-btn sm primary" disabled={saving === s.key || String(typing[s.key] || '').length !== 7} onClick={() => saveImo(s)}>{saving === s.key ? 'Saving…' : 'Save'}</button>
-                  </>
-                )}
-              </div>
+              ))}
             </div>
-          ))}
-        </div>
+          )}
+
+          <section className="ix-card ix-trk-console" style={{ '--vt-h': `${mapH}px` }}>
+            <aside className="ix-trk-list">
+              <Tabs value={filter} onChange={setFilter} tabs={[
+                { id: 'all', label: 'All', count: rows.length },
+                { id: 'sea', label: 'At sea', count: count('sea') },
+                { id: 'port', label: 'At port', count: count('port') },
+                { id: 'attn', label: 'Needs a look', count: count('attn'), tone: anyRed ? 'red' : 'amber' },
+              ]} />
+              <div className="ix-trk-rows">
+                {!listed.length && (
+                  <EmptyState icon={rows.length ? 'filter-off' : 'ship'} tone={filter === 'attn' ? 'green' : 'grey'}
+                    title={!rows.length ? 'No ship is carrying our cargo right now' : filter === 'attn' ? 'All ships on schedule' : 'No ship in this group'} />
+                )}
+                {listed.map((r) => {
+                  const { s, m, sea, trip } = r
+                  const [tone, label] = statusOf(r)
+                  const pct = m.arrived || m.atPod ? 100 : m.waiting ? 0 : trip?.pct
+                  const kmLeft = !m.arrived && !m.atPod && !m.waiting && trip?.left != null ? Math.round(trip.left * 1.852) : null
+                  const boxes = s.jobs.reduce((n, x) => n + (x.j?.containers?.nos?.length || 0), 0)
+                  const isSel = sel?.key === s.key
+                  return (
+                    <div key={s.key} className={`ix-vl-row ${r.tone} ${isSel ? 'sel' : ''}`} role="button" tabIndex={0} aria-pressed={isSel}
+                      onClick={() => setSelected(isSel ? null : s.key)}
+                      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSelected(s.key) } }}>
+                      <div className="top">
+                        <span className="jobs">{jobNos(s.jobs)}</span>
+                        <Status tone={tone}>{label}</Status>
+                      </div>
+                      <div className="l2">
+                        {m.clients || 'No client'}
+                        {m.line && <span className="m"> · {m.line}</span>}
+                        {boxes > 0 && <span className="m"> · {boxes} container{boxes === 1 ? '' : 's'}</span>}
+                      </div>
+                      <div className="l3">
+                        {sea && !sea.error && sea.pod_date && <span>{sea.pod_actual ? 'Arrived' : 'ETA'} <b>{portEta(sea.pod_date)}</b></span>}
+                        {kmLeft != null ? <span>{kmLeft.toLocaleString('en-IN')} km to go</span>
+                          : m.atPod && !m.arrived ? <span>At the port</span>
+                            : m.waiting ? <span>Not sailed yet</span> : null}
+                        {m.delay && !m.arrived && (
+                          <span className={`ix-delay ${m.delay.tone}`} title="How far the line moved the ETA since tracking started">{m.delay.text}</span>
+                        )}
+                      </div>
+                      {r.serious.slice(0, 1).map((f) => <div key={f.id} className={`warn ${f.tone}`}><Icon name={f.icon} />{f.text}</div>)}
+                      {pct != null && <div className="bar" aria-hidden="true"><span style={{ width: `${pct}%` }} /></div>}
+                    </div>
+                  )
+                })}
+              </div>
+            </aside>
+            <div className="ix-trk-map">
+              <ShipMap ships={mapShips} selectedKey={sel?.key || null} onSelect={setSelected} height={mapH} />
+            </div>
+          </section>
+
+          {noPosition.length > 0 && (
+            <Panel className="ix-trk-panel" title={<>Ships without a position yet <span className="n">{noPosition.length}</span></>}
+              meta="Open the job and tap Track this ship, or type the IMO">
+              <div className="ix-tbl-wrap">
+                <table className="ix-tbl">
+                  <thead><tr><th>Job</th><th>Client</th><th>Line</th><th>What we know</th><th className="r">ETA</th><th className="r" aria-label="Actions" /></tr></thead>
+                  <tbody>
+                    {noPosition.map((s) => {
+                      const first = s.jobs[0].job
+                      const clients = [...new Set(s.jobs.map((x) => x.job.client).filter(Boolean))].join(', ')
+                      const eta = s.jobs.length === 1 ? first.eta : null
+                      return (
+                        <tr key={s.key}>
+                          <td><span className="ix-trk-jobs">{jobNos(s.jobs)}</span></td>
+                          <td className="cl">{clients || <Dash />}</td>
+                          <td>{lineOf(s) || <Dash />}</td>
+                          <td className="dim">{s.imo ? 'Waiting for the first position' : unknownHint(s)}</td>
+                          <td className="r">{eta ? fmtDate(eta) : <Dash />}</td>
+                          <td className="act">
+                            <div>
+                              {!s.imo && igmOf(first) && (
+                                <Button size="sm" icon="search" onClick={() => onGo?.(`customs&job=${first.id}`)} title="Opens this job's IGM check on the BE & OOC page">Check IGM</Button>
+                              )}
+                              {!s.imo && (
+                                <span className="ix-trk-form" style={{ padding: 0 }}>
+                                  <input value={typing[s.key] || ''} onChange={(e) => setTyping((p) => ({ ...p, [s.key]: e.target.value.replace(/\D/g, '').slice(0, 7) }))}
+                                    placeholder="IMO, 7 digits" inputMode="numeric" style={{ width: 120 }} className="mono"
+                                    onKeyDown={(e) => { if (e.key === 'Enter' && String(typing[s.key] || '').length === 7) saveImo(s) }}
+                                    aria-label={`IMO number for ${s.jobs.map((x) => x.job.job_no).join(', ')}`} />
+                                  <Button size="sm" disabled={saving === s.key || String(typing[s.key] || '').length !== 7} onClick={() => saveImo(s)}>
+                                    {saving === s.key ? 'Saving…' : 'Save IMO'}
+                                  </Button>
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </Panel>
+          )}
+        </>
       )}
-    </div>
+    </>
   )
 }

@@ -1,5 +1,5 @@
 import { supabase } from '../supabase'
-import { buildJourneyData } from '../../supabase/functions/_shared/portal/journeyCore.js'
+import { buildJourneyData, buildSeaByJob } from '../../supabase/functions/_shared/portal/journeyCore.js'
 
 // The rules live in journeyCore.js (shared with the WhatsApp bot)
 export * from '../../supabase/functions/_shared/portal/journeyCore.js'
@@ -9,7 +9,9 @@ export * from '../../supabase/functions/_shared/portal/journeyCore.js'
 //
 // Everything here reads SAVED data only (jobs, customs_status, ulip_results,
 // container_tracking). It never calls ULIP. Pages call loadJourneyData() once,
-// then journeyFor(job, data) for each job.
+// then journeyFor(job, data) for each job. The shared counts every screen must
+// agree on (free days, open jobs, trucks, containers) are listed in
+// src/services/JOURNEY_FACTS.md.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const DAY = 24 * 60 * 60 * 1000
@@ -40,7 +42,7 @@ export async function loadJourneyData() {
       .gte('checked_at', since)
       .order('checked_at', { ascending: false, nullsFirst: false })),
     readAll(() => supabase.from('container_tracking')
-      .select('container_no, job_id, job_no, status, status_text, current_location, free_days, port_in, port_out, cfs_gate_in, milestones, last_refreshed_at, vessel, shipping_line_ldb, eta')
+      .select('container_no, job_id, job_no, status, status_text, current_location, free_days, port_in, port_out, cfs_gate_in, milestones, last_refreshed_at, vessel, shipping_line_ldb, container_size, eta')
       .order('container_no')),
     // ship numbers found by the vessel-track finder (by ship name); optional
     supabase.from('vessel_positions').select('name, mmsi, imo, candidates, seen_at, destination, lat, lon'),
@@ -55,6 +57,7 @@ export async function loadJourneyData() {
     firstError ? (firstError.message || 'Could not load the latest data') : null,
   )
   built.shipIds = Object.fromEntries((ships.data || []).map((r) => [r.name, r]))
-  built.seaByJob = Object.fromEntries((sea.data || []).map((r) => [r.job_id, r]))
+  // (a tracking row about an older voyage is left out, so no screen shows its arrival)
+  built.seaByJob = buildSeaByJob(sea.data || [], built.jobs)
   return built
 }
