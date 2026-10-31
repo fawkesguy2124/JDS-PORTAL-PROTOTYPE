@@ -181,9 +181,17 @@ export default function TrucksPage({ currentUserName, onOpenJob, showToast, canU
     try { await fn() } finally { lock.current = false; setBusyId(null) }
   }
 
-  const assign = (job) => guarded(job.id, async () => {
+  // the job's containers no truck carries yet
+  const freeBoxes = (j) => {
+    const taken = new Set((j?.trucks || []).map((t) => t.container).filter(Boolean))
+    return (j?.containers?.nos || []).filter((no) => !taken.has(no))
+  }
+  // one free container: it is the one on the truck, no need to pick it (Jose, 31 Oct 2026)
+  const assign = (job, j) => guarded(job.id, async () => {
     const f = forms[job.id] || {}
-    const res = await assignTruck(job, { truckNo: f.truckNo, dlNo: f.dlNo, container: f.container }, currentUserName)
+    const free = freeBoxes(j)
+    const container = f.container || (free.length === 1 ? free[0] : '')
+    const res = await assignTruck(job, { truckNo: f.truckNo, dlNo: f.dlNo, container }, currentUserName)
     if (!res.ok) { setForm(job.id, { error: res.error }); return }
     showToast?.(`Truck ${String(f.truckNo).toUpperCase()} added to ${job.job_no}`, 'success')
     setForms((p) => ({ ...p, [job.id]: undefined }))
@@ -217,17 +225,18 @@ export default function TrucksPage({ currentUserName, onOpenJob, showToast, canU
   // job has containers) or else the driver licence; one Save
   const editorRow = (job, j) => {
     const f = forms[job.id] || {}
-    const taken = new Set((j.trucks || []).map((t) => t.container).filter(Boolean))
-    const boxes = (j.containers?.nos || []).filter((no) => !taken.has(no))
+    const boxes = freeBoxes(j)
     return (
       <tr key={`${job.id}:edit`} className="ix-trk-sub">
         <td colSpan={COLS}>
-          <form className="ix-trk-form" onSubmit={(e) => { e.preventDefault(); if (f.truckNo && !anyBusy) assign(job) }}>
+          <form className="ix-trk-form" onSubmit={(e) => { e.preventDefault(); if (f.truckNo && !anyBusy) assign(job, j) }}>
             <span className="lbl">{(j.trucks || []).length ? 'Another truck for' : 'Truck for'} <JobNo no={job.job_no} /></span>
             {/* focus goes straight to the truck number: the person just pressed "Assign truck" */}
             <input className="plate" autoFocus value={f.truckNo || ''} placeholder="MH04AB1234" aria-label={`Truck number for ${job.job_no}`} disabled={anyBusy}
               onChange={(e) => setForm(job.id, { truckNo: e.target.value.toUpperCase(), error: '' })} />
-            {boxes.length > 0 ? (
+            {boxes.length === 1 ? (
+              <span className="ix-trk-box mono" title="The job's only container: it goes on this truck">{boxes[0]}</span>
+            ) : boxes.length > 1 ? (
               <select value={f.container || ''} aria-label={`Container on this truck for ${job.job_no} (optional)`} disabled={anyBusy}
                 onChange={(e) => setForm(job.id, { container: e.target.value, error: '' })}>
                 <option value="">Container (optional)</option>
