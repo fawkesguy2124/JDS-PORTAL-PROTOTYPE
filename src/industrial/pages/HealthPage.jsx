@@ -17,7 +17,7 @@ const CRON_NAMES = {
   'sea-track': ['Ship tracking', 'every hour'],
   'vessel-track': ['Ship positions (old)', ''],
   'refresh-containers-every-30-min': ['Container tracking', 'every 30 minutes'],
-  'wa-bot-alerts': ['WhatsApp & desktop alerts', 'every 15 minutes'],
+  'wa-bot-alerts': ['WhatsApp & desktop alerts', 'every 5 minutes'],
   'wa-bot-warm': ['Keep WhatsApp assistant awake', ''],
   'wa-bot-morning': ['8:00 morning summary', ''],
   'weekly-backup': ['Weekly backup', ''],

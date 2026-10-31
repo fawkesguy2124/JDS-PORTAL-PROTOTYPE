@@ -1,6 +1,6 @@
 // Desktop notifications for the portal app (Jose, 24 Oct 2026): the same alerts as
 // WhatsApp (OOC granted, free days, ship in without BE, container moves), sent by the
-// 15-minute alerts run to every computer that switched them on (push_subscriptions),
+// 5-minute alerts run to every computer that switched them on (push_subscriptions),
 // for the kinds that computer chose. Free: browsers deliver them, not Meta.
 import webpush from 'npm:web-push@3.6.7'
 import { alertUrl } from '../_shared/portal/alertLinks.js'
