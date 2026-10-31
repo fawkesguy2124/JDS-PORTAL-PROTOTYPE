@@ -3,12 +3,37 @@
 
 /* table: container numbers are the page's main data, so mono 12px at full weight */
 .ix-cn-tbl .ix-cn-no { font: 600 12px var(--mono); letter-spacing: -.01em; color: var(--text) }
+/* one row per job: the job's other boxes as a small "+1" / "+2" after the number */
+.ix-cn-nocell { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap }
+.ix-cn-more { display: inline-flex; align-items: center; height: 18px; padding: 0 5px; border-radius: var(--r-sm); border: 1px solid var(--navy-200); background: var(--navy-50); color: var(--navy); font: 600 11px var(--font); font-variant-numeric: tabular-nums; cursor: pointer }
+.ix-cn-more:hover, .ix-cn-more.on { background: var(--navy-100); border-color: var(--navy) }
+.ix-cn-more:focus-visible, .ix-cn-places:focus-visible { outline: none; box-shadow: var(--focus) }
+/* the job's boxes are in different places: a quiet hint after Where now */
+.ix-cn-wherecell { display: inline-flex; align-items: center; gap: 8px; max-width: 100%; min-width: 0 }
+.ix-cn-places { flex-shrink: 0; height: 18px; display: inline-flex; align-items: center; padding: 0 5px; border: 0; border-radius: var(--r-sm); background: var(--surface-3); color: var(--text-2); font: 500 var(--fs-xs) var(--font); white-space: nowrap; cursor: pointer }
+.ix-cn-places:hover { background: var(--navy-50); color: var(--navy) }
+/* Free till: the job's most urgent box, when the row shows another one */
+.ix-cn-also { display: block; margin-top: 2px; font: 500 11px var(--mono); letter-spacing: -.01em; white-space: nowrap; color: var(--text-2) }
+.ix-cn-also.red { color: var(--red) }
+.ix-cn-also.amber { color: var(--amber) }
+
+/* the +N list: every box of the job, tap one to open it */
+.ix-cn-peek { position: fixed; z-index: 40; width: 320px; max-width: calc(100vw - 16px); padding: 4px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--shadow-pop) }
+.ix-cn-peek .hd { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 8px 8px; border-bottom: 1px solid var(--line); font-size: var(--fs-xs); color: var(--muted) }
+.ix-cn-peek ul { list-style: none; margin: 4px 0 0; padding: 0; max-height: 220px; overflow-y: auto }
+.ix-cn-peek li button { width: 100%; display: flex; align-items: center; gap: 8px; min-height: 34px; padding: 4px 8px; border: 0; border-radius: var(--r-md); background: none; color: var(--text); font: inherit; font-size: var(--fs-sm); text-align: left; cursor: pointer }
+.ix-cn-peek li button:hover { background: var(--surface-2) }
+.ix-cn-peek li button:focus-visible { outline: none; box-shadow: var(--focus) }
+.ix-cn-peek li button.cur { background: var(--navy-50) }
+.ix-cn-peek .no { font: 600 12px var(--mono); letter-spacing: -.01em; flex-shrink: 0 }
+.ix-cn-peek .wh { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-2) }
+.ix-cn-peek .ix-fd { flex-shrink: 0 }
 /* long text is cut with '…' (full text in the cell's title); inner wrappers carry
    the widths so the table fits at 1366-1440px (round-1 review) */
 .ix-cn-ell { display: block; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
 .ix-cn-tbl td.ix-cn-line { color: var(--text-2) }
 .ix-cn-tbl td.ix-cn-line .ix-cn-ell { max-width: 130px }
-.ix-cn-tbl .ix-cn-where .ix-st { max-width: 220px }
+.ix-cn-tbl .ix-cn-where .ix-st { max-width: 220px; min-width: 0 }
 .ix-cn-tbl .ix-cn-where .ix-st .x { flex-shrink: 0 }
 .ix-cn-wt { min-width: 0; overflow: hidden; text-overflow: ellipsis }
 .ix-cn-ev { display: inline-flex; align-items: baseline; gap: 6px }
@@ -24,41 +49,108 @@
 .ix-cn-jobchip button:hover { background: var(--navy-100) }
 .ix-cn-jobchip button:focus-visible { outline: none; box-shadow: var(--focus) }
 
-/* side panel: narrower than the job panel, with a fixed action row at the bottom */
-.ix-cn-drawer { width: min(460px, 100vw) }
-.ix-cn-client { color: var(--text-2); font-size: var(--fs-md); font-weight: 500; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
-.ix-cn-pos { font-size: var(--fs-sm); color: var(--muted); font-variant-numeric: tabular-nums; margin-right: 2px }
-.ix-cn-hero { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 8px }
-.ix-cn-hero .no { font: 600 15px var(--mono); letter-spacing: -.01em; color: var(--text) }
-.ix-cn-hero .size { font-size: var(--fs-sm); color: var(--text-2) }
-.ix-cn-facts { grid-template-columns: repeat(var(--n, 4), minmax(0, 1fr)) }
-.ix-cn-facts .v.red { color: var(--red) }
-.ix-cn-facts .v small { display: block; margin-top: 1px; font-size: var(--fs-sm); font-weight: 400; color: var(--muted) }
-.ix-cn-facts .v.red small { color: var(--red) }
-.ix-cn-note.amber { border-color: var(--amber-line); background: var(--amber-bg) }
-.ix-cn-note.amber > i { color: var(--amber-dot) }
-.ix-cn-note.grey { background: var(--surface-2) }
-.ix-cn-note.grey > i { color: var(--muted) }
-.ix-cn-meta { color: var(--muted); font-size: var(--fs-sm) }
+/* ── container panel (ix-cnp-*): the old Containers panel, in the Control tower look.
+   Header and switcher stay put; the body scrolls. ── */
+.ix .ix-drawer.ix-cnp { width: min(520px, 100vw) }
 
-/* trip timeline: a heading per day; upcoming dates as hollow rings */
-.ix-cn-day { position: relative; z-index: 1; margin: 2px 0 8px -22px; padding: 1px 0; background: var(--surface); font-size: var(--fs-xs); font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--muted) }
-.ix-cn-upcoming { margin-bottom: 6px }
-.ix-cn-upcoming::before { display: none }
-.ix-cn-upcoming .ix-tl::before { background: none; box-shadow: inset 0 0 0 2px var(--red) }
-.ix-cn-upcoming .ix-tl.n::before { box-shadow: inset 0 0 0 2px var(--faint) }
-.ix-cn-drawer .ix-tl .m > i { font-size: 13px }
+/* header: white, with a navy top edge (the old panel's dark band, kept as a line) */
+.ix-cnp-head { flex-shrink: 0; padding: 12px 16px 12px 20px; border-top: 3px solid var(--navy); border-bottom: 1px solid var(--line); background: var(--surface) }
+.ix-cnp-r1 { display: flex; align-items: center; gap: 10px; min-width: 0 }
+.ix-cnp-r1 .right { margin-left: auto; display: flex; align-items: center; gap: 6px }
+.ix-cnp-sub { margin-top: 2px; font-size: var(--fs-md); color: var(--text-2); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.ix-cnp-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px }
+.ix-cnp-chips:empty { display: none }
 
-/* the job's other containers, to jump between them */
-.ix-cn-sibs { display: flex; flex-wrap: wrap; gap: 6px }
-.ix-cn-sib { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 8px; border: 1px solid var(--line-2); border-radius: var(--r-sm); background: var(--surface); color: var(--text-2); font: 500 12px var(--mono) }
-.ix-cn-sib:hover { background: var(--surface-2) }
-.ix-cn-sib:focus-visible { outline: none; box-shadow: var(--focus) }
-.ix-cn-sib.on { border-color: var(--navy-200); background: var(--navy-50); color: var(--navy); font-weight: 600 }
+/* container switcher: one tab per box, arrows and "1/2" */
+.ix-cnp-switch { flex-shrink: 0; display: flex; align-items: center; gap: 6px; padding: 8px 12px; border-bottom: 1px solid var(--line); background: var(--surface-2) }
+.ix-cnp-switch .tabs { flex: 1; min-width: 0; display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; padding: 1px }
+.ix-cnp-switch .tabs::-webkit-scrollbar { display: none }
+.ix-cnp-switch .n { flex-shrink: 0; min-width: 28px; text-align: right; font-size: var(--fs-sm); color: var(--muted); font-variant-numeric: tabular-nums }
+.ix-cnp-tab { flex-shrink: 0; display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border: 1px solid var(--line-2); border-radius: var(--r-md); background: var(--surface); color: var(--text-2); font: 500 12px var(--mono); letter-spacing: -.01em; white-space: nowrap }
+.ix-cnp-tab:hover { border-color: var(--navy-200); color: var(--text) }
+.ix-cnp-tab:focus-visible { outline: none; box-shadow: var(--focus) }
+.ix-cnp-tab.risk { border-color: var(--red-line); color: var(--red) }
+.ix-cnp-tab.done { color: var(--muted) }
+.ix-cnp-tab.on { border-color: var(--navy); background: var(--navy); color: #fff; font-weight: 600 }
+.ix-cnp-tab.on .ix-dot { box-shadow: 0 0 0 2px rgba(255, 255, 255, .85) }
 
-.ix-cn-foot { display: flex; gap: 8px; flex-wrap: wrap; padding: 10px 20px; border-top: 1px solid var(--line); background: var(--surface) }
+.ix-cnp-body { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain }
 
-/* columns that drop out as the screen narrows (sidebar open, page max 1500px);
+/* the box: number, last check, free days */
+.ix-cnp-hero { padding: 14px 20px 16px; border-bottom: 1px solid var(--line) }
+.ix-cnp-title { display: flex; align-items: center; gap: 2px; flex-wrap: wrap; min-width: 0 }
+.ix-cnp-title .no { font: 600 17px var(--mono); letter-spacing: -.02em; color: var(--text); margin-right: 4px }
+.ix-cnp-title .st { margin-left: auto; padding-left: 8px; min-width: 0 }
+.ix-cnp-title .st .ix-st { max-width: 220px; overflow: hidden; text-overflow: ellipsis }
+.ix-cnp .ix-icon-btn.spin > i { animation: ixSpin .8s linear infinite }
+.ix-cnp-seen { display: flex; align-items: center; gap: 5px; margin-top: 2px; font-size: var(--fs-sm); color: var(--muted) }
+.ix-cnp-seen > i { font-size: 13px }
+
+.ix-cnp-free { --tone: var(--grey); --tint: var(--grey-bg); --edge: var(--grey-line); margin-top: 12px; padding: 12px 14px; border: 1px solid var(--edge); border-radius: var(--r-lg); background: var(--tint) }
+.ix-cnp-free.teal { --tone: var(--teal); --tint: var(--teal-bg); --edge: var(--teal-line) }
+.ix-cnp-free.amber { --tone: var(--amber); --tint: var(--amber-bg); --edge: var(--amber-line) }
+.ix-cnp-free.red { --tone: var(--red); --tint: var(--red-bg); --edge: var(--red-line) }
+.ix-cnp-free.green { --tone: var(--green); --tint: var(--green-bg); --edge: var(--green-line) }
+.ix-cnp-free.grey { --tone: var(--text-2) }
+.ix-cnp-free .top { display: flex; align-items: baseline; justify-content: space-between; gap: 12px }
+.ix-cnp-free .k { font-size: var(--fs-xs); font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--tone) }
+.ix-cnp-free .big { font-size: var(--fs-kpi); font-weight: 600; line-height: 1; letter-spacing: -.02em; color: var(--tone); font-variant-numeric: tabular-nums; white-space: nowrap }
+.ix-cnp-free .bar { height: 6px; margin-top: 10px; border-radius: 3px; background: var(--edge); overflow: hidden }
+.ix-cnp-free .bar > span { display: block; height: 100%; border-radius: 3px; background: var(--tone); min-width: 3px }
+.ix-cnp-free .meta { display: flex; justify-content: space-between; gap: 12px; margin-top: 6px; font-size: var(--fs-sm); color: var(--text-2); font-variant-numeric: tabular-nums }
+.ix-cnp-free .act { display: flex; align-items: flex-start; gap: 6px; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--edge); font-size: var(--fs-sm); font-weight: 600; color: var(--tone) }
+.ix-cnp-free .act > i { font-size: 14px; margin-top: 1px }
+.ix-cnp-free .foot { margin-top: 6px; font-size: var(--fs-sm); color: var(--text-2) }
+
+.ix-cnp-alert { display: flex; align-items: flex-start; gap: 8px; margin-top: 8px; padding: 8px 12px; border: 1px solid var(--red-line); border-radius: var(--r-lg); background: var(--surface); color: var(--red); font-size: var(--fs-sm); font-weight: 500; box-shadow: inset 3px 0 0 var(--red) }
+.ix-cnp-alert > i { font-size: 15px; margin-top: 1px }
+.ix-cnp-alert.green { border-color: var(--green-line); color: var(--green); box-shadow: inset 3px 0 0 var(--green) }
+.ix-cnp-alert.amber { border-color: var(--amber-line); color: var(--amber); box-shadow: inset 3px 0 0 var(--amber) }
+/* Port events: a box that moved from one CFS to another (as the old panel told it) */
+.ix-cnp-note { display: flex; align-items: flex-start; gap: 6px; margin: -2px 0 12px; padding: 7px 10px; border: 1px solid var(--blue-line); border-radius: var(--r-md); background: var(--blue-bg); color: var(--blue); font-size: var(--fs-sm) }
+.ix-cnp-note > i { font-size: 14px; margin-top: 1px; flex-shrink: 0 }
+.ix-cnp-note b { font-weight: 600 }
+
+/* sections: small caps heading, a hairline to the right, a 2-column grid; Location
+   and Port events on a light grey band, as the old panel alternated them */
+.ix-cnp-sec { padding: 14px 20px 16px; border-bottom: 1px solid var(--line) }
+.ix-cnp-sec:nth-of-type(even) { background: var(--surface-2) }
+.ix-cnp-sec.last { border-bottom: 0; padding-bottom: 24px }
+.ix-cnp-h { display: flex; align-items: center; gap: 8px; margin: 0 0 12px; font-size: var(--fs-xs); font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--text-2) }
+.ix-cnp-h .ic { width: 20px; height: 20px; flex-shrink: 0; display: grid; place-items: center; border-radius: var(--r-sm); background: var(--navy-50); color: var(--navy); font-size: 13px }
+.ix-cnp-h .rule { flex: 1; height: 1px; background: var(--line) }
+.ix-cnp-h .r { text-transform: none; letter-spacing: 0; font-weight: 500; color: var(--muted) }
+.ix-cnp-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 20px; margin: 0 }
+.ix-cnp-grid dt { font-size: var(--fs-xs); font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--muted) }
+.ix-cnp-grid dd { margin: 3px 0 0; font-size: var(--fs-md); color: var(--text); overflow-wrap: anywhere; font-variant-numeric: tabular-nums }
+.ix-cnp-grid dd.mono { font: 500 12px var(--mono) }
+.ix-cnp-grid dd.muted { color: var(--text-2) }
+.ix-cnp-grid dd small { display: block; margin-top: 1px; font-size: var(--fs-sm); color: var(--muted) }
+.ix-cnp-grid dd .muted { color: var(--muted); font-size: var(--fs-sm) }
+
+/* event history: newest first, a dot per event on one line */
+.ix-cnp-tl { list-style: none; margin: 0; padding: 0 }
+.ix-cnp-tl li { --tone: var(--faint); --tint: var(--surface); position: relative; display: flex; gap: 12px; padding-bottom: 14px }
+.ix-cnp-tl li:last-child { padding-bottom: 0 }
+.ix-cnp-tl li:not(:last-child)::after { content: ''; position: absolute; left: 8px; top: 20px; bottom: 2px; width: 1px; background: var(--line) }
+.ix-cnp-tl li.teal { --tone: var(--teal); --tint: var(--teal-bg) }
+.ix-cnp-tl li.blue { --tone: var(--navy); --tint: var(--navy-50) }
+.ix-cnp-tl li.green { --tone: var(--green); --tint: var(--green-bg) }
+.ix-cnp-tl .dot { position: relative; flex-shrink: 0; width: 17px; height: 17px; margin-top: 1px; border-radius: 50%; border: 1.5px solid var(--tone); background: var(--tint) }
+.ix-cnp-tl .dot::after { content: ''; position: absolute; inset: 3.5px; border-radius: 50%; background: var(--tone) }
+.ix-cnp-tl li.latest .dot { box-shadow: 0 0 0 3px var(--tint) }
+.ix-cnp-tl .body { flex: 1; min-width: 0 }
+.ix-cnp-tl .l1 { display: flex; align-items: center; gap: 8px; flex-wrap: wrap }
+.ix-cnp-tl .t { font-size: var(--fs-md); font-weight: 500; color: var(--text) }
+.ix-cnp-tl li.latest .t { font-weight: 600; color: var(--tone) }
+.ix-cnp-tl li.latest.grey .t { color: var(--text) }
+.ix-cnp-tl .mode { display: inline-flex; align-items: center; gap: 3px; height: 18px; padding: 0 5px; border-radius: var(--r-sm); border: 1px solid var(--grey-line); background: var(--grey-bg); color: var(--text-2); font-size: 10.5px; font-weight: 600; letter-spacing: .03em; text-transform: uppercase }
+.ix-cnp-tl .mode > i { font-size: 12px }
+.ix-cnp-tl .at { margin-left: auto; font-size: var(--fs-sm); color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums }
+.ix-cnp-tl .pl { margin-top: 1px; font-size: var(--fs-sm); color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.ix-cnp-none { font-size: var(--fs-md); color: var(--muted) }
+
+/* columns that drop out as the screen narrows (sidebar open);
    size, line and last check are also in the container panel */
 @media (max-width: 1599px) { .ix-cn-tbl .c-upd { display: none } }
 @media (max-width: 1499px) {
@@ -71,8 +163,12 @@
 
 @media (max-width: 760px) {
   .ix-cn-wrap { max-height: none }
-  .ix-cn-tbl .ix-cn-where .ix-st { max-width: 170px }
-  .ix-cn-facts { grid-template-columns: repeat(2, minmax(0, 1fr)) }
-  .ix-cn-foot { padding: 10px 12px calc(10px + env(safe-area-inset-bottom, 0px)) }
-  .ix-cn-foot .ix-btn { flex: 1 1 auto; justify-content: center }
+  .ix-cn-tbl .ix-cn-where .ix-st { max-width: 150px }
+  /* the panel is full screen on a phone */
+  .ix .ix-drawer.ix-cnp { width: 100vw }
+  .ix-cnp-head { padding: 10px 12px 10px 16px }
+  .ix-cnp-hero, .ix-cnp-sec { padding-left: 16px; padding-right: 16px }
+  .ix-cnp-title .st { margin-left: 0; padding-left: 0; flex-basis: 100%; margin-top: 6px }
+  .ix-cnp-grid { gap: 10px 14px }
+  .ix-cnp-tl .at { margin-left: 0; flex-basis: 100% }
 }
