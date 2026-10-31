@@ -45,7 +45,7 @@ function igm(parsed, job) {
   }
 }
 
-// Checks that look a BE up by its NUMBER only (PCS, ports): BE numbers repeat
+// Checks that look a BE up by its NUMBER only (ports): BE numbers repeat
 // over the years and across customs houses, so the answer can be someone
 // else's old BE (seen 19 Oct 2026: BE 4501905 of J-677, 17 Oct 2026 at
 // INBOM4, came back as a 2021 Chennai BE with "OOC granted"). If the BE date
@@ -82,7 +82,7 @@ function sameBe(parsed, job) {
   }
 }
 
-const RULES = { 'ICEGATE/07': igm, 'PCS/05': sameBe, 'PCS/04': sameBe, 'MBPT/02': sameBe, 'IPORTMAN/02': sameBe }
+const RULES = { 'ICEGATE/07': igm, 'MBPT/02': sameBe, 'IPORTMAN/02': sameBe }
 
 export function presentResult(api, parsed, job) {
   if (!parsed || !parsed.found || !RULES[api]) return parsed

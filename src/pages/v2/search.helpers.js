@@ -42,7 +42,6 @@ export function detectNumberType(raw) {
     return {
       kind: 'be7', label: 'Looks like a Bill of Entry or shipping bill number (7 digits)', checks: [
         mk('ICEGATE/03', 'Out of charge from Customs', 'Has Customs given out-of-charge? Needs the BE date.', 'Check OOC', 'beNo', compact),
-        mk('PCS/05', 'Out of charge (port system)', 'Out-of-charge as shown in PCS, any port.', 'Check OOC in PCS', 'boeNumber', compact),
         mk('ICEGATE/06', 'Let Export Order (LEO)', 'For a shipping bill: has the Let Export Order been given? Needs the date.', 'Check LEO', 'sbNo', compact),
       ], also: [],
     }

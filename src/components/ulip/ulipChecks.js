@@ -56,16 +56,6 @@ const CUSTOMS_GROUPS = [
     ],
   },
   {
-    title: 'Backup port records (any port)',
-    description: 'Backup checks. Use these if the checks above have no record yet.',
-    collapsed: true,
-    checks: [
-      { api: 'PCS/05', title: 'Out of charge (backup record)', button: 'Check OOC (backup)', refs: { boeNumber: 'be_no' } },
-      { api: 'PCS/04', title: 'Bill of Entry details (backup record)', button: 'Check BE (backup)', refs: { boeNumber: 'be_no' } },
-      { api: 'PCS/01', title: 'Containers on the IGM (backup record)', showIf: (job) => !isAir(job), button: 'Check IGM (backup)', refs: { igmNumber: 'igm_no' } },
-    ],
-  },
-  {
     title: 'Client and goods',
     description: 'Client IEC and HS code import policy.',
     collapsed: true,
@@ -128,8 +118,6 @@ const EXPORT_GROUPS = [
         refs: { shippingBillNo: 'sb_no', shippingBillDate: 'sb_date' },
         fixed: { portCode: portCodeOf }, fixedHint: 'Please set the job\'s Port in Job Details first.',
       },
-      { api: 'PCS/03', title: 'LEO and rotation (backup record, any port)', button: 'Check backup', refs: { sbNumber: 'sb_no' } },
-      { api: 'PCS/02', title: 'Shipping bill details (backup record, any port)', button: 'Check backup', refs: { sbNumber: 'sb_no' } },
     ],
   },
   {
@@ -221,9 +209,10 @@ export const SHIP_GROUPS = VESSEL_GROUPS
 
 // ── Quick Lookup ────────────────────────────────────────────────────────────
 // VAHAN/01, 02, 03 and 06 were switched off by ULIP on 16 Oct 2026 and are not listed.
+// PCS/01-05 removed 31 Oct 2026: never had a record for any JDS job, only 2021 samples (Jose).
 const CATEGORY_APIS = [
-  { id: 'import', icon: '🧾', label: 'Import (BE / IGM)', apis: ['ICEGATE/03', 'ICEGATE/02', 'ICEGATE/07', 'ICEGATE/01', 'JNPT/02', 'MBPT/02', 'IPORTMAN/02', 'PCS/05', 'PCS/04', 'PCS/01'] },
-  { id: 'export', icon: '📦', label: 'Export (shipping bill)', apis: ['ICEGATE/06', 'ICEGATE/05', 'ICEGATE/12', 'ICEGATE/08', 'ICEGATE/13', 'JNPT/03', 'MBPT/03', 'IPORTMAN/03', 'PCS/03', 'PCS/02'] },
+  { id: 'import', icon: '🧾', label: 'Import (BE / IGM)', apis: ['ICEGATE/03', 'ICEGATE/02', 'ICEGATE/07', 'ICEGATE/01', 'JNPT/02', 'MBPT/02', 'IPORTMAN/02'] },
+  { id: 'export', icon: '📦', label: 'Export (shipping bill)', apis: ['ICEGATE/06', 'ICEGATE/05', 'ICEGATE/12', 'ICEGATE/08', 'ICEGATE/13', 'JNPT/03', 'MBPT/03', 'IPORTMAN/03'] },
   { id: 'vessel', icon: '🚢', label: 'Vessel', apis: ['JNPT/01', 'MBPT/01', 'IPORTMAN/01', 'ICEGATE/04'] },
   { id: 'container', icon: '⊟', label: 'Container', apis: ['LDB/01'] },
   { id: 'truck', icon: '🚚', label: 'Truck & driver', apis: ['FASTAG/01', 'FASTAG/02', 'VAHAN/04', 'VAHAN/05', 'SARATHI/02', 'SARATHI/01', 'ECHALLAN/01', 'EWAYBILL/01', 'TOLL/01'] },
@@ -240,11 +229,6 @@ const LOOKUP_TEXT = {
   'VAHAN/05': { title: 'Vehicle papers by chassis number' },
   'SARATHI/02': { title: 'Driving licence' },
   'SARATHI/01': { title: 'Driving licence, full details (needs date of birth)' },
-  'PCS/05': { title: 'Out of charge (backup record, any port)' },
-  'PCS/04': { title: 'Bill of Entry details (backup record, any port)' },
-  'PCS/01': { title: 'Containers on the IGM (backup record, any port)' },
-  'PCS/02': { title: 'Shipping bill details (backup record, any port)' },
-  'PCS/03': { title: 'Shipping bill rotation and LEO (backup record, any port)' },
   'ACMES/01': { title: 'Air export cargo at the terminal (system A)' },
   'ACMES/02': { title: 'Air import cargo at the terminal (system A)' },
   'AAICLAS/01': { title: 'Air export cargo at the terminal (system B)' },

@@ -25,7 +25,7 @@ const CRON_NAMES = {
 const KIND_NAMES = { ooc: 'OOC check', truck: 'Truck at tolls', papers: 'Truck papers' }
 const KIND_MANY = { ooc: 'OOC checks', truck: 'trucks at tolls', papers: 'truck paper checks' }
 const API_NAMES = {
-  'ICEGATE/01': 'Customs (BE status)', 'ICEGATE/02': 'Customs (BE details)', 'ICEGATE/03': 'Customs (OOC)', 'PCS/01': 'Port (container in/out)', 'ICEGATE/07': 'Customs (shipping bill)',
+  'ICEGATE/01': 'Customs (BE status)', 'ICEGATE/02': 'Customs (BE details)', 'ICEGATE/03': 'Customs (OOC)', 'ICEGATE/07': 'Customs (shipping bill)',
   'LDB/01': 'Container movement', 'FASTAG/01': 'Toll plazas (trucks)', 'VAHAN/04': 'Truck papers',
 }
 const TONE_WORD = { green: 'Running', amber: 'Needs a look', red: 'Problem' }
