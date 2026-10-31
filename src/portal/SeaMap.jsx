@@ -215,7 +215,8 @@ function SeaSketch({ from, to, t, tag, air, layout }) {
 export default function SeaMap({ job, sea, found, vessel, air, layout }) {
   const pos = air ? null : shipPosition(sea, found)
   const fromName = air ? '' : shortPort(sea?.pol) || ''
-  const toName = shortPort(sea?.pod) || shortPort(String(portByCode(job?.port_code)?.name || '').split(' / ').pop())
+  // (a short place name like the prototype's: "Mumbai Air Cargo (CSMIA)" → "Mumbai")
+  const toName = shortPort(sea?.pod) || shortPort(String(portByCode(job?.port_code)?.name || '').split(' / ').pop().replace(/\s*\(.*\)\s*$/, '').replace(/\s+Air Cargo$/i, ''))
   const firstVessel = String(job?.vessel || '').split(' / ')[0].trim()
   const tag = air ? firstVessel || vessel || '' : (sea?.vessel_name || vessel || firstVessel || '')
 

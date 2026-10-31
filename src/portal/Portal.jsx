@@ -22,11 +22,7 @@ import './portal.css'
 // on top. The open job, Manage page and Edit details live in the URL
 // (?job= / ?manage= / ?edit=1) so links work and Back closes them.
 const JobPage = lazyPage(() => import('./JobPage'))
-// (guard while the new-job sheet is being built in parallel: no sheet → "Fill in manually")
-const optional = import.meta.glob('./NewJobSheet.jsx')
-const NewJobSheet = lazyPage(() => (optional['./NewJobSheet.jsx']
-  ? optional['./NewJobSheet.jsx']()
-  : Promise.resolve({ default: function NoSheet({ open, onManual }) { useEffect(() => { if (open) onManual(null) }, [open, onManual]); return null } })))
+const NewJobSheet = lazyPage(() => import('./NewJobSheet'))
 
 const PHONE = '(max-width: 899.98px)'
 const FRESH_MS = 60_000
@@ -284,7 +280,14 @@ function PortalInner() {
         void m.offsetHeight
       }
       const raf = requestAnimationFrame(() => clipTo(m, app, null, 0, true))
-      const t = setTimeout(() => (m.querySelector('[aria-label="Back"]') || m.querySelector('button'))?.focus({ preventScroll: true }), 80)
+      // focus Back once the page is there (its code may still be loading on the first opening)
+      let tries = 0, t = 0
+      const focusBack = () => {
+        const b = m.querySelector('.pt-back')
+        if (b) { b.focus({ preventScroll: true }); return }
+        if (++tries < 20) t = setTimeout(focusBack, 100)
+      }
+      t = setTimeout(focusBack, 80)
       return () => { cancelAnimationFrame(raf); clearTimeout(t) }
     }
     if (!openId && was) {

@@ -1,5 +1,6 @@
 import { LiveMap } from './SeaMap'
 import './maps.css'
+import { atCfsOf } from './model'
 
 // Where the truck is, on the job page's WHERE card (approved design, Jose 31 Oct
 // 2026). With saved FASTag toll crossings that have a position it is a real
@@ -104,7 +105,7 @@ export default function RoadMap({ job, j, trucks = [], layout }) {
       if (n && names[names.length - 1] !== n) names.push(n)
     }
     const towns = names.slice(-2)
-    const atCfs = !(j?.containers?.anyOut || Number(job?.stage) >= 9 || j?.truckLocation)
+    const atCfs = j ? atCfsOf(job, j) : Number(job?.stage) < 9
     const t = Number(job?.stage) >= 10 ? 1 : atCfs ? 0 : towns.length ? tAt(towns.length === 1 ? 2 : 4) : 0.15
     return (
       <div className="pt-map pt-map--road pt-map-svg">

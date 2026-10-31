@@ -262,7 +262,11 @@ function arrivalText(job, data) {
   return 'Arrival date not known'
 }
 
-const atCfsOf = (job, j) => !(j.containers?.anyOut || Number(job.stage) >= 9 || j.truckLocation)
+// Still at the CFS: no container has left it with the cargo (LDB's CFS OUT / port exit
+// for this trip), the stage is before "Vehicle Out" and no toll plaza has seen the truck.
+// (containers.anyOut is not used: it is true as soon as a box leaves the PORT for the
+// CFS, which would skip "Left CFS" on almost every FCL job.)
+export const atCfsOf = (job, j) => !((j.containers?.tracked || []).some((t) => t.outWithCargo) || Number(job.stage) >= 9 || j.truckLocation)
 
 export function whereOf(row, data) {
   const { job, j } = row

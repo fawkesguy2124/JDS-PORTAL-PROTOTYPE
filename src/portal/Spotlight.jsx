@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent, useMemo, useRef, useState } from 'react'
+import { useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { lockScroll, pushLayer, trapTab } from '../ui/hooks'
 import { searchAll } from './model'
 
@@ -52,17 +52,26 @@ export default function Spotlight({ open, seed = '', rows, data, profiles, listI
   }
 
   const close = useEffectEvent(() => onClose())
+  // focus the box in the same frame it opens, so keys typed right after the
+  // first one (fast typists) land in it instead of being lost
+  const focusBox = () => {
+    const el = inputRef.current
+    if (!el || document.activeElement === el) return
+    el.focus({ preventScroll: true })
+    try { el.setSelectionRange(el.value.length, el.value.length) } catch { /* type=search in old Safari */ }
+  }
+  const prevFocus = useRef(null)
+  useLayoutEffect(() => {
+    if (!open) return
+    prevFocus.current = document.activeElement
+    focusBox()
+  }, [open])
   useEffect(() => {
     if (!open) return undefined
-    const prev = document.activeElement
+    const prev = prevFocus.current
     const unlock = lockScroll()
     const layer = pushLayer(Symbol('pt-spot'))
-    const t = setTimeout(() => {
-      const el = inputRef.current
-      if (!el) return
-      el.focus({ preventScroll: true })
-      try { el.setSelectionRange(el.value.length, el.value.length) } catch { /* type=search in old Safari */ }
-    }, 30)
+    const t = setTimeout(focusBox, 30)
     const onKey = (e) => {
       if (!layer.isTop()) return
       if (e.key === 'Escape') { e.preventDefault(); close() }

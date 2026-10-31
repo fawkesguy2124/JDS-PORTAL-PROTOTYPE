@@ -17,8 +17,9 @@
 /* Leaflet, quiet */
 .pt .pt-map .leaflet-container { background: var(--pt-sea); font: 13px/1.4 var(--pt-sans); outline: none }
 .pt .pt-map--road .leaflet-container { background: var(--pt-land) }
-.pt-map--road .leaflet-gl-layer, .pt-map--road .leaflet-tile-pane { filter: saturate(.25) }
-:root[data-theme="dark"] .pt-map .leaflet-gl-layer,
+/* (the MapLibre layer lives inside Leaflet's tile pane: filter the pane only, or
+   the filter applies twice and a double invert leaves the map light in dark mode) */
+.pt-map--road .leaflet-tile-pane { filter: saturate(.25) }
 :root[data-theme="dark"] .pt-map .leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(.85) contrast(.9) saturate(.5) }
 .pt-map .leaflet-control-attribution { max-width: 22px; height: 22px; padding: 0 !important; margin: 0 8px 8px 0 !important; overflow: hidden; white-space: nowrap; border-radius: 11px; font-size: 0 !important; line-height: 22px; background: color-mix(in srgb, var(--pt-surface) 92%, transparent) !important; color: var(--pt-ink-2); box-shadow: 0 1px 3px rgba(14,20,32,.15); transition: max-width .2s ease }
 .pt-map .leaflet-control-attribution::before { content: 'i'; display: inline-block; width: 22px; text-align: center; vertical-align: top; font: italic 600 12px/22px Georgia, serif; color: var(--pt-ink-2) }

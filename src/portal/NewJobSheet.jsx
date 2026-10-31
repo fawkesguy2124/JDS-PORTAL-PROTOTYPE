@@ -7,6 +7,7 @@ import {
   applyModeChange, guessDocType, extractFromPdf, validateJobForm, createJob,
 } from '../services/newJob'
 import './maps.css'
+import './jobpage.css' // .pt-pbtn (the sheet can open before any job page has loaded)
 
 // New job (approved design, Jose 31 Oct 2026): drop the BL or pre-alert, the
 // document reader fills the job in (the same reader as the Create Job form, on
