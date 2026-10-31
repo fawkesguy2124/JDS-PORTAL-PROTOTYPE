@@ -97,6 +97,11 @@ export default function VesselsPage({ onOpenJob, showToast, onGo }) {
   // a ship the map cannot show yet: what is known, and how to get the IMO
   const unknownHint = (s) => {
     const job = s.jobs[0].job
+    // ship tracking is already on it (it follows the BL / container and brings the IMO
+    // itself): nothing to type (Jose, 1 Nov 2026)
+    const sea = seaOfShip(s)
+    if (sea?.error) return 'Ship tracking is on · waiting for the shipping line’s first update (checked every hour)'
+    if (sea) return 'Ship tracking is on · looking up the ship'
     const igm = igmOf(job)
     return `IMO not known yet${igm ? ` · IGM ${igm}${job.ulip_refs?.igm_date ? ` (${fmtDate(job.ulip_refs.igm_date)})` : ''}` : ''}`
   }
@@ -266,7 +271,7 @@ export default function VesselsPage({ onOpenJob, showToast, onGo }) {
                               {!s.imo && igmOf(first) && (
                                 <Button size="sm" icon="search" onClick={() => onGo?.(`customs&job=${first.id}`)} title="Opens this job's IGM check on the BE & OOC page">Check IGM</Button>
                               )}
-                              {!s.imo && (
+                              {!s.imo && !seaOfShip(s) && (
                                 <span className="ix-trk-form" style={{ padding: 0 }}>
                                   <input value={typing[s.key] || ''} onChange={(e) => setTyping((p) => ({ ...p, [s.key]: e.target.value.replace(/\D/g, '').slice(0, 7) }))}
                                     placeholder="IMO, 7 digits" inputMode="numeric" style={{ width: 120 }} className="mono"

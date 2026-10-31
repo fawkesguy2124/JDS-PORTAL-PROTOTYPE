@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import { supabase } from '../supabase'
+import { SHIP_TRACKED } from '../services/shipTracking'
 import { loadJourneyData, journeyFor, activeRows, isOldVoyage, onTheRoad, needATruck, containersInPlay, isDetentionRisk, activeJobsByClient } from '../services/journey'
 
 // One shared load of everything the new screens show (saved data only, never
@@ -35,6 +36,13 @@ export function JourneyProvider({ children }) {
   }, [key])
 
   const refresh = useCallback(() => { setLoading(true); setKey((k) => k + 1) }, [])
+
+  // ship tracking just answered for a new job or BL (services/shipTracking): reload, so the
+  // Vessels page shows the ship without waiting for a page change
+  useEffect(() => {
+    window.addEventListener(SHIP_TRACKED, refresh)
+    return () => window.removeEventListener(SHIP_TRACKED, refresh)
+  }, [refresh])
 
   // Put one changed job into the loaded data without a full reload
   const patchJob = useCallback((job) => {

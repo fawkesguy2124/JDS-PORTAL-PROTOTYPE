@@ -8,6 +8,7 @@ import { supabase } from '../supabase'
 // shipments are used); the sea-track function keeps the monthly cap and skips a job
 // whose container is already in port. Never throws; resolves to the function's answer.
 const TRACKING_FROM = '2026-10-24'
+export const SHIP_TRACKED = 'jds:ship-tracked'
 
 export function shouldTrackShip(job) {
   if (!job?.id || job.mode === 'Air' || job.job_type === 'export') return false
@@ -20,6 +21,8 @@ export async function startShipTracking(job) {
   try {
     const { data, error } = await supabase.functions.invoke('sea-track', { body: { jobId: job.id, start: true } })
     if (error) { console.warn('[shipTracking] could not start:', error.message); return null }
+    // the portal reloads its data so the Vessels page shows the ship without a refresh
+    window.dispatchEvent(new Event(SHIP_TRACKED))
     return data
   } catch (e) {
     console.warn('[shipTracking] could not start:', e?.message)
