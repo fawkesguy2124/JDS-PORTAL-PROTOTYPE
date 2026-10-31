@@ -29,7 +29,9 @@ const MAP_STYLE = 'https://tiles.openfreemap.org/styles/liberty'
 const ENGLISH = ['coalesce', ['get', 'name:en'], ['get', 'name_int'], ['get', 'name:latin'], ['get', 'name']]
 const SEA = '#cddff1', LAND = '#eef0f3'
 const HIDE = /poi|transit|aeroway|building|housenumber|road|highway|bridge|tunnel|railway|ferry|landcover|landuse|park|wood|grass|sand|glacier|ice|aerialway|label_town|label_village|label_other|label_state|place_other|hillshade/
-function addSeaChart(m) {
+// (exported for the portal's job-page sea map, src/portal/SeaMap.jsx)
+// eslint-disable-next-line react-refresh/only-export-components
+export function addSeaChart(m) {
   try {
     const gl = L.maplibreGL({ style: MAP_STYLE, attribution: '© <a href="https://openfreemap.org" target="_blank">OpenFreeMap</a> · <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a>' }).addTo(m)
     const ml = gl.getMaplibreMap()

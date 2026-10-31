@@ -1,0 +1,119 @@
+/* Maps on the job page (SeaMap, RoadMap) and the New job sheet's form bits.
+   Prototype classes with the pt- prefix; tokens (--pt-*) come from portal.css.
+   The real maps (Leaflet + MapLibre) are drawn quietly: no zoom buttons, the
+   credits folded behind a small "i", markers in the portal's own colours. When
+   there is no position the prototype's drawn map is shown instead (.pt-mp-*). */
+
+/* ── the map box ─────────────────────────────────────────────────────────── */
+.pt-map { position: relative; width: 100%; aspect-ratio: 700 / 250; overflow: hidden; background: var(--pt-sea); isolation: isolate }
+.pt-map.pt-map--road { background: var(--pt-land) }
+.pt-app[data-l="m"] .pt-map { aspect-ratio: auto; height: 200px }
+/* the drawn map keeps the prototype's proportions (its labels grow on a phone instead) */
+.pt-map.pt-map-svg, .pt-app[data-l="m"] .pt-map.pt-map-svg { aspect-ratio: auto; height: auto; background: none }
+.pt-map svg.pt-mp { width: 100%; height: auto; display: block }
+.pt-map-canvas { position: absolute; inset: 0; opacity: 0; transition: opacity .45s var(--pt-ease) }
+.pt-map-canvas.on { opacity: 1 }
+
+/* Leaflet, quiet */
+.pt .pt-map .leaflet-container { background: var(--pt-sea); font: 13px/1.4 var(--pt-sans); outline: none }
+.pt .pt-map--road .leaflet-container { background: var(--pt-land) }
+.pt-map--road .leaflet-gl-layer, .pt-map--road .leaflet-tile-pane { filter: saturate(.25) }
+:root[data-theme="dark"] .pt-map .leaflet-gl-layer,
+:root[data-theme="dark"] .pt-map .leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(.85) contrast(.9) saturate(.5) }
+.pt-map .leaflet-control-attribution { max-width: 22px; height: 22px; padding: 0 !important; margin: 0 8px 8px 0 !important; overflow: hidden; white-space: nowrap; border-radius: 11px; font-size: 0 !important; line-height: 22px; background: color-mix(in srgb, var(--pt-surface) 92%, transparent) !important; color: var(--pt-ink-2); box-shadow: 0 1px 3px rgba(14,20,32,.15); transition: max-width .2s ease }
+.pt-map .leaflet-control-attribution::before { content: 'i'; display: inline-block; width: 22px; text-align: center; vertical-align: top; font: italic 600 12px/22px Georgia, serif; color: var(--pt-ink-2) }
+.pt-map .leaflet-control-attribution:hover, .pt-map .leaflet-control-attribution:focus-within { max-width: calc(100% - 16px); font-size: 10.5px !important; padding-right: 9px !important }
+.pt-map .leaflet-control-attribution a { color: var(--pt-ink-2) }
+.pt-map .leaflet-control-attribution .leaflet-attribution-flag { display: none !important }
+
+/* lines drawn on the real map (CSS wins over Leaflet's stroke attribute) */
+.pt-map path.pt-ml-sailed { stroke: var(--pt-brand) }
+.pt-map path.pt-ml-ahead { stroke: var(--pt-ink-3) }
+.pt-map path.pt-ml-roadbg { stroke: var(--pt-road-edge) }
+.pt-map path.pt-ml-road { stroke: var(--pt-brand) }
+.pt-map path.pt-ml-plaza { stroke: var(--pt-ink-2); fill: var(--pt-surface); fill-opacity: 1 }
+
+/* markers: zero-size anchors, everything placed around the point */
+.pt-map .pt-mk { background: none; border: 0; overflow: visible }
+.pt-mk > * { position: absolute; left: 0; top: 0 }
+.pt-mk-halo { width: 48px; height: 48px; margin: -24px 0 0 -24px; border-radius: 50%; background: var(--pt-brand); opacity: .15; animation: pt-pulse 2.4s var(--pt-ease) infinite; pointer-events: none }
+.pt-mk-veh { width: 30px; height: 30px; margin: -15px 0 0 -15px; border-radius: 50%; background: var(--pt-brand); display: grid; place-items: center; box-shadow: 0 1px 4px rgba(14,20,32,.25) }
+.pt-mk-veh svg { width: 30px; height: 30px; display: block; overflow: visible }
+.pt-mk-tag { display: flex; align-items: center; height: 30px; padding: 0 14px; white-space: nowrap; background: var(--pt-surface); border: 1px solid var(--pt-line); border-radius: 8px; font: 500 16px/1 var(--pt-sans); color: var(--pt-ink); box-shadow: 0 1px 2px rgba(14,20,32,.06); transform: translateX(-50%); pointer-events: none }
+.pt-mk-tag.above { top: -56px }
+.pt-mk-tag.below { top: 26px }
+.pt-mk-tag.mono { font-family: var(--pt-mono); letter-spacing: .01em }
+.pt-mk-pin { width: 12px; height: 12px; margin: -6px 0 0 -6px; border-radius: 50%; background: var(--pt-surface); border: 2.5px solid var(--pt-ink-2) }
+.pt-mk-pin.end { width: 16px; height: 16px; margin: -8px 0 0 -8px; background: var(--pt-ink); border-color: var(--pt-ink) }
+.pt-mk-label { top: 12px; white-space: nowrap; transform: translateX(-50%); font: 400 15px/1.2 var(--pt-sans); color: var(--pt-ink-3); text-shadow: 0 0 2px var(--pt-surface), 0 0 4px var(--pt-surface), 0 0 6px var(--pt-surface); pointer-events: none }
+.pt-mk-label.t { top: 14px; font-size: 16px; font-weight: 500; color: var(--pt-ink) }
+.pt-map .leaflet-tooltip { background: var(--pt-surface); color: var(--pt-ink); border: 1px solid var(--pt-line); border-radius: 8px; box-shadow: var(--pt-shadow); font: 14px/1.35 var(--pt-sans); padding: 6px 10px }
+.pt-map .leaflet-tooltip-top::before { border-top-color: var(--pt-surface) }
+.pt-map .leaflet-tooltip-bottom::before { border-bottom-color: var(--pt-surface) }
+.pt-map .leaflet-tooltip-left::before { border-left-color: var(--pt-surface) }
+.pt-map .leaflet-tooltip-right::before { border-right-color: var(--pt-surface) }
+@keyframes pt-pulse { 0% { transform: scale(.6); opacity: .3 } 100% { transform: scale(1.9); opacity: 0 } }
+
+/* ── the drawn map (prototype seaMap / roadMap) ──────────────────────────── */
+.pt-mp-sea { fill: var(--pt-sea) }
+.pt-mp-wave { fill: none; stroke: var(--pt-sea-2); stroke-width: 1.5; stroke-linecap: round }
+.pt-mp-land { fill: var(--pt-land) }
+.pt-mp-coast { fill: none; stroke: var(--pt-road-edge); stroke-width: 1.5 }
+.pt-mp-route { fill: none; stroke: var(--pt-ink-3); stroke-width: 2; stroke-dasharray: 1 7; stroke-linecap: round }
+.pt-mp-done { fill: none; stroke: var(--pt-brand); stroke-width: 3; stroke-linecap: round }
+.pt-mp-roadbg { fill: none; stroke: var(--pt-road-edge); stroke-width: 14; stroke-linecap: round; stroke-linejoin: round }
+.pt-mp-road { fill: none; stroke: var(--pt-road); stroke-width: 9; stroke-linecap: round; stroke-linejoin: round }
+.pt-mp-roaddone { fill: none; stroke: var(--pt-brand); stroke-width: 4; stroke-linecap: round; stroke-linejoin: round }
+.pt-mp-pin { fill: var(--pt-surface); stroke: var(--pt-ink-2); stroke-width: 2.5 }
+.pt-mp-pin.end { fill: var(--pt-ink); stroke: var(--pt-ink) }
+.pt-mp-t { fill: var(--pt-ink); font: 500 18px var(--pt-sans) }
+.pt-mp-s { fill: var(--pt-ink-3); font: 400 16px var(--pt-sans) }
+.pt-mp-veh { fill: var(--pt-brand) }
+.pt-mp-veh-fg { fill: none; stroke: #fff; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round }
+.pt-mp-halo { fill: var(--pt-brand); opacity: .15; transform-box: fill-box; transform-origin: center; animation: pt-pulse 2.4s var(--pt-ease) infinite }
+.pt-mp-tag { fill: var(--pt-surface); stroke: var(--pt-line) }
+.pt-mp-tag-t { fill: var(--pt-ink); font: 500 16px var(--pt-sans) }
+.pt-mp-tag-m { fill: var(--pt-ink); font: 500 16px var(--pt-mono) }
+.pt-app[data-l="m"] .pt-mp-t { font-size: 30px }
+.pt-app[data-l="m"] .pt-mp-s { font-size: 26px }
+.pt-app[data-l="m"] .pt-mp-tag-t, .pt-app[data-l="m"] .pt-mp-tag-m { font-size: 26px }
+
+/* ── New job sheet ───────────────────────────────────────────────────────── */
+.pt-sheet { color: var(--pt-ink) }
+.pt-sheet:focus { outline: none }
+.pt-sheet-x { position: absolute; top: 14px; right: 14px; width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center }
+.pt .pt-sheet-x { color: var(--pt-ink-3) }
+.pt .pt-sheet-x:hover { background: var(--pt-surface-2); color: var(--pt-ink-2) }
+.pt-sheet h3 { padding-right: 40px }
+.pt-drop { border: 1.5px dashed var(--pt-line); border-radius: 18px; padding: 36px 16px; display: grid; place-items: center; gap: 8px; text-align: center; color: var(--pt-ink-3); cursor: pointer; transition: border-color .2s, background-color .2s }
+.pt-drop:hover, .pt-drop.over { border-color: var(--pt-ink-3) }
+.pt-drop.over { background: var(--pt-surface-2) }
+.pt-drop b { color: var(--pt-ink); font-weight: 500 }
+.pt-drop svg.pt-i { width: 28px; height: 28px }
+.pt-reading { display: flex; align-items: center; gap: 10px; color: var(--pt-ink-2); min-width: 0 }
+.pt-reading span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.pt-kv { display: grid; grid-template-columns: 110px minmax(0, 1fr); gap: 12px; align-items: center }
+.pt-kv > label { color: var(--pt-ink-3) }
+.pt .pt-kv :is(input, select) { width: 100%; min-width: 0; border: 0; border-bottom: 1px solid var(--pt-line); border-radius: 0; background: none; padding: 4px 0; color: var(--pt-ink); box-shadow: none; -webkit-appearance: none; appearance: none }
+.pt .pt-kv select { padding-right: 22px; background: no-repeat right 2px center / 14px url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238B94A4' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E"); cursor: pointer }
+.pt .pt-kv :is(input, select):focus-visible { outline: none; border-bottom-color: var(--pt-brand); box-shadow: 0 1px 0 var(--pt-brand) }
+.pt .pt-kv input::placeholder { color: var(--pt-ink-3); opacity: 1 }
+.pt-kv .mono { font-family: var(--pt-mono); letter-spacing: .02em; text-transform: uppercase }
+.pt-kv .mono::placeholder { font-family: var(--pt-sans); letter-spacing: 0; text-transform: none }
+.pt-kv-pair { display: flex; gap: 10px; min-width: 0 }
+.pt-kv-pair > * { flex: 1 1 0 }
+.pt-kv-jn { display: flex; align-items: baseline; gap: 2px; min-width: 0 }
+.pt-kv-jn > span { color: var(--pt-ink-2); font-weight: 500 }
+.pt-kv-jn input { font-weight: 500 }
+.pt-sheet-note { margin: -6px 0 0; font-size: 14px; color: var(--pt-ink-3) }
+.pt-sheet-msg { margin: 0; color: var(--pt-ink-2) }
+.pt-sheet-err { margin: 0; color: var(--pt-risk); font-size: 15px }
+.pt .pt-sheet .pt-pbtn { height: 52px; padding: 0 26px; border-radius: 14px; background: var(--pt-brand); color: #fff; font-weight: 500; font-size: 18px; display: inline-flex; align-items: center; gap: 8px; transition: transform .15s var(--pt-ease), opacity .2s; white-space: nowrap }
+.pt .pt-sheet .pt-pbtn:active:not(:disabled) { transform: scale(.97) }
+.pt .pt-sheet .pt-pbtn:disabled { opacity: .65; cursor: default }
+.pt .pt-sheet .pt-pbtn.full { justify-content: center; width: 100% }
+.pt-map .pt-mk.leaflet-interactive { cursor: default }
+.pt-sheet-form { display: contents }
+.pt .pt-sheet .pt-link:disabled { opacity: .5; cursor: default; text-decoration: none }
+/* the drop area takes the focus when the sheet opens: ring only for keyboard users */
+.pt .pt-drop:focus-within:not(:focus-visible) { outline: none }
