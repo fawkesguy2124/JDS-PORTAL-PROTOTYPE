@@ -658,14 +658,7 @@ function JobDetailView({ job, profiles = {}, currentUserName, isAdmin, canUpdate
             )}
           </div>
         </div>
-        <div className="ix-jp-meta">
-          {job.mode && <Chip>{job.mode}</Chip>}
-          <Chip>{isExport ? 'Export' : 'Import'}</Chip>
-          {line && <span>{line}</span>}
-          {job.port_code && <><span className="sep">·</span><span>{portLabel(job.port_code) || job.port_code}</span></>}
-          {job.created_at && <><span className="sep">·</span><span title={fmtDateTime(job.created_at)}>Opened {fmtDate(job.created_at)}</span></>}
-          {!j && <><span className="sep">·</span><span>Stage {stage}: {stageName}</span></>}
-        </div>
+        {/* (no mode / line / port / opened line here: Job details below says it once; Jose, 1 Nov 2026) */}
 
         <div className="ix-jp-facts">
           {facts.map((f) => (
