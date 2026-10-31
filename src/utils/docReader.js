@@ -189,16 +189,28 @@ function vesselVoyage(lines, text) {
     const line = String(text).split('\n').find((l) => /^[A-Z][A-Z .]{4,40}(?:\s+V\.\s*|\s*\/\s*|\s+-\s+)[A-Z0-9]{3,8}\s*$/.test(l.trim()) && !/NHAVA|INDIA|CHINA|PORT/.test(l))
     if (line) { m = line.trim().match(/^(.*?)(?:\s+V\.\s*|\s*\/\s*|\s+-\s+)([A-Z0-9]{3,8})$/); if (m) { vessel = m[1]; voyage = m[2] } }
   }
-  if (vessel) vessel = vessel.replace(/\b(PORT OF DISCHARGE|PLACE OF DELIVERY|COMBINED TRANSPORT).*$/i, '').replace(/\s+(NHAVA SHEVA|JNPT|MUNDRA|CHENNAI|MUMBAI|KOLKATA|PIPAVAV|HAZIRA|INDIA).*$/i, '').replace(/\s{2,}.*/, '').trim() || null
+  if (vessel) {
+    vessel = vessel.replace(/\b(PORT OF DISCHARGE|PLACE OF DELIVERY|COMBINED TRANSPORT).*$/i, '')
+    // the port columns and the ship read as one line, ship last: "JIANGMEN NHAVA SHEVA
+    // SYNERGY OAKLAND" (port of loading, port of discharge, ship; J-1001, 31 Oct 2026)
+    const after = vessel.match(SHIP_AFTER_PORT)
+    vessel = (after ? after[1] : vessel.replace(/\s+(NHAVA SHEVA|JNPT|MUNDRA|CHENNAI|MUMBAI|KOLKATA|PIPAVAV|HAZIRA|INDIA).*$/i, ''))
+      .replace(/\s{2,}.*/, '').trim() || null
+  }
   return { vessel_name: vessel, voyage_no: voyage }
 }
+const SHIP_AFTER_PORT = /\b(?:NHAVA\s*SHEVA|JNPT|MUNDRA|CHENNAI|MUMBAI|KOLKATA|PIPAVAV|HAZIRA)\s+(?!.*\b(?:NHAVA\s*SHEVA|JNPT|MUNDRA|CHENNAI|MUMBAI|KOLKATA|PIPAVAV|HAZIRA)\b)([A-Z][A-Z0-9 .]{2,40})$/i
 
 const INDIAN_PORTS = /\b(NHAVA\s*SHEVA|JNPT|MUMBAI|MUNDRA|PIPAVAV|HAZIRA|KANDLA|CHENNAI|KATTUPALLI|ENNORE|KOLKATA|HALDIA|VISAKHAPATNAM|VIZAG|COCHIN|KOCHI|TUTICORIN|MANGALORE)\b/i
-function port(lines, labelRe) {
+// a ports-and-ship line ends with the voyage: "JIANGMEN NHAVA SHEVA SYNERGY OAKLAND/27W"
+const ENDS_WITH_VOYAGE = /\/\s*[A-Z0-9]{3,8}\s*$/i
+function port(lines, labelRe, loading = false) {
   const v = afterLabel(lines, labelRe, /[A-Za-z]{3,}/)
   if (!v || /XXXX|^\(|Combined|Pre-Carriage|Clause/i.test(v)) return null
   const indian = v.match(INDIAN_PORTS)
-  if (indian && /\b(MSC|CMA CGM|MAERSK|EVER|COSCO|ONE|HMM|WAN HAI|INTERASIA|V\.)\b/i.test(v)) return indian[1].replace(/\s+/g, ' ')
+  // the port of loading is the part before the Indian port on such a line
+  if (indian && loading && indian.index > 0 && ENDS_WITH_VOYAGE.test(v)) return v.slice(0, indian.index).replace(/[,:]\s*$/, '').trim()
+  if (indian && (/\b(MSC|CMA CGM|MAERSK|EVER|COSCO|ONE|HMM|WAN HAI|INTERASIA|V\.)\b/i.test(v) || ENDS_WITH_VOYAGE.test(v))) return indian[1].replace(/\s+/g, ' ')
   return v.replace(/\s{2,}.*/, '').replace(/[,:]\s*$/, '').trim()
 }
 
@@ -236,7 +248,7 @@ function readBl(lines, text) {
     container_numbers: containers,
     seal_numbers: seals.filter((s) => !containers.includes(s)),
     container_size: containerSize(t),
-    port_of_loading: port(lines, /PORT OF LOADING/i),
+    port_of_loading: port(lines, /PORT OF LOADING/i, true),
     port_of_discharge: port(lines, /PORT OF DISCHARGE(?!\s*AGENT)/i) || (/NHAVA SHEVA/i.test(t) ? 'Nhava Sheva' : null),
     place_of_delivery: port(lines, /PLACE OF DELIVERY/i),
     consignee_name: who.client?.legal || null,

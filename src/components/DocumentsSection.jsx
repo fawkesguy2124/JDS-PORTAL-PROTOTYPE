@@ -3,6 +3,7 @@ import { supabase } from '../supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { availableTypes, docTypeLabel } from '../utils/docTypes'
 import { vesselFromBl } from '../services/blVessel'
+import { startShipTracking } from '../services/shipTracking'
 import { isLineNotShip } from '../../supabase/functions/_shared/portal/shippingLines.js'
 import { downloadDoc, useDocUrl } from '../services/docFiles'
 import PdfPreview from './PdfPreview'
@@ -226,6 +227,8 @@ function DocumentsSection({ jobs, currentUserName, showToast, initialExpandJobId
           }
         } catch (e) { console.warn('[Documents] could not read the ship name from the BL:', e?.message) }
       }
+      // a BL: ship tracking starts now (runs on in the background)
+      if (docType === 'BL') startShipTracking(job)
       clearInterval(sim)
       setUploadProgress(100)
       showToast(`${docType} uploaded for ${job.job_no}`, 'success')

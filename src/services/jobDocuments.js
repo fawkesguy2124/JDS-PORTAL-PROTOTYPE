@@ -1,5 +1,6 @@
 import { supabase } from '../supabase'
 import { vesselFromBl } from './blVessel'
+import { startShipTracking } from './shipTracking'
 import { isLineNotShip } from '../../supabase/functions/_shared/portal/shippingLines.js'
 
 // Upload one paper for a job: the file to storage, a documents row, the ship name from a
@@ -56,6 +57,8 @@ export async function uploadJobDocument({ job, file, docType, userName }) {
         }
       } catch (e) { console.warn('[jobDocuments] could not read the ship name from the BL:', e?.message) }
     }
+    // a BL: ship tracking starts now (runs on in the background)
+    if (docType === 'BL') startShipTracking(job)
     try {
       await supabase.from('activity_log').insert({
         type: 'document_upload', action: 'document_upload',

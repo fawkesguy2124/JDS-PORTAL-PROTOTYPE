@@ -11,6 +11,7 @@ import { boxOwnerHint } from '../../supabase/functions/_shared/portal/shippingLi
 import { availableTypes, typesFoundInside, docTypeLabel } from '../utils/docTypes'
 import { isLineNotShip } from '../../supabase/functions/_shared/portal/shippingLines.js'
 import { Button, Chip, Icon } from '../industrial/ui'
+import { startShipTracking } from '../services/shipTracking'
 // tokens live on .ix: the employee screen and the full-page route do not load them otherwise
 import '../industrial/industrial.css'
 import '../industrial/styles/createjob.css'
@@ -605,6 +606,8 @@ export default function CreateJob({ isModal = false, onCancel, onCreated, initia
     } catch (logErr) {
       console.warn('[CreateJob] activity_log insert failed:', logErr.message)
     }
+    // ship tracking starts now, not at the next hourly run (runs on in the background)
+    startShipTracking(insertedJob)
     setSaving(false)
 
     if (onCreated) {
