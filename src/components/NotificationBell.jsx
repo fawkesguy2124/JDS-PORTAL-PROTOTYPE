@@ -18,10 +18,11 @@ function formatNotifTime(ts) {
   const notifDay = new Date(d)
   notifDay.setHours(0, 0, 0, 0)
 
-  const timeStr = d.toLocaleTimeString('en-IN', {
+  // 24-hour times, "14:05" (docs/DESIGN.md Writing)
+  const timeStr = d.toLocaleTimeString('en-GB', {
     hour: '2-digit', minute: '2-digit',
-    hour12: true, timeZone: 'Asia/Kolkata'
-  }).toUpperCase()
+    hourCycle: 'h23', timeZone: 'Asia/Kolkata'
+  })
 
   if (notifDay.getTime() === today.getTime()) {
     return timeStr
@@ -30,7 +31,7 @@ function formatNotifTime(ts) {
     return `Yesterday, ${timeStr}`
   }
   const dateStr = d.toLocaleDateString('en-IN', {
-    day: '2-digit', month: 'short', timeZone: 'Asia/Kolkata'
+    day: 'numeric', month: 'short', timeZone: 'Asia/Kolkata'
   })
   return `${dateStr}, ${timeStr}`
 }
