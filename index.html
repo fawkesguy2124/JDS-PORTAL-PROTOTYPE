@@ -27,15 +27,19 @@
     </style>
     <script>
       // Theme before React loads (src/ui/hooks.js useTheme, localStorage jds_theme).
-      // Only Shell pages (/admin) are themed: there the resolved theme goes on <html
-      // data-theme> now, so a saved dark theme never flashes light while the app
-      // starts. Every other route (login, employee, field) is light for now.
+      // Only the portal and Shell pages are themed: there the resolved theme goes on
+      // <html data-theme> now, so a saved dark theme never flashes light while the
+      // app starts. Every other route (login, classic employee / field) is light.
       (function () {
         var root = document.documentElement, t = null
         try { t = localStorage.getItem('jds_theme') } catch (e) {}
         // Dark is opt-in while legacy pages exist: nothing saved means light (hooks.js DEFAULT).
         var dark = t === 'dark' || (t === 'system' && !!window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches)
-        var shell = /^\/admin\/?$/.test(location.pathname)
+        // the portal (/admin, /dashboard, /field) is themed; the classic employee /
+        // field dashboard (sessionStorage jds_classic) stays light
+        var classic = false
+        try { classic = sessionStorage.getItem('jds_classic') === '1' } catch (e) {}
+        var shell = /^\/(admin|dashboard|field)\/?$/.test(location.pathname) && !(classic && !/^\/admin/.test(location.pathname))
         var r = shell && dark ? 'dark' : 'light'
         root.className = 'boot-' + r
         if (shell) { root.setAttribute('data-theme', r); root.style.colorScheme = r }

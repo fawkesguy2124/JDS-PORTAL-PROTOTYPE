@@ -1,0 +1,211 @@
+/* The one-screen portal (Jose, 31 Oct 2026): fonts, tokens and the frame
+   (list, picker lens, job pane / phone page, search, menu, sheets, dock, toast).
+   Look and motion follow the approved prototype (storyboard/index.html); every
+   class is the prototype's name with a pt- prefix, so nothing here touches the
+   older screens (src/ui, .ix-*) that still open inside Manage and Classic view.
+   Job page: jobpage.css (B). Maps and the new-job form: maps.css (C). */
+
+/* Roboto, self-hosted (no Google Fonts request). Each file covers every script
+   with unicode-range, so the browser fetches only the Latin files it needs. */
+@import '@fontsource/roboto/400.css';
+@import '@fontsource/roboto/500.css';
+@import '@fontsource/roboto/700.css';
+@import '@fontsource/roboto-mono/400.css';
+@import '@fontsource/roboto-mono/500.css';
+
+/* ── tokens ─────────────────────────────────────────────────────────────── */
+.pt {
+  --pt-bg: #F4F5F7; --pt-surface: #FFFFFF; --pt-surface-2: #F8F9FB; --pt-line: #E4E7EC;
+  --pt-ink: #0E1420; --pt-ink-2: #4A5465; --pt-ink-3: #8B94A4;
+  --pt-brand: #1F4FAE; --pt-brand-soft: #E8EEFA; --pt-amber: #E99A1C; --pt-risk: #D23B2E; --pt-risk-soft: #FCEBE9;
+  --pt-sea: #E5EDF6; --pt-sea-2: #D6E2F0; --pt-land: #F3F1EC; --pt-road: #FFFFFF; --pt-road-edge: #D9DDE4;
+  --pt-shadow: 0 1px 2px rgba(14,20,32,.05), 0 10px 30px rgba(14,20,32,.07);
+  --pt-sans: 'Roboto', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --pt-mono: 'Roboto Mono', ui-monospace, Menlo, monospace;
+  --pt-ease: cubic-bezier(.2,.8,.2,1);
+  color-scheme: light;
+}
+:root[data-theme="dark"] .pt {
+  --pt-bg: #090C13; --pt-surface: #11161F; --pt-surface-2: #161C27; --pt-line: #242C3A;
+  --pt-ink: #E8ECF3; --pt-ink-2: #A7B0C0; --pt-ink-3: #6B7588;
+  --pt-brand: #6C98F0; --pt-brand-soft: rgba(108,152,240,.16); --pt-amber: #F2B13E; --pt-risk: #F2685C; --pt-risk-soft: rgba(242,104,92,.15);
+  --pt-sea: #0D1624; --pt-sea-2: #13203A; --pt-land: #161B24; --pt-road: #2A3242; --pt-road-edge: #1E2533;
+  --pt-shadow: 0 1px 2px rgba(0,0,0,.4), 0 10px 30px rgba(0,0,0,.35);
+  color-scheme: dark;
+}
+
+/* ── base (zero specificity, and never inside the older .ix screens) ─────── */
+.pt { font: 17px/1.5 var(--pt-sans); font-variant-numeric: tabular-nums; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; color: var(--pt-ink) }
+:where(.pt) :where(*:not(.ix *)), :where(.pt) :where(*:not(.ix *))::before, :where(.pt) :where(*:not(.ix *))::after { box-sizing: border-box }
+:where(.pt) :where(button:not(.ix *)) { font: inherit; color: inherit; background: none; border: 0; padding: 0; margin: 0; cursor: pointer; text-align: inherit; -webkit-tap-highlight-color: transparent }
+:where(.pt) :where(input:not(.ix *), select:not(.ix *), textarea:not(.ix *)) { font: inherit; color: inherit }
+:where(.pt) :where(button:not(.ix *), input:not(.ix *), select:not(.ix *), a:not(.ix *)):focus-visible,
+:where(.pt) :where(label:not(.ix *)):focus-within { outline: 2px solid var(--pt-brand); outline-offset: 2px; box-shadow: none }
+:where(.pt) :where(h1, h2, h3):where(:not(.ix *)) { margin: 0 }
+.pt svg.pt-i { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0 }
+.pt-sr { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0 }
+
+/* ── shell ──────────────────────────────────────────────────────────────── */
+.pt-app {
+  position: fixed; inset: 0; overflow: hidden; overflow: clip; display: grid; background: var(--pt-bg);
+  padding-left: env(safe-area-inset-left, 0px); padding-right: env(safe-area-inset-right, 0px);
+}
+.pt-app[data-l="d"] { grid-template-columns: 430px minmax(0, 1fr) }
+.pt-app[data-l="m"] { grid-template-columns: minmax(0, 1fr) }
+.pt-app[data-l="m"] .pt-pane { display: none }
+
+/* list */
+.pt-list { position: relative; display: grid; grid-template-rows: auto minmax(0, 1fr); min-height: 0; min-width: 0; padding-top: env(safe-area-inset-top, 0px); transition: transform .45s var(--pt-ease), opacity .35s var(--pt-ease), filter .35s }
+.pt-app[data-l="d"] .pt-list { border-right: 1px solid var(--pt-line) }
+.pt-app.receded .pt-list { transform: scale(.93); opacity: 0; filter: blur(3px); pointer-events: none }
+.pt-top { display: flex; align-items: center; gap: 12px; padding: 18px 22px 8px; min-height: 64px; min-width: 0 }
+.pt-mark { width: 30px; height: 30px; border-radius: 9px; background: var(--pt-ink); position: relative; flex-shrink: 0 }
+.pt-mark::after { content: ""; position: absolute; left: 8px; right: 8px; bottom: 8px; height: 2.5px; border-radius: 2px; background: var(--pt-amber) }
+.pt-top h1 { margin: 0; font-size: 20px; font-weight: 500; letter-spacing: -.01em; white-space: nowrap }
+.pt-filter { display: inline-flex; align-items: center; gap: 6px; height: 28px; max-width: 100%; min-width: 0; padding: 0 6px 0 10px; border-radius: 999px; background: var(--pt-ink); color: var(--pt-bg); font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden }
+.pt .pt-filter { background: var(--pt-ink); color: var(--pt-bg) }
+.pt-filter > span { overflow: hidden; text-overflow: ellipsis }
+.pt-filter svg.pt-i { width: 14px; height: 14px }
+.pt-topend { margin-left: auto; display: inline-flex; align-items: center; gap: 10px; flex-shrink: 0 }
+.pt-newbtn { display: inline-flex; align-items: center; gap: 6px; height: 40px; padding: 0 16px; border-radius: 11px; font-size: 16px; font-weight: 500; white-space: nowrap }
+.pt .pt-newbtn { background: var(--pt-ink); color: var(--pt-bg) }
+.pt-app[data-l="m"] .pt-newbtn { display: none }
+.pt-av { width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; font: 500 12px var(--pt-sans); background: var(--pt-surface); border: 1px solid var(--pt-line); color: var(--pt-ink-2); flex-shrink: 0 }
+.pt .pt-top .pt-av { width: 36px; height: 36px; font-size: 13px; background: var(--pt-surface); border: 1px solid var(--pt-line); transition: border-color .2s }
+.pt-top .pt-av:hover, .pt-top .pt-av[aria-expanded="true"] { border-color: var(--pt-ink-3) }
+
+.pt-typehint { position: absolute; left: 0; right: 0; bottom: 0; padding: 14px 22px; font-size: 14px; color: var(--pt-ink-3); background: linear-gradient(transparent, var(--pt-bg) 40%); pointer-events: none; z-index: 4 }
+.pt-typehint kbd { font: 500 11px var(--pt-mono); border: 1px solid var(--pt-line); border-radius: 5px; padding: 1px 6px; background: var(--pt-surface) }
+.pt-app[data-l="m"] .pt-typehint { display: none }
+
+/* the picker: rows loop; the row in the lens is large and sharp, the rest blur away */
+.pt-feedwrap { position: relative; min-height: 0 }
+.pt-feed { position: absolute; inset: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; scroll-snap-type: y mandatory; z-index: 1; mask-image: linear-gradient(to bottom, transparent 0, #000 22%, #000 78%, transparent 100%); -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 22%, #000 78%, transparent 100%) }
+.pt-feed::-webkit-scrollbar { display: none }
+.pt-feed:focus-visible { outline: none }
+.pt-lens { position: absolute; left: 14px; right: 14px; top: 50%; height: 84px; transform: translateY(-50%); border-radius: 999px; background: var(--pt-surface); border: 1.5px solid var(--pt-line); box-shadow: 0 1px 3px rgba(14,20,32,.08), 0 8px 28px rgba(14,20,32,.08); z-index: 0; pointer-events: none }
+:root[data-theme="dark"] .pt-lens { box-shadow: 0 1px 3px rgba(0,0,0,.4), 0 8px 28px rgba(0,0,0,.35) }
+.pt-pad { height: 0; flex-shrink: 0 }
+.pt-row { display: block; width: 100%; height: 76px; text-align: left; padding: 0 22px; scroll-snap-align: center }
+.pt .pt-row { background: none; border: 0; padding: 0 22px }
+.pt .pt-row:focus-visible { outline: none }
+.pt-row:focus-visible .pt-ri { outline: 2px solid var(--pt-brand); outline-offset: -4px; border-radius: 999px }
+.pt-ri { display: flex; align-items: center; gap: 16px; height: 76px; padding: 0 18px; transform-origin: 50% 50%; will-change: transform, opacity, filter }
+.pt-jn { font-size: 25px; font-weight: 500; letter-spacing: -.02em; min-width: 92px; white-space: nowrap }
+.pt-cl { font-size: 19px; color: var(--pt-ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0 }
+.pt-stt { margin-left: auto; display: inline-flex; align-items: center; gap: 8px; font-size: 15px; color: var(--pt-ink-3); white-space: nowrap; flex-shrink: 0 }
+.pt-flag { width: 8px; height: 8px; border-radius: 50%; background: var(--pt-risk); flex-shrink: 0; box-shadow: 0 0 0 4px var(--pt-risk-soft) }
+.pt-app[data-l="m"] .pt-row { padding: 0 16px }
+.pt-app[data-l="m"] .pt-ri { gap: 12px; padding: 0 14px }
+.pt-app[data-l="m"] .pt-jn { min-width: 80px; font-size: 22px }
+.pt-app[data-l="m"] .pt-cl { font-size: 17px }
+.pt-app[data-l="m"] .pt-stt { font-size: 14px }
+.pt-empty { padding: 60px 26px; color: var(--pt-ink-3) }
+.pt-empty .pt-link { margin-top: 10px; font-size: 15px }
+.pt-loading { display: flex; align-items: center; gap: 10px; padding: 60px 26px; color: var(--pt-ink-2) }
+
+/* ── job pane (desktop) / page (phone) ──────────────────────────────────── */
+.pt-pane { position: relative; min-width: 0; min-height: 0; overflow: hidden }
+.pt-pane-empty { position: absolute; inset: 0; display: grid; place-items: center; color: var(--pt-ink-3); transition: opacity .3s }
+.pt-pane.has .pt-pane-empty { opacity: 0 }
+.pt-page { position: absolute; inset: 0; overflow-y: auto; overscroll-behavior: contain; background: var(--pt-bg) }
+.pt-page:focus { outline: none }
+.pt-pane .pt-page { opacity: 0; transform: translateY(10px); visibility: hidden; transition: opacity .3s var(--pt-ease), transform .4s var(--pt-ease), visibility 0s .4s }
+.pt-pane.has .pt-page { opacity: 1; transform: none; visibility: visible; transition: opacity .3s var(--pt-ease), transform .4s var(--pt-ease) }
+.pt-app > .pt-page { z-index: 20; visibility: hidden; padding-top: env(safe-area-inset-top, 0px); clip-path: inset(var(--ct, 0) var(--cr, 0) var(--cb, 0) var(--cl, 0) round var(--crad, 0)); transition: clip-path .5s var(--pt-ease) }
+.pt-app > .pt-page.open { visibility: visible }
+.pt-page-wait { display: grid; place-items: center; min-height: 50%; padding: 60px 0 }
+
+/* ── overlays ───────────────────────────────────────────────────────────── */
+.pt-scrim { position: absolute; inset: 0; background: rgba(8,11,18,.3); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); opacity: 0; visibility: hidden; transition: opacity .3s, visibility 0s .3s; z-index: 40 }
+.pt-scrim.on { opacity: 1; visibility: visible; transition: opacity .3s }
+
+/* search: centred card (desktop), bottom sheet with the box at the bottom (phone) */
+.pt-spot { position: absolute; left: 50%; top: 14%; width: min(620px, calc(100% - 32px)); transform: translate(-50%, -8px) scale(.98); opacity: 0; visibility: hidden; z-index: 41; background: var(--pt-surface); border: 1px solid var(--pt-line); border-radius: 22px; box-shadow: 0 30px 80px rgba(0,0,0,.25); overflow: hidden; transition: opacity .25s, transform .3s var(--pt-ease), visibility 0s .3s }
+.pt-spot.on { opacity: 1; visibility: visible; transform: translate(-50%, 0) scale(1); transition: opacity .25s, transform .3s var(--pt-ease) }
+.pt-app[data-l="m"] .pt-spot { top: auto; bottom: 0; left: 0; width: 100%; transform: translateY(100%); border-radius: 26px 26px 0 0; max-height: 86%; display: flex; flex-direction: column-reverse; opacity: 1; border-bottom: 0 }
+.pt-app[data-l="m"] .pt-spot.on { transform: none }
+.pt .pt-spot input { width: 100%; border: 0; background: none; font-size: 24px; font-weight: 500; letter-spacing: -.02em; padding: 22px 24px; outline: none; box-shadow: none; color: var(--pt-ink); border-radius: 0; -webkit-appearance: none; appearance: none }
+.pt-spot input::-webkit-search-cancel-button { -webkit-appearance: none; appearance: none }
+.pt-app[data-l="m"] .pt-spot input { font-size: 20px; padding: 18px 20px calc(18px + env(safe-area-inset-bottom, 0px)); border-top: 1px solid var(--pt-line) }
+.pt-spot input::placeholder { color: var(--pt-ink-3); opacity: 1 }
+.pt-res { border-top: 1px solid var(--pt-line); max-height: 380px; overflow-y: auto; overscroll-behavior: contain }
+.pt-res:empty { display: none }
+.pt-app[data-l="m"] .pt-res { border-top: 0; max-height: none; flex: 1; min-height: 0 }
+.pt .pt-res button { display: flex; align-items: center; gap: 14px; width: 100%; text-align: left; padding: 13px 24px; border-bottom: 1px solid var(--pt-line) }
+.pt .pt-res button.hl, .pt .pt-res button:hover { background: var(--pt-surface-2) }
+.pt .pt-res button:focus-visible { outline-offset: -2px }
+.pt-res .a { font-weight: 500; font-size: 19px; min-width: 76px; white-space: nowrap }
+.pt-res .b { color: var(--pt-ink-2); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.pt-res .pt-num { font-family: var(--pt-mono); font-size: 16px }
+.pt-res .c { margin-left: auto; font-size: 15px; color: var(--pt-ink-3); white-space: nowrap; padding-left: 8px }
+.pt-res mark { background: color-mix(in srgb, var(--pt-amber) 35%, transparent); color: inherit; border-radius: 3px }
+.pt-res .none { padding: 18px 24px; color: var(--pt-ink-3) }
+.pt-res .lk .a { color: var(--pt-brand); min-width: 0; font-size: 17px }
+
+/* sheets (New job: maps.css adds the form bits). Phone: bottom sheet; desktop: centred */
+.pt-sheet { position: absolute; left: 50%; bottom: 0; width: min(520px, 100%); max-height: 92%; overflow-y: auto; overscroll-behavior: contain; transform: translate(-50%, 100%); z-index: 41; background: var(--pt-surface); border-radius: 26px 26px 0 0; padding: 24px 22px calc(22px + env(safe-area-inset-bottom, 0px)); display: grid; gap: 16px; align-content: start; transition: transform .4s var(--pt-ease), visibility 0s .4s; box-shadow: 0 -10px 40px rgba(0,0,0,.18); visibility: hidden }
+.pt-app[data-l="d"] .pt-sheet { top: 50%; bottom: auto; border-radius: 22px; transform: translate(-50%, -46%) scale(.97); opacity: 0; transition: opacity .25s, transform .3s var(--pt-ease), visibility 0s .3s }
+.pt-sheet.on { transform: translate(-50%, 0); visibility: visible; transition: transform .4s var(--pt-ease) }
+.pt-app[data-l="d"] .pt-sheet.on { transform: translate(-50%, -50%); opacity: 1; visibility: visible; transition: opacity .25s, transform .3s var(--pt-ease) }
+.pt-sheet h3 { margin: 0; font-size: 21px; font-weight: 500; letter-spacing: -.02em }
+.pt-spin { width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--pt-line); border-top-color: var(--pt-brand); animation: pt-spin .8s linear infinite; flex-shrink: 0 }
+@keyframes pt-spin { to { transform: rotate(360deg) } }
+.pt-link { justify-self: start; font-weight: 500; font-size: 14px }
+.pt .pt-link { color: var(--pt-brand) }
+.pt .pt-link:hover { text-decoration: underline; text-underline-offset: 3px }
+
+/* user menu: popover under the avatar (desktop), bottom sheet (phone) */
+.pt-menu { position: absolute; top: calc(64px + env(safe-area-inset-top, 0px)); left: 162px; width: 300px; z-index: 42; background: var(--pt-surface); border: 1px solid var(--pt-line); border-radius: 18px; box-shadow: 0 20px 60px rgba(14,20,32,.18); padding: 8px; display: grid; gap: 2px; transform-origin: 90% 0; transform: translateY(-6px) scale(.98); opacity: 0; visibility: hidden; transition: opacity .2s, transform .25s var(--pt-ease), visibility 0s .25s; max-height: calc(100% - 80px); overflow-y: auto }
+.pt-menu.on { opacity: 1; visibility: visible; transform: none; transition: opacity .2s, transform .25s var(--pt-ease) }
+.pt-app[data-l="m"] .pt-menu { top: auto; left: 0; right: 0; bottom: 0; width: 100%; border-radius: 26px 26px 0 0; border-bottom: 0; padding: 14px 12px calc(14px + env(safe-area-inset-bottom, 0px)); transform: translateY(100%); opacity: 1; max-height: 86% }
+.pt-app[data-l="m"] .pt-menu.on { transform: none }
+.pt-menu-who { display: flex; align-items: center; gap: 12px; padding: 10px 12px 12px }
+.pt-menu-who b { display: block; font-weight: 500; font-size: 17px; line-height: 1.3 }
+.pt-menu-who small { display: block; font-size: 14px; color: var(--pt-ink-3) }
+.pt-menu-who .pt-av { width: 40px; height: 40px; font-size: 14px }
+.pt-menu-sep { height: 1px; background: var(--pt-line); margin: 6px 4px }
+.pt-menu-h { padding: 8px 12px 4px; font-size: 13px; font-weight: 500; color: var(--pt-ink-3) }
+.pt .pt-mi { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 44px; padding: 0 12px; border-radius: 11px; font-size: 16px; color: var(--pt-ink); text-align: left }
+.pt .pt-mi:hover { background: var(--pt-surface-2) }
+.pt .pt-mi:focus-visible { outline-offset: -2px }
+.pt-mi svg.pt-i { color: var(--pt-ink-3) }
+.pt-mi.danger { color: var(--pt-risk) }
+.pt-mi.danger svg.pt-i { color: var(--pt-risk) }
+.pt-seg { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2px; margin: 2px 8px 6px; padding: 3px; border-radius: 12px; background: var(--pt-surface-2); border: 1px solid var(--pt-line) }
+.pt .pt-seg button { height: 34px; border-radius: 9px; font-size: 14px; font-weight: 500; color: var(--pt-ink-2); text-align: center }
+.pt .pt-seg button[aria-pressed="true"] { background: var(--pt-surface); color: var(--pt-ink); box-shadow: 0 1px 2px rgba(14,20,32,.12) }
+.pt-menu-alerts { margin: 4px 4px 0 }
+.pt-menu-alerts:empty { display: none }
+
+/* Manage: full-screen frame for the older pages (Team & stages, bot, health, ULIP lookup, Edit details, Create job) */
+.pt-manage { position: absolute; inset: 0; z-index: 50; display: grid; grid-template-rows: auto minmax(0, 1fr); background: var(--pt-bg); animation: pt-in .3s var(--pt-ease) }
+@keyframes pt-in { from { opacity: 0; transform: translateY(10px) } to { opacity: 1; transform: none } }
+.pt-manage-bar { display: flex; align-items: center; gap: 12px; height: calc(56px + env(safe-area-inset-top, 0px)); padding: env(safe-area-inset-top, 0px) 16px 0; border-bottom: 1px solid var(--pt-line); background: var(--pt-surface) }
+.pt-manage-bar h2 { margin: 0; font-size: 18px; font-weight: 500; letter-spacing: -.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+.pt .pt-mback { width: 40px; height: 40px; border-radius: 50%; background: var(--pt-surface); border: 1px solid var(--pt-line); display: grid; place-items: center; flex-shrink: 0 }
+.pt-manage-body { overflow-y: auto; overscroll-behavior: contain; background: var(--bg, #F6F7F9); -webkit-overflow-scrolling: touch }
+.pt-manage-body > .ix { min-height: 100%; padding: 20px max(16px, env(safe-area-inset-left, 0px)) calc(40px + env(safe-area-inset-bottom, 0px)) }
+.pt-manage-body > .ix.ix-light { background: var(--bg, #F6F7F9) }
+.pt-manage-body .pt-wrap { max-width: 1240px; margin: 0 auto }
+.pt-manage-body .pt-wrap.narrow { max-width: 1080px }
+.pt-manage-wait { display: flex; align-items: center; gap: 10px; padding: 40px 24px; color: var(--pt-ink-2) }
+
+/* phone dock: Search + amber New job */
+.pt-dock { position: absolute; left: 50%; bottom: calc(18px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); z-index: 25; display: flex; gap: 6px; padding: 6px; background: var(--pt-ink); border-radius: 999px; box-shadow: 0 10px 30px rgba(0,0,0,.25); transition: transform .35s var(--pt-ease), opacity .3s }
+.pt .pt-dock button { height: 56px; padding: 0 22px; border-radius: 999px; display: inline-flex; align-items: center; gap: 8px; color: var(--pt-bg); font-weight: 500; font-size: 18px }
+.pt .pt-dock button.plus { background: var(--pt-amber); color: #111; padding: 0; width: 56px; justify-content: center }
+.pt-dock svg.pt-i { width: 21px; height: 21px }
+.pt-dock button:focus-visible { outline-color: var(--pt-amber) }
+.pt-app[data-l="d"] .pt-dock { display: none }
+.pt-app.receded .pt-dock { transform: translate(-50%, 120px); opacity: 0; pointer-events: none }
+
+.pt-toast { position: absolute; left: 50%; bottom: 28px; transform: translate(-50%, 20px); opacity: 0; z-index: 60; background: var(--pt-ink); color: var(--pt-bg); padding: 13px 18px; border-radius: 12px; font-size: 16px; font-weight: 500; transition: opacity .25s, transform .3s var(--pt-ease); pointer-events: none; white-space: nowrap; max-width: calc(100% - 32px); overflow: hidden; text-overflow: ellipsis }
+.pt-toast.err { background: var(--pt-risk); color: #fff; white-space: normal }
+.pt-app[data-l="m"] .pt-toast { bottom: calc(96px + env(safe-area-inset-bottom, 0px)) }
+.pt-app.receded[data-l="m"] .pt-toast { bottom: calc(28px + env(safe-area-inset-bottom, 0px)) }
+.pt-toast.on { opacity: 1; transform: translate(-50%, 0) }
+
+@media (prefers-reduced-motion: reduce) {
+  .pt *, .pt *::before, .pt *::after { transition-duration: 0s !important; animation: none !important }
+}
