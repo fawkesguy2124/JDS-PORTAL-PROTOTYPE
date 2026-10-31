@@ -276,15 +276,6 @@ export default function JobDrawer({ jobId, onClose, onOpenFull, onOpenTruck, cur
     showToast?.(done, 'success')
   }
 
-  const copyLink = async () => {
-    const url = `${window.location.origin}/admin?tab=jobs&open=${job.id}`
-    try {
-      await navigator.clipboard.writeText(url)
-      showToast?.(`Link to ${job.job_no} copied`, 'success')
-    } catch {
-      window.prompt('Copy this link', url)
-    }
-  }
   const goPage = (tabName) => { onClose(); navigate(`/admin?tab=${tabName}&job=${job.id}`) }
 
   // ── the one primary action: the next step (Jose, 31 Oct 2026: no second copy in the alerts) ──
@@ -436,6 +427,9 @@ export default function JobDrawer({ jobId, onClose, onOpenFull, onOpenTruck, cur
 
   // ── details, only what the job has ──
   const igm = job.ulip_refs?.igm_no
+  // ── the ship (its name appears only in the ship card) and its IMO number ──
+  const shipName = !isExport && !isAir ? vesselOf(job, data) : (isExport ? job.vessel : null)
+  const imo = shipName && !isExport ? shipIdOf(job, shipName, data).imo : null
   const kv = [
     ['Client', job.client],
     ['Job', [job.mode, isExport ? 'export' : 'import'].filter(Boolean).join(' ') + (job.created_at ? ` · opened ${fmtDate(job.created_at)}` : '')],
@@ -443,6 +437,8 @@ export default function JobDrawer({ jobId, onClose, onOpenFull, onOpenTruck, cur
     ['Port', job.port_code ? portLabel?.(job.port_code) || job.port_code : null],
     [isAir ? 'Airline' : 'Shipping line', line ? <>{line}{lineMismatch && <span className="flag"><Icon name="info-circle" /> tracking says {lineMismatch.tracking}</span>}</> : null],
     [isAir ? 'AWB' : 'BL', job.bl_no ? <span className="mono">{job.bl_no}</span> : null],
+    // the ship's IMO number (Jose, 1 Nov 2026): typed, from the IGM or found by ship tracking
+    ['IMO', !isAir && imo ? <span className="mono">{imo}</span> : null],
     ['IGM', igm ? <><span className="mono">{igm}</span>{job.ulip_refs?.igm_date ? <span className="muted"> · {fmtDate(job.ulip_refs.igm_date)}</span> : null}</> : null],
     ['Assessment', rmsText(job.rms_status)],
     ['CFS', job.cfs_name],
@@ -453,9 +449,7 @@ export default function JobDrawer({ jobId, onClose, onOpenFull, onOpenTruck, cur
   const trucks = j.trucks || []
   const canTruck = !isExport && j.oocDone && j.onwardMode !== 'rail'
 
-  // ── ship card (the ship's name and IMO appear only here) ──
-  const shipName = !isExport && !isAir ? vesselOf(job, data) : (isExport ? job.vessel : null)
-  const imo = shipName && !isExport ? shipIdOf(job, shipName, data).imo : null
+  // ── ship card ──
   // the ship card only while the ship is still on its way: once it has arrived the step
   // bar says so and the ship is of no more interest here (Jose, 31 Oct 2026)
   const shipArrived = !isExport && !!j.steps?.[0]?.done
@@ -513,7 +507,6 @@ export default function JobDrawer({ jobId, onClose, onOpenFull, onOpenTruck, cur
             {String(job.priority).toLowerCase() === 'urgent' && <Chip tone="red" icon="flame">Urgent</Chip>}
             <div className="right">
               <span className="vr hide-m" />
-              <button type="button" className="ix-icon-btn" onClick={copyLink} title="Copy link to this job" aria-label="Copy link to this job"><Icon name="link" /></button>
               <button type="button" className="ix-icon-btn" onClick={() => onOpenFull(job.id, 'details')} title="Open full job" aria-label="Open full job"><Icon name="external-link" /></button>
               <span className="vr" />
               {at >= 0 && <span className="pg">{at + 1} of {pagerIds.length}</span>}
@@ -583,13 +576,13 @@ export default function JobDrawer({ jobId, onClose, onOpenFull, onOpenTruck, cur
               <div className="ix-jp-grid">
                 <div>
                   {boxes.length > 0 && (
-                    <Section title={`Containers · ${boxes.length}`} right={!isExport && !delivered ? <button type="button" className="ix-link" onClick={() => goPage('containers')}>Open on Containers <Icon name="arrow-right" /></button> : null}>
+                    <Section title={<><Icon name="box" />Containers · {boxes.length}</>}>
                       {boxTable(boxes)}
                       <div className="ix-jp-more" />
                     </Section>
                   )}
 
-                  <Section title="Details">
+                  <Section title={<><Icon name="list-details" />Details</>}>
                     <div className="ix-jp-kv">
                       {kv.map(([k, v]) => [<div key={`${k}-k`}>{k}</div>, <div key={`${k}-v`}>{v}</div>])}
                       {(trucks.length > 0 || canTruck) && [
@@ -608,15 +601,15 @@ export default function JobDrawer({ jobId, onClose, onOpenFull, onOpenTruck, cur
                   </Section>
 
                   {/* air imports: is the air waybill in Customs' air manifest yet */}
-                  {!isExport && isAir && <Section title="Flight"><AirCargo key={job.id} job={job} showToast={showToast} /></Section>}
+                  {!isExport && isAir && <Section title={<><Icon name="plane" />Flight</>}><AirCargo key={job.id} job={job} showToast={showToast} /></Section>}
 
                   {showSeaTrack && (
-                    <Section title="Ship">
+                    <Section title={<><Icon name="ship" />Ship</>}>
                       <SeaTracking job={job} showToast={showToast} shipName={shipName} imo={imo} onVessels={() => goPage('vessels')} />
                     </Section>
                   )}
                   {!showSeaTrack && shipName && !shipArrived && (
-                    <Section title="Ship">
+                    <Section title={<><Icon name="ship" />Ship</>}>
                       <div className="ix-jp-ship">
                         <span className={`ic${j.arrivedAt || isExport ? '' : ' sea'}`}><Icon name={j.arrivedAt ? 'anchor' : 'ship'} /></span>
                         <div style={{ minWidth: 0 }}>
@@ -629,7 +622,7 @@ export default function JobDrawer({ jobId, onClose, onOpenFull, onOpenTruck, cur
                   )}
 
                   {!isExport && (
-                    <Section title="Arrangements">
+                    <Section title={<><Icon name="route" />Arrangements</>}>
                       <div className="ix-jp-arr">
                         <div>Move by</div>
                         <div>
@@ -648,7 +641,7 @@ export default function JobDrawer({ jobId, onClose, onOpenFull, onOpenTruck, cur
                 </div>
 
                 <div>
-                  <Section title="Papers" right={<UploadMenu job={job} docs={docs} userName={currentUserName} showToast={showToast} onDone={() => setDocsTick((n) => n + 1)} />}>
+                  <Section title={<><Icon name="files" />Papers</>} right={<UploadMenu job={job} docs={docs} userName={currentUserName} showToast={showToast} onDone={() => setDocsTick((n) => n + 1)} />}>
                     <div className="ix-jp-papers">
                       {docs.length === 0 && <span className="muted">No papers yet</span>}
                       {docs.map((d) => (
@@ -658,7 +651,7 @@ export default function JobDrawer({ jobId, onClose, onOpenFull, onOpenTruck, cur
                       ))}
                     </div>
                   </Section>
-                  <Section title="Timeline" right={<span className="muted">IST</span>}>
+                  <Section title={<><Icon name="clock" />Timeline</>} right={<span className="muted">IST</span>}>
                     {timeline(allEvents ? 0 : 6)}
                   </Section>
                 </div>
