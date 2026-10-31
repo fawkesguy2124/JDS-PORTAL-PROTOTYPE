@@ -56,8 +56,12 @@ const CARRIERS = [
   ['Maersk', /MAERSK|\bMAEU|\bMRKU/],
   ['Hapag-Lloyd', /HAPAG|\bHLCU|\bHLXU/],
   ['CMA CGM', /CMA CGM|\bCMDU/],
-  ['Evergreen', /EVERGREEN|\bEGLV|\bEVER [A-Z]/],
-  ['ONE', /OCEAN NETWORK EXPRESS|\bONEY|\bONE [A-Z]{3,}/],
+  // (full names and codes only in the BL's text: "ONE <word>" also matched plain English,
+  // J-1001's "…such transport One | Signed for the carrier" read as ONE, though ZIM was
+  // the carrier, so tracking asked the wrong line. Ship names like "ONE THESEUS" or
+  // "EVER LEARNED" are matched on the ship's name alone, below.)
+  ['Evergreen', /EVERGREEN|\bEGLV/],
+  ['ONE', /OCEAN NETWORK EXPRESS|\bONEY\b/],
   ['OOCL', /\bOOCL|ORIENT OVERSEAS/],
   ['COSCO', /COSCO|\bCOSU/],
   ['ZIM', /\bZIM\b|\bZIMU/],
@@ -79,6 +83,11 @@ function carrierOf(text) {
   const t = String(text).toUpperCase()
   return CARRIERS.find(([, re]) => re.test(t))?.[0] || null
 }
+// the line from the ship's own name: ONE THESEUS, EVER LEARNED, MSC APOLLINE, HMM LIME …
+const SHIP_LINE = [['ONE', /^ONE [A-Z]/], ['Evergreen', /^EVER [A-Z]/], ['MSC', /^MSC [A-Z]/], ['HMM', /^HMM [A-Z]/],
+  ['COSCO', /^COSCO [A-Z]/], ['CMA CGM', /^CMA CGM [A-Z]/], ['Maersk', /^MAERSK [A-Z]/], ['OOCL', /^OOCL [A-Z]/],
+  ['Yang Ming', /^YM [A-Z]/], ['Wan Hai', /^WAN HAI [A-Z0-9]/], ['Interasia', /^INTERASIA [A-Z]/], ['ZIM', /^ZIM [A-Z]/]]
+const lineOfShip = (name) => SHIP_LINE.find(([, re]) => re.test(String(name || '').toUpperCase().trim()))?.[0] || null
 
 const INCOTERMS = /\b(EXW|FCA|FAS|FOB|CFR|CNF|C&F|CIF|CPT|CIP|DAP|DPU|DDP)\b/
 const CURRENCY = /\b(USD|EUR|CNY|RMB|GBP|JPY|AED|SGD|CHF|INR|KRW|THB|HKD|AUD)\b/
@@ -247,7 +256,7 @@ function readBl(lines, text) {
     return null
   })()
   const who = clientFrom(t)
-  const carrier = carrierOf(t) || carrierOf(vv.vessel_name || '')
+  const carrier = carrierOf(t) || lineOfShip(vv.vessel_name)
   return {
     bl_number: bl,
     bl_date: onBoard || toIsoDate(afterLabel(lines, /PLACE AND DATE OF ISSUE|DATE OF ISSUE/i, DATE_RE)),
