@@ -1,5 +1,6 @@
 import { supabase } from '../supabase'
 import { vesselFromBl } from './blVessel'
+import { isLineNotShip } from '../../supabase/functions/_shared/portal/shippingLines.js'
 
 // Upload one paper for a job: the file to storage, a documents row, the ship name from a
 // BL (never overwrites), and an activity log line. The same steps the Documents page
@@ -42,11 +43,15 @@ export async function uploadJobDocument({ job, file, docType, userName }) {
     })
     if (insErr) throw insErr
     let vessel = null
-    if (docType === 'BL' && !job.vessel) {
+    // (a shipping line saved as the ship, e.g. "EVERGREEN", counts as no ship: the BL's replaces it)
+    const lineAsShip = !!job.vessel && isLineNotShip(String(job.vessel).split('/')[0], job.shipping_line)
+    if (docType === 'BL' && (!job.vessel || lineAsShip)) {
       try {
         const found = await vesselFromBl(file)
         if (found) {
-          const { data: upd } = await supabase.from('jobs').update({ vessel: found }).eq('id', job.id).is('vessel', null).select('id')
+          let q = supabase.from('jobs').update({ vessel: found }).eq('id', job.id)
+          q = lineAsShip ? q.eq('vessel', job.vessel) : q.is('vessel', null)
+          const { data: upd } = await q.select('id')
           if (upd?.length) vessel = found
         }
       } catch (e) { console.warn('[jobDocuments] could not read the ship name from the BL:', e?.message) }

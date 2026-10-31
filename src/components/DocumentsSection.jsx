@@ -3,6 +3,7 @@ import { supabase } from '../supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { availableTypes, docTypeLabel } from '../utils/docTypes'
 import { vesselFromBl } from '../services/blVessel'
+import { isLineNotShip } from '../../supabase/functions/_shared/portal/shippingLines.js'
 import { downloadDoc, useDocUrl } from '../services/docFiles'
 import PdfPreview from './PdfPreview'
 import { cachedDocs, keepDocs, loadDocs } from '../services/docCache'
@@ -212,11 +213,15 @@ function DocumentsSection({ jobs, currentUserName, showToast, initialExpandJobId
       if (insErr) throw insErr
       // a BL on a job with no ship yet: save the ship name from it, so the
       // Vessels page can follow the ship from the pre-alert (never overwrites)
-      if (docType === 'BL' && !job.vessel) {
+      // (a shipping line saved as the ship, e.g. "EVERGREEN", counts as no ship: the BL's replaces it)
+      const lineAsShip = !!job.vessel && isLineNotShip(String(job.vessel).split('/')[0], job.shipping_line)
+      if (docType === 'BL' && (!job.vessel || lineAsShip)) {
         try {
           const vessel = await vesselFromBl(uploadFile)
           if (vessel) {
-            const { data: upd } = await supabase.from('jobs').update({ vessel }).eq('id', job.id).is('vessel', null).select('id')
+            let q = supabase.from('jobs').update({ vessel }).eq('id', job.id)
+            q = lineAsShip ? q.eq('vessel', job.vessel) : q.is('vessel', null)
+            const { data: upd } = await q.select('id')
             if (upd?.length) showToast(`Ship name saved from the BL: ${vessel}`, 'success')
           }
         } catch (e) { console.warn('[Documents] could not read the ship name from the BL:', e?.message) }

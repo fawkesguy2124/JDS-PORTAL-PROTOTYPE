@@ -4,6 +4,7 @@ import { getStageName, parseContainerNos, getContainerSize } from '../utils/jobH
 import { useJourney } from '../industrial/JourneyContext'
 import { daysAgo, deliveryBy, displayLine, effectiveStage } from '../services/journey'
 import { seaOf } from '../../supabase/functions/_shared/portal/ships.js'
+import { isLineNotShip } from '../../supabase/functions/_shared/portal/shippingLines.js'
 import { Button, Chip, Dash, Icon, JobNo, Panel, PhaseStatus, Status, Tabs, fmtDate, fmtDateTime, fmtINR, timeAgo } from '../industrial/ui'
 import CustomsStatusCard from './CustomsStatusCard'
 import { PORTS, portLabel } from '../utils/ports'
@@ -290,6 +291,13 @@ function JobDetailView({ job, profiles = {}, currentUserName, isAdmin, canUpdate
     const wrongBoxes = boxRowsOf(form).map(r => r.no.trim().toUpperCase()).filter(no => no && !/^[A-Z]{4}\d{7}$/.test(no))
     if (wrongBoxes.length) {
       notify(`Container number looks wrong: ${wrongBoxes.join(', ')}. It is 4 letters and 7 digits, for example MSCU1234567.`, 'error')
+      return
+    }
+    // a shipping line typed as the ship (J-583, J-667, J-690 had "EVERGREEN"): the
+    // ship's own name is on the BL (Jose, 31 Oct 2026), same rule as Create job
+    const vesselTyped = String(form.vessel || '').trim()
+    if (vesselTyped && vesselTyped !== String(job.vessel || '').trim() && isLineNotShip(vesselTyped.split('/')[0], form.shipping_line || job.shipping_line)) {
+      notify(`"${vesselTyped}" is a shipping line, not a ship. Type the ship's own name from the BL (for example EVER LUCID), or leave Vessel empty.`, 'error')
       return
     }
     setSaving(true)
