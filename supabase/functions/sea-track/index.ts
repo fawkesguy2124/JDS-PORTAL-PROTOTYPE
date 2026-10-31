@@ -55,8 +55,13 @@ function scacFor(line: unknown, lines: any[]) {
   if (!want) return null
   const alias: Record<string, string> = { 'HUNGA A': 'HEUNG A', 'TS LINE': 'T S LINES', 'TS': 'T S LINES' }
   const w = alias[want] || want
-  const hit = lines.find((s) => tidy(s.name) === w) || lines.find((s) => tidy(s.name).startsWith(w) || w.startsWith(tidy(s.name)))
-    || lines.find((s) => tidy(s.name).replace(/\s/g, '').includes(w.replace(/\s/g, '')))
+  // whole words only (J-1001, 1 Nov 2026: "ONE" matched inside "Cleve & ZONEN", so the
+  // container was asked of the wrong line). "Ocean Network Express (ONE)" carries the
+  // short name as its own word, so ONE / MSC / HMM find their line this way.
+  const words = (s: any) => ` ${tidy(s.name)} `
+  const hit = lines.find((s) => tidy(s.name) === w)
+    || lines.find((s) => words(s).includes(` ${w} `))
+    || lines.find((s) => ` ${w} `.startsWith(words(s)))
   return hit?.scacCodes?.[0] || null
 }
 
@@ -198,7 +203,11 @@ async function usedThisMonth(admin: any) {
 // One job: look up, save. `start` allows a number not yet counted this month.
 async function track(admin: any, job: any, lines: any[], opts: { start?: boolean; by?: string; auto?: boolean }) {
   const { data: prev } = await admin.from('sea_tracking').select('*').eq('job_id', job.id).maybeSingle()
-  const n = prev ? { number: prev.number, type: prev.number_type, scac: prev.sealine } : pickNumber(job, lines)
+  // a container is asked of the job's line as it is worked out today (an older row may
+  // carry a wrong line code: J-1001 had Cleve & Zonen's for ONE)
+  const n = prev
+    ? { number: prev.number, type: prev.number_type, scac: prev.number_type === 'CT' ? scacFor(job.shipping_line, lines) || prev.sealine : prev.sealine }
+    : pickNumber(job, lines)
   if (!n) return { job: job.job_no, skipped: 'no BL or container number' }
   // a new number this month uses one of the trial's shipments
   const { data: counted } = await admin.from('sea_track_usage').select('number').eq('month', month()).eq('number', n.number).maybeSingle()
