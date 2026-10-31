@@ -198,7 +198,7 @@ function UploadMenu({ job, docs, userName, showToast, onDone, label = 'Upload' }
 }
 
 export default function JobDrawer({ jobId, onClose, onOpenFull, onOpenTruck, currentUserName, showToast }) {
-  const { byId, data, profiles, patchJob, active } = useJourney()
+  const { byId, data, profiles, patchJob, active, refresh } = useJourney()
   const navigate = useNavigate()
   const [curId, setCurId] = useState(jobId)
   const row = byId[curId]
@@ -207,6 +207,7 @@ export default function JobDrawer({ jobId, onClose, onOpenFull, onOpenTruck, cur
   const [loaded, setLoaded] = useState({ id: null, log: [], docs: [] })
   const [viewDoc, setViewDoc] = useState(null) // a PDF shown inside the portal
   const [openBox, setOpenBox] = useState(null)
+  const [checking, setChecking] = useState(false) // Check OOC running in the panel
   const [allEvents, setAllEvents] = useState(false)
 
   const log = loaded.id === curId ? loaded.log : []
@@ -276,6 +277,32 @@ export default function JobDrawer({ jobId, onClose, onOpenFull, onOpenTruck, cur
     showToast?.(done, 'success')
   }
 
+  // Check OOC right here (Jose, 1 Nov 2026: no jump to the BE & OOC page): the same
+  // customs check as that page's button, and a pop-up with what Customs said
+  const checkOoc = async () => {
+    if (checking) return
+    setChecking(true)
+    const { data: res, error: fnErr } = await supabase.functions.invoke('customs-status', { body: { jobId: job.id } })
+    setChecking(false)
+    if (fnErr || !res?.success) {
+      let msg = res?.error
+      if (!msg && fnErr?.context?.json) { try { msg = (await fnErr.context.json())?.error } catch { /* no body */ } }
+      showToast?.(`OOC not updated: ${plain(msg || fnErr?.message || 'the customs check failed')}`, 'error')
+      return
+    }
+    const r = res.data || {}
+    if (r.ooc_date) {
+      showToast?.(`OOC updated: granted ${fmtDate(r.ooc_date)}${r.ooc_no ? ` · OOC ${r.ooc_no}` : ''}`, 'success')
+      refresh?.()
+      return
+    }
+    const when = res.cached ? ' (checked a few minutes ago)' : ''
+    const said = r.icegate_status === 'not_found' ? 'Customs has no record of this BE yet'
+      : r.icegate_status === 'error' ? `Customs did not answer${r.icegate_error ? `: ${plain(r.icegate_error)}` : ''}`
+        : 'Customs has not given OOC yet'
+    showToast?.(`OOC not updated: ${said}${when}`, 'info')
+    refresh?.()
+  }
   const goPage = (tabName) => { onClose(); navigate(`/admin?tab=${tabName}&job=${job.id}`) }
 
   // ── the one primary action: the next step (Jose, 31 Oct 2026: no second copy in the alerts) ──
@@ -284,7 +311,7 @@ export default function JobDrawer({ jobId, onClose, onOpenFull, onOpenTruck, cur
   if (!isExport && j.readyForTruck) {
     cta = { key: 'truck', step: 'truck', label: 'Assign truck', icon: 'truck', run: () => onOpenTruck(job.id) }
     if (!j.onwardMode) alt = { label: 'Goes by rail', icon: 'train', run: () => setMeta('onward_mode', 'rail', 'Saved: goes by rail') }
-  } else if (!isExport && j.phase === 'ooc') cta = { key: 'customs', step: 'ooc', label: 'Check OOC', icon: 'file-certificate', run: () => onOpenFull(job.id, 'customs') }
+  } else if (!isExport && j.phase === 'ooc') cta = { key: 'customs', step: 'ooc', label: 'Check OOC', icon: 'file-certificate', run: () => checkOoc() }
   else if (!isExport && (j.phase === 'docs' || j.phase === 'arrival') && !job.be_no) cta = { key: 'customs', step: 'be', label: 'Record BE no', icon: 'file-plus', run: () => onOpenFull(job.id, 'customs') }
   else if (isExport && !j.sbNo) cta = { key: 'export', step: 'sb', label: 'Record SB no', icon: 'file-plus', run: () => onOpenFull(job.id, isAir ? 'air' : 'export') }
   else if (!isExport && j.phase === 'truck' && !j.truck && j.onwardMode !== 'rail' && deliveryBy(job) === 'jds') cta = { key: 'truck', step: 'truck', label: 'Add truck number', icon: 'truck', run: () => onOpenTruck(job.id), onDone: true }
@@ -541,7 +568,7 @@ export default function JobDrawer({ jobId, onClose, onOpenFull, onOpenTruck, cur
                         until OOC is granted); Add truck number also once the box has left */}
                     {cta && (!s.done || cta.onDone) && (cta.step || (s.current && s.id)) === s.id && (
                       <div className="act">
-                        <Button size="sm" variant="primary" urgent={level === 'red' && cta.key === 'truck'} icon={cta.icon} onClick={cta.run}>{cta.label}</Button>
+                        <Button size="sm" variant="primary" urgent={level === 'red' && cta.key === 'truck'} icon={cta.key === 'customs' && checking ? 'loader-2' : cta.icon} disabled={cta.key === 'customs' && checking} onClick={cta.run}>{cta.key === 'customs' && checking ? 'Checking…' : cta.label}</Button>
                         {alt && <Button size="sm" variant="ghost" icon={alt.icon} onClick={alt.run}>{alt.label}</Button>}
                       </div>
                     )}
