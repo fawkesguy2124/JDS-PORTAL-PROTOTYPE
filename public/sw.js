@@ -7,9 +7,9 @@
 // v2 (24 Oct 2026): during a release Vercel briefly answered a new script's name
 // with the page (HTML); v1 kept that and the portal stayed on its loading screen.
 // Now only real scripts / styles / fonts / images are kept, and v1's copies are dropped.
-const VERSION = 'jds-app-v2'
+const VERSION = 'jds-app-v3'
 const KEEPABLE = /javascript|css|font|image|wasm|json/
-const SHELL = ['/offline.html', '/app/icon-192.png', '/app/badge-96.png']
+const SHELL = ['/offline.html', '/app/icon-a-192.png', '/app/badge-a-96.png']
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(VERSION).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()))
@@ -51,8 +51,8 @@ self.addEventListener('push', (e) => {
   try { n = e.data ? e.data.json() : {} } catch { n = { body: e.data ? e.data.text() : '' } }
   e.waitUntil(self.registration.showNotification(n.title || 'JDS Portal', {
     body: n.body || '',
-    icon: '/app/icon-192.png',
-    badge: '/app/badge-96.png',
+    icon: '/app/icon-a-192.png',
+    badge: '/app/badge-a-96.png',
     tag: n.tag || undefined, // the same alert again replaces the old one instead of stacking
     data: { url: n.url || '/admin?tab=today' },
   }))

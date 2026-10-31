@@ -103,7 +103,7 @@ export async function enablePush(profile, kinds = ALL_KINDS) {
   })
   if (error) throw new Error(error.message)
   // a first one at once, so the person sees what they look like
-  await reg.showNotification('JDS Portal', { body: 'Desktop alerts are on for this computer.', icon: '/app/icon-192.png', badge: '/app/badge-96.png', tag: 'jds-welcome' })
+  await reg.showNotification('JDS Portal', { body: 'Desktop alerts are on for this computer.', icon: '/app/icon-a-192.png', badge: '/app/badge-a-96.png', tag: 'jds-welcome' })
 }
 
 export async function setPushKinds(kinds) {
