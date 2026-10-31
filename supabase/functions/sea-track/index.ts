@@ -16,7 +16,7 @@
 //  • { sealines: true } the lines Safecube covers; { usage: true } this month's count
 import { adminClient, corsHeaders, getCaller, json } from '../_shared/ulip.ts'
 import { lineName } from '../_shared/portal/shippingLines.js'
-import { containerTrip } from '../_shared/portal/journeyCore.js'
+import { containerTrip, isOldVoyage } from '../_shared/portal/journeyCore.js'
 
 const API = 'https://api.sinay.ai/container-tracking/api/v2'
 const MONTH_CAP = 45                 // trial: 50 shipments; 5 kept spare
@@ -210,6 +210,21 @@ async function track(admin: any, job: any, lines: any[], opts: { start?: boolean
   if (!counted && (r.ok || r.billed)) await admin.from('sea_track_usage').insert({ month: month(), number: n.number, job_no: job.job_no })
   const now = new Date().toISOString()
   const base = { job_id: job.id, job_no: job.job_no, number: n.number, number_type: n.type, sealine: n.scac, fetched_at: now, ...(prev ? {} : { started_by: opts.by || 'auto' }) }
+  // the line still answers with this container's PREVIOUS trip (J-673, 1 Nov 2026: the box
+  // was delivered at Chennai on 9 Aug, long before the job was opened on 27 Oct). That is
+  // not this job's ship: nothing of it is kept, the job is not marked arrived, and the
+  // hourly run keeps asking until the line shows the new trip (once the box is loaded).
+  if (r.ok && isOldVoyage(r.row, job)) {
+    const was = r.row.pod_date ? String(r.row.pod_date).slice(0, 10) : null
+    await admin.from('sea_tracking').upsert({
+      ...base, done: false, refresh_error: null,
+      error: `the line still shows this container's previous trip${was ? ` (arrived ${was})` : ''}. The new trip shows once the box is loaded; checked every hour.`,
+      status: null, pol: null, pol_date: null, pod: null, pod_date: null, pod_actual: null, predictive_eta: null,
+      vessel_name: null, vessel_imo: null, vessel_mmsi: null, lat: null, lng: null, position_at: null,
+      last_event: null, first_pod_date: null, track: [], eta_history: [],
+    }, { onConflict: 'job_id' })
+    return { job: job.job_no, number: n.number, old_trip: was }
+  }
   if (!r.ok) {
     // a failed update of a ship we already follow: keep its last good position, ETA and
     // route on screen and try again next hour; only note the failure (Jose, 25 Oct
