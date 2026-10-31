@@ -7,6 +7,7 @@ import {
 import {
   ALERT_KINDS, ALL_KINDS, disablePush, enablePush, pushState, runningAsApp, setPushKinds, showTestAlert, useInstallApp,
 } from '../../services/desktopApp'
+import { askConfirm } from '../confirm'
 import '../styles/settings.css'
 
 // Settings (Jose, 31 Oct 2026: "dark mode and stuff like that"). Everything here is
@@ -351,8 +352,8 @@ function AppData({ showToast, onRefresh }) {
     try { await onRefresh?.(); showToast?.('Fresh data loaded', 'success') } catch { showToast?.('Could not reload the data. Try again.', 'error') }
     setBusy(false)
   }
-  const clear = () => {
-    if (!window.confirm('Clear the portal’s saved data on this computer?\n\nYour settings go back to the defaults and saved lists (recent jobs, page choices) are emptied. You stay signed in.')) return
+  const clear = async () => {
+    if (!(await askConfirm({ title: 'Clear the portal’s saved data on this computer?', text: 'Your settings go back to the defaults and saved lists (recent jobs, page choices) are emptied. You stay signed in.', ok: 'Clear', danger: true }))) return
     clearSavedData()
     window.location.replace('/admin?tab=settings')
   }

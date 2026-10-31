@@ -11,6 +11,7 @@ import { cachedDocs, keepDocs, loadDocs } from '../services/docCache'
 import { useJourney } from '../industrial/JourneyContext'
 import { Icon, JobNo, PhaseStatus, Chip, Dash, Button, Tabs, Toolbar, Panel, EmptyState, Skeleton, fmtDate, fmtDateTime } from '../industrial/ui'
 import '../industrial/styles/customs.css'
+import { askConfirm } from '../industrial/confirm'
 
 // Documents: one row per job with its papers checklist (Control tower, Jose 31 Oct 2026).
 // A green paper is in (click to preview it); a dashed one is missing (click to upload
@@ -270,7 +271,7 @@ function DocumentsSection({ jobs, currentUserName, showToast, initialExpandJobId
 
   const handleDelete = async (doc) => {
     setMenuFor(null)
-    if (!window.confirm(`Delete "${doc.file_name}"?`)) return
+    if (!(await askConfirm({ title: `Delete ${doc.file_name}?`, text: 'The paper is removed from this job.', ok: 'Delete', danger: true }))) return
     try {
       if (doc.file_path) {
         const { error: storageErr } = await supabase.storage.from('job-documents').remove([doc.file_path])

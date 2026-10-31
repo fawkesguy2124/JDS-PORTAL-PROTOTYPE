@@ -13,6 +13,7 @@ import {
   Icon, Chip, fmtDate, fmtDateTime, fmtTime, timeAgo, Skeleton, PageHead, JobNo, Status, Tabs, Button, SearchBox, FreeDays, EmptyState, Dash,
 } from '../ui'
 import { truckPoints } from '../truckPoints'
+import { askConfirm } from '../confirm'
 import '../styles/tracking.css'
 
 // the map (and its map library) loads only when this page opens
@@ -199,8 +200,8 @@ export default function TrucksPage({ currentUserName, onOpenJob, showToast, canU
     patchJob(res.job)
   })
 
-  const unassign = (job, no) => {
-    if (!window.confirm(`Take truck ${no} off job ${job.job_no}?`)) return
+  const unassign = async (job, no) => {
+    if (!(await askConfirm({ title: `Take truck ${no} off job ${job.job_no}?`, ok: 'Take it off' }))) return
     return guarded(job.id, async () => {
       const res = await removeTruck(job, no, currentUserName)
       if (!res.ok) { showToast?.(res.error, 'error'); return }
@@ -210,8 +211,8 @@ export default function TrucksPage({ currentUserName, onOpenJob, showToast, canU
     })
   }
 
-  const deliver = (job) => {
-    if (!window.confirm(`Mark job ${job.job_no} as delivered?`)) return
+  const deliver = async (job) => {
+    if (!(await askConfirm({ title: `Mark job ${job.job_no} as delivered?`, ok: 'Mark delivered' }))) return
     return guarded(job.id, async () => {
       const res = await setStage(job, 10, 'Delivered', currentUserName)
       if (!res.ok) { showToast?.(res.error, 'error'); return }

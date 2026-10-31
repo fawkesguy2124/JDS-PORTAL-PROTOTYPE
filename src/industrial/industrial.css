@@ -1096,3 +1096,13 @@ html[data-theme="dark"] .ix .maplibregl-ctrl-attrib a { color: var(--map-ctl-ink
 html[data-theme="dark"] .ix .maplibregl-popup-content { background: var(--surface); color: var(--text); box-shadow: var(--shadow-pop) }
 html[data-theme="dark"] .ix .maplibregl-popup-anchor-bottom .maplibregl-popup-tip { border-top-color: var(--surface) }
 html[data-theme="dark"] .ix .maplibregl-popup-anchor-top .maplibregl-popup-tip { border-bottom-color: var(--surface) }
+
+/* the portal's own "Are you sure?" box (confirm.jsx) */
+.ix-confirm-bg { z-index: 90 }
+.ix-confirm { max-width: 420px }
+.ix-confirm .bd { display: grid; grid-template-columns: 36px minmax(0, 1fr); gap: 12px; padding: 18px 18px 14px }
+.ix-confirm .ic { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; background: var(--navy-50); color: var(--navy); font-size: 19px }
+.ix-confirm .ic.red { background: var(--red-bg); color: var(--red) }
+.ix-confirm b { display: block; font-size: var(--fs-lg); font-weight: 600; margin-top: 6px }
+.ix-confirm p { margin: 6px 0 0; color: var(--text-2); white-space: pre-line }
+.ix-confirm .ft { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 18px; border-top: 1px solid var(--line); background: var(--surface-2) }

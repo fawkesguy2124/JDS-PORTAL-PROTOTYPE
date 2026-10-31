@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import NotificationBell from '../components/NotificationBell'
 import CommandPalette from './CommandPalette'
+import { ConfirmHost } from './confirm'
 import { useSystemHealth, healthTones, autoCheckLine } from './AutoStatus'
 import { Icon, initials } from './ui'
 import { useInstallApp } from '../services/desktopApp'
@@ -139,6 +140,7 @@ export default function Shell({ sections, active, counts = {}, onGo, onOpenJob, 
         </>
       )}
 
+      <ConfirmHost />
       <CommandPalette open={palette} onClose={() => setPalette(false)} pages={pages} commands={commands} onGo={go} onOpenJob={onOpenJob}
         onLookup={sections.some((s) => s.items.some((it) => it.id === 'search')) ? (q) => {
           try { sessionStorage.setItem('ix_lookup', q) } catch { /* private mode: the page opens empty */ }

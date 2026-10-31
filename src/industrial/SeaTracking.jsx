@@ -5,6 +5,7 @@ import { useJourney } from './JourneyContext'
 import { seaArea, seaOf } from '../../supabase/functions/_shared/portal/ships.js'
 import { Button, Chip, Icon, fmtDateTime, timeAgo } from './ui'
 import { voyage, viaText } from './ShipMap'
+import { askConfirm } from './confirm'
 
 // Ship tracking on the job (Jose, 24 Oct 2026): what JDS used to look up on each
 // shipping line's website by container number: ETA, the ship (IMO), where it is
@@ -65,7 +66,7 @@ export default function SeaTracking({ job, showToast, shipName, imo, onVessels }
   const sea = seaOf(job, data)
 
   const run = async (start) => {
-    if (start && !window.confirm(`Start tracking the ship of ${job.job_no}?\n\nThis uses 1 of the 50 trial shipments. Only do it for a ship that hasn't arrived yet.`)) return
+    if (start && !(await askConfirm({ title: `Start tracking the ship of ${job.job_no}?`, text: 'This uses 1 of the trial shipments. Only do it for a ship that hasn’t arrived yet.', ok: 'Start tracking' }))) return
     setBusy(true)
     try {
       const { data: res, error } = await supabase.functions.invoke('sea-track', { body: { jobId: job.id, start } })

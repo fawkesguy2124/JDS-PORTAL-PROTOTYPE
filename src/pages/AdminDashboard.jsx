@@ -15,6 +15,7 @@ import IxTodayPage from '../industrial/pages/TodayPage'
 import IxJobsPage from '../industrial/pages/JobsPage'
 import IxCustomsPage from '../industrial/pages/CustomsPage'
 import { forceRefreshAllContainers } from '../services/tracking/ldbProvider'
+import { askConfirm } from '../industrial/confirm'
 
 // Opened less often (or heavy, like the maps): loaded the first time they are opened
 const IxTrucksPage = lazyPage(() => import('../industrial/pages/TrucksPage'))
@@ -183,7 +184,7 @@ function AdminDashboardInner() {
   }
 
   const handleDeleteJob = async (job) => {
-    if (!window.confirm(`Delete job ${job.job_no || ''}? This cannot be undone.`)) return
+    if (!(await askConfirm({ title: `Delete job ${job.job_no || ''}?`, text: 'The job, its papers and its tracking are removed. Its history is kept. This cannot be undone.', ok: 'Delete job', danger: true }))) return
 
     try {
       // 1. Delete related documents from storage (best-effort — RLS may block)
