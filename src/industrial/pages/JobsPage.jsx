@@ -244,12 +244,7 @@ export default function JobsPage({ profile, onOpenJob, selectedId }) {
     <>
       <PageHead
         title="All jobs"
-        sub={busy ? 'Loading…' : [
-          `${counts.open} open`,
-          `${counts.action} need action`,
-          counts.detention ? <span className="ix-jb-red">{counts.detention} at detention risk</span> : null,
-          `${counts.move} to move`,
-        ]}
+        sub={busy ? 'Loading…' : null /* no counts here: the tabs right below carry them (Jose, 31 Oct 2026) */}
         actions={<Button size="sm" variant="ghost" icon="refresh" onClick={refresh} disabled={loading}>{loading ? 'Refreshing…' : 'Refresh'}</Button>}
       />
       {error && <div className="ix-error">Could not load the latest data: {error}. Press Refresh.</div>}

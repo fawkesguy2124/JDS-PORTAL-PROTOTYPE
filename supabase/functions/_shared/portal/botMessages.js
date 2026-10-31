@@ -130,7 +130,15 @@ export function morningSummary(allData, person, now = new Date()) {
 // The same event for several boxes of one job in one check is one message.
 const BOX_ICON = [[/PORT IN|DISCHARGE|VESSEL ARRIVED|DPD/, '🚢'], [/PORT OUT|GATE OUT|GATE CROSSED|TERMINAL OUT/, '🚛'], [/CFS IN|ICD IN|GATE IN|TERMINAL IN/, '🏭'], [/CFS OUT|ICD OUT/, '🚚'], [/TOLL|STATION|RAIL|WAGON/, '🛣️'], [/EMPTY/, '📦']]
 const boxIcon = (ev) => BOX_ICON.find(([re]) => re.test(ev))?.[1] || '📦'
-const placeOf = (note) => oneLine(String(note || '').split('·').slice(1).join('·')).replace(/^Latest:.*$/i, '').trim() || null
+// A container note is "<event or status> · <place> · at <time>" (the time added 30 Oct
+// 2026). The place is what is left after the first part, without the time, the status
+// or "Latest: …" (else the alert read "Port out at at 31 Oct", Jose 31 Oct 2026).
+const noteParts = (note) => {
+  const parts = String(note || '').split('·').slice(1).map(oneLine).filter(Boolean)
+  const time = parts.map((s) => s.match(/^at (\d.*)$/i)?.[1]).find(Boolean) || null
+  const place = parts.filter((s) => !/^at \d/i.test(s) && !/^(Status|Latest):/i.test(s)).join(' · ') || null
+  return { place, time }
+}
 
 // When a job's ship is due: the ship tracking's ETA (follows the line's latest plan),
 // else the ETA typed on the job, else the IGM's expected arrival
@@ -258,10 +266,12 @@ export function instantAlerts(data, events = [], now = new Date()) {
     const row = data.containersByNo?.[String(box).toUpperCase()]
     if (row && containerFinishedOn(row, job)) continue
     const k = `${job.id}|${what}`
-    const g = groups.get(k) || { job, what, boxes: [], ids: [], place: null, more: 0 }
+    const g = groups.get(k) || { job, what, boxes: [], ids: [], place: null, time: null, more: 0 }
     if (!g.boxes.includes(box)) g.boxes.push(box)
     g.ids.push(ev.id)
-    g.place ||= placeOf(ev.note)
+    const { place, time } = noteParts(ev.note)
+    g.place ||= place
+    g.time ||= time
     const extra = String(ev.note || '').match(/^(\d+) new events/)
     if (extra) g.more += Number(extra[1]) - 1
     groups.set(k, g)
@@ -269,8 +279,9 @@ export function instantAlerts(data, events = [], now = new Date()) {
   for (const g of groups.values()) {
     const event = (g.what.charAt(0) + g.what.slice(1).toLowerCase()).replace(/\b(cfs|icd|dpd|dpe)\b/gi, (w) => w.toUpperCase())
     const boxes = g.boxes.length === 1 ? `Container ${g.boxes[0]}` : `${g.boxes.length} containers (${g.boxes.slice(0, 4).join(', ')}${g.boxes.length > 4 ? ', …' : ''})`
+    const aside = [g.time, g.more > 0 ? `and ${g.more} earlier update${g.more === 1 ? '' : 's'}` : null].filter(Boolean).join('; ')
     add('container', `box:${g.ids.sort().join(',')}`, g.job,
-      `${boxIcon(g.what)} ${boxes}: ${event}${g.place ? ` at ${g.place}` : ''}${g.more > 0 ? ` (and ${g.more} earlier update${g.more === 1 ? '' : 's'})` : ''}.`)
+      `${boxIcon(g.what)} ${boxes}: ${event}${g.place ? ` at ${g.place}` : ''}${aside ? ` (${aside})` : ''}.`)
   }
 
   // worked out from today's saved data (once per job per day)

@@ -32,7 +32,6 @@
 .ix-jb-tbl .ix-jb-nx .ix-chip { margin-left: 0; flex-shrink: 0 }
 .ix-jb-next.dim { color: var(--muted) }
 .ix-jb-sub { display: none }
-.ix-jb-red { color: var(--red) }
 .ix-jb-foot kbd { margin: 0 1px }
 
 /* the stage cell: a tinted status pill over a slim 6-segment bar (navy done, amber now) */

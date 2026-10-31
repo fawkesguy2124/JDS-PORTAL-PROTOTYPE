@@ -4,7 +4,7 @@
    .ix-truck-row rules in industrial.css are no longer used by these pages; the map
    overrides below are prefixed with .ix so they win over the older map rules. */
 
-/* ── alert rows ("needs a look"): one hairline box, one 36px row per item ── */
+/* ── alert rows (Trucks: papers problems): one hairline box, one 36px row per item ── */
 .ix-trk-alerts { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); margin-bottom: var(--s3); overflow: hidden }
 .ix-trk-al { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; align-items: center; gap: 10px; min-height: 36px; padding: 5px 8px 5px 12px; border-bottom: 1px solid var(--line); font-size: var(--fs-md) }
 .ix-trk-al:last-child { border-bottom: 0 }

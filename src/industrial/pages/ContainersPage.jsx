@@ -5,7 +5,7 @@ import { refreshAllContainers, forceRefreshAllContainers, fetchLDBTracking, pers
 import { containerTrip } from '../../services/journey'
 import { useJourney, useFreshOnOpen } from '../JourneyContext'
 import {
-  Icon, PageHead, Button, KpiStrip, Kpi, Tabs, Toolbar, Panel, EmptyState, Status, Chip,
+  Icon, PageHead, Button, Tabs, Toolbar, Panel, EmptyState, Status, Chip,
   FreeDays, JobNo, Dash, Skeleton, fmtDate, fmtDateTime, timeAgo,
 } from '../ui'
 import '../styles/containers.css'
@@ -43,6 +43,7 @@ const boxTone = (c, j) => (isRisk(c) ? 'red' : !c.finishedOn && c.level === 'soo
 function WhereNow({ c, j }) {
   if (c.where === 'unknown') return <span className="ix-st hollow">No tracking yet</span>
   const tone = whereTone(c, j)
+  // (the row hides this 'since' while Last event shows the same day: see sameDay)
   return (
     <Status tone={tone} sub={c.whereSince ? `since ${fmtDate(c.whereSince)}` : null}
       title={tone === 'amber' ? 'OOC done, no truck or rail arranged yet' : undefined}>
@@ -51,6 +52,19 @@ function WhereNow({ c, j }) {
     </Status>
   )
 }
+
+// Where now and Last event often say the same thing ("At CFS since 26 Oct" beside
+// "At CFS 26 Oct, 12:30"; Jose, 31 Oct 2026: each fact once). The event's name is left
+// out when one name contains the other (lowercase, no punctuation: "left cfs" in "left
+// cfs with cargo", "at port" in "arrived at port"); the 'since' date is left out when
+// the event is on that same day (only while the Last event column is on screen).
+const flatName = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim()
+function sameName(c) {
+  const a = flatName(c.lastEvent?.label)
+  const b = flatName(c.whereText)
+  return !!(a && b) && (a.includes(b) || b.includes(a))
+}
+const sameDay = (c) => !!(c.whereSince && c.lastEvent?.at) && fmtDate(c.whereSince) === fmtDate(c.lastEvent.at)
 
 // '2026-11-01' → '2026-11-02' (the day detention starts)
 function nextDay(ymd) {
@@ -259,34 +273,21 @@ export default function ContainersPage({ showToast, pendingNavAction, onNavActio
     return m
   }, [all])
 
-  // the KPI and tab figures, all from the one list of containers in play
+  // the tab figures, all from the one list of containers in play (no KPI strip: it
+  // repeated these tabs, Jose 31 Oct 2026)
   const k = useMemo(() => {
-    const n = { all: inPlay.length, due: 0, port: 0, toCfs: 0, cfs: 0, out: 0, road: 0, rail: 0, none: 0, stale: 0, risk: 0, over: 0 }
-    const jobs = new Set()
-    const riskJobs = new Set()
-    let oldestCfs = null
-    let firstRisk = null
+    const n = { all: inPlay.length, due: 0, port: 0, cfs: 0, out: 0, none: 0, stale: 0, risk: 0 }
     let lastCheck = null
     for (const c of inPlay) {
-      jobs.add(c.jobId)
       n[GROUP[c.where]] = (n[GROUP[c.where]] || 0) + 1
-      if (c.where === 'to_cfs') n.toCfs++
-      if (c.where === 'road') n.road++
-      if (c.where === 'rail') n.rail++
       if (c.stale) n.stale++
-      if (c.where === 'cfs' && c.whereSince && (!oldestCfs || c.whereSince < oldestCfs)) oldestCfs = c.whereSince
-      if (isRisk(c)) {
-        n.risk++
-        riskJobs.add(c.jobId)
-        if (c.level === 'over') n.over++
-        if (!firstRisk || c.freeLeft < firstRisk.freeLeft) firstRisk = c
-      }
+      if (isRisk(c)) n.risk++
     }
     for (const c of all) {
       const t = data?.containersByNo?.[c.no]?.last_refreshed_at
       if (t && (!lastCheck || t > lastCheck)) lastCheck = t
     }
-    return { ...n, jobs: jobs.size, riskJobs: riskJobs.size, oldestCfs, firstRisk, lastCheck }
+    return { ...n, lastCheck }
   }, [inPlay, all, data])
 
   const lines = useMemo(() => [...new Set(inPlay.map((c) => c.line).filter(Boolean))].sort(), [inPlay])
@@ -549,6 +550,8 @@ export default function ContainersPage({ showToast, pendingNavAction, onNavActio
     const t = checkedAt(c)
     const others = r.boxes.filter((x) => x.no !== c.no)
     const j = byId[r.jobId]?.j
+    const evNameDup = c.lastEvent && c.where !== 'unknown' && sameName(c)
+    const sinceDup = c.where !== 'unknown' && sameDay(c)
     return (
       <tr key={r.key} className={cls} onClick={() => (on ? setSel(null) : selectRow(r))}>
         <td className="lvl" />
@@ -568,7 +571,7 @@ export default function ContainersPage({ showToast, pendingNavAction, onNavActio
         </td>
         <td className="dim c-size">{c.size || <Dash />}</td>
         <td className="ix-cn-line c-line" title={c.line || undefined}><span className="ix-cn-ell">{c.line || <Dash />}</span></td>
-        <td className="ix-cn-where" title={c.where === 'unknown' ? undefined : `${c.whereText}${c.whereSince ? ` since ${fmtDate(c.whereSince)}` : ''}`}>
+        <td className={`ix-cn-where${sinceDup ? ' dupsince' : ''}`} title={c.where === 'unknown' ? undefined : `${c.whereText}${c.whereSince ? ` since ${fmtDate(c.whereSince)}` : ''}`}>
           <span className="ix-cn-wherecell">
             <WhereNow c={c} j={j} />
             {!r.done && r.places > 1 && (
@@ -577,9 +580,9 @@ export default function ContainersPage({ showToast, pendingNavAction, onNavActio
             )}
           </span>
         </td>
-        <td className="c-ev" title={c.lastEvent?.place || undefined}>
+        <td className="c-ev" title={c.lastEvent ? [evNameDup && c.lastEvent.label, c.lastEvent.place].filter(Boolean).join(' · ') || undefined : undefined}>
           {c.lastEvent
-            ? <span className="ix-cn-ev"><span>{c.lastEvent.label}</span><span className="at">{fmtDateTime(c.lastEvent.at)}</span></span>
+            ? <span className="ix-cn-ev">{!evNameDup && <span>{c.lastEvent.label}</span>}<span className="at">{fmtDateTime(c.lastEvent.at)}</span></span>
             : <Dash />}
         </td>
         <td className="r">
@@ -597,7 +600,6 @@ export default function ContainersPage({ showToast, pendingNavAction, onNavActio
     )
   }
 
-  const pickKpi = (id) => setView((v) => (v === id ? 'all' : id))
   const clearFilters = () => { setQ(''); setLine(''); setJobFilter(null); setView('all') }
   const jobNoOf = (id) => byId[id]?.job?.job_no || 'This job'
 
@@ -615,7 +617,7 @@ export default function ContainersPage({ showToast, pendingNavAction, onNavActio
   const head = (
     <PageHead
       title="Containers"
-      sub={['Every container on open jobs', 'port and CFS movements, updated automatically', k.lastCheck && `last check ${fmtDateTime(k.lastCheck)}`]}
+      sub={['Updated automatically', k.lastCheck && `last check ${fmtDateTime(k.lastCheck)}`]}
       actions={(
         <Button icon="refresh" onClick={refreshAll} disabled={busy || !data} title="Check every open container's movements now">
           {busy ? 'Checking…' : 'Refresh all'}
@@ -643,24 +645,6 @@ export default function ContainersPage({ showToast, pendingNavAction, onNavActio
   return (
     <>
       {head}
-
-      <KpiStrip>
-        <Kpi label="In play" value={k.all}
-          sub={k.all ? `on ${plural(k.jobs, 'open job')}${k.none ? ` · ${k.none} not tracked yet` : ''}` : 'no open containers'}
-          onClick={() => setView('all')} title="Show every container in play" />
-        <Kpi label="At port" dot="teal" value={k.port} sub={k.toCfs ? `${k.toCfs} on the way to the CFS` : null}
-          onClick={() => pickKpi('port')} selected={view === 'port'} />
-        <Kpi label="At CFS" dot="teal" value={k.cfs} sub={k.oldestCfs ? `longest there since ${fmtDate(k.oldestCfs)}` : null}
-          onClick={() => pickKpi('cfs')} selected={view === 'cfs'} />
-        <Kpi label="Left with cargo" dot="blue" value={k.out}
-          sub={k.road || k.rail ? [k.road && `${k.road} on the road`, k.rail && `${k.rail} on rail`].filter(Boolean).join(' · ') : null}
-          onClick={() => pickKpi('out')} selected={view === 'out'} />
-        <Kpi label="Detention risk" dot="red" tone={k.risk ? 'red' : undefined} value={k.risk}
-          sub={k.risk
-            ? (k.over ? `${k.over} in detention · ${plural(k.riskJobs, 'job')}` : k.firstRisk && <><JobNo no={k.firstRisk.jobNo} /> free till {fmtDate(k.firstRisk.freeTill)}</>)
-            : '2 free days or fewer'}
-          onClick={() => pickKpi('risk')} selected={view === 'risk'} />
-      </KpiStrip>
 
       <Panel>
         <Tabs tabs={tabs} value={view} onChange={setView} />

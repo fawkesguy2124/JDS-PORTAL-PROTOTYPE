@@ -2,7 +2,7 @@
    the customs stage chips (BeStage) and the Documents checklist.
    Control tower look (Jose, 31 Oct 2026): hairlines, 13px type, tokens only. */
 
-/* ── BE & OOC desk: list on the left, the job (or the queue table) on the right ── */
+/* ── BE & OOC desk: list on the left, the job (or a quiet "pick a job" note) on the right ── */
 .cu-desk { display: grid; grid-template-columns: 400px minmax(0, 1fr); gap: var(--s3); align-items: start }
 .cu-desk > * { min-width: 0 }
 .cu-status { margin: calc(-1 * var(--s1)) 0 var(--s3) }
@@ -43,9 +43,8 @@
 .cu-legacy { margin-top: var(--s3) }
 .cu-legacy + .cu-legacy { margin-top: var(--s4) }
 
-/* the queue table when no job is picked */
-.cu-queue .ix-tbl-wrap { max-height: calc(100vh - 230px) }
-.cu-queue td.cl { max-width: 200px }
+/* no job picked: one quiet line, not a second copy of the list */
+.cu-pick .ix-emptyline { color: var(--muted) }
 
 /* exports: three queues */
 .cu-q .cu-qrow { display: flex; align-items: center; gap: 10px; padding: 7px var(--s3) 7px var(--s4); border-bottom: 1px solid var(--line) }
@@ -64,6 +63,7 @@
   .cu-desk { grid-template-columns: 1fr }
   .cu-list { position: static }
   .cu-list-body { max-height: 360px }
+  .cu-desk:not(.has-sel) > .cu-pick { display: none } /* the list sits on top: the note adds nothing */
 }
 /* phone: a picked job takes the screen; the X in its head goes back to the list */
 @media (max-width: 760px) {

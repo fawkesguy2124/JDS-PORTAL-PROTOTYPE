@@ -394,7 +394,7 @@ function AdminDashboardInner() {
         />
       )}
 
-      {activeNav === 'documents' && legacyPage('Documents', 'Every job’s papers in one place',
+      {activeNav === 'documents' && legacyPage('Documents', undefined,
         <DocumentsSection
           jobs={jobs} profiles={profiles} currentUserName={currentUserName} showToast={showToast}
           initialExpandJobId={documentExpandJobId} onExpandConsumed={() => setDocumentExpandJobId(null)}
@@ -402,7 +402,7 @@ function AdminDashboardInner() {
       )}
       {activeNav === 'search' && <SearchPage {...pageProps} />}
       {activeNav === 'clients' && <ClientsPage {...pageProps} />}
-      {activeNav === 'compliance' && legacyPage('BIS & Licences', 'Certificates and licences, with their expiry dates', <ComplianceSection showToast={showToast} />)}
+      {activeNav === 'compliance' && legacyPage('BIS & Licences', undefined, <ComplianceSection showToast={showToast} />)}
       {activeNav === 'bot' && <BotPreviewPage {...pageProps} />}
       {activeNav === 'health' && <IxHealthPage />}
       {activeNav === 'settings' && (

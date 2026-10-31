@@ -5,15 +5,16 @@ import UlipCheck from '../../components/ulip/UlipCheck'
 import { CUSTOMS_TAB_GROUPS, SHIP_GROUPS } from '../../components/ulip/ulipChecks'
 import { JobPicker, CustomsWorkspace, DayTag } from '../JobChecks'
 import { useJourney, useFreshOnOpen } from '../JourneyContext'
-import { useAutoChecks, checkCustoms, isDue, COOLDOWN_MIN } from '../autoChecks'
+import { useAutoChecks, checkCustoms, isDue } from '../autoChecks'
 import AutoStatus from '../AutoStatus'
-import { Icon, JobNo, Status, PhaseStatus, Chip, FreeDays, Dash, Button, Segmented, PageHead, Panel, EmptyState, Skeleton, worst, fmtDate, fmtDateTime } from '../ui'
+import { Icon, JobNo, Status, Chip, FreeDays, Button, Segmented, PageHead, Panel, EmptyState, Skeleton, worst, fmtDate, fmtDateTime, fmtTime } from '../ui'
 import '../styles/customs.css'
 
 // BE & OOC desk (Control tower, Jose 31 Oct 2026). Imports: the work list on the
-// left (waiting for OOC oldest BE first, OOC granted, BE to file), and on the right
-// the picked job's customs facts and checks, or the whole queue as a table when no
-// job is picked. Exports: SB & LEO queues.
+// left (waiting for OOC oldest BE first, OOC granted, BE to file; empty groups are
+// hidden), and on the right the picked job's customs facts and checks, or a quiet
+// "pick a job" note (no second copy of the list; Jose, 31 Oct 2026). The counts are in
+// the list's group heads, not again in the page sub-line. Exports: SB & LEO queues.
 // Opening the page checks customs by itself for import jobs still waiting for
 // OOC (see autoChecks.js for the limits). Once OOC is granted a job is never
 // checked again. Every other check runs only when its button is pressed.
@@ -88,57 +89,12 @@ function Queue({ title, items, empty, note, render }) {
   )
 }
 
-// No job picked: the whole import queue as one table, a row per job
-function QueueTable({ groups, onSelect }) {
-  const total = groups.reduce((n, g) => n + g.rows.length, 0)
-  if (!total) {
-    return (
-      <Panel title="Customs queue">
-        <EmptyState icon="circle-check" tone="green" title="Nothing waiting at customs">
-          No BE to file, no BE waiting for OOC and no job with OOC granted still to move.
-        </EmptyState>
-      </Panel>
-    )
-  }
+// No job picked: a quiet note (the left list is the queue; Jose, 31 Oct 2026)
+function PickJob() {
   return (
-    <Panel title="Customs queue" meta="Pick a job to see its BE, OOC and checks" className="cu-queue">
-      <div className="ix-tbl-wrap">
-        <table className="ix-tbl click">
-          <thead><tr>
-            <th className="lvl" /><th>Job</th><th>Client</th><th>BE no</th><th>BE date</th>
-            <th className="r">Since BE</th><th>Customs stage</th><th>Last checked</th><th>OOC</th>
-          </tr></thead>
-          <tbody>
-            {groups.filter((g) => g.rows.length).map((g) => [
-              <tr key={`g-${g.title}`} className="grp"><td className="lvl" /><td colSpan={8}>{g.title}<span className="n">{g.rows.length}</span></td></tr>,
-              ...g.rows.map((r) => {
-                const { job, j } = r
-                const waiting = j.beFiled && !j.oocDone
-                return (
-                  <tr key={job.id} className={levelOf(r)} onClick={() => onSelect(job.id)} tabIndex={0}
-                    onKeyDown={(e) => { if (e.key === 'Enter') onSelect(job.id) }}>
-                    <td className="lvl" />
-                    <td><JobNo no={job.job_no} /></td>
-                    <td className="cl">{job.client || <Dash />}</td>
-                    <td className="mono">{job.be_no || <Dash />}</td>
-                    <td>{job.be_date ? fmtDate(job.be_date) : <Dash />}</td>
-                    <td className="r">{waiting ? <DayTag since={job.be_date} /> : <Dash />}</td>
-                    {/* once OOC is granted the stage reads as everywhere else (amber 'To move';
-                        green only once delivered), the OOC column has the date */}
-                    <td>{j.oocDone ? <PhaseStatus job={job} j={j} />
-                      : j.beStage ? <Status tone={j.beStage.tone}>{j.beStage.short}</Status>
-                        : waiting ? <span className="ix-dash">Not set</span> : <Status tone="grey">BE to file</Status>}</td>
-                    <td className="dim">{j.customs?.checked_at ? fmtDateTime(j.customs.checked_at) : <Dash />}</td>
-                    <td>{j.oocDate ? fmtDate(j.oocDate) : j.oocDone ? <span className="ix-dash">{oocText(j)}</span> : <Dash />}</td>
-                  </tr>
-                )
-              }),
-            ])}
-          </tbody>
-        </table>
-      </div>
-      <div className="ix-tbl-foot">{total} {total === 1 ? 'job' : 'jobs'} at customs or just through it</div>
-    </Panel>
+    <div className="ix-card cu-pick">
+      <EmptyState line icon="hand-click" title="Pick a job on the left to see its BE, OOC and checks" />
+    </div>
   )
 }
 
@@ -204,7 +160,7 @@ export default function CustomsPage({ currentUserName, onOpenJob, showToast, can
     showToast?.(which === 'be' ? `BE saved for ${job.job_no}` : `Shipping bill saved for ${job.job_no}`, 'success')
   }
 
-  // ── import list groups (left list and the queue table share them) ──
+  // ── import list groups (the left list) ──
   const groups = [
     { title: 'Waiting for OOC', rows: waiting, empty: 'No BE waiting for OOC.', level: levelOf,
       sub: ({ job, j }) => <>BE <span className="mono">{job.be_no}</span> · {fmtDate(job.be_date)}{j.beStage ? ` · ${j.beStage.short}` : ''}</>,
@@ -278,25 +234,29 @@ export default function CustomsPage({ currentUserName, onOpenJob, showToast, can
     sub: <>SB <span className="mono">{j.sbNo}</span> · LEO given {fmtDate(j.leoDate)}</>,
   })
 
+  // only the groups that have jobs (no 'BE to file 0 / No BE to file.' rows)
+  const shownGroups = groups.filter((g) => g.rows.length)
+  const listGroups = shownGroups.length ? shownGroups : [{ title: 'Work list', rows: [], empty: 'Nothing waiting at customs.' }]
+
   const switchKind = (k) => { setKind(k); setFormFor(null); setLeoFor(null) }
   const isImport = kind === 'import'
-  const sub = isImport
-    ? [`${waiting.length} waiting for OOC`, `${toMove.length} OOC granted, to move`, `${toFile.length} BE to file`]
-    : [`${inPhase('sb').length} shipping bills to file`, `${inPhase('leo').length} waiting for LEO`, `${inPhase('sail').length} LEO given`]
+  // (no counts in the sub-line: the list's group heads and the export queue heads carry them)
+  const lastCheckText = lastCheck ? (fmtDate(lastCheck) === fmtDate(new Date().toISOString()) ? fmtTime(lastCheck) : fmtDateTime(lastCheck)) : null
 
   return (
     <>
-      <PageHead title={isImport ? 'BE & OOC' : 'Shipping bill & LEO'} sub={data ? sub : 'File in LiveImpex, record it here, then follow it'}
+      <PageHead title={isImport ? 'BE & OOC' : 'Shipping bill & LEO'}
         actions={<>
           <Segmented label="Imports or exports" value={kind} onChange={switchKind}
             options={[{ value: 'import', label: 'Imports' }, { value: 'export', label: 'Exports' }]} />
           <Button size="sm" variant="ghost" icon="refresh" onClick={refresh} disabled={loading}>{loading ? 'Loading…' : 'Refresh'}</Button>
         </>} />
 
-      {/* the honest promise: customs is checked when this page opens, not round the clock (audit, 31 Oct 2026) */}
+      {/* customs is checked when this page opens (each job at most every COOLDOWN_MIN
+          min; never again once OOC is granted), not round the clock (audit, 31 Oct 2026) */}
       {isImport && <AutoStatus auto={auto} fresh={fresh} what="customs"
         idle={waiting.length || advance.length
-          ? `Customs is checked when this page opens, each job at most every ${COOLDOWN_MIN} min${lastCheck ? ` · last check ${fmtDateTime(lastCheck)}` : ''}. Jobs with OOC granted are not checked again.`
+          ? `Checked automatically${lastCheckText ? ` · last ${lastCheckText}` : ''}`
           : 'No job is waiting for OOC, so there is nothing to check.'} />}
 
       {error && (
@@ -316,12 +276,12 @@ export default function CustomsPage({ currentUserName, onOpenJob, showToast, can
             selectedId={selId}
             onSelect={select}
             placeholder="Any import job: job no, client, BE, container…"
-            lists={groups}
+            lists={listGroups}
           />
           {selId
             ? <CustomsWorkspace jobId={selId} onOpenJob={onOpenJob} canEditBE={canEditBE} canUpdateStage={canUpdateStage} onClose={unselect}
                 currentUserName={currentUserName} showToast={showToast} groups={[...CUSTOMS_TAB_GROUPS, ...SHIP_GROUPS]} />
-            : <QueueTable groups={groups} onSelect={select} />}
+            : <PickJob />}
         </div>
       ) : (
         <div className="ix-queues">

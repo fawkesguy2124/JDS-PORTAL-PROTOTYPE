@@ -144,7 +144,16 @@ export default function ClientsPage({ onOpenJob }) {
       {label} {sort === id ? <Icon name={id === 'name' ? 'arrow-up' : 'arrow-down'} /> : <Icon name="selector" className="hint" />}
     </th>
   )
-  const COLS = 9
+  // say "Not in client list" only when it tells rows apart, and leave out a column
+  // that is empty on every row (Jose, 31 Oct 2026: each fact once, no blank columns)
+  const tagNotListed = notListed > 0 && notListed < clients.length
+  const show = {
+    gstin: clients.some((c) => c.gstin),
+    iec: clients.some((c) => c.iec),
+    city: clients.some((c) => c.place),
+    check: clients.some((c) => c.inList && /^\d{10}$/.test(c.iec)),
+  }
+  const COLS = 4 + (show.gstin ? 1 : 0) + (show.iec ? 2 : 0) + (show.city ? 1 : 0) + (show.check ? 1 : 0)
 
   const page = (
     <>
@@ -160,14 +169,17 @@ export default function ClientsPage({ onOpenJob }) {
           </EmptyState>
         ) : (
           <div className="ix-tbl-wrap rec-wrap">
-            <table className="ix-tbl click rec-tbl">
+            <table className={`ix-tbl click rec-tbl${COLS <= 5 ? ' narrow' : ''}`}>
               <thead>
                 <tr>
                   {sortTh('name', 'Client')}
                   {sortTh('open', 'Active jobs', 'r')}
                   <th className="r">Total</th>
                   {sortTh('last', 'Last job')}
-                  <th>GSTIN</th><th>IEC</th><th>IEC status</th><th>City</th><th />
+                  {show.gstin && <th>GSTIN</th>}
+                  {show.iec && <><th>IEC</th><th>IEC status</th></>}
+                  {show.city && <th>City</th>}
+                  {show.check && <th />}
                 </tr>
               </thead>
               <tbody>
@@ -182,7 +194,7 @@ export default function ClientsPage({ onOpenJob }) {
                         <td className="cl wide" title={c.legal && c.legal !== c.name ? `${c.name} · ${c.legal}` : c.name}>
                           <span className="rec-name">{c.name}</span>
                           {c.legal && c.legal !== c.name ? <span className="rec-x">{c.legal}</span> : null}
-                          {!c.inList ? <> <Chip tone="grey">Not in client list</Chip></> : null}
+                          {!c.inList && tagNotListed ? <> <Chip tone="grey">Not in client list</Chip></> : null}
                         </td>
                         <td className="r">{c.open ? <b className="rec-n">{c.open}</b> : <Dash />}</td>
                         <td className="r dim">{c.total || <Dash />}</td>
@@ -191,24 +203,28 @@ export default function ClientsPage({ onOpenJob }) {
                             ? <><JobNo no={c.last.job.job_no} onClick={() => onOpenJob?.(c.last.job.id, 'details')} />{c.last.job.created_at ? <span className="rec-x">{fmtDate(c.last.job.created_at)}</span> : null}</>
                             : <Dash />}
                         </td>
-                        <td className="mono">{c.gstin || <Dash />}</td>
-                        <td className="mono">{c.iec || <Dash />}</td>
-                        <td>
-                          {!c.iec ? <Dash />
-                            : !iecOk ? <span className="muted" title="This IEC has letters, so it can't be checked online">Can't check online</span>
-                            : <Chip tone={st.tone} icon={st.icon}>{st.text}</Chip>}
-                        </td>
-                        <td className="dim">{c.place || <Dash />}</td>
-                        <td className="r">
-                          {iecOk && c.inList && (
-                            <span className="row-act">
-                              <Button size="sm" variant="ghost" icon="id-badge-2"
-                                onClick={(e) => { e.stopPropagation(); setExpanded(c.key); setChecking(checking === c.key ? null : c.key) }}>
-                                {checking === c.key ? 'Close check' : 'Check IEC'}
-                              </Button>
-                            </span>
-                          )}
-                        </td>
+                        {show.gstin && <td className="mono">{c.gstin || <Dash />}</td>}
+                        {show.iec && <td className="mono">{c.iec || <Dash />}</td>}
+                        {show.iec && (
+                          <td>
+                            {!c.iec ? <Dash />
+                              : !iecOk ? <span className="muted" title="This IEC has letters, so it can't be checked online">Can't check online</span>
+                              : <Chip tone={st.tone} icon={st.icon}>{st.text}</Chip>}
+                          </td>
+                        )}
+                        {show.city && <td className="dim">{c.place || <Dash />}</td>}
+                        {show.check && (
+                          <td className="r">
+                            {iecOk && c.inList && (
+                              <span className="row-act">
+                                <Button size="sm" variant="ghost" icon="id-badge-2"
+                                  onClick={(e) => { e.stopPropagation(); setExpanded(c.key); setChecking(checking === c.key ? null : c.key) }}>
+                                  {checking === c.key ? 'Close check' : 'Check IEC'}
+                                </Button>
+                              </span>
+                            )}
+                          </td>
+                        )}
                       </tr>
                       {open && (
                         <tr className="rec-more">
@@ -244,7 +260,7 @@ export default function ClientsPage({ onOpenJob }) {
         )}
         {!busy && shown.length > 0 && (
           <div className="ix-tbl-foot">
-            <span>{shown.length} client{shown.length === 1 ? '' : 's'}</span>
+            {/* the count is in the line under the title */}
             <span className="right muted">Click a client to see its jobs</span>
           </div>
         )}

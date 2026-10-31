@@ -4,13 +4,12 @@ import { isDelivered, isExportJob, displayLine } from '../../services/journey'
 import { useJourney, useFreshOnOpen } from '../JourneyContext'
 import ShipMap, { vesselsOf, shipIdOf, shipPosition, voyage, toneOf } from '../ShipMap'
 import { cargoOnShip, seaOf } from '../../../supabase/functions/_shared/portal/ships.js'
-import { Icon, Skeleton, fmtDate, PageHead, KpiStrip, Kpi, JobNo, Status, Tabs, Panel, Button, EmptyState, Dash } from '../ui'
+import { Icon, Skeleton, fmtDate, PageHead, JobNo, Status, Tabs, Panel, Button, EmptyState, Dash } from '../ui'
 import { shipChecks, realMs } from '../shipChecks'
 import { polText, seaWhere, portName, notSailed, moveText, nextStop, atPort } from '../SeaTracking'
 import '../styles/tracking.css'
 
 const TONE_ORDER = { sea: 0, port: 1, old: 2 }
-const RANK = { red: 0, amber: 1, grey: 2, info: 3 }
 const pad = (n) => String(n).padStart(2, '0')
 
 // The line's ETA as a date (audit, 31 Oct 2026: every ETA ended in "6:30 pm"). A value
@@ -150,7 +149,8 @@ export default function VesselsPage({ onOpenJob, showToast, onGo }) {
   // ship leaves this list by itself two days later; Jose, 24 Oct 2026)
 
   // the tracking console (Jose, 25 Oct 2026): the ship list on the left, the map beside
-  // it, the figures on top
+  // it. No figures on top (Jose, 31 Oct 2026): the tabs already count the ships; only
+  // the next arrival, which the tabs don't say, sits in the page sub-line.
   const rows = ships.filter(shown).map((s) => {
     const m = mapShips.find((x) => x.key === s.key)
     const sea = seaOfShip(s)
@@ -161,43 +161,33 @@ export default function VesselsPage({ onOpenJob, showToast, onGo }) {
   const inGroup = (r, t) => (t === 'port' ? inPort(r) : t === 'sea' ? r.tone === 'sea' : t === 'attn' ? r.serious.length > 0 : true)
   const count = (t) => rows.filter((r) => inGroup(r, t)).length
   const listed = rows.filter((r) => inGroup(r, filter))
-  // what needs a look, most serious first (Jose, 25 Oct 2026); the calm notes
+  // the "Needs a look" tab is red when any ship has a red flag; the calm notes
   // (arriving soon, changes ship) stay on the row and in the map card
-  const alerts = rows.flatMap((r) => r.serious.map((f) => ({ ...f, key: r.s.key, jobs: r.s.jobs }))).sort((a, b) => RANK[a.tone] - RANK[b.tone])
-  const anyRed = alerts.some((a) => a.tone === 'red')
+  const anyRed = rows.some((r) => r.serious.some((f) => f.tone === 'red'))
   // the next ship due (the line's port time; Nhava Sheva is India time)
   const next = rows.filter((r) => r.podAt && r.tone === 'sea' && realMs(r.podAt, r.sea?.pod) > openedAt)
     .sort((a, b) => String(a.podAt).localeCompare(String(b.podAt)))[0]
   const nextEta = next ? etaParts(next.podAt) : null
   const noPosition = ships.filter((s) => !shown(s))
   const mapH = typeof window !== 'undefined' ? (window.innerWidth < 900 ? 420 : Math.max(520, window.innerHeight - 250)) : 560
-  const pickFilter = (id) => setFilter((f) => (f === id && id !== 'all' ? 'all' : id))
   const jobNos = (jobs) => jobs.map(({ job }) => <JobNo key={job.id} no={job.job_no} onClick={() => onOpenJob?.(job.id)} />)
+  // 'Next arrival J-674 · 20 Nov', job number first; pressing it shows that ship on the map
+  const nextLine = next ? (
+    <span>Next arrival{' '}
+      <button type="button" className="ix-link" style={{ marginLeft: 0, fontSize: 'inherit' }} onClick={() => setSelected(next.s.key)} title="Show this ship on the map">
+        {next.s.jobs.map(({ job }) => job.job_no).join(', ')} · {nextEta.day}{nextEta.time ? `, ${nextEta.time}` : ''}
+      </button>
+    </span>
+  ) : null
 
   return (
     <>
-      <PageHead title="Vessels" sub={['Every ship carrying our cargo, by job', 'positions update by themselves']} />
+      <PageHead title="Vessels" sub={[nextLine, next ? 'positions update by themselves' : 'Positions update by themselves']} />
 
       {loading && !data ? (
         <div className="ix-card"><Skeleton rows={5} /></div>
       ) : (
         <>
-          <KpiStrip>
-            <Kpi label="Ships tracked" value={rows.length} sub={noPosition.length ? `${noPosition.length} without a position yet` : 'All on the map'}
-              onClick={() => setFilter('all')} selected={filter === 'all'} />
-            <Kpi label="At sea" dot="blue" value={count('sea')} onClick={() => pickFilter('sea')} selected={filter === 'sea'} />
-            <Kpi label="At port" dot="teal" value={count('port')} onClick={() => pickFilter('port')} selected={filter === 'port'} />
-            <Kpi label="Next arrival" value={nextEta?.day ?? null}
-              sub={next ? <>{next.s.jobs.map(({ job }, i) => <span key={job.id}>{i > 0 && ', '}<JobNo no={job.job_no} size="sm" /></span>)}{nextEta.time ? ` · ${nextEta.time}` : ''}</> : 'No ship due'}
-              onClick={next ? () => setSelected(next.s.key) : undefined} title={next ? 'Show this ship on the map' : undefined} />
-            <Kpi label="Needs a look" dot={alerts.length ? (anyRed ? 'red' : 'amber') : undefined} tone={alerts.length ? (anyRed ? 'red' : 'amber') : undefined}
-              value={count('attn')} sub={alerts.length ? alerts[0].text : 'All ships on schedule'}
-              onClick={() => pickFilter('attn')} selected={filter === 'attn'} />
-          </KpiStrip>
-
-          {/* (no alert strip above the map: each ship's card in the list already says it;
-              Jose, 31 Oct 2026. The "Needs a look" tab and figure remain.) */}
-
           <section className="ix-card ix-trk-console" style={{ '--vt-h': `${mapH}px` }}>
             <aside className="ix-trk-list">
               <Tabs value={filter} onChange={setFilter} tabs={[
@@ -234,7 +224,8 @@ export default function VesselsPage({ onOpenJob, showToast, onGo }) {
                       <div className="l3">
                         {sea && !sea.error && sea.pod_date && <span>{sea.pod_actual ? 'Arrived' : 'ETA'} <b>{portEta(sea.pod_date)}</b></span>}
                         {kmLeft != null ? <span>{kmLeft.toLocaleString('en-IN')} km to go</span>
-                          : m.atPod && !m.arrived ? <span>At the port</span>
+                          // (the status already says At port: no second 'At the port' here)
+                          : m.atPod && !m.arrived ? (label === 'At port' ? null : <span>At the port</span>)
                             : m.waiting ? <span>Not sailed yet</span> : null}
                         {m.delay && !m.arrived && (
                           <span className={`ix-delay ${m.delay.tone}`} title="How far the line moved the ETA since tracking started">{m.delay.text}</span>

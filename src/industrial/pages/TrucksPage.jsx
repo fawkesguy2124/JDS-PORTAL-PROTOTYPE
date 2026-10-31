@@ -7,10 +7,10 @@ import UlipCheck from '../../components/ulip/UlipCheck'
 import { JOB_TABS } from '../../components/ulip/ulipChecks'
 import { JobPicker, TruckWorkspace, NoJobChosen } from '../JobChecks'
 import { useJourney, useFreshOnOpen } from '../JourneyContext'
-import { useAutoChecks, checkTruck, isDue, COOLDOWN_MIN } from '../autoChecks'
+import { useAutoChecks, checkTruck, isDue } from '../autoChecks'
 import AutoStatus from '../AutoStatus'
 import {
-  Icon, Chip, fmtDate, fmtDateTime, timeAgo, Skeleton, PageHead, KpiStrip, Kpi, JobNo, Status, Tabs, Button, SearchBox, FreeDays, EmptyState, Dash,
+  Icon, Chip, fmtDate, fmtDateTime, fmtTime, timeAgo, Skeleton, PageHead, JobNo, Status, Tabs, Button, SearchBox, FreeDays, EmptyState, Dash,
 } from '../ui'
 import { truckPoints } from '../truckPoints'
 import '../styles/tracking.css'
@@ -23,8 +23,9 @@ const TRUCK_GROUPS = JOB_TABS.find((t) => t.id === 'truck')?.groups || []
 // shows moving, and jobs waiting for a truck. Opening the page looks up every truck
 // on an open job by itself and checks each truck's papers once (limits in
 // autoChecks.js). "Where is it?" still works by hand.
-// One "on the road" list (onTheRoad) drives the status line, the map, the counts and
-// the table, so they always agree (audit, Jose 31 Oct 2026).
+// One "on the road" list (onTheRoad) drives the map, the count and the table, so they
+// always agree (audit, Jose 31 Oct 2026). Each fact once (Jose, 31 Oct 2026): no figures
+// strip (the panel heads carry the counts), the status line only when trucks are looked up.
 
 const WHERE_CHECK = {
   api: 'FASTAG/01', title: 'Where is the truck now?', description: 'Asks the toll system for the plazas this truck crossed in the last 72 hours.',
@@ -120,8 +121,7 @@ export default function TrucksPage({ currentUserName, onOpenJob, showToast, canU
   // import trucks whose 4-day watch is over while the job is still open (mark it delivered?)
   const tripOver = open.filter((r) => !isExportJob(r.job)).flatMap((r) => (r.j.trucks || []).filter((t) => truckTripOver(r, t)).map((t) => ({ key: `${r.job.id}:${t.no}`, jobId: r.job.id, r, t })))
   const papersBad = open.flatMap((r) => (r.j.trucks || []).filter((t) => t.papers?.found && t.papers.tone === 'bad').map((t) => ({ r, t })))
-  const roadTrucks = road.filter((x) => x.kind === 'truck').length
-  const roadMoving = road.length - roadTrucks
+  const roadMoving = road.filter((x) => x.kind !== 'truck').length
 
   const q = search.trim().toLowerCase()
   const match = (job) => !q || [...truckNos(job), job.job_no, job.client].some((v) => String(v || '').toLowerCase().includes(q))
@@ -161,11 +161,12 @@ export default function TrucksPage({ currentUserName, onOpenJob, showToast, canU
     return out
   })
   const auto = useAutoChecks(autoItems, fresh, refresh)
-  const idleText = entries.length
-    ? `Trucks on open jobs are looked up by themselves when you open this page (each at most every ${COOLDOWN_MIN} min). Mark a job delivered and its trucks stop being looked up.`
-    : road.length
-      ? `${plural(jobCount(road), 'job')} moving by container tracking, no truck number added yet, so nothing to look up.`
-      : 'No truck on the road, so nothing to look up.'
+  // the status line shows only when there are trucks to look up (no "nothing to look up" line)
+  const lastLook = entries.flatMap(({ job, truck: t }) => savedFor(job.id, 'FASTAG/01', t.no).map((x) => x.checked_at)).filter(Boolean).sort().at(-1)
+  const lastLookText = lastLook ? (fmtDate(lastLook) === fmtDate(new Date().toISOString()) ? fmtTime(lastLook) : fmtDateTime(lastLook)) : null
+  const showStatus = entries.length > 0 || auto.running || auto.total > 0
+  // (each truck at most every COOLDOWN_MIN min, see autoChecks.js)
+  const idleText = `Trucks looked up automatically${lastLookText ? ` · last ${lastLookText}` : ''}`
 
   const setForm = (jobId, patch) => setForms((p) => ({ ...p, [jobId]: { ...p[jobId], ...patch } }))
   const togglePanel = (key, kind) => setPanel((p) => (p?.key === key && p.kind === kind ? null : { key, kind }))
@@ -320,7 +321,8 @@ export default function TrucksPage({ currentUserName, onOpenJob, showToast, canU
           <td className="lvl" />
           <td><JobNo no={job.job_no} onClick={() => openJob(job)} /></td>
           <td className="cl">{job.client || <Dash />}</td>
-          <td><span className="ix-plate none">{x.mode === 'rail' ? 'Rail' : 'No truck no.'}</span></td>
+          {/* no truck number: a dash (the Add truck number button is on the row; "On rail" is in the status) */}
+          <td><Dash /></td>
           <td className="mono">{containersText(j.containers?.nos) || <Dash />}</td>
           <td className="two">
             <Status tone="blue">{text}{x.place ? ` · ${x.place}` : ''}</Status>
@@ -384,11 +386,10 @@ export default function TrucksPage({ currentUserName, onOpenJob, showToast, canU
   for (const x of [...roadShown.filter((e) => e.kind === 'truck'), ...waitingShown, ...overShown]) if (!firstKey.has(x.jobId)) firstKey.set(x.jobId, x.key)
   const anyTruckRows = roadShown.length + waitingShown.length + overShown.length > 0
   const showMap = road.length > 0 || entries.length > 0
-  const topReady = ready[0]
 
   return (
     <>
-      <PageHead title="Trucks" sub={['Every truck moving JDS cargo', 'from toll crossings and container tracking']}
+      <PageHead title="Trucks"
         actions={<>
           {view === 'trucks' && <SearchBox value={search} onChange={setSearch} placeholder="Truck, job or client" width={260} />}
           <Button size="sm" variant="ghost" icon="refresh" onClick={refresh} disabled={loading}>{loading ? 'Loading…' : 'Refresh'}</Button>
@@ -425,28 +426,34 @@ export default function TrucksPage({ currentUserName, onOpenJob, showToast, canU
         </div>
       ) : (
         <>
-          <AutoStatus auto={auto} fresh={fresh} what="trucks" idle={idleText} />
+          {showStatus && <AutoStatus auto={auto} fresh={fresh} what="trucks" idle={idleText} />}
 
           {loading && !data ? (
             <div className="ix-card"><Skeleton rows={6} /></div>
           ) : error ? null : (
             <>
-              <KpiStrip>
-                <Kpi label="On the road" dot={road.length ? 'blue' : undefined} value={jobCount(road)} unit={jobCount(road) === 1 ? 'job' : 'jobs'}
-                  sub={road.length ? [roadTrucks && plural(roadTrucks, 'truck') + ' seen', roadMoving && `${roadMoving} by container tracking`].filter(Boolean).join(' · ') : 'No truck on the road'} />
-                <Kpi label="Ready for a truck" dot={ready.length ? 'amber' : undefined} tone={ready.length ? 'amber' : undefined} value={ready.length}
-                  sub={topReady ? <><JobNo no={topReady.job.job_no} size="sm" />{topReady.j.freeTill ? ` free till ${fmtDate(topReady.j.freeTill)}` : topReady.j.oocDate ? ` OOC ${fmtDate(topReady.j.oocDate)}` : ' first in line'}</> : 'No job waiting'}
-                  onClick={ready.length ? () => readyRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }) : undefined} title="Go to the jobs waiting for a truck" />
-                <Kpi label="Export carting" value={carting.length} sub={carting.length ? `${carting.filter((r) => truckNos(r.job).length).length} with a truck` : 'No export cargo moving'} />
-                <Kpi label="Papers problems" dot={papersBad.length ? 'red' : undefined} tone={papersBad.length ? 'red' : undefined} value={papersBad.length}
-                  sub={papersBad[0] ? <><JobNo no={papersBad[0].r.job.job_no} size="sm" /> truck {papersBad[0].t.no}</> : 'Registration, fitness, insurance'} />
-              </KpiStrip>
+              {/* papers problems: a red line only when there is one */}
+              {papersBad.length > 0 && (
+                <div className="ix-trk-alerts" role="alert">
+                  <div className="ix-trk-al red">
+                    <Icon name="alert-triangle" />
+                    <p>
+                      <span>{papersBad.length === 1 ? 'Truck papers problem' : `${papersBad.length} truck papers problems`}</span>
+                      {papersBad.map(({ r, t }) => (
+                        <span key={`${r.job.id}:${t.no}`} className="t" title={t.papers?.summary || undefined}>
+                          <JobNo no={r.job.job_no} onClick={() => openJob(r.job)} /> truck {t.no}
+                        </span>
+                      ))}
+                    </p>
+                  </div>
+                </div>
+              )}
 
               <section className="ix-card ix-trk-panel">
                 <div className="ix-card-head">
                   <Icon name="road" />
                   <h2>On the road</h2><span className="n">{jobCount(road)}</span>
-                  <span className="sub hide-m">Last toll crossing of each truck, and boxes container tracking sees moving</span>
+                  <span className="sub hide-m">Last toll crossing of each truck (last 4 days), and boxes container tracking sees moving</span>
                 </div>
                 {showMap ? (
                   <Suspense fallback={<div className="ix-realmap"><div className="ix-realmap-msg">Loading map…</div></div>}>
@@ -463,7 +470,7 @@ export default function TrucksPage({ currentUserName, onOpenJob, showToast, canU
                     <table className="ix-tbl">
                       {truckHead}
                       <tbody>
-                        {roadShown.length > 0 && group('road', 'On the road', roadShown.length, 'Seen in the last 4 days')}
+                        {/* (no 'On the road' group row: the panel head above already says it) */}
                         {roadShown.map((x) => {
                           if (x.kind !== 'truck') return movingRow(x)
                           const t = (x.j.trucks || []).find((tr) => tr.no === x.truckNo)

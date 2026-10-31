@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../supabase'
-import { PageHead, KpiStrip, Kpi, Panel, Status, Chip, Button, Dash, EmptyState, Skeleton, fmtTime, fmtDateTime, timeAgo } from '../ui'
-import { healthTones, autoCheckLine } from '../AutoStatus'
+import { PageHead, Panel, Status, Chip, Button, Dash, EmptyState, Skeleton, fmtTime, fmtDateTime, timeAgo } from '../ui'
+import { healthTones } from '../AutoStatus'
 import '../styles/records.css'
 
 // System health (Jose, 25 Oct 2026): is every background service running?
@@ -106,28 +106,15 @@ export default function HealthPage() {
   ]
   const headline = t.overall === 'green' ? 'Everything is running normally'
     : t.overall === 'amber' ? 'Running, but something needs a look' : 'Something has stopped, see the red row'
-  const tone = (x) => (x === 'green' ? undefined : x)
 
   return (
     <>
       <PageHead title="System health"
-        sub={[<Status key="o" tone={t.overall}>{headline}</Status>, `checked ${fmtTime(h.now)} IST`, 'background services that keep the portal, alerts and WhatsApp up to date']}
+        sub={[<Status key="o" tone={t.overall}>{headline}</Status>, `checked ${fmtTime(h.now)} IST`]}
         actions={checkNow} />
       {err && <div className="ix-error">Last check failed — {err}. Showing the previous result.</div>}
 
-      <KpiStrip>
-        <Kpi label="Automatic checks" dot={t.auto} tone={tone(t.auto)} value={a.watching || 0} unit="watching"
-          sub={autoCheckLine(h) || 'not run yet'} />
-        <Kpi label="Ship tracking" dot={t.ships} tone={tone(t.ships)} value={s.tracked || 0} unit={s.tracked === 1 ? 'ship' : 'ships'}
-          sub={s.last_update ? `updated ${fmtTime(s.last_update)}` : 'not updated yet'} />
-        <Kpi label="Container tracking" dot={t.boxes} tone={tone(t.boxes)} value={c.tracked || 0} unit="boxes"
-          sub={c.last_refresh ? `refreshed ${fmtTime(c.last_refresh)}` : 'not refreshed yet'} />
-        <Kpi label="WhatsApp & alerts" dot={t.whatsapp} tone={tone(t.whatsapp)} value={w.sent || 0} unit="sent in 24 h"
-          sub={w.failed ? `${w.failed} failed` : `${w.held || 0} held`} />
-        <Kpi label="Government lookups" dot={t.gov} tone={tone(t.gov)} value={govOk + govFailed} unit="in 24 h"
-          sub={govFailed ? `${govFailed} failed` : 'none failed'} />
-      </KpiStrip>
-
+      {/* no count tiles: they repeated the Services rows below (Jose, 31 Oct 2026) */}
       <Panel title="Services" className="rec-panel">
         <div className="ix-tbl-wrap">
           <table className="ix-tbl rec-tbl">

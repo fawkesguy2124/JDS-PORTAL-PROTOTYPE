@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../../supabase'
-import { daysAgo, detentionLevel, isExportJob, jobCount } from '../../services/journey'
+import { daysAgo, detentionLevel, isExportJob } from '../../services/journey'
 import { seaOf } from '../../../supabase/functions/_shared/portal/ships.js'
 import { useJourney, useFreshOnOpen } from '../JourneyContext'
 import {
@@ -10,7 +10,8 @@ import {
 import { getPrefs, setPref } from '../settings'
 import '../styles/today.css'
 
-// Today (Control tower, Jose 31 Oct 2026): KPIs that filter the list, the pipeline,
+// Today (Control tower, Jose 31 Oct 2026): KPIs that filter the list (only the three the
+// pipeline does not already show: Active jobs, Need action, Free days ≤ 2), the pipeline,
 // one row per job worst problem first, the free-time runway and the latest updates.
 // Every count comes from useJourney() (active / facts), so it matches the sidebar.
 
@@ -52,8 +53,8 @@ const GROUPS = [
   { id: 'none', title: 'No action needed' },
 ]
 // the list's title for each KPI filter, and the All jobs view that shows the same jobs
-const KF_TITLE = { action: 'Needs action', active: 'Active jobs', risk: 'Free days ≤ 2', move: 'Move not arranged', ooc: 'Waiting for OOC', road: 'On the road', arriving: 'Arriving in 7 days' }
-const JOBS_VIEW = { action: 'action', active: 'open', risk: 'detention', move: 'truck', ooc: 'ooc', road: 'onroad', arriving: 'open' }
+const KF_TITLE = { action: 'Needs action', active: 'Active jobs', risk: 'Free days ≤ 2' }
+const JOBS_VIEW = { action: 'action', active: 'open', risk: 'detention' }
 
 // ETA of a job not yet arrived: the ship tracking's date when it has one, else the job's
 // (the line's dates for an Indian port are port time saved as UTC, as in journeyFor)
@@ -197,8 +198,6 @@ export default function TodayPage({ onOpenJob, onGo, profile }) {
     for (const c of boxes) (boxesBy[c.jobId] ||= []).push(c)
     const road = facts.onRoad.filter((e) => ids.has(e.jobId))
     const risk = facts.detention.filter((r) => ids.has(r.job.id))
-    const need = facts.needTruck.filter((r) => ids.has(r.job.id))
-    const ooc = act.filter((r) => r.j.phase === 'ooc')
 
     const all = act.map((r) => {
       const items = r.j.attention || []
@@ -231,7 +230,7 @@ export default function TodayPage({ onOpenJob, onGo, profile }) {
       .filter((r) => { const d = daysAgo(r.at, now); return d !== null && d >= 0 && d < 7 })
       .sort((a, b) => String(b.at).localeCompare(String(a.at)))
 
-    return { act, all, byId, boxes, road, risk, need, ooc, action, watching, arriving, delivered, shown: new Set([...ids, ...delivered.map((r) => r.job.id)]) }
+    return { act, all, byId, boxes, risk, action, watching, arriving, delivered, shown: new Set([...ids, ...delivered.map((r) => r.job.id)]) }
   }, [active, rows, facts, kind, mine, me, data, now])
 
   const dash = loading && !data
@@ -242,10 +241,6 @@ export default function TodayPage({ onOpenJob, onGo, profile }) {
       action: null,
       active: v.all.map((x) => x.id),
       risk: v.risk.map((r) => r.job.id),
-      move: v.need.map((r) => r.job.id),
-      ooc: v.ooc.map((r) => r.job.id),
-      road: [...new Set(v.road.map((e) => e.jobId))],
-      arriving: v.arriving.map((x) => x.id),
     }[kf]
     return ids ? ids.map((id) => v.byId[id]).filter(Boolean) : v.action
   }, [kf, v])
@@ -254,28 +249,17 @@ export default function TodayPage({ onOpenJob, onGo, profile }) {
   // ── KPI figures ──
   const red = v.action.filter((x) => x.level === 'red').length
   const firstRisk = [...v.risk].sort((a, b) => a.j.freeDaysLeft - b.j.freeDaysLeft)[0]
-  const oldestMove = v.need.map((r) => ({ r, d: daysAgo(r.j.oocDate, now) })).filter((x) => x.d !== null).sort((a, b) => b.d - a.d)[0]
-  const oocDays = v.ooc.map((r) => ({ r, d: daysAgo(r.job.be_date, now) })).filter((x) => x.d !== null).sort((a, b) => b.d - a.d)
-  const roadJobs = jobCount(v.road)
-  const lastRoad = v.road[0]
   const openBoxes = v.boxes.filter((c) => !c.finishedOn).length
-  const firstArr = v.arriving[0]
-  // one job waiting: 'J-689 · 9 d since BE'; more: 'oldest 12 d · avg 7 d' (audit)
-  const oocSub = !oocDays.length ? (v.ooc.length ? null : 'none waiting')
-    : oocDays.length === 1 ? <><JobNo no={oocDays[0].r.job.job_no} /> · {oocDays[0].d} d since BE</>
-      : `oldest ${oocDays[0].d} d · avg ${Math.round(oocDays.reduce((s, x) => s + x.d, 0) / oocDays.length)} d`
-  const etaText = (eta) => { const d = daysAgo(eta, now); return d === 0 ? 'ETA today' : d < 0 ? `ETA ${fmtDate(eta)}` : `ETA was ${fmtDate(eta)}` }
   const pick = (id) => setKf((cur) => (cur === id ? 'action' : id))
 
   const openView = (view) => { savePref('ix_jobs_view', view); onGo?.('jobs') }
   const open = (id, tab) => onOpenJob?.(id, tab)
 
-  // ── page head: 'Saturday 31 Oct · refreshed 19:42 IST · 12 active jobs' ──
+  // ── page head: 'Saturday 31 Oct · refreshed 19:42 IST' (the job count is the Active jobs KPI) ──
   const dateText = now ? `${WEEKDAY[new Date(now + IST).getUTCDay()]} ${fmtDate(data.loadedAt)}` : null
   const sub = [
     dateText,
     data && <span title={`Loaded ${timeAgo(data.loadedAt)}`}>refreshed {fmtTime(data.loadedAt)} IST</span>,
-    !dash && `${v.act.length} active ${v.act.length === 1 ? 'job' : 'jobs'}${kind !== 'all' ? ` (${kind === 'export' ? 'exports' : 'imports'})` : ''}${mine ? ', mine' : ''}`,
   ]
 
   return (
@@ -299,19 +283,6 @@ export default function TodayPage({ onOpenJob, onGo, profile }) {
             ? <><JobNo no={firstRisk.job.job_no} /> {firstRisk.j.freeDaysLeft < 0 ? `${-firstRisk.j.freeDaysLeft} d over` : firstRisk.j.freeTill ? `free till ${fmtDate(firstRisk.j.freeTill)}` : `${firstRisk.j.freeDaysLeft} d left`}</>
             : 'no risk today')}
           onClick={() => pick('risk')} selected={kf === 'risk'} title="Jobs at detention risk (2 free days or less)" />
-        <Kpi label="Move not arranged" tone={v.need.length ? 'amber' : undefined} value={dash ? null : v.need.length} unit={v.need.length ? (v.need.length === 1 ? 'job' : 'jobs') : undefined}
-          sub={!dash && (oldestMove ? <>oldest <JobNo no={oldestMove.r.job.job_no} /> · OOC {oldestMove.d} d ago</> : v.need.length ? 'arrange truck or rail' : 'all arranged')}
-          onClick={() => pick('move')} selected={kf === 'move'} title="OOC done, no truck or rail arranged" />
-        <Kpi label="Waiting for OOC" value={dash ? null : v.ooc.length} sub={!dash && oocSub}
-          onClick={() => pick('ooc')} selected={kf === 'ooc'} title="BE filed, OOC not yet" />
-        <Kpi label="On the road" value={dash ? null : roadJobs}
-          sub={!dash && (lastRoad
-            ? <><JobNo no={lastRoad.job.job_no} /> · {lastRoad.place || (lastRoad.kind === 'left' ? `left ${fmtDate(lastRoad.at)}` : lastRoad.mode === 'rail' ? 'on rail' : 'moving')}</>
-            : v.need.length ? `${v.need.length} ready for a truck` : 'no truck seen')}
-          onClick={() => pick('road')} selected={kf === 'road'} title="Trucks seen at a toll, or containers moving, in the last 4 days" />
-        <Kpi label="Arriving ≤ 7 days" value={dash ? null : v.arriving.length}
-          sub={!dash && (firstArr ? <><JobNo no={firstArr.job.job_no} /> · {etaText(firstArr.eta)}</> : 'none due')}
-          onClick={() => pick('arriving')} selected={kf === 'arriving'} title="Ships and flights due within 7 days, or due and not in yet" />
       </KpiStrip>
 
       <Pipeline v={v} kind={kind} dash={dash} now={now} onOpenJob={open} openView={openView} />

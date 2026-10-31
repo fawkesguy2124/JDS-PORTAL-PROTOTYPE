@@ -38,6 +38,9 @@
 .ix-cn-wt { min-width: 0; overflow: hidden; text-overflow: ellipsis }
 .ix-cn-ev { display: inline-flex; align-items: baseline; gap: 6px }
 .ix-cn-ev .at { color: var(--muted); font-size: var(--fs-sm); font-variant-numeric: tabular-nums }
+/* Where now's 'since <date>' is left out while Last event (on screen from 1280px)
+   shows that same day; below 1280px the Last event column is gone, so it stays */
+@media (min-width: 1280px) { .ix-cn-tbl td.dupsince .ix-st .x { display: none } }
 .ix-cn-tbl tr.done td { color: var(--muted) }
 .ix-cn-tbl tr.done .ix-cn-no { color: var(--text-2) }
 .ix-cn-wrap { max-height: calc(100vh - 330px); min-height: 160px }
