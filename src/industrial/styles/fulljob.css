@@ -39,7 +39,7 @@
 .ix-fj-f > .k { color: var(--text-2); font-size: var(--fs-md); display: flex; align-items: center; gap: 4px; min-width: 0 }
 .ix-fj-f > .k .lock { font-size: 12px; color: var(--faint) }
 .ix-fj-f > .v { min-width: 0; overflow-wrap: anywhere; font-size: var(--fs-md) }
-.ix-fj-f > .v .mono { font-size: 12px }
+.ix-fj-f > .v .mono { font: inherit }
 .ix-fj-cn { display: inline-block; margin-right: 8px }
 
 /* who filled a field */

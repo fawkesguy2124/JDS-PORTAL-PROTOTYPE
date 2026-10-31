@@ -127,7 +127,8 @@
 .ix-jp-kv { display: grid; grid-template-columns: 140px minmax(0, 1fr); border-top: 1px solid var(--line); margin-bottom: 16px }
 .ix-jp-kv > div { padding: 6px 0; border-bottom: 1px solid var(--line); font-size: var(--fs-md); min-width: 0; overflow-wrap: anywhere }
 .ix-jp-kv > div:nth-child(odd) { color: var(--text-2); padding-right: 8px }
-.ix-jp-kv .mono { font-size: 12px }
+/* numbers in the same font and size as the other details (Jose, 31 Oct 2026) */
+.ix-jp-kv .mono { font: inherit }
 .ix-jp-kv .flag { color: var(--navy); font-size: var(--fs-sm); margin-left: 6px; white-space: nowrap }
 .ix-jp-kv .trucks { display: flex; gap: 6px; flex-wrap: wrap; align-items: center }
 .ix-jp-kv .ix-plate { font-size: 12px; border-width: 1px }
