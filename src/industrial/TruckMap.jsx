@@ -12,7 +12,20 @@ import { Icon, fmtDateTime } from './ui'
 // can't draw it (very old phone, no WebGL), the plain OpenStreetMap tiles.
 const MAP_STYLE = 'https://tiles.openfreemap.org/styles/liberty'
 const ENGLISH = ['coalesce', ['get', 'name:en'], ['get', 'name_int'], ['get', 'name:latin'], ['get', 'name']]
+// Dark mode (Jose, 31 Oct 2026): the street map has no dark style of its own, so in
+// dark mode its tiles are drawn inverted (light streets become dark, colours kept).
+// Only the base map: the pins and tags sit in their own panes and keep their colours.
+const DARK_TILES = 'invert(.9) hue-rotate(180deg) brightness(.95) contrast(.9)'
+const isDark = () => document.documentElement.dataset.theme === 'dark'
+function darkTiles(m) {
+  const paint = () => { const p = m.getPane('tilePane'); if (p) p.style.filter = isDark() ? DARK_TILES : '' }
+  paint()
+  const watch = new MutationObserver(paint)
+  watch.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
+  m.on('unload', () => watch.disconnect())
+}
 export function addBaseMap(m) {
+  darkTiles(m)
   try {
     const gl = L.maplibreGL({ style: MAP_STYLE, attribution: '© <a href="https://openfreemap.org" target="_blank">OpenFreeMap</a> · <a href="https://www.openmaptiles.org/" target="_blank">OpenMapTiles</a> · <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a>' }).addTo(m)
     const ml = gl.getMaplibreMap()

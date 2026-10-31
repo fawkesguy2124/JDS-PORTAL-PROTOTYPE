@@ -11,7 +11,33 @@
     <meta name="apple-mobile-web-app-title" content="JDS Portal" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>JDS Logistics Portal</title>
+    <script>
+      // The theme chosen in Settings (jds_prefs_v1, src/industrial/settings.js), set
+      // before anything is drawn so a dark portal never flashes white (31 Oct 2026).
+      (function () {
+        var theme = 'light', p = null
+        try { p = JSON.parse(localStorage.getItem('jds_prefs_v1') || 'null') } catch (e) {}
+        // only the admin portal has a dark theme; login and the staff screen stay light
+        var portal = location.pathname.indexOf('/admin') === 0
+        if (!portal) p = p ? { density: p.density, text: p.text, motion: p.motion } : null
+        if (p && p.theme === 'dark') theme = 'dark'
+        else if (p && p.theme === 'system' && window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches) theme = 'dark'
+        var root = document.documentElement
+        root.setAttribute('data-theme', theme)
+        root.style.colorScheme = theme
+        if (p) {
+          if (p.density) root.setAttribute('data-density', p.density)
+          if (p.text) root.setAttribute('data-text', p.text)
+          if (p.motion) root.setAttribute('data-motion', p.motion)
+        }
+        if (theme === 'dark') { var m = document.querySelector('meta[name="theme-color"]'); if (m) m.setAttribute('content', '#0e2650') }
+      })()
+    </script>
     <style>
+      /* dark theme: the page and the boot screen start dark too */
+      html[data-theme="dark"], html[data-theme="dark"] body { background: #0b1220 }
+      html[data-theme="dark"] #boot { background: #0b1220 }
+      html[data-motion="reduce"] #boot .logo { animation: none }
       /* shown until the app has loaded (the app window opens on this, not on a blank page) */
       #boot { position: fixed; inset: 0; display: grid; place-items: center; background: #f3f5f8 }
       /* the same mark as the sidebar logo: navy squircle, JDS, amber bar (Control tower, 31 Oct 2026) */

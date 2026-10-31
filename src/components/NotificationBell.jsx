@@ -2,9 +2,29 @@ import { useState, useEffect, useRef, useMemo } from 'react'
 import { supabase } from '../supabase'
 import { alertUrl } from '../../supabase/functions/_shared/portal/alertLinks.js'
 import DesktopAlerts from './DesktopAlerts'
+import { fmtDate, fmtTime } from '../industrial/ui'
+import { bellKindOf, beep, getPrefs, usePrefs } from '../industrial/settings'
 
 const getStorageKey = (userId) => `jds_notif_last_seen_${userId || 'unknown'}`
 
+// Light token values (same as industrial.css) for when the bell is not inside .ix
+// (EmployeeDashboard). Inside .ix the shell's tokens, light or dark, are used.
+const BELL_TOKENS = `.jds-bell:not(.ix *) {
+  --navy: #1a4fa0; --navy-50: #eef3fb; --navy-100: #dce6f6; --navy-200: #b8cbec;
+  --primary: #1a4fa0; --on-fill: #fff; --red-fill: #c81e1e;
+  --surface: #fff; --surface-2: #f8f9fb; --line: #e3e7ed; --line-2: #d3d9e2;
+  --text: #101828; --text-2: #475467; --muted: #8792a5;
+  --green: #16803c; --amber: #b45309; --amber-bg: #fff6e8; --amber-line: #f5d6a3;
+  --red: #c81e1e; --red-bg: #fdefef; --red-line: #f3c3c3;
+  --teal: #0f766e; --teal-bg: #e8f4f3; --teal-line: #b7ddd8;
+  --blue: var(--navy); --blue-bg: var(--navy-50); --blue-line: var(--navy-200);
+  --grey-bg: #f1f3f6; --grey-line: #dde2e9; --r-lg: 8px;
+  --mono: ui-monospace, 'Cascadia Mono', 'SF Mono', Consolas, monospace;
+  --shadow-pop: 0 8px 24px rgba(16, 24, 40, .12), 0 2px 6px rgba(16, 24, 40, .06);
+}`
+
+// '14:43' today, 'Yesterday, 14:43', else '29 Oct, 14:43' (IST; 12 h or 24 h as
+// chosen in Settings)
 function formatNotifTime(ts) {
   if (!ts) return ''
   const d = new Date(ts)
@@ -15,21 +35,14 @@ function formatNotifTime(ts) {
   const notifDay = new Date(d)
   notifDay.setHours(0, 0, 0, 0)
 
-  const timeStr = d.toLocaleTimeString('en-IN', {
-    hour: '2-digit', minute: '2-digit',
-    hour12: true, timeZone: 'Asia/Kolkata'
-  }).toUpperCase()
-
+  const timeStr = fmtTime(ts)
   if (notifDay.getTime() === today.getTime()) {
     return timeStr
   }
   if (notifDay.getTime() === yesterday.getTime()) {
     return `Yesterday, ${timeStr}`
   }
-  const dateStr = d.toLocaleDateString('en-IN', {
-    day: '2-digit', month: 'short', timeZone: 'Asia/Kolkata'
-  })
-  return `${dateStr}, ${timeStr}`
+  return `${fmtDate(ts)}, ${timeStr}`
 }
 
 function groupByDay(notifications) {
@@ -66,6 +79,9 @@ export default function NotificationBell({ onNavigate, profile }) {
   const [readAhead, setReadAhead] = useState(() => [])
   const dropdownRef = useRef(null)
   const bellRef = useRef(null)
+  // Settings: kinds of update hidden from the bell, and a beep for new ones
+  const [prefs] = usePrefs()
+  const muted = prefs.bellMuted
 
   // Load lastSeen after profile is available
   useEffect(() => {
@@ -92,12 +108,20 @@ export default function NotificationBell({ onNavigate, profile }) {
     }
     load()
 
+    let lastBeep = 0
     const channel = supabase
       .channel('activity_log_changes')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'activity_log' }, payload => {
         const allowedTypes = ROLE_FILTERS[profile?.role] ?? ['container_update', 'detention_alert', 'ooc_granted', 'ship_arrived']
         if (profile?.role === 'admin' || allowedTypes.includes(payload.new.type)) {
           setNotifications(prev => [payload.new, ...prev].slice(0, 50))
+          // one beep for a new update of a kind that is shown (a burst of
+          // updates from one check beeps once)
+          const p = getPrefs()
+          if (p.bellSound && !p.bellMuted.includes(bellKindOf(payload.new.type || payload.new.action)) && Date.now() - lastBeep > 3000) {
+            lastBeep = Date.now()
+            beep()
+          }
         }
       })
       .subscribe()
@@ -116,11 +140,16 @@ export default function NotificationBell({ onNavigate, profile }) {
     return () => document.removeEventListener('mousedown', handler)
   }, [])
 
+  // the updates the bell shows (kinds switched off in Settings are left out)
+  const shown = useMemo(() => (muted.length
+    ? notifications.filter((n) => !muted.includes(bellKindOf(n.type || n.action)))
+    : notifications), [notifications, muted])
+
   const unreadCount = useMemo(() =>
-    notifications.filter(n =>
+    shown.filter(n =>
       (!lastSeen || new Date(n.created_at) > new Date(lastSeen)) && !readAhead.includes(n.id)
     ).length
-  , [notifications, lastSeen, readAhead])
+  , [shown, lastSeen, readAhead])
 
   // Opening the bell marks everything read (Jose, 31 Oct 2026: no "Mark all read" button).
   // "Read up to" is now; alerts stamped later than now (old LDB 11:59 pm stamps) are
@@ -140,7 +169,7 @@ export default function NotificationBell({ onNavigate, profile }) {
 
   // how many were new when the bell was opened (shown in the header while it is open)
   const wasNew = (n) => newSince === '' || (!!newSince && new Date(n.created_at) > new Date(newSince) && !newAhead.includes(n.id))
-  const newCount = notifications.filter(wasNew).length
+  const newCount = shown.filter(wasNew).length
 
   const handleOpen = () => {
     const nowOpen = !open
@@ -167,8 +196,8 @@ export default function NotificationBell({ onNavigate, profile }) {
   }
 
   const filteredNotifications = filter === 'all'
-    ? notifications
-    : notifications.filter(n => {
+    ? shown
+    : shown.filter(n => {
         const t = n.type || n.action || ''
 if (filter === 'container') return t.includes('container') || t === 'detention_alert'
       if (filter === 'alert') return t === 'detention_alert'
@@ -180,41 +209,47 @@ if (filter === 'container') return t.includes('container') || t === 'detention_a
 
   const groups = groupByDay(filteredNotifications)
 
+  // colours are the portal's tokens, so the bell follows the light / dark theme
   const tagStyles = {
-    alert:     { bg: '#FCEBEB', color: '#791F1F', border: '#F7C1C1' },
-    container: { bg: '#E6F1FB', color: '#0C447C', border: '#B5D4F4' },
-    job:       { bg: '#EAF3DE', color: '#27500A', border: '#C0DD97' },
-    document:  { bg: '#FAEEDA', color: '#633806', border: '#FAC775' },
-    ulip:      { bg: '#ecfdf5', color: '#065f46', border: '#d1fae5' },
-    default:   { bg: '#f4f6f9', color: '#4a5568', border: '#e2e6ed' },
+    alert:     { bg: 'var(--red-bg)', color: 'var(--red)', border: 'var(--red-line)' },
+    container: { bg: 'var(--blue-bg)', color: 'var(--blue)', border: 'var(--blue-line)' },
+    job:       { bg: 'var(--grey-bg)', color: 'var(--text-2)', border: 'var(--grey-line)' },
+    document:  { bg: 'var(--amber-bg)', color: 'var(--amber)', border: 'var(--amber-line)' },
+    ulip:      { bg: 'var(--teal-bg)', color: 'var(--teal)', border: 'var(--teal-line)' },
+    default:   { bg: 'var(--grey-bg)', color: 'var(--text-2)', border: 'var(--grey-line)' },
   }
 
   return (
-    <div style={{ position: 'relative' }}>
+    <div className="jds-bell" style={{ position: 'relative' }}>
+      {/* the staff dashboard draws the bell outside the .ix shell: give it the light tokens there */}
+      <style>{BELL_TOKENS}</style>
       <button
         ref={bellRef}
         onClick={handleOpen}
         style={{
           width: '36px', height: '36px', borderRadius: '8px', position: 'relative',
-          border: unreadCount > 0 ? '1.5px solid #fecaca' : '1.5px solid #e2e6ed',
-          background: unreadCount > 0 ? '#fef2f2' : open ? '#E6F1FB' : 'white',
+          border: unreadCount > 0 ? '1.5px solid var(--red-line)' : '1.5px solid var(--line-2)',
+          background: unreadCount > 0 ? 'var(--red-bg)' : open ? 'var(--navy-50)' : 'var(--surface)',
+          color: 'var(--text-2)',
           cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
           fontSize: '16px', transition: 'all 0.15s',
         }}
-        onMouseEnter={e => { e.currentTarget.style.borderColor = '#1a4fa0'; e.currentTarget.style.background = '#E6F1FB' }}
+        onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--navy)'; e.currentTarget.style.background = 'var(--navy-50)' }}
         onMouseLeave={e => {
-          e.currentTarget.style.borderColor = unreadCount > 0 ? '#fecaca' : open ? '#1a4fa0' : '#e2e6ed'
-          e.currentTarget.style.background = unreadCount > 0 ? '#fef2f2' : open ? '#E6F1FB' : 'white'
+          e.currentTarget.style.borderColor = unreadCount > 0 ? 'var(--red-line)' : open ? 'var(--navy)' : 'var(--line-2)'
+          e.currentTarget.style.background = unreadCount > 0 ? 'var(--red-bg)' : open ? 'var(--navy-50)' : 'var(--surface)'
         }}
+        aria-label={unreadCount > 0 ? `Notifications, ${unreadCount} new` : 'Notifications'}
+        title="Notifications"
       >
-        🔔
+        <i className="ti ti-bell" aria-hidden="true" />
         {unreadCount > 0 && (
           <span style={{
             position: 'absolute', top: '-5px', right: '-5px',
-            background: '#dc2626', color: 'white', borderRadius: '9999px',
+            background: 'var(--red-fill)', color: 'var(--on-fill)', borderRadius: '9999px',
             fontSize: '10px', fontWeight: 700, minWidth: '16px', height: '16px',
             padding: '0 3px', display: 'flex', alignItems: 'center', justifyContent: 'center',
-            border: '2px solid white', animation: 'bellBadgePop 0.25s cubic-bezier(0.16,1,0.3,1)',
+            border: '2px solid var(--surface)', animation: 'bellBadgePop 0.25s cubic-bezier(0.16,1,0.3,1)',
           }}>
             {unreadCount > 99 ? '99+' : unreadCount}
           </span>
@@ -228,9 +263,9 @@ if (filter === 'container') return t.includes('container') || t === 'detention_a
             position: 'fixed',
             top: window.innerWidth >= 768 ? '56px' : '68px',
             right: window.innerWidth >= 768 ? '72px' : '8px',
-            width: 'min(360px, calc(100vw - 16px))', background: 'white',
-            border: '1.5px solid #d0d9e8', borderRadius: '14px',
-            boxShadow: '0 8px 32px rgba(0,0,0,0.14)', zIndex: 9999,
+            width: 'min(360px, calc(100vw - 16px))', background: 'var(--surface)', color: 'var(--text)',
+            border: '1px solid var(--line)', borderRadius: 'var(--r-lg)',
+            boxShadow: 'var(--shadow-pop)', zIndex: 9999,
             overflow: 'hidden',
             maxHeight: 'calc(100vh - 88px)',
             animation: 'bellDropdown 0.18s cubic-bezier(0.16,1,0.3,1)',
@@ -241,27 +276,32 @@ if (filter === 'container') return t.includes('container') || t === 'detention_a
             @keyframes bellDropdown { from { opacity:0; transform: translateY(-6px) scale(0.97) } to { opacity:1; transform: translateY(0) scale(1) } }
           `}</style>
 
-          <div style={{ padding: '12px 16px 10px', borderBottom: '0.5px solid #e2e6ed', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', fontWeight: 700, color: '#1a2233' }}>
+          <div style={{ padding: '12px 16px 10px', borderBottom: '1px solid var(--line)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', fontWeight: 700, color: 'var(--text)' }}>
               Notifications
               {newCount > 0 && (
-                <span style={{ background: '#dc2626', color: 'white', borderRadius: '9999px', fontSize: '10px', fontWeight: 700, padding: '2px 7px' }}>
+                <span style={{ background: 'var(--red-fill)', color: 'var(--on-fill)', borderRadius: '9999px', fontSize: '10px', fontWeight: 700, padding: '2px 7px' }}>
                   {newCount} new
                 </span>
               )}
             </div>
+            {muted.length > 0 && (
+              <span style={{ fontSize: '11px', color: 'var(--muted)' }} title="Choose which updates the bell shows in Settings">
+                {muted.length} {muted.length === 1 ? 'kind' : 'kinds'} hidden
+              </span>
+            )}
           </div>
 
-          <div style={{ display: 'flex', gap: '5px', padding: '8px 16px', borderBottom: '0.5px solid #f4f6f9', overflowX: 'auto' }}>
+          <div style={{ display: 'flex', gap: '5px', padding: '8px 16px', borderBottom: '1px solid var(--line)', overflowX: 'auto' }}>
             {['all', 'container', 'alert', 'job', 'document', 'ulip'].map(f => (
               <button
                 key={f}
                 onClick={() => setFilter(f)}
                 style={{
                   padding: '3px 10px', borderRadius: '9999px', fontSize: '11px', fontWeight: 500,
-                  border: `0.5px solid ${filter === f ? '#1a4fa0' : '#e2e6ed'}`,
-                  background: filter === f ? '#1a4fa0' : 'white',
-                  color: filter === f ? 'white' : '#8a96a8',
+                  border: `1px solid ${filter === f ? 'var(--primary)' : 'var(--line)'}`,
+                  background: filter === f ? 'var(--primary)' : 'var(--surface)',
+                  color: filter === f ? 'var(--on-fill)' : 'var(--text-2)',
                   cursor: 'pointer', whiteSpace: 'nowrap', transition: 'all 0.12s',
                 }}
               >
@@ -273,15 +313,15 @@ if (filter === 'container') return t.includes('container') || t === 'detention_a
           <div style={{ overflowY: 'auto', maxHeight: '360px' }}>
             {filteredNotifications.length === 0 ? (
               <div style={{ padding: '32px 16px', textAlign: 'center' }}>
-                <div style={{ fontSize: '28px', marginBottom: '8px' }}>🎉</div>
-                <p style={{ fontSize: '12px', color: '#8a96a8' }}>All caught up! No notifications.</p>
+                <i className="ti ti-circle-check" aria-hidden="true" style={{ display: 'block', fontSize: '28px', marginBottom: '8px', color: 'var(--green)' }} />
+                <p style={{ fontSize: '12px', color: 'var(--muted)' }}>All caught up! No notifications.</p>
               </div>
             ) : (
               Object.entries(groups).map(([day, items]) => {
                 if (items.length === 0) return null
                 return (
                   <div key={day}>
-                    <div style={{ padding: '6px 16px 4px', fontSize: '9px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#8a96a8', background: '#f8f9fb', borderBottom: '0.5px solid #f4f6f9', position: 'sticky', top: 0 }}>
+                    <div style={{ padding: '6px 16px 4px', fontSize: '9px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--muted)', background: 'var(--surface-2)', borderBottom: '1px solid var(--line)', position: 'sticky', top: 0 }}>
                       {day}
                     </div>
                     {items.map((n, i) => {
@@ -295,28 +335,28 @@ if (filter === 'container') return t.includes('container') || t === 'detention_a
                           onClick={() => handleItemClick(n)}
                           style={{
                             padding: '10px 16px', display: 'flex', gap: '8px', alignItems: 'flex-start',
-                            borderBottom: '0.5px solid #f4f6f9', cursor: 'pointer',
-                            background: isUnread ? '#f0f5ff' : 'white',
+                            borderBottom: '1px solid var(--line)', cursor: 'pointer',
+                            background: isUnread ? 'var(--navy-50)' : 'var(--surface)',
                             transition: 'background 0.1s',
                           }}
-                          onMouseEnter={e => e.currentTarget.style.background = isUnread ? '#e6eeff' : '#f8f9fb'}
-                          onMouseLeave={e => e.currentTarget.style.background = isUnread ? '#f0f5ff' : 'white'}
+                          onMouseEnter={e => e.currentTarget.style.background = isUnread ? 'var(--navy-100)' : 'var(--surface-2)'}
+                          onMouseLeave={e => e.currentTarget.style.background = isUnread ? 'var(--navy-50)' : 'var(--surface)'}
                         >
                           <div style={{ flex: 1, minWidth: 0 }}>
-                            <div style={{ fontSize: '12px', fontWeight: 500, color: '#1a2233', lineHeight: 1.4, marginBottom: '3px' }}>
+                            <div style={{ fontSize: '12px', fontWeight: 500, color: 'var(--text)', lineHeight: 1.4, marginBottom: '3px' }}>
                               {n.title || n.action || 'Update'}
                             </div>
-                            <div style={{ fontSize: '11px', color: '#8a96a8', display: 'flex', alignItems: 'center', gap: '5px', flexWrap: 'wrap' }}>
+                            <div style={{ fontSize: '11px', color: 'var(--muted)', display: 'flex', alignItems: 'center', gap: '5px', flexWrap: 'wrap' }}>
                               <span style={{ display: 'inline-flex', padding: '1px 6px', borderRadius: '9999px', fontSize: '10px', fontWeight: 600, background: ts.bg, color: ts.color, border: `0.5px solid ${ts.border}` }}>
                                 {(n.type || n.action)?.replace(/_/g, ' ') || 'update'}
                               </span>
-                              {n.job_no && <span style={{ fontFamily: 'monospace', color: '#185FA5' }}>{n.job_no}</span>}
+                              {n.job_no && <span style={{ fontFamily: 'var(--mono)', color: 'var(--navy)' }}>{n.job_no}</span>}
                               {n.done_by_name && <span>· {n.done_by_name}</span>}
                             </div>
                           </div>
                           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px', flexShrink: 0 }}>
-                            <span style={{ fontSize: '10px', color: '#8a96a8', whiteSpace: 'nowrap' }}>{formatNotifTime(n.created_at)}</span>
-                            {isUnread && <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#1a4fa0' }} />}
+                            <span style={{ fontSize: '10px', color: 'var(--muted)', whiteSpace: 'nowrap' }}>{formatNotifTime(n.created_at)}</span>
+                            {isUnread && <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'var(--navy)' }} />}
                           </div>
                         </div>
                       )

@@ -229,7 +229,9 @@ export default function ContainersPage({ showToast, pendingNavAction, onNavActio
   const navigate = useNavigate()
   const toast = (msg, type = 'info') => showToast?.(msg, type)
 
-  const [view, setView] = useState('all')
+  // an old Detention link (?tab=detention) opens the Detention risk tab (the Detention page
+  // was folded into Containers, 31 Oct 2026)
+  const [view, setView] = useState(() => (new URLSearchParams(window.location.search).get('tab') === 'detention' ? 'risk' : 'all'))
   const [q, setQ] = useState('')
   const [line, setLine] = useState('')
   const [jobFilter, setJobFilter] = useState(null)

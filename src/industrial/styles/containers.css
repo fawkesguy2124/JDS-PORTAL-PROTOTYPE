@@ -71,7 +71,7 @@
 .ix-cnp-tab:focus-visible { outline: none; box-shadow: var(--focus) }
 .ix-cnp-tab.risk { border-color: var(--red-line); color: var(--red) }
 .ix-cnp-tab.done { color: var(--muted) }
-.ix-cnp-tab.on { border-color: var(--navy); background: var(--navy); color: #fff; font-weight: 600 }
+.ix-cnp-tab.on { border-color: var(--primary); background: var(--primary); color: var(--on-fill); font-weight: 600 }
 .ix-cnp-tab.on .ix-dot { box-shadow: 0 0 0 2px rgba(255, 255, 255, .85) }
 
 .ix-cnp-body { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain }

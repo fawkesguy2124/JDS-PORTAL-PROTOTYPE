@@ -39,32 +39,46 @@ export function shipPosition(sea, found) {
 // ships and their routes are the only colour on the map.
 const MAP_STYLE = 'https://tiles.openfreemap.org/styles/liberty'
 const ENGLISH = ['coalesce', ['get', 'name:en'], ['get', 'name_int'], ['get', 'name:latin'], ['get', 'name']]
-const SEA = '#cddff1', LAND = '#eef0f3'
+// Light and dark charts (dark mode: Jose, 31 Oct 2026). Map layers cannot read CSS
+// variables, so the two sets are given here and the chart is repainted when the theme changes.
+const CHART = {
+  light: { sea: '#cddff1', land: '#eef0f3', border: '#c5ccd6', seaText: '#7d9cbd', country: '#5f6b7c', place: '#8a93a1', halo: 'rgba(255,255,255,0.85)' },
+  dark: { sea: '#0f2033', land: '#1a212c', border: '#38404d', seaText: '#5c7a9c', country: '#a3adbc', place: '#7f8a9b', halo: 'rgba(13,18,26,0.85)' },
+}
+const isDark = () => document.documentElement.dataset.theme === 'dark'
+const chart = () => CHART[isDark() ? 'dark' : 'light']
 const HIDE = /poi|transit|aeroway|building|housenumber|road|highway|bridge|tunnel|railway|ferry|landcover|landuse|park|wood|grass|sand|glacier|ice|aerialway|label_town|label_village|label_other|label_state|place_other|hillshade/
 function addSeaChart(m) {
   try {
     const gl = L.maplibreGL({ style: MAP_STYLE, attribution: '© <a href="https://openfreemap.org" target="_blank">OpenFreeMap</a> · <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a>' }).addTo(m)
     const ml = gl.getMaplibreMap()
-    ml.on('style.load', () => {
-      for (const layer of ml.getStyle().layers || []) {
+    const paint = (first) => {
+      const c = chart()
+      for (const layer of ml.getStyle()?.layers || []) {
         try {
           const id = layer.id
-          if (layer.type === 'raster' || layer.type === 'hillshade' || HIDE.test(id)) { ml.setLayoutProperty(id, 'visibility', 'none'); continue }
-          if (layer.type === 'background') ml.setPaintProperty(id, 'background-color', LAND)
-          else if (layer.type === 'fill' && /water|ocean/.test(id)) ml.setPaintProperty(id, 'fill-color', SEA)
-          else if (layer.type === 'line' && /waterway/.test(id)) ml.setPaintProperty(id, 'line-color', SEA)
-          else if (layer.type === 'line' && /boundary|admin/.test(id)) { ml.setPaintProperty(id, 'line-color', '#c5ccd6'); ml.setPaintProperty(id, 'line-opacity', 0.9) }
+          if (layer.type === 'raster' || layer.type === 'hillshade' || HIDE.test(id)) { if (first) ml.setLayoutProperty(id, 'visibility', 'none'); continue }
+          if (layer.type === 'background') ml.setPaintProperty(id, 'background-color', c.land)
+          else if (layer.type === 'fill' && /water|ocean/.test(id)) ml.setPaintProperty(id, 'fill-color', c.sea)
+          else if (layer.type === 'line' && /waterway/.test(id)) ml.setPaintProperty(id, 'line-color', c.sea)
+          else if (layer.type === 'line' && /boundary|admin/.test(id)) { ml.setPaintProperty(id, 'line-color', c.border); ml.setPaintProperty(id, 'line-opacity', 0.9) }
           else if (layer.type === 'symbol') {
-            if (/water|ocean|sea|marine/.test(id)) ml.setPaintProperty(id, 'text-color', '#7d9cbd')
-            else ml.setPaintProperty(id, 'text-color', /country/.test(id) ? '#5f6b7c' : '#8a93a1')
-            ml.setPaintProperty(id, 'text-halo-color', 'rgba(255,255,255,0.85)')
-            if (/name/.test(JSON.stringify(layer.layout?.['text-field'] || ''))) ml.setLayoutProperty(id, 'text-field', ENGLISH)
+            if (/water|ocean|sea|marine/.test(id)) ml.setPaintProperty(id, 'text-color', c.seaText)
+            else ml.setPaintProperty(id, 'text-color', /country/.test(id) ? c.country : c.place)
+            ml.setPaintProperty(id, 'text-halo-color', c.halo)
+            if (first && /name/.test(JSON.stringify(layer.layout?.['text-field'] || ''))) ml.setLayoutProperty(id, 'text-field', ENGLISH)
           }
         } catch { /* a layer without that property */ }
       }
-    })
+    }
+    let ready = false
+    ml.on('style.load', () => { ready = true; paint(true) })
+    // the theme changed (Settings): repaint the chart in the other set
+    const watch = new MutationObserver(() => { if (ready) paint(false) })
+    watch.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
+    m.on('unload', () => watch.disconnect())
   } catch {
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', { maxZoom: 18, attribution: '© OpenStreetMap contributors © CARTO' }).addTo(m)
+    L.tileLayer(`https://{s}.basemaps.cartocdn.com/${isDark() ? 'dark_all' : 'light_all'}/{z}/{x}/{y}{r}.png`, { maxZoom: 18, attribution: '© OpenStreetMap contributors © CARTO' }).addTo(m)
   }
   // buoys, lights and channels near the ports, only when zoomed right in (free, open data)
   L.tileLayer('https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png', { minZoom: 10, maxZoom: 18, opacity: 0.8, attribution: '© <a href="https://www.openseamap.org" target="_blank">OpenSeaMap</a>' }).addTo(m)
@@ -232,7 +246,7 @@ export default function ShipMap({ ships = [], selectedKey, onSelect, height = 42
     }
     if (sel && v) {
       if (v.sailed.length > 1) {
-        L.polyline(v.sailed, { color: '#ffffff', weight: 6, opacity: 0.8, interactive: false }).addTo(layer.current)
+        L.polyline(v.sailed, { color: isDark() ? chart().land : '#ffffff', weight: 6, opacity: 0.8, interactive: false }).addTo(layer.current)
         L.polyline(v.sailed, { color: SAILED, weight: 3, opacity: 0.95, interactive: false }).addTo(layer.current)
       }
       if (v.ahead.length > 1) L.polyline(v.ahead, { color: AHEAD, weight: 2.5, opacity: 0.7, dashArray: '1 7', lineCap: 'round', interactive: false }).addTo(layer.current)

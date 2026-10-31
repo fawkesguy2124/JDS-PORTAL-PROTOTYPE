@@ -4,6 +4,7 @@ import CommandPalette from './CommandPalette'
 import { useSystemHealth, healthTones, autoCheckLine } from './AutoStatus'
 import { Icon, initials } from './ui'
 import { useInstallApp } from '../services/desktopApp'
+import { applyPrefs, resolveTheme, usePrefs } from './settings'
 
 // The frame around every page (Control tower, Jose 31 Oct 2026): navy sidebar with
 // the brand cell on top, a slim top bar (search, Create job, bell, you), and a
@@ -11,8 +12,17 @@ import { useInstallApp } from '../services/desktopApp'
 // counts[id] is a number (neutral badge) or { n, tone: 'red' | 'amber', title }.
 // Items with alert: true show their count in red.
 export default function Shell({ sections, active, counts = {}, onGo, onOpenJob, onCreateJob, onLogout, profile, onBellNavigate, children }) {
-  const [collapsed, setCollapsed] = useState(() => { try { return localStorage.getItem('ix_nav_collapsed') === '1' } catch { return false } })
-  const [compact, setCompact] = useState(() => { try { return localStorage.getItem('ix_compact') === '1' } catch { return false } })
+  // the menu, row height, theme and text size come from Settings (settings.js)
+  const [prefs, setPref] = usePrefs()
+  const collapsed = prefs.navCollapsed
+  const compact = prefs.density === 'compact'
+  useEffect(() => { applyPrefs(prefs) }, [prefs])
+  // dark is for the portal only: the login and staff screens are light, so leaving the
+  // portal (sign out) puts the page back to light
+  useEffect(() => () => {
+    document.documentElement.setAttribute('data-theme', 'light')
+    document.documentElement.style.colorScheme = 'light'
+  }, [])
   const [palette, setPalette] = useState(false)
   const [mnav, setMnav] = useState(false)
   const app = useInstallApp() // the portal as a desktop app
@@ -27,7 +37,13 @@ export default function Shell({ sections, active, counts = {}, onGo, onOpenJob, 
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [])
-  const toggle = (setter, key) => setter((v) => { try { localStorage.setItem(key, v ? '0' : '1') } catch { /* private mode */ } return !v })
+  const toggleCompact = () => setPref('density', compact ? 'comfortable' : 'compact')
+  const dark = resolveTheme(prefs.theme) === 'dark'
+  // quick switches in Ctrl K (the Settings page itself is in the pages list)
+  const commands = [
+    { id: 'cmd-theme', label: dark ? 'Switch to light theme' : 'Switch to dark theme', icon: dark ? 'sun' : 'moon', words: 'theme dark light mode night', run: () => setPref('theme', dark ? 'light' : 'dark') },
+    { id: 'cmd-rows', label: compact ? 'Comfortable rows' : 'Compact rows', icon: 'layout-rows', words: 'rows compact comfortable density', run: toggleCompact },
+  ]
 
   const pages = sections.flatMap((s) => s.items).filter((it) => !it.hidden)
   const pageLabel = pages.find((p) => p.id === active)?.label
@@ -78,7 +94,7 @@ export default function Shell({ sections, active, counts = {}, onGo, onOpenJob, 
         </div>
 
         <header className="ix-top">
-          <button type="button" className="ix-icon-btn hide-m" onClick={() => toggle(setCollapsed, 'ix_nav_collapsed')}
+          <button type="button" className="ix-icon-btn hide-m" onClick={() => setPref('navCollapsed', !collapsed)}
             aria-label={collapsed ? 'Expand menu' : 'Collapse menu'} title={collapsed ? 'Expand menu' : 'Collapse menu'}>
             <Icon name={collapsed ? 'layout-sidebar-left-expand' : 'layout-sidebar-left-collapse'} />
           </button>
@@ -90,8 +106,8 @@ export default function Shell({ sections, active, counts = {}, onGo, onOpenJob, 
           <div className="ix-top-actions">
             <button type="button" className="ix-btn primary hide-m" onClick={onCreateJob}><Icon name="plus" />Create job</button>
             <div className="ix-bell"><NotificationBell onNavigate={onBellNavigate} profile={profile} /></div>
-            <MeMenu name={name} role={role} compact={compact} onCompact={() => toggle(setCompact, 'ix_compact')}
-              canInstall={app.canInstall} onInstall={app.install} onLogout={onLogout} />
+            <MeMenu name={name} role={role} compact={compact} onCompact={toggleCompact}
+              canInstall={app.canInstall} onInstall={app.install} onSettings={() => go('settings')} onLogout={onLogout} />
           </div>
         </header>
 
@@ -123,7 +139,7 @@ export default function Shell({ sections, active, counts = {}, onGo, onOpenJob, 
         </>
       )}
 
-      <CommandPalette open={palette} onClose={() => setPalette(false)} pages={pages} onGo={go} onOpenJob={onOpenJob}
+      <CommandPalette open={palette} onClose={() => setPalette(false)} pages={pages} commands={commands} onGo={go} onOpenJob={onOpenJob}
         onLookup={sections.some((s) => s.items.some((it) => it.id === 'search')) ? (q) => {
           try { sessionStorage.setItem('ix_lookup', q) } catch { /* private mode: the page opens empty */ }
           go('search')
@@ -133,9 +149,10 @@ export default function Shell({ sections, active, counts = {}, onGo, onOpenJob, 
   )
 }
 
-// The avatar button: your name and role, and a menu with Compact rows, Install app
-// and Log out (the density toggle moved here: on the bar it looked like a menu icon).
-function MeMenu({ name, role, compact, onCompact, canInstall, onInstall, onLogout }) {
+// The avatar button: your name and role, and a menu with Compact rows, Settings,
+// Install app and Log out (the density toggle moved here: on the bar it looked like a
+// menu icon). Compact rows is the same preference as Rows on the Settings page.
+function MeMenu({ name, role, compact, onCompact, canInstall, onInstall, onSettings, onLogout }) {
   const [open, setOpen] = useState(false)
   const ref = useRef(null)
   useEffect(() => {
@@ -160,6 +177,7 @@ function MeMenu({ name, role, compact, onCompact, canInstall, onInstall, onLogou
           <button type="button" role="menuitemcheckbox" aria-checked={compact} onClick={onCompact}>
             <Icon name="layout-rows" />Compact rows<span className={`ix-switch ${compact ? 'on' : ''}`} />
           </button>
+          <button type="button" role="menuitem" onClick={pick(onSettings)}><Icon name="settings" />Settings</button>
           {canInstall && (
             <button type="button" role="menuitem" onClick={pick(onInstall)} title="Install the JDS Portal as an app on this computer (own window, Start menu and taskbar icon)">
               <Icon name="download" />Install app

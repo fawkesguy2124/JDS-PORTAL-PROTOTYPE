@@ -103,7 +103,17 @@ export async function enablePush(profile, kinds = ALL_KINDS) {
   })
   if (error) throw new Error(error.message)
   // a first one at once, so the person sees what they look like
-  await reg.showNotification('JDS Portal', { body: 'Desktop alerts are on for this computer.', icon: '/app/icon-a-192.png', badge: '/app/badge-a-96.png', tag: 'jds-welcome' })
+  await reg.showNotification('JDS Portal', { body: 'Desktop alerts are on for this computer.', ...NOTE_LOOK, tag: 'jds-welcome' })
+}
+const NOTE_LOOK = { icon: '/app/icon-a-192.png', badge: '/app/badge-a-96.png' }
+
+// "Send a test alert" (Settings): shows one on this computer straight away, the same
+// way the welcome alert does; nothing is sent to anyone else
+export async function showTestAlert() {
+  if (!pushSupported()) throw new Error('This browser cannot show desktop notifications.')
+  if (Notification.permission !== 'granted') throw new Error('Turn desktop alerts on first.')
+  const reg = await navigator.serviceWorker.ready
+  await reg.showNotification('JDS Portal', { body: 'Test alert: desktop alerts work on this computer.', ...NOTE_LOOK, tag: 'jds-test' })
 }
 
 export async function setPushKinds(kinds) {

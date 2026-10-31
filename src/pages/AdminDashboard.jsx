@@ -2,7 +2,6 @@ import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { supabase } from '../supabase'
 import { useAuth } from '../contexts/AuthContext'
-import { getStageName } from '../utils/jobHelpers'
 import lazyPage from '../utils/lazyPage'
 import { loadDocs } from '../services/docCache'
 import '../industrial/industrial.css'
@@ -11,6 +10,7 @@ import { rememberJob } from '../industrial/recentJobs'
 import Shell from '../industrial/Shell'
 import JobDrawer from '../industrial/JobDrawer'
 import { PageHead, Skeleton } from '../industrial/ui'
+import { usePrefs, LANDING_PAGES } from '../industrial/settings'
 import IxTodayPage from '../industrial/pages/TodayPage'
 import IxJobsPage from '../industrial/pages/JobsPage'
 import IxCustomsPage from '../industrial/pages/CustomsPage'
@@ -21,15 +21,13 @@ const IxTrucksPage = lazyPage(() => import('../industrial/pages/TrucksPage'))
 const IxVesselsPage = lazyPage(() => import('../industrial/pages/VesselsPage'))
 const IxHealthPage = lazyPage(() => import('../industrial/pages/HealthPage'))
 const IxContainersPage = lazyPage(() => import('../industrial/pages/ContainersPage'))
-const ControlTowerSection = lazyPage(() => import('../components/ControlTower'))
 const JobDetailView = lazyPage(() => import('../components/JobDetailView'))
 const DocumentsSection = lazyPage(() => import('../components/DocumentsSection'))
-const PaymentsSection = lazyPage(() => import('../components/PaymentsSection'))
 const ComplianceSection = lazyPage(() => import('../components/ComplianceSection'))
 const SearchPage = lazyPage(() => import('./v2/SearchPage'))
 const ClientsPage = lazyPage(() => import('./v2/ClientsPage'))
-const DetentionPage = lazyPage(() => import('./v2/DetentionPage'))
 const BotPreviewPage = lazyPage(() => import('./v2/BotPreviewPage'))
+const IxSettingsPage = lazyPage(() => import('../industrial/pages/SettingsPage'))
 const CreateJob = lazyPage(() => import('./CreateJob'))
 
 const NAV_SECTIONS = [
@@ -46,26 +44,26 @@ const NAV_SECTIONS = [
     { id: 'customs', label: 'BE & OOC', icon: 'file-certificate' },
     { id: 'documents', label: 'Documents', icon: 'files' },
   ] },
-  { label: 'MONEY', items: [
-    { id: 'payments', label: 'Payments', icon: 'currency-rupee' },
-    { id: 'detention', label: 'Detention', icon: 'clock-exclamation', alert: true },
-  ] },
+  // (Payments, Detention and Team & stages left the menu on 31 Oct 2026 (Jose): Payments had
+  // nothing to show, Detention is the Containers page's "Detention risk" tab, and Team &
+  // stages repeated Today until jobs can be given an owner. Their old links still land.)
   { label: 'RECORDS', items: [
     { id: 'clients', label: 'Clients', icon: 'users' },
     { id: 'compliance', label: 'BIS & Licences', icon: 'certificate' },
   ] },
   { label: 'ADMIN', items: [
-    { id: 'overview', label: 'Team & stages', icon: 'chart-bar' },
     { id: 'bot', label: 'WhatsApp bot', icon: 'brand-whatsapp' },
     { id: 'health', label: 'System health', icon: 'heart-rate-monitor' },
     // reached from Ctrl K → "Look up on ULIP" (Jose, 25 Oct 2026: one search box, not two)
     { id: 'search', label: 'ULIP lookup', icon: 'search', hidden: true },
+    // theme, rows, text size, start page, alerts, password (Jose, 31 Oct 2026)
+    { id: 'settings', label: 'Settings', icon: 'settings' },
   ] },
 ]
 
 // Old page names still work (bookmarks, bell links)
 // (the shipment board was removed on 25 Oct 2026: All jobs does the job)
-const OLD_TAB_NAMES = { lookup: 'search', 'shipment-tracker': 'jobs', board: 'jobs', 'be-filing': 'customs' }
+const OLD_TAB_NAMES = { lookup: 'search', 'shipment-tracker': 'jobs', board: 'jobs', 'be-filing': 'customs', detention: 'containers', payments: 'today', overview: 'today' }
 
 const NAV_ITEMS = NAV_SECTIONS.flatMap(s => s.items)
 
@@ -75,6 +73,8 @@ function AdminDashboardInner() {
   const navigate = useNavigate()
   const location = useLocation()
   const { user, profile } = useAuth()
+  // re-render every page when a preference changes (12 h / 24 h times, start page)
+  const [prefs] = usePrefs()
   const [jobs, setJobs] = useState([])
   const [profiles, setProfiles] = useState({})
   const [selectedJob, setSelectedJob] = useState(null)
@@ -97,11 +97,13 @@ function AdminDashboardInner() {
   const [documentExpandJobId, setDocumentExpandJobId] = useState(null)
   const [toastState, setToastState] = useState(null)
 
+  // no ?tab= (just signed in): the start page chosen in Settings
+  const landing = LANDING_PAGES.some((p) => p.value === prefs.landing) ? prefs.landing : 'today'
   const activeNav = useMemo(() => {
     const params = new URLSearchParams(location.search)
-    const t = params.get('tab') || 'today'
+    const t = params.get('tab') || landing
     return OLD_TAB_NAMES[t] || t
-  }, [location.search])
+  }, [location.search, landing])
 
   useEffect(() => {
     if (location.state?.tab) {
@@ -323,7 +325,7 @@ function AdminDashboardInner() {
     jobs: journey?.active?.length || null,
     customs: journey?.active?.filter((r) => r.j.phase === 'ooc').length || null,
     trucks: truckCount ? { n: truckCount, tone: 'amber', title: `${truckCount} ${truckCount === 1 ? 'job needs' : 'jobs need'} a truck` } : null,
-    detention: detentionCount ? { n: detentionCount, tone: 'red', title: `${detentionCount} ${detentionCount === 1 ? 'job' : 'jobs'} at detention risk (2 free days or less)` } : null,
+    containers: detentionCount ? { n: detentionCount, tone: 'red', title: `${detentionCount} ${detentionCount === 1 ? 'job' : 'jobs'} at detention risk (2 free days or less)` } : null,
   }
   const urlJob = new URLSearchParams(location.search).get('job')
   // an older screen that draws no heading of its own: the same page heading as the new ones
@@ -333,7 +335,7 @@ function AdminDashboardInner() {
       {node}
     </>
   )
-  const fullJob = selectedJob && (activeNav === 'jobs' || activeNav === 'overview')
+  const fullJob = selectedJob && activeNav === 'jobs'
   const closeFullJob = () => {
     setSelectedJob(null)
     const params = new URLSearchParams(window.location.search)
@@ -381,7 +383,6 @@ function AdminDashboardInner() {
       {activeNav === 'trucks' && <IxTrucksPage key={urlJob || 'none'} {...ixProps} />}
       {activeNav === 'vessels' && <IxVesselsPage key={urlJob || 'none'} {...ixProps} />}
 
-      {!fullJob && activeNav === 'overview' && <ControlTowerSection {...ixProps} />}
 
       {activeNav === 'containers' && (
         <IxContainersPage
@@ -401,11 +402,12 @@ function AdminDashboardInner() {
       )}
       {activeNav === 'search' && <SearchPage {...pageProps} />}
       {activeNav === 'clients' && <ClientsPage {...pageProps} />}
-      {activeNav === 'detention' && <DetentionPage {...pageProps} />}
-      {activeNav === 'payments' && legacyPage('Payments', 'Open jobs at the duty payment or CFS stage, with their CFS amounts', <PaymentsSection jobs={jobs} profiles={profiles} showToast={showToast} getStageName={getStageName} onOpenJob={openJob} />)}
       {activeNav === 'compliance' && legacyPage('BIS & Licences', 'Certificates and licences, with their expiry dates', <ComplianceSection showToast={showToast} />)}
       {activeNav === 'bot' && <BotPreviewPage {...pageProps} />}
       {activeNav === 'health' && <IxHealthPage />}
+      {activeNav === 'settings' && (
+        <IxSettingsPage {...ixProps} user={user} onLogout={handleLogout} onRefresh={refreshJobs} />
+      )}
 
       {!NAV_ITEMS.some(n => n.id === activeNav) && (
         <div className="ix-card ix-empty">This page does not exist. Pick one from the menu.</div>

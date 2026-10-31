@@ -87,30 +87,51 @@
 .ix-trk-tabs { margin-bottom: var(--s3) }
 
 /* ── maps: colours in the Control tower set (at sea navy, at port teal) ── */
-.ix .ix-tag { border-color: var(--line-2); border-left-color: var(--navy); border-radius: var(--r-md); font-family: var(--font) }
+.ix .ix-tag { border-color: var(--line-2); border-left-color: var(--navy); border-radius: var(--r-md); font-family: var(--font); background: var(--surface); color: var(--text-2) }
 .ix .ix-tag b { font: 600 12px var(--mono); letter-spacing: -.02em; color: var(--text) }
+.ix .ix-tag span { border-left-color: var(--line) }
 .ix .ix-tag.port { border-left-color: var(--teal) } .ix .ix-tag.old { border-left-color: var(--faint) }
 .ix .ix-tag.sel { border-color: var(--navy); border-left-color: var(--accent); box-shadow: 0 0 0 3px rgba(245, 165, 36, .3), 0 2px 8px rgba(16, 24, 40, .18) }
 .ix .ix-tag.port-tag { border-left-color: var(--navy); background: var(--surface-2) }
 .ix .ix-tag.port-tag b { font-family: var(--font); color: var(--navy) }
-.ix .ix-cluster { background: var(--navy); box-shadow: 0 0 0 4px rgba(26, 79, 160, .2), 0 1px 4px rgba(0, 0, 0, .35) }
-.ix .ix-cluster.port { background: var(--teal); box-shadow: 0 0 0 4px rgba(15, 118, 110, .2), 0 1px 4px rgba(0, 0, 0, .35) }
+.ix .ix-cluster { background: var(--primary); box-shadow: 0 0 0 4px rgba(26, 79, 160, .2), 0 1px 4px rgba(0, 0, 0, .35) }
+.ix .ix-cluster.port { background: var(--teal-fill); box-shadow: 0 0 0 4px rgba(15, 118, 110, .2), 0 1px 4px rgba(0, 0, 0, .35) }
 .ix .ix-cluster.old { background: var(--faint); box-shadow: 0 0 0 4px rgba(182, 191, 204, .3), 0 1px 4px rgba(0, 0, 0, .35) }
-.ix .ix-portmk { background: var(--navy); border-radius: var(--r-md) }
+.ix .ix-portmk { background: var(--primary); border-radius: var(--r-md) }
 .ix .ix-ship.sel .hull { filter: drop-shadow(0 0 2px #fff) drop-shadow(0 0 5px var(--accent)) }
 .ix .ix-via .dot { background: var(--navy-700) }
-.ix .ix-via .lbl { color: var(--navy-700); border-color: var(--navy-200); border-radius: var(--r-md) }
+.ix .ix-via .lbl { color: var(--navy-700); border-color: var(--navy-200); border-radius: var(--r-md); background: var(--surface) }
 .ix .ix-seacard .via i, .ix .ix-voyage .via i { color: var(--navy) }
-.ix .ix-map-all { border-radius: var(--r-md); font: 500 var(--fs-sm) var(--font); height: 28px; box-shadow: var(--shadow-pop) }
-.ix .ix-realmap-legend { border-radius: var(--r-md); font-size: var(--fs-xs); color: var(--text-2) }
+.ix .ix-map-all { border-radius: var(--r-md); font: 500 var(--fs-sm) var(--font); height: 28px; box-shadow: var(--shadow-pop); background: var(--surface); color: var(--text) }
+.ix .ix-realmap-legend { border-radius: var(--r-md); font-size: var(--fs-xs); color: var(--text-2); background: var(--surface) }
 .ix .ix-realmap-legend i.hollow { background: var(--surface) !important; box-shadow: inset 0 0 0 1.5px var(--navy) }
-.ix .ix-realmap-expand { border-radius: var(--r-md); box-shadow: none }
-.ix .ix-realmap-msg { border-radius: var(--r-lg); box-shadow: var(--shadow-pop); font-size: var(--fs-md) }
+.ix .ix-realmap-expand { border-radius: var(--r-md); box-shadow: none; background: var(--surface); color: var(--text) }
+.ix .ix-realmap-expand:hover { background: var(--surface-2); color: var(--navy) }
+.ix .ix-realmap-msg { border-radius: var(--r-lg); box-shadow: var(--shadow-pop); font-size: var(--fs-md); background: var(--surface) }
 .ix .ix-realmap-msg .s { font-size: var(--fs-sm); color: var(--muted); margin-top: 4px }
-.ix .ix-realmap.big { box-shadow: var(--shadow-panel) }
+.ix .ix-realmap.big { box-shadow: var(--shadow-panel); background: var(--surface) }
+
+/* the map's own controls (zoom, hover notes, scale, credits) in the portal's surfaces,
+   so they follow the theme instead of the map library's white */
+.ix .leaflet-container a { color: var(--navy) }
+.ix .leaflet-bar a, .ix .leaflet-bar a:hover { background-color: var(--surface); color: var(--text); border-bottom-color: var(--line) }
+.ix .leaflet-bar a:hover { background-color: var(--surface-2) }
+.ix .leaflet-bar a.leaflet-disabled { background-color: var(--surface-2); color: var(--faint) }
+.ix .leaflet-tooltip { background: var(--surface); color: var(--text); border-color: var(--line-2) }
+.ix .leaflet-tooltip-top::before { border-top-color: var(--surface) }
+.ix .leaflet-tooltip-bottom::before { border-bottom-color: var(--surface) }
+.ix .leaflet-tooltip-left::before { border-left-color: var(--surface) }
+.ix .leaflet-tooltip-right::before { border-right-color: var(--surface) }
+.ix .leaflet-popup-content-wrapper, .ix .leaflet-popup-tip { background: var(--surface); color: var(--text) }
+.ix .leaflet-control-scale-line { background: var(--surface); color: var(--text-2); border-color: var(--muted) }
+.ix .ix-realmap .leaflet-control-attribution { background: var(--surface) !important; color: var(--text-2) }
+.ix .ix-realmap .leaflet-control-attribution::before { color: var(--text-2) }
+/* before the chart's tiles arrive: the page's canvas, not a bright blue flash */
+.ix .ix-shipmap2 { background: var(--bg) }
+html[data-theme="dark"] .ix .ix-shipmap2 .leaflet-container { background: #0f2033 } /* = the dark chart's sea (ShipMap CHART.dark) */
 
 /* the voyage card on the sea map (it floats: shadow-pop) */
-.ix .ix-voyage { border-radius: var(--r-lg); box-shadow: var(--shadow-pop); font-size: var(--fs-sm) }
+.ix .ix-voyage { border-radius: var(--r-lg); box-shadow: var(--shadow-pop); font-size: var(--fs-sm); background: var(--surface) }
 .ix .ix-voyage .hd .ic { width: 30px; height: 30px; border-radius: var(--r-md); background: var(--navy-50); color: var(--navy); font-size: 17px }
 .ix .ix-voyage .hd .ic.port { background: var(--teal-bg); color: var(--teal) }
 .ix .ix-voyage .hd .ic.old { background: var(--grey-bg); color: var(--text-2) }
@@ -128,8 +149,8 @@
 .ix .ix-delay.early { background: var(--grey-bg); color: var(--text-2) }
 
 /* truck pins */
-.ix .ix-tmark { border: 1.5px solid var(--navy); font: 600 11.5px var(--mono); box-shadow: var(--shadow-pop) }
-.ix .ix-tmark .ic { width: 24px; height: 24px; background: var(--navy); font-size: 15px }
+.ix .ix-tmark { border: 1.5px solid var(--navy); font: 600 11.5px var(--mono); box-shadow: var(--shadow-pop); background: var(--surface); color: var(--text) }
+.ix .ix-tmark .ic { width: 24px; height: 24px; background: var(--primary); font-size: 15px }
 .ix .ix-tmark::after { border-top-color: var(--navy) }
 .ix .ix-tmark .job { font: 600 11px var(--mono); color: var(--navy); background: var(--navy-50); letter-spacing: -.02em }
 .ix .ix-tmark.stale { border-color: var(--red) } .ix .ix-tmark.stale .ic { background: var(--red) } .ix .ix-tmark.stale::after { border-top-color: var(--red) }

@@ -6,12 +6,13 @@ import { truckNos } from '../services/journey'
 import { recentJobIds } from './recentJobs'
 
 // Ctrl K: one box for every job number, client, BE, BL, container and truck,
-// plus the pages. Searches saved data only.
+// plus the pages and a few quick switches (commands: settings, theme, rows).
+// Searches saved data only.
 export default function CommandPalette({ open, ...rest }) {
   return open ? <Palette {...rest} /> : null
 }
 
-function Palette({ onClose, pages, onGo, onOpenJob, onLookup }) {
+function Palette({ onClose, pages, commands = [], onGo, onOpenJob, onLookup }) {
   const { rows } = useJourney() || { rows: [] }
   const [q, setQ] = useState('')
   const [hl, setHl] = useState(0)
@@ -41,13 +42,17 @@ function Palette({ onClose, pages, onGo, onOpenJob, onLookup }) {
     const pg = pages.filter((p) => !needle || p.label.toLowerCase().replace(/\s+/g, '').includes(needle)).slice(0, 5).map((p) => ({ type: 'page', ...p }))
     // a number that is not one of ours: check it with the government systems
     const look = onLookup && needle.length >= 5 && /\d/.test(needle) ? [{ type: 'lookup', id: '__lookup', q: q.trim() }] : []
-    return [...jobs, ...look, ...pg]
-  }, [q, rows, pages, onLookup])
+    // quick switches: only once something is typed that matches them ("dark", "settings")
+    const cmds = needle.length >= 2 ? commands.filter((c) => `${c.label} ${c.words || ''}`.toLowerCase().split(/\s+/).some((w) => w.startsWith(needle))
+      || c.label.toLowerCase().replace(/\s+/g, '').includes(needle)).slice(0, 3).map((c) => ({ type: 'cmd', ...c })) : []
+    return [...jobs, ...look, ...cmds, ...pg]
+  }, [q, rows, pages, commands, onLookup])
 
   const pick = (it) => {
     onClose()
     if (it.type === 'job') onOpenJob(it.id)
     else if (it.type === 'lookup') onLookup(it.q)
+    else if (it.type === 'cmd') it.run()
     else onGo(it.id)
   }
   const onKey = (e) => {
@@ -58,6 +63,7 @@ function Palette({ onClose, pages, onGo, onOpenJob, onLookup }) {
   }
   const jobItems = items.filter((i) => i.type === 'job')
   const pageItems = items.filter((i) => i.type === 'page')
+  const cmdItems = items.filter((i) => i.type === 'cmd')
 
   return (
     <div className="ix-pal-bg" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose() }}>
@@ -86,6 +92,15 @@ function Palette({ onClose, pages, onGo, onOpenJob, onLookup }) {
               <div key={it.id} className={`ix-pal-item ${idx === hl ? 'hl' : ''}`} onMouseEnter={() => setHl(idx)} onClick={() => pick(it)}>
                 {/* plain words on screen, no system names (Jose, 31 Oct 2026) */}
                 <Icon name="world-search" />Look up <b className="mono">{it.q}</b> on government systems<span className="k">BE, container, truck…</span>
+              </div>
+            )
+          })}
+          {cmdItems.length > 0 && <div className="ix-pal-group">Settings</div>}
+          {cmdItems.map((it) => {
+            const idx = items.indexOf(it)
+            return (
+              <div key={it.id} className={`ix-pal-item ${idx === hl ? 'hl' : ''}`} onMouseEnter={() => setHl(idx)} onClick={() => pick(it)}>
+                <Icon name={it.icon} />{it.label}<span className="k">Setting</span>
               </div>
             )
           })}

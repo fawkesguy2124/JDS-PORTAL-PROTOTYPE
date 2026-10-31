@@ -7,6 +7,7 @@ import {
   Button, Chip, Dash, EmptyState, FreeDays, Icon, JobNo, Kpi, KpiStrip, PageHead, Panel, Segmented, Skeleton, Status,
   fmtDate, fmtTime, timeAgo, worst,
 } from '../ui'
+import { getPrefs, setPref } from '../settings'
 import '../styles/today.css'
 
 // Today (Control tower, Jose 31 Oct 2026): KPIs that filter the list, the pipeline,
@@ -149,20 +150,21 @@ function tagsOf(main, items, r, boxCount) {
 const sortRows = (a, b) => (a.free ?? 9999) - (b.free ?? 9999) || (b.sinceDays ?? -9999) - (a.sinceDays ?? -9999)
   || String(a.job.job_no).localeCompare(String(b.job.job_no), undefined, { numeric: true })
 
-const readPref = (k, fallback) => { try { return localStorage.getItem(k) || fallback } catch { return fallback } }
 const savePref = (k, val) => { try { localStorage.setItem(k, val) } catch { /* private mode: the choice just isn't remembered */ } }
 
 export default function TodayPage({ onOpenJob, onGo, profile }) {
   const { data, rows, active, facts, loading, error, refresh } = useJourney()
   useFreshOnOpen() // opening the page shows the latest saved data
   const [log, setLog] = useState([])
-  const [kind, setKindRaw] = useState(() => readPref('ix_today_kind', 'all'))
-  const [who, setWhoRaw] = useState(() => readPref('ix_today_who', 'all'))
+  // the page starts on the choice in Settings ("Today page starts on"); a change here
+  // is remembered there too, as before
+  const [kind, setKindRaw] = useState(() => getPrefs().todayType)
+  const [who, setWhoRaw] = useState(() => (getPrefs().todayScope === 'mine' ? 'mine' : 'all'))
   const [kf, setKf] = useState('action') // the KPI that filters the list (Need action by default)
   const me = profile?.id || null
   const mine = who === 'mine' && !!me
-  const setKind = (val) => { setKindRaw(val); savePref('ix_today_kind', val) }
-  const setWho = (val) => { setWhoRaw(val); savePref('ix_today_who', val) }
+  const setKind = (val) => { setKindRaw(val); setPref('todayType', val) }
+  const setWho = (val) => { setWhoRaw(val); setPref('todayScope', val === 'mine' ? 'mine' : 'everyone') }
 
   // the last 24 hours of updates (audit: the feed was empty every evening)
   useEffect(() => {

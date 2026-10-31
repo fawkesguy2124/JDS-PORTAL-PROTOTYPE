@@ -4,12 +4,13 @@
 // components because every page already imports them from this file.
 /* eslint-disable react-refresh/only-export-components */
 import { useEffect, useState } from 'react'
+import { getPrefs } from './settings'
 
 export const Icon = ({ name, style, className = '' }) => <i className={`ti ti-${name}${className ? ` ${className}` : ''}`} style={style} aria-hidden="true" />
 
 // ── formats: one helper each, used on every page ──
 // Dates as '29 Oct' ('Sep', never 'Sept'), the year only when it is not this year,
-// times as 24 h IST. A date-only value ('2026-10-29') is taken as that day, not
+// times in IST as 24 h ('14:43') or 12 h ('2:43 pm'), as chosen in Settings. A date-only value ('2026-10-29') is taken as that day, not
 // shifted by time zone.
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 const IST_MS = 5.5 * 3600000
@@ -34,10 +35,14 @@ export const fmtDate = (iso) => {
   const year = p.y !== istParts(Date.now()).y ? ` ${p.y}` : ''
   return `${p.d} ${MONTHS[p.m]}${year}`
 }
-// '18:20' (IST)
+// hours and minutes in the chosen format: '14:43' or '2:43 pm'
+export const clockText = (h, min) => (getPrefs().timeFormat === '12h'
+  ? `${h % 12 || 12}:${pad(min)} ${h < 12 ? 'am' : 'pm'}`
+  : `${pad(h)}:${pad(min)}`)
+// '18:20' or '6:20 pm' (IST)
 export const fmtTime = (iso) => {
   const p = parts(iso)
-  return p && !p.dateOnly ? `${pad(p.h)}:${pad(p.min)}` : ''
+  return p && !p.dateOnly ? clockText(p.h, p.min) : ''
 }
 // '31 Oct, 18:20' (IST); a date-only value prints as the date alone
 export const fmtDateTime = (iso) => {

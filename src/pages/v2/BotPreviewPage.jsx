@@ -10,6 +10,23 @@ const DAY = 24 * 60 * 60 * 1000
 // blocks on the shared hairline look (Control tower, Jose 31 Oct 2026)
 const card = { background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: 'var(--r-lg)', padding: '12px 16px', marginBottom: '12px' }
 const muted = { color: 'var(--text-2)' }
+// The chat panels keep WhatsApp's own look, in its light or dark colours to match the
+// portal's theme (dark mode: Jose, 31 Oct 2026). The cards around them use the tokens.
+const WA = {
+  light: { wall: '#efeae2', bubble: '#ffffff', mine: '#d9fdd3', edge: '#e2e6ed', field: '#ffffff', text: '#111b21' },
+  dark: { wall: '#0b141a', bubble: '#202c33', mine: '#005c4b', edge: '#2a3942', field: '#2a3942', text: '#e9edef' },
+}
+const isDark = () => document.documentElement.dataset.theme === 'dark'
+// follows the theme the Settings page puts on <html> (light / dark, "system" already resolved)
+function useWa() {
+  const [dark, setDark] = useState(isDark)
+  useEffect(() => {
+    const watch = new MutationObserver(() => setDark(isDark()))
+    watch.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
+    return () => watch.disconnect()
+  }, [])
+  return WA[dark ? 'dark' : 'light']
+}
 
 // WhatsApp-style text: *bold*, line breaks
 function WaText({ text }) {
@@ -21,12 +38,12 @@ function WaText({ text }) {
   )
 }
 
-function Bubble({ text, mine, note }) {
+function Bubble({ text, mine, note, wa }) {
   return (
     <div style={{ display: 'flex', justifyContent: mine ? 'flex-end' : 'flex-start', marginBottom: '8px' }}>
-      <div style={{ maxWidth: '92%', background: mine ? '#d9fdd3' : 'white', border: '1px solid #e2e6ed', borderRadius: '10px', padding: '8px 10px', fontSize: '14px', boxShadow: '0 1px 1px rgba(0,0,0,.05)' }}>
+      <div style={{ maxWidth: '92%', background: mine ? wa.mine : wa.bubble, color: wa.text, border: `1px solid ${wa.edge}`, borderRadius: '10px', padding: '8px 10px', fontSize: '14px', boxShadow: '0 1px 1px rgba(0,0,0,.05)' }}>
         <WaText text={text} />
-        {note && <div style={{ ...muted, fontSize: '11px', marginTop: '4px', textAlign: 'right' }}>{note}</div>}
+        {note && <div style={{ color: wa.text, opacity: 0.65, fontSize: '11px', marginTop: '4px', textAlign: 'right' }}>{note}</div>}
       </div>
     </div>
   )
@@ -43,6 +60,8 @@ export default function BotPreviewPage() {
   const [asShort, setAsShort] = useState(false)
   const [question, setQuestion] = useState('')
   const [chat, setChat] = useState([])
+  const wa = useWa()
+  const chatCard = { ...card, background: wa.wall, color: wa.text }
 
   useEffect(() => {
     let cancelled = false
@@ -92,7 +111,7 @@ export default function BotPreviewPage() {
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
               {team.map((t) => (
                 <button key={t.id} onClick={() => { setWho(t.id); setChat([]) }}
-                  style={{ minHeight: '40px', padding: '6px 12px', borderRadius: '10px', cursor: 'pointer', font: 'inherit', border: `1.5px solid ${t.id === who ? '#1f6feb' : '#e2e6ed'}`, background: t.id === who ? '#eef4ff' : 'white' }}>
+                  style={{ minHeight: '40px', padding: '6px 12px', borderRadius: '10px', cursor: 'pointer', font: 'inherit', color: 'var(--text)', border: `1.5px solid ${t.id === who ? 'var(--navy)' : 'var(--line-2)'}`, background: t.id === who ? 'var(--navy-50)' : 'var(--surface)' }}>
                   {t.name} <span style={{ ...muted, fontSize: '12px' }}>· +{t.phone.slice(0, 2)} {t.phone.slice(2)}</span>
                 </button>
               ))}
@@ -103,7 +122,7 @@ export default function BotPreviewPage() {
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(300px, 100%), 1fr))', gap: '12px', alignItems: 'start' }}>
-            <div style={{ ...card, background: '#efeae2' }}>
+            <div style={chatCard}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', marginBottom: '8px', flexWrap: 'wrap' }}>
                 <div style={{ fontWeight: 600 }}>Morning summary · 8:00</div>
                 <label style={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
@@ -111,23 +130,23 @@ export default function BotPreviewPage() {
                 </label>
               </div>
               {summary && (asShort
-                ? <Bubble text={fillTemplate(summary.template.name, summary.template.values)} note="Sent when they haven't messaged the bot in 24 h (WhatsApp rule)" />
-                : <Bubble text={summary.text} note="Full list" />)}
+                ? <Bubble wa={wa} text={fillTemplate(summary.template.name, summary.template.values)} note="Sent when they haven't messaged the bot in 24 h (WhatsApp rule)" />
+                : <Bubble wa={wa} text={summary.text} note="Full list" />)}
             </div>
 
-            <div style={{ ...card, background: '#efeae2' }}>
+            <div style={chatCard}>
               <div style={{ fontWeight: 600, marginBottom: '8px' }}>Instant alerts · last 24 hours ({alerts.length})</div>
-              {alerts.length === 0 && <div style={muted}>No alerts in the last 24 hours.</div>}
-              {alerts.map((a) => <Bubble key={a.key} text={asShort ? fillTemplate(a.template.name, a.template.values) : a.text} note={a.kind.replace(/_/g, ' ')} />)}
+              {alerts.length === 0 && <div style={{ opacity: 0.7 }}>No alerts in the last 24 hours.</div>}
+              {alerts.map((a) => <Bubble wa={wa} key={a.key} text={asShort ? fillTemplate(a.template.name, a.template.values) : a.text} note={a.kind.replace(/_/g, ' ')} />)}
             </div>
 
-            <div style={{ ...card, background: '#efeae2' }}>
+            <div style={chatCard}>
               <div style={{ fontWeight: 600, marginBottom: '8px' }}>Ask the bot (try it)</div>
-              {chat.length === 0 && <Bubble text={answer(data, 'help', person)} />}
-              {chat.map((m, i) => <Bubble key={i} mine={m.mine} text={m.text} />)}
+              {chat.length === 0 && <Bubble wa={wa} text={answer(data, 'help', person)} />}
+              {chat.map((m, i) => <Bubble wa={wa} key={i} mine={m.mine} text={m.text} />)}
               <form onSubmit={ask} style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
                 <input value={question} onChange={(e) => setQuestion(e.target.value)} placeholder="J-193, a container no, a BE no, SUMMARY…"
-                  style={{ flex: 1, minWidth: 0, height: '44px', padding: '0 12px', border: '1.5px solid #e2e6ed', borderRadius: '22px', fontSize: '14px', background: 'white' }} />
+                  style={{ flex: 1, minWidth: 0, height: '44px', padding: '0 12px', border: `1.5px solid ${wa.edge}`, borderRadius: '22px', fontSize: '14px', background: wa.field, color: wa.text }} />
                 <button type="submit" style={{ height: '44px', padding: '0 16px', borderRadius: '22px', border: 'none', background: '#1f8f4e', color: 'white', fontWeight: 600, cursor: 'pointer' }}>Send</button>
               </form>
             </div>
@@ -137,7 +156,7 @@ export default function BotPreviewPage() {
             <div style={{ fontWeight: 600, marginBottom: '6px' }}>Message templates to submit in Meta</div>
             <div style={{ ...muted, fontSize: '13px', marginBottom: '8px' }}>WhatsApp Manager → Message templates → Create. Category: Utility. Language: English. Use these names and wording exactly.</div>
             {Object.entries(TEMPLATES).map(([name, t]) => (
-              <div key={name} style={{ borderTop: '1px solid #eef0f4', padding: '8px 0' }}>
+              <div key={name} style={{ borderTop: '1px solid var(--line)', padding: '8px 0' }}>
                 <div style={{ fontFamily: 'ui-monospace, monospace', fontWeight: 600 }}>{name}</div>
                 <div style={{ margin: '4px 0' }}>{t.body}</div>
                 <div style={{ ...muted, fontSize: '12px' }}>Sample values: {t.sample.map((s, i) => `{{${i + 1}}} = ${s}`).join(' · ')}</div>

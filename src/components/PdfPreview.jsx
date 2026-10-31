@@ -5,6 +5,9 @@ import { docBlob } from '../services/docFiles'
 // every browser and on phones, which often can't show a PDF inside a page.
 // The file comes from private storage (docBlob); nothing leaves the browser.
 const MAX_PAGES = 30
+// portal colour tokens (light / dark mode); the fallbacks are the old light colours
+const MUTED = 'var(--muted, #8a96a8)'
+const RED = 'var(--red, #b91c1c)'
 
 export default function PdfPreview({ doc }) {
   const box = useRef(null)
@@ -39,7 +42,7 @@ export default function PdfPreview({ doc }) {
           canvas.style.width = `${width}px`
           canvas.style.display = 'block'
           canvas.style.margin = '0 auto 12px'
-          canvas.style.background = '#fff'
+          canvas.style.background = '#fff' // the paper itself stays white in dark mode too
           canvas.style.boxShadow = '0 1px 3px rgba(0,0,0,.15)'
           canvas.setAttribute('aria-label', `Page ${n} of ${pdf.numPages}`)
           await page.render({ canvasContext: canvas.getContext('2d'), viewport: view, canvas }).promise
@@ -56,13 +59,13 @@ export default function PdfPreview({ doc }) {
 
   return (
     <div style={{ width: '100%', alignSelf: 'flex-start' }}>
-      {state.status === 'loading' && <p className="text-sm text-[#8a96a8] text-center">Opening…</p>}
+      {state.status === 'loading' && <p className="text-sm text-center" style={{ color: MUTED }}>Opening…</p>}
       {state.status === 'error' && (
-        <p className="text-sm text-[#b91c1c] text-center">This PDF could not be shown here. Use Download to open it.</p>
+        <p className="text-sm text-center" style={{ color: RED }}>This PDF could not be shown here. Use Download to open it.</p>
       )}
       <div ref={box} />
       {state.status === 'ok' && state.pages > MAX_PAGES && state.shown === MAX_PAGES && (
-        <p className="text-xs text-[#8a96a8] text-center">Showing the first {MAX_PAGES} of {state.pages} pages. Use Download for the full file.</p>
+        <p className="text-xs text-center" style={{ color: MUTED }}>Showing the first {MAX_PAGES} of {state.pages} pages. Use Download for the full file.</p>
       )}
     </div>
   )

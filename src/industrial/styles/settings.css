@@ -1,0 +1,93 @@
+/* Settings page (Jose, 31 Oct 2026). Only what the shared .ix classes do not give.
+   Colours are tokens from industrial.css, so the page follows the light / dark theme.
+   The one exception is the theme previews: each draws its own theme on purpose. */
+
+/* desktop: section list on the left, one section shown at a time */
+.set-wrap { display: grid; grid-template-columns: 208px minmax(0, 1fr); gap: var(--s4); align-items: start; max-width: 1080px }
+.set-nav { position: sticky; top: 0; display: flex; flex-direction: column; gap: 2px }
+.set-nav button { display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 10px; border: 0; border-radius: var(--r-md); background: none; color: var(--text-2); font-size: var(--fs-md); text-align: left; white-space: nowrap }
+.set-nav button > i { font-size: 16px; color: var(--muted) }
+.set-nav button:hover { background: var(--surface-2); color: var(--text) }
+.set-nav button.on { background: var(--navy-50); color: var(--navy); font-weight: 600 }
+.set-nav button.on > i { color: var(--navy) }
+.set-nav button:focus-visible { outline: none; box-shadow: var(--focus) }
+.set-sec { display: none; overflow: hidden }
+.set-sec.on { display: block }
+
+/* one setting: name + help left, control right */
+.set-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--s2) var(--s6); align-items: center; padding: var(--s3) var(--s4); border-top: 1px solid var(--line) }
+.set-sec .ix-card-head + .set-row { border-top: 0 }
+.set-row.block { grid-template-columns: minmax(0, 1fr) }
+.set-l { min-width: 0 }
+.set-l > b, .set-l > label { display: block; font-weight: 500; color: var(--text) }
+.set-l > p { margin: 2px 0 0; color: var(--muted); font-size: var(--fs-sm); line-height: 1.4 }
+.set-l > p b { color: var(--text-2); font-weight: 600 }
+.set-c { display: flex; align-items: center; justify-content: flex-end; gap: var(--s2); flex-wrap: wrap; min-width: 0 }
+.set-row.block .set-c { justify-content: flex-start; flex-direction: column; align-items: stretch }
+.set-val { color: var(--text); text-align: right; overflow-wrap: anywhere }
+.set-val.muted { color: var(--faint) }
+
+/* controls */
+.set-switch { display: inline-flex; align-items: center; padding: 4px; border: 0; border-radius: var(--r-md); background: none }
+.set-switch .ix-switch { margin-left: 0 }
+.set-switch:focus-visible { outline: none; box-shadow: var(--focus) }
+.set-select, .set-input { height: 32px; min-width: 0; padding: 0 10px; border: 1px solid var(--line-2); border-radius: var(--r-md); background: var(--surface); color: var(--text); font-size: var(--fs-md) }
+.set-select { min-width: 180px; cursor: pointer }
+.set-select:focus-visible, .set-input:focus-visible { outline: none; border-color: var(--accent); box-shadow: var(--focus) }
+.set-input::placeholder { color: var(--faint) }
+.set-checks { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2px var(--s4) }
+.set-checks label { display: flex; align-items: center; gap: 8px; min-height: 28px; color: var(--text); cursor: pointer }
+.set-checks input { width: 15px; height: 15px; margin: 0; accent-color: var(--navy); flex-shrink: 0 }
+.set-checks input:focus-visible { outline: none; box-shadow: var(--focus) }
+
+/* theme picker: three tiles with a small drawing of each theme */
+.set-theme { display: flex; gap: var(--s2); flex-wrap: wrap }
+.set-theme-opt { display: flex; flex-direction: column; align-items: stretch; gap: 6px; width: 132px; padding: 6px 6px 8px; border: 1px solid var(--line-2); border-radius: var(--r-lg); background: var(--surface); color: var(--text-2); font-size: var(--fs-sm); font-weight: 500; text-align: center }
+.set-theme-opt:hover { border-color: var(--navy-200) }
+.set-theme-opt.on { border-color: var(--navy); box-shadow: 0 0 0 1px var(--navy); color: var(--navy); font-weight: 600 }
+.set-theme-opt:focus-visible { outline: none; box-shadow: var(--focus) }
+.set-prev { position: relative; display: block; height: 60px; border-radius: var(--r-md); overflow: hidden; background: var(--p-bg); border: 1px solid var(--line) }
+.set-prev .half { position: absolute; inset: 0; background: var(--p-bg) }
+.set-prev .half.dark { clip-path: polygon(100% 0, 100% 100%, 0 100%) }
+.set-prev .nav { position: absolute; left: 0; top: 0; bottom: 0; width: 22%; background: var(--p-nav) }
+.set-prev .card { position: absolute; left: 30%; right: 8%; top: 20%; bottom: 20%; background: var(--p-card); border: 1px solid var(--p-line); border-radius: 3px }
+.set-prev .card::before, .set-prev .card::after { content: ''; position: absolute; left: 12%; height: 3px; border-radius: 2px; background: var(--p-line) }
+.set-prev .card::before { top: 28%; right: 30% }
+.set-prev .card::after { top: 60%; right: 50% }
+/* the previews' own colours (a picture of each theme, whatever theme is on) */
+.set-prev.light, .set-prev .half.light { --p-bg: #f3f5f8; --p-nav: #0e2650; --p-card: #fff; --p-line: #dfe4eb }
+.set-prev.dark, .set-prev .half.dark { --p-bg: #0b1220; --p-nav: #08162f; --p-card: #151e30; --p-line: #2b3852 }
+
+/* blocked alerts: how to unblock */
+.set-note { display: flex; gap: 10px; align-items: flex-start; margin: 0 var(--s4) var(--s3); padding: 10px 12px; border: 1px solid var(--amber-line); border-radius: var(--r-md); background: var(--amber-bg); color: var(--text); font-size: var(--fs-sm); line-height: 1.5 }
+.set-note > i { font-size: 16px; color: var(--amber); margin-top: 1px }
+.set-err { color: var(--red); font-size: var(--fs-sm); padding: 0 var(--s4) var(--s3) }
+.set-row .set-err { padding: 0 }
+
+/* change password */
+.set-pw { display: flex; flex-wrap: wrap; gap: var(--s2); align-items: center }
+.set-pw .set-input { width: 210px }
+
+/* keyboard shortcuts */
+.set-keys { margin: 0; display: grid; gap: 4px }
+.set-keys > div { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: var(--s3); align-items: center; min-height: 26px }
+.set-keys dt { display: flex; gap: 4px; flex-wrap: wrap }
+.set-keys dd { margin: 0; color: var(--text-2) }
+
+/* phone: every section stacked, controls under their text */
+@media (max-width: 760px) {
+  .set-wrap { grid-template-columns: minmax(0, 1fr); gap: var(--s3) }
+  .set-nav { display: none }
+  .set-sec { display: block }
+  .set-sec + .set-sec { margin-top: var(--s3) }
+  .set-row { grid-template-columns: minmax(0, 1fr) }
+  .set-c { justify-content: flex-start }
+  .set-val { text-align: left }
+  .set-checks { grid-template-columns: minmax(0, 1fr) }
+  .set-checks label { min-height: 36px }
+  .set-theme-opt { width: calc((100% - 2 * var(--s2)) / 3); min-width: 0 }
+  .set-select { width: 100% }
+  .set-pw .set-input { width: 100% }
+  .set-pw .ix-btn { width: 100% }
+  .set-keys > div { grid-template-columns: minmax(0, 1fr); gap: 2px; padding: 4px 0 }
+}
