@@ -238,6 +238,9 @@ export function containerFinishedOn(row, job) {
 // empty is back.
 export function freeTimeFor(job, row, now = Date.now()) {
   if (!row || containerFinishedOn(row, job)) return null
+  // a box that left the CFS / port with cargo is no longer the portal's to count: the
+  // empty's return is JDS's own business (Jose, 31 Oct 2026)
+  if (containerTrip(row, job).exitAt) return null
   const moved = daysSinceLastMove(row)
   if (moved !== null && moved > STALE_AFTER_DAYS) return null
   const today = istDayNo(now)
@@ -506,6 +509,20 @@ export function journeyFor(job, data) {
     : c.outCount > 0 ? `${c.outCount} of ${c.all.length} out${firstWhere ? ` · ${firstWhere.label}${firstWhere.since ? ` since ${dayLabel(firstWhere.since)}` : ''}` : ''}`
       : firstWhere ? `${firstWhere.label}${firstWhere.since && ['cfs', 'port', 'to_cfs'].includes(firstWhere.code) ? ` since ${dayLabel(firstWhere.since)}` : ''}` : null
 
+  // ── Cargo delivered (Jose, 31 Oct 2026) ──
+  // 24 hours after the cargo was loaded for the client the job shows as delivered, also
+  // when nobody added a truck number. Loaded = every box left the CFS / ICD / port with
+  // cargo on this trip (container tracking), or trucks were put on the job for all its
+  // boxes (or the job has no tracked box). Rail moves take days: not counted. Once the
+  // cargo is loaded, the empty's return is JDS's own business (Jose, 31 Oct 2026): the
+  // job is then simply finished, with no free days or detention to watch.
+  const truckAts = trucks.map((t) => t.at).filter(Boolean).sort()
+  const truckCovered = trucks.length > 0 && (c.all.length === 0 || trucks.length >= c.nos.length
+    || c.nos.every((no) => trucks.some((t) => String(t.container || '').toUpperCase() === no)))
+  const loadedAt = c.allOut ? c.lastExitAt : truckCovered ? truckAts.at(-1) || null : null
+  const cargoDelivered = !delivered && oocDone && mode !== 'rail' && !railMoving && !!loadedAt
+    && Date.now() - new Date(loadedAt).getTime() >= DAY
+
   const steps = [
     arrived
       ? { id: 'arrival', label: isAirJob(job) ? 'Flight arrived' : 'Ship arrived', done: true, when: dayLabel(ata || c.portIn), sub: null }
@@ -520,11 +537,14 @@ export function journeyFor(job, data) {
     { id: 'out', label: isAirJob(job) ? 'Cargo out' : 'Container out', done: c.allOut || stage >= 9, when: c.allOut ? dayLabel(c.lastExitAt) : null, sub: outSub || c.tracked[0]?.status_text || null },
     { id: 'truck', label: mode === 'rail' ? 'Rail' : mode === 'truck' ? 'Truck' : 'Truck / rail', done: oocDone && (!!truck || railMoving || roadMoving || allLeft), when: moved ? dayLabel(moved.at) : allLeft ? dayLabel(c.lastExitAt) : null,
       sub: truck ? (trucks.length > 1 ? `${trucks.length} trucks` : truck) : movedText || (allLeft ? leftText : mode === 'rail' ? 'Going by rail' : oocDone ? 'Not arranged yet' : null) },
-    { id: 'delivered', label: 'Delivered', done: delivered, when: !isDelivered(job) && c.finishedOn ? dayLabel(c.finishedOn) : null, sub: !isDelivered(job) && c.allDelivered ? (deliveryBy(job) === 'client' ? 'Collected by client' : 'Empty container back') : null },
+    { id: 'delivered', label: 'Delivered', done: delivered || cargoDelivered,
+      when: !isDelivered(job) && c.finishedOn ? dayLabel(c.finishedOn) : cargoDelivered ? dayLabel(loadedAt) : null,
+      sub: !isDelivered(job) && c.allDelivered ? (deliveryBy(job) === 'client' ? 'Collected by client' : 'Empty container back')
+        : cargoDelivered && deliveryBy(job) === 'client' ? 'Collected by client' : null },
   ]
   // delivered = the whole job is over: every step counts as done, nothing is "next"
   // (Jose, 25 Oct 2026: old delivered jobs with no BE saved said "Next: file the BE")
-  if (delivered) for (const s of steps) { if (!s.done) { s.done = true; s.sub = null } }
+  if (delivered || cargoDelivered) for (const s of steps) { if (!s.done) { s.done = true; s.sub = null } }
   markCurrent(steps)
   const moveStep = steps.find((s) => s.id === 'truck')
   const moveText = mode === 'rail' ? 'Next: send the container by rail' : mode === 'truck' ? 'Next: assign a truck' : 'Next: arrange truck or rail'
@@ -539,7 +559,7 @@ export function journeyFor(job, data) {
   if (oocStep?.current && beStage) oocStep.nextText = beStage.next
 
   let phase = 'arrival'
-  if (delivered) phase = 'delivered'
+  if (delivered || cargoDelivered) phase = 'delivered'
   else if ((truck && oocDone) || ((railMoving || roadMoving || allLeft) && oocDone) || stage >= 9) phase = 'truck'
   else if (oocDone) phase = 'release'
   // a BE filed before the ship came in waits for the ship first, not for OOC.
@@ -550,7 +570,7 @@ export function journeyFor(job, data) {
 
   // OOC done and the onward move not arranged yet (rail jobs don't wait for a truck)
   // (nor jobs whose boxes have all left the CFS loaded: the move has happened)
-  const readyForTruck = !delivered && oocDone && !truck && mode !== 'rail' && !roadMoving && !allLeft
+  const readyForTruck = !delivered && !cargoDelivered && oocDone && !truck && mode !== 'rail' && !roadMoving && !allLeft
 
   // ── Saved job details that container tracking (LDB) contradicts ──
   const mismatches = []
@@ -561,7 +581,7 @@ export function journeyFor(job, data) {
   // ── What needs attention ──
   const attention = []
   const add = (level, text, action) => attention.push({ level, text, action, jobId: job.id, jobNo: job.job_no, client: job.client })
-  if (!delivered) {
+  if (!delivered && !cargoDelivered) {
     const late = c.tracked.filter((t) => t.freeLeft !== null && t.freeLeft === c.minFree)
     const outLate = late.length > 0 && late.every((t) => t.outWithCargo)
     if (c.minFree !== null && c.minFree < 0) add('red', `Detention running — ${-c.minFree} day${c.minFree === -1 ? '' : 's'} over free time${outLate ? ' (delivered, empty not back yet)' : ''}`, 'containers')
@@ -596,12 +616,14 @@ export function journeyFor(job, data) {
   return {
     steps, phase, attention, beStage,
     oocDate, oocDone, beFiled, truck, trucks, readyForTruck, onwardMode: mode, onwardMove: moved,
+    // delivered by inference 24 h after loading (Jose, 31 Oct 2026)
+    cargoDelivered, deliveredAt: cargoDelivered ? loadedAt : null,
     arrivedAt: ata || c.portIn || null,
     // a finished job has no free days to count down (Jose, 25 Oct 2026)
-    freeDaysLeft: delivered ? null : c.minFree,
+    freeDaysLeft: delivered || cargoDelivered ? null : c.minFree,
     // the last free day ('YYYY-MM-DD') and the box it belongs to (same pick as jobFreeTime)
-    freeTill: delivered ? null : c.freeTill,
-    freeBox: delivered ? null : c.freeBox,
+    freeTill: delivered || cargoDelivered ? null : c.freeTill,
+    freeBox: delivered || cargoDelivered ? null : c.freeBox,
     // every box left the CFS / port loaded on this trip, and when the last one did
     allLeft, leftAt: c.lastExitAt,
     containers: c,
