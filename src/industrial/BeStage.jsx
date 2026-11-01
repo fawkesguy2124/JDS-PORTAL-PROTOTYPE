@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { supabase } from '../supabase'
 import { useJourney } from './JourneyContext'
 import { BE_STAGES, beStageOf } from '../services/journey'
-import { Icon, fmtDateTime } from './ui'
+import { Icon } from './ui'
 import './styles/customs.css'
 
 // Customs stage after the BE, set with one tap (Jose, 25 Oct 2026). ICEGATE through ULIP
@@ -47,7 +47,7 @@ export default function BeStage({ job, userName, showToast, compact = false }) {
         <div className="hd">
           <Icon name="building-bank" />
           <span className="t">Customs stage</span>
-          <span className="s">{now ? `${now.label}${now.by ? ` · ${now.by}` : ''}${now.at ? ` · ${fmtDateTime(now.at)}` : ''}` : 'Not set'}</span>
+          {/* (no "Assessed: pay duty · Jose · 1 Nov" line: the lit chip shows the stage; Jose, 1 Nov 2026) */}
         </div>
       )}
       <div className="chips" role="group" aria-label={`Customs stage of ${job.job_no}`}>

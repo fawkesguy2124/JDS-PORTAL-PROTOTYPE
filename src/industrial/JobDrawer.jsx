@@ -379,7 +379,20 @@ export default function JobDrawer({ jobId, onClose, onOpenFull, onOpenTruck, cur
       title = plain(title)
       return { level: a.level, step: stepOf(a), text: sub ? `${title}${/[.!?]$/.test(title) ? '' : '.'} ${plain(sub)}` : title, act }
     })
+  // free till: a ! on Container out with the date on hover (Jose, 1 Nov 2026), coloured by
+  // how close it is; not added when a free-time alert there already says it
+  const outStep = stepPick('out', 'truck')
+  if (!isExport && !delivered && j.freeTill && outStep && !alerts.some((a) => a.step === outStep && /free|detention/i.test(a.text))) {
+    const box = j.freeBox && boxes.length > 1 ? ` (${j.freeBox})` : ''
+    const left = j.freeDaysLeft
+    alerts.push({
+      level: left !== null && left <= 2 ? 'red' : left !== null && left <= 5 ? 'amber' : 'info', icon: 'alert-circle', step: outStep,
+      text: `Free till ${fmtDate(j.freeTill)}${box}${left !== null ? ` · ${freeWord(left)}` : ''}`,
+      act: boxes.length ? { label: 'Open on Containers', run: () => goPage('containers') } : null,
+    })
+  }
   const LEVELS = { red: ['alert-circle', 3], amber: ['alert-triangle', 2], info: ['info-circle', 1] }
+  const iconOf = (ws, lv) => (ws.every((w) => w.icon) ? ws[0].icon : LEVELS[lv][0])
   const warnsOn = (id) => alerts.filter((a) => a.step === id)
   const worstOf = (ws) => ws.reduce((w, a) => ((LEVELS[a.level]?.[1] || 1) > (LEVELS[w]?.[1] || 1) ? a.level : w), 'info')
 
@@ -465,12 +478,8 @@ export default function JobDrawer({ jobId, onClose, onOpenFull, onOpenTruck, cur
     facts.push({ k: 'LEO', v: j.leoDate && fmtDate(j.leoDate) })
     facts.push({ k: 'EGM', v: j.egmNo, mono: true })
   } else {
-    // (arrival / ETA, BE and OOC are on the step bar right below; not repeated here)
-    facts.push({
-      k: 'Free till', v: j.freeTill && fmtDate(j.freeTill), small: freeWord(j.freeDaysLeft),
-      tone: j.freeDaysLeft !== null && j.freeDaysLeft <= 2 ? 'red' : undefined,
-      title: j.freeBox ? `Runs out first: ${j.freeBox}` : undefined,
-    })
+    // (arrival / ETA, BE and OOC are on the step bar right below; not repeated here. Free
+    // till is a mark on Container out, not a box above the steps: Jose, 1 Nov 2026)
   }
   // (boxes go on the line under the job name; a strip with only them looked empty)
   // (no owner can be set anywhere in the portal yet, so no "Assign" link that leads nowhere)
@@ -590,7 +599,7 @@ export default function JobDrawer({ jobId, onClose, onOpenFull, onOpenTruck, cur
                 const warn = lv && (
                   <button type="button" className={`ix-jp-warn ${lv}${j.steps.indexOf(s) < 2 ? ' l' : ''}${toAct ? '' : ' na'}`} data-tip={ws.map((w) => w.text).join('\n')} aria-label={ws.map((w) => w.text).join(' ')}
                     onClick={() => (isPhone() ? setWarnOpen((v) => (v === s.id ? null : s.id)) : toAct?.run())}>
-                    <Icon name={LEVELS[lv][0]} />
+                    <Icon name={iconOf(ws, lv)} />
                   </button>
                 )
                 return (
@@ -618,7 +627,7 @@ export default function JobDrawer({ jobId, onClose, onOpenFull, onOpenTruck, cur
             return (
               <div className={`ix-jp-warnline ${lv}`} role="status">
                 <div>
-                  <Icon name={LEVELS[lv][0]} />
+                  <Icon name={iconOf(ws, lv)} />
                   <p>{ws.map((w) => <span key={w.text}>{w.text}</span>)}</p>
                   {toAct && <button type="button" className="ix-link" onClick={toAct.run}>{toAct.label}</button>}
                 </div>
