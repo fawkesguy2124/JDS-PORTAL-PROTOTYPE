@@ -19,15 +19,14 @@ import { buildJourneyData, buildSeaByJob } from '../_shared/portal/journeyCore.j
 import { morningSummary, instantAlerts, answer, teamFromProfiles, BOT_NUMBERS, missingDetails, allowed, LEVELS, LEVEL_LABEL } from '../_shared/portal/botMessages.js'
 import { askAssistant, groqInfo } from './assistant.ts'
 import { applyChange, confirmText, isNo, isYes, PENDING_MINUTES, prepareChange, type Pending } from './actions.ts'
-import { downloadMedia, transcribe, normalizeSpoken, docTypeFromName, jobFromText, safeName, MAX_FILE_BYTES } from './media.ts'
+import { downloadMedia, transcribe, normalizeSpoken, docTypeFromName, jobFromText, jobNoFromText, safeName, MAX_FILE_BYTES } from './media.ts'
 import { makeServerTools, sendDueReminders, checkWatches, checkTasks } from './servertools.ts'
 import { readBeFile, jobForBe, beLine } from './bereader.ts'
 import { readDocFile, jobForDoc, docFill, fillArgs } from './docfill.ts'
 import { pushAlerts, pushTest } from './push.ts'
-import { handlePost, undoPost, isUndo, UNDO_MINUTES } from './posts.ts'
+import { handlePost, undoPost, isUndo, UNDO_MINUTES, knownClient } from './posts.ts'
 import { runQuestions, answerQuestion, questionsDue } from './questions.ts'
 
-const PORTAL = 'https://jds-portal-prototype.vercel.app'
 
 const GRAPH = 'https://graph.facebook.com/v21.0'
 const DAY = 24 * 60 * 60 * 1000
@@ -130,6 +129,11 @@ function toWhatsApp(s: string) {
     .replace(/^\[checked:.*\]$/gm, '') // the bot's own note, never shown
     .trim()
 }
+
+// No website links in WhatsApp unless the person asked for one (Jose, 2 Nov 2026: "the
+// bot on its own should never give a website link")
+const askedForLink = (t: string) => /\b(link|url|website|web\s*site)\b/i.test(t)
+const noLinks = (s: string) => s.replace(/\s*[(<]?https?:\/\/\S+?[)>]?(?=\s|$)/g, '').replace(/[ \t]+$/gm, '').replace(/\n{3,}/g, '\n\n').trim()
 
 // the team list rarely changes: keep it for 5 minutes
 let teamCache: { at: number; team: Person[] } | null = null
@@ -477,7 +481,6 @@ async function handleFile(admin: Admin, person: Person, m: any, data: any) {
   const docType = docTypeFromName(`${caption} ${name}`)
   const lastFile = { path, file_name: name, mime: file.mime, size: file.bytes.length, doc_type: docType, at: new Date().toISOString() }
   await admin.from('bot_inbox').upsert({ phone: person.phone, last_file: lastFile, pending: null, last_inbound_at: new Date().toISOString() })
-  const createLink = `${PORTAL}/admin?tab=jobs&createFrom=${encodeURIComponent(path)}`
   // a PDF: read by the portal's own reader (no AI, the same as Create job): a BE / OOC, BL,
   // air waybill, invoice, packing list or a bundle. One Yes / No for everything it shows:
   // attach it, record the BE and IGM, the OOC, and fill the job's empty fields
@@ -493,15 +496,40 @@ async function handleFile(admin: Admin, person: Person, m: any, data: any) {
     const isAwb = doc.types.includes('BL') && !f.vessel && /^\d{11}$/.test(String(f.bl_no || ''))
     const PLAIN: Record<string, string> = { Invoice: 'Invoice', 'Packing List': 'Packing list', Insurance: 'Insurance', COO: 'Certificate of origin' }
     const what = be ? `${be.copy_type === 'OOC' ? 'OOC' : 'BE'} ${be.be_no}`
-      : [doc.types.includes('BL') ? (f.bl_no ? `${isAwb ? 'AWB' : 'BL'} ${f.bl_no}` : 'BL') : null, ...doc.types.filter((t) => PLAIN[t]).map((t) => PLAIN[t])].filter(Boolean).join(' + ') || lastFile.doc_type
+      : [doc.types.includes('BL') ? (f.bl_no ? `${isAwb ? 'AWB' : 'BL'} ${f.bl_no}` : 'Bill of lading') : null, ...doc.types.filter((t) => PLAIN[t]).map((t) => PLAIN[t])].filter(Boolean).join(' + ') || lastFile.doc_type
     const named = jobFromText(`${caption} ${name}`, data?.jobs || [])
     const match = named ? { job: named, how: 'the file name' } : (be ? jobForBe(be, data?.jobs || []) : null) || jobForDoc(doc, data?.jobs || [])
     if (!match) {
-      await reply(`📄 *${what}*\n\nI couldn't find its job. Which job is it? (e.g. J-652)\nOr make a new job from it: ${createLink}`, userText)
+      // a BE of a job the portal doesn't have yet (its number is in LiveImpex's file name,
+      // "Processed_BE_736_…", or the caption): offer to make the job (Jose, 2 Nov 2026).
+      // Like a BE post: only a recent BE (an old one is an old job), never a BE already on a job.
+      const jobNo = be && be.copy_type !== 'OOC' ? jobNoFromText(`${caption} ${name}`) : null
+      const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' })
+      const age = be ? (new Date(today).getTime() - new Date(be.be_date).getTime()) / 864e5 : 99
+      const onJob = be ? (data?.jobs || []).find((x: any) => String(x.be_no || '') === String(be.be_no)) : null
+      const written = String(f.client || be?.client || '').trim()
+      if (jobNo && age >= 0 && age <= 10 && !onJob && written) {
+        const client = knownClient(written, data).name
+        const mode = be.mode === 'Air' ? 'Air' : be.port_code === 'INBOM1' ? 'BPT/MBPT' : be.load === 'LCL' || f.container_load === 'LCL' ? 'Sea LCL' : 'Sea FCL'
+        const port = be.port_code || (mode === 'Air' ? 'INBOM4' : 'INNSA1')
+        const boxes = f.containers || []
+        const pending: Pending = {
+          action: 'create_from_doc', job_id: '', job_no: jobNo,
+          args: { job_no: jobNo, client, mode, port_code: port, be_no: String(be.be_no), be_date: be.be_date, fields: fillArgs(f), file: { path, file_name: name, mime: file.mime, size: file.bytes.length, doc_type: lastFile.doc_type } },
+          summary: `Create ${jobNo} for ${client} from BE ${be.be_no}`, at: new Date().toISOString(),
+        }
+        const line = [client, mode, f.bl_no ? `${mode === 'Air' ? 'MAWB' : 'BL'} ${f.bl_no}` : null, mode !== 'Air' && boxes.length ? (boxes.length === 1 ? `Container ${boxes[0]}` : `${boxes.length} containers`) : null].filter(Boolean).join(' · ')
+        await admin.from('bot_inbox').update({ pending }).eq('phone', person.phone)
+        await reply(`📄 *${what}*\n\n*${jobNo}* isn't in the portal yet. Create it?\n${line}`, userText, YES_NO)
+        return
+      }
+      const why = onJob ? `It is already on *${onJob.job_no}*, which is closed. ` : jobNo && be && age > 10 ? `${jobNo} isn't in the portal, and this BE is old, so I didn't make a job from it. ` : ''
+      await reply(`📄 *${what}*\n\n${why || "I couldn't find its job in the portal. "}Which job is it? (e.g. J-652)`, userText)
       return
     }
     const j = match.job
-    const head = `📄 *${what}* for *${j.job_no}*${j.client ? ` (${j.client})` : ''}`
+    // the job is already in the portal: only what it is missing is offered
+    const head = `📄 *${what}* · *${j.job_no}*${j.client ? ` (${j.client})` : ''} is already in the portal.`
     const items: Pending[] = []
     const adds: string[] = [] // what Yes does, in plain words
     const att = prepareChange({ action: 'attach_document', job: j.job_no, doc_type: lastFile.doc_type }, data, person, { lastFile })
@@ -525,9 +553,9 @@ async function handleFile(admin: Admin, person: Person, m: any, data: any) {
       if (r.ok) { items.push(r.pending); adds.push(`OOC ${be.ooc_no}`) }
     }
     const warn = fill.mismatch ? `\n\n⚠ Its containers are not ${j.job_no}'s, so I won't fill anything from it. Wrong job?` : ''
-    if (!items.length) { await reply(`${head}\n\n${fill.mismatch ? warn.trim() : `${j.job_no} already has all of this 👍`}`, userText); return }
+    if (!items.length) { await reply(`${head}\n\n${fill.mismatch ? warn.trim() : 'It already has everything in this paper 👍'}`, userText); return }
     const list = adds.join(' · ')
-    const ask = att.ok && adds.length ? `Save it to the job and add:\n${list}` : att.ok ? 'Save it to the job?' : `Add to the job:\n${list}`
+    const ask = att.ok && adds.length ? `Save the file and add what's missing?\n${list}` : att.ok ? 'Save the file to it?' : `Add what's missing?\n${list}`
     const pending: Pending = {
       action: 'batch', job_id: j.id, job_no: j.job_no,
       // one plain "done" line instead of one line per change
@@ -549,7 +577,7 @@ async function handleFile(admin: Admin, person: Person, m: any, data: any) {
     await reply(`📎 Got *${name}* and kept it safely. ${res.error}`, userText)
     return
   }
-  await reply(`📎 Got *${name}*. Which job is it for, and what is it? (e.g. "J-652, BE")\nOr make a new job from it: ${createLink}`, userText)
+  await reply(`📎 Got *${name}*. Which job is it for, and what is it? (e.g. "J-652, BE")`, userText)
 }
 
 async function handleInbound(admin: Admin, payload: any) {
@@ -682,7 +710,7 @@ async function handleInbound(admin: Admin, payload: any) {
       // a proposed change: the bot itself asks for YES, in fixed words
       if (ask) reply = confirmText(ask)
       else if (ai.text && /reply\s*\*?yes/i.test(ai.text)) reply = "I couldn't prepare that change. Please send it again in one message with all the details, for example: record BE 1234567 dated 18 Oct on J-509."
-      else reply = ai.text ? toWhatsApp(ai.text) : "⏳ The AI is busy right now, so I couldn't answer that question. Please ask again in a minute.\n\nThese always work instantly: a job no (J-193), a container no, a BE no, SUMMARY or URGENT."
+      else reply = ai.text ? (askedForLink(text) ? toWhatsApp(ai.text) : noLinks(toWhatsApp(ai.text))) : "⏳ The AI is busy right now, so I couldn't answer that question. Please ask again in a minute.\n\nThese always work instantly: a job no (J-193), a container no, a BE no, SUMMARY or URGENT."
     }
     if (pending && live && !isYes(text) && !isNo(text) && !ask) reply = `(The earlier change was not made: ${pending.summary.replace(/\*/g, '')}.)\n\n${reply}`
     // (one waiting slot: a Yes / No question wins over the undo of an earlier post)

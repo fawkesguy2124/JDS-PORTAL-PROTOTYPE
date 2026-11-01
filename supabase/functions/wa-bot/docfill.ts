@@ -104,7 +104,9 @@ export function docFill(f: Record<string, any>, job: any): { fields: Record<stri
   }
   if (f.bl_no && !job.bl_no) { fields.bl_no = String(f.bl_no); said.push(`${isAir ? 'MAWB' : 'BL'} ${f.bl_no}`) }
   let refs = job.ulip_refs || {}
-  if (f.hawb_no && !refs.hawb_no) { refs = { ...refs, hawb_no: String(f.hawb_no) }; fields.ulip_refs = refs; said.push(`${isAir ? 'HAWB' : 'house BL'} ${f.hawb_no}`) }
+  // a house BL that is the job's own BL number (a BE often repeats it) is not a new number
+  const sameAsBl = norm(f.hawb_no) === norm(fields.bl_no || job.bl_no)
+  if (f.hawb_no && !refs.hawb_no && !sameAsBl) { refs = { ...refs, hawb_no: String(f.hawb_no) }; fields.ulip_refs = refs; said.push(`${isAir ? 'HAWB' : 'house BL'} ${f.hawb_no}`) }
   if (f.igm_no && isoDay(f.igm_date) && !refs.igm_no) { refs = { ...refs, igm_no: String(f.igm_no), igm_date: f.igm_date }; fields.ulip_refs = refs; said.push(`IGM ${f.igm_no}`) }
   if (!isAir && f.shipping_line && !job.shipping_line) { fields.shipping_line = f.shipping_line; said.push(`line ${f.shipping_line}`) }
   if (!isAir && f.vessel && !job.vessel) { fields.vessel = f.vessel; said.push(`ship ${f.vessel}`) }

@@ -142,10 +142,17 @@ const TYPES: [RegExp, string][] = [
 ]
 export const docTypeFromName = (name: string) => TYPES.find(([re]) => re.test(name))?.[1] || null
 
+// the job numbers in a caption / file name ("J-652", LiveImpex's "Processed_BE_652_…")
+const jobNosIn = (text: string) => {
+  const t = String(text || '')
+  return [...t.matchAll(/\bJ-?\s?0*(\d{1,5})\b/gi), ...t.matchAll(/(?:^|[\s_-])(?:BE|OOC|Charge)[\s_-]*0*(\d{2,5})(?=[\s_.-])/gi)].map((m) => m[1])
+}
+// the job number a file names, for a job the portal doesn't have yet ("J-736")
+export const jobNoFromText = (text: string) => { const n = jobNosIn(text)[0]; return n ? `J-${n.replace(/^0+/, '')}` : null }
+
 // Which job a file is for, from the caption or the file name ("J-652", "BE_652_…")
 export function jobFromText(text: string, jobs: any[]): any | null {
-  const t = String(text || '')
-  const nos = [...t.matchAll(/\bJ-?\s?0*(\d{1,5})\b/gi), ...t.matchAll(/(?:^|[\s_-])(?:BE|OOC|Charge)[\s_-]*0*(\d{2,5})(?=[\s_.-])/gi)].map((m) => m[1])
+  const nos = jobNosIn(text)
   for (const n of nos) {
     const job = jobs.find((j: any) => String(j.job_no || '').replace(/\D/g, '').replace(/^0+/, '') === n.replace(/^0+/, ''))
     if (job) return job

@@ -344,6 +344,35 @@ export async function applyChange(admin: Admin, pending: Pending, person: Person
 
 They should send any message (e.g. "hi") to the bot to start. While the bot uses Meta's test number, the number must also be on Meta's test recipient list, or the bot's replies will not reach them.`
   }
+  // a new job from a BE PDF sent on WhatsApp (Jose, 2 Nov 2026: "it should say, should I
+  // create a job?"): the job, then everything else the papers give, then the file itself
+  if (pending.action === 'create_from_doc') {
+    const a = pending.args || {}
+    const { data: clash } = await admin.from('jobs').select('id').eq('job_no', a.job_no).maybeSingle()
+    if (clash) return `❌ ${a.job_no} already exists. Nothing was created.`
+    const uuid = /^[0-9a-f-]{36}$/i.test(String(person.id || '')) ? person.id : null
+    const now = new Date().toISOString()
+    const { data: made, error } = await admin.from('jobs').insert({
+      job_no: a.job_no, client: a.client, mode: a.mode, port_code: a.port_code, job_type: 'import', stage: 4, priority: 'normal', free_days: 14,
+      be_no: a.be_no, be_date: a.be_date, created_by: uuid, field_meta: { created_via: 'whatsapp_doc' }, updated_at: now,
+    }).select('*').single()
+    if (error || !made) return `❌ Could not create ${a.job_no}: ${error?.message || 'unknown error'}.`
+    const by = `${person.name} via WhatsApp`
+    for (const l of [
+      { type: 'job_created', title: `${a.job_no} — Job created`, note: `${a.client} · ${a.mode} (from the BE sent on WhatsApp by ${person.name})` },
+      { type: 'be_filed', title: `${a.job_no} — BE ${a.be_no} filed`, note: `BE ${a.be_no} dated ${a.be_date} (read from the BE sent on WhatsApp by ${person.name})` },
+    ]) await admin.from('activity_log').insert({ ...l, action: l.type, job_id: made.id, job_no: a.job_no, done_by_name: by, meta: { job_id: made.id, job_no: a.job_no, via: 'whatsapp' } })
+    const { fields } = docFill(a.fields || {}, made)
+    if (Object.keys(fields).length) {
+      const { error: fillErr } = await admin.from('jobs').update({ ...fields, updated_at: new Date().toISOString() }).eq('id', made.id)
+      if (fillErr) return `✅ ${a.job_no} is made, but its other details could not be saved (${fillErr.message}).`
+    }
+    if (a.file?.path) {
+      const att = await applyChange(admin, { action: 'attach_document', job_id: made.id, job_no: a.job_no, args: a.file, summary: '', at: now }, person, deps)
+      if (!att.startsWith('✅')) return `✅ ${a.job_no} is made. ${att}`
+    }
+    return `✅ Done. ${a.job_no} is made in the portal.`
+  }
   // a new job typed on WhatsApp
   if (pending.action === 'create_job') {
     const f = pending.args || {}

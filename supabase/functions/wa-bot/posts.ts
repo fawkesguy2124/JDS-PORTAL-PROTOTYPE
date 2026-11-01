@@ -11,7 +11,6 @@ import type { Pending } from './actions.ts'
 type Admin = any
 type Person = { phone: string; name: string; level?: string; id?: string }
 
-const PORTAL = 'https://jds-portal-prototype.vercel.app'
 export const UNDO_MINUTES = 30
 const todayIst = () => new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' })
 const nice = (d: string) => new Date(`${d}T00:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' })
@@ -166,7 +165,7 @@ export async function handlePost(admin: Admin, person: Person, text: string, dat
       if (made.undo) undoItems.push(made.undo)
       continue
     }
-    if (!cached) { notes.push(`${ref.jobNo} isn't in the portal yet, so nothing was saved for it. Add it with Create job: ${PORTAL}/admin?tab=jobs`); continue }
+    if (!cached) { notes.push(`${ref.jobNo} isn't in the portal yet, so nothing was saved for it. Add it in the portal with Create job.`); continue }
     // the job as it is right now (the bot's copy can be a few minutes old)
     const { data: job } = await admin.from('jobs').select('*').eq('id', cached.id).maybeSingle()
     if (!job) { notes.push(`${ref.jobNo} could not be read just now; nothing was saved for it.`); continue }
@@ -213,7 +212,7 @@ export async function handlePost(admin: Admin, person: Person, text: string, dat
 // The client as already spelled on earlier jobs: "Vendkin" → "Vendekin Technologies",
 // "NNC" → "Divine / NNC", "Limitless" → "Limitless Components EXIM"; else as written
 const squash = (s: string) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '')
-function knownClient(written: string, data: any): { name: string; known: boolean } {
+export function knownClient(written: string, data: any): { name: string; known: boolean } {
   const want = squash(written)
   const names = [...new Set((data?.jobs || []).map((j: any) => String(j.client || '').trim()).filter(Boolean))] as string[]
   if (!want) return { name: '', known: false }
@@ -233,7 +232,7 @@ async function createFromBePost(admin: Admin, post: any, jobNo: string, data: an
   const { date } = fixYear(post.be_date, today)
   const age = date ? (new Date(today).getTime() - new Date(date).getTime()) / 864e5 : null
   if (!date || age === null || age < 0 || age > 10) {
-    notes.push(`${jobNo} isn't in the portal, and this BE is ${date ? `from ${nice(date)}` : 'undated'}, so I didn't make a new job from it. Add it with Create job: ${PORTAL}/admin?tab=jobs`)
+    notes.push(`${jobNo} isn't in the portal, and this BE is ${date ? `from ${nice(date)}` : 'undated'}, so I didn't make a new job from it. Add it in the portal with Create job.`)
     return { line: null, notes, undo: null }
   }
   const clash = (data?.jobs || []).find((j: any) => String(j.be_no || '') === post.be_no)
