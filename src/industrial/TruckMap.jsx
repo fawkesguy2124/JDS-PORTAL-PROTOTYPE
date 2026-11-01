@@ -68,14 +68,21 @@ export default function TruckMap({ trucks, selectedId, onSelect, message }) {
   const layer = useRef(null)
   const [big, setBig] = useState(false) // expanded to fill the screen
   const lastBounds = useRef([])
+  const fitKey = useRef('') // the view is refitted only when the picked truck or the trucks change
 
   useEffect(() => {
     if (!box.current || map.current) return
-    map.current = L.map(box.current, { zoomControl: true, scrollWheelZoom: false }).setView([19.05, 73.05], 9)
+    // the mouse wheel zooms the map (Jose, 1 Nov 2026)
+    map.current = L.map(box.current, { zoomControl: true, scrollWheelZoom: true }).setView([19.05, 73.05], 9)
     map.current.attributionControl.setPrefix(false) // no "Leaflet" credit; the map credits sit behind the small ⓘ
     addBaseMap(map.current)
     layer.current = L.layerGroup().addTo(map.current)
-    return () => { map.current?.remove(); map.current = null }
+    return () => {
+      // a mouse-wheel zoom still finishing when the page closes would run on the removed map
+      // (Leaflet's queued zoom-end step returns early when no zoom is marked as running)
+      if (map.current) { map.current._animatingZoom = false; map.current.remove() }
+      map.current = null
+    }
   }, [])
 
   const placed = trucks.map((t) => ({ ...t, last: [...t.points].reverse().find((p) => p.pos) || null }))
@@ -92,30 +99,33 @@ export default function TruckMap({ trucks, selectedId, onSelect, message }) {
       const lastAt = new Date(t.last.at)
       const stale = !t.hollow && !isNaN(lastAt) && Date.now() - lastAt.getTime() > STALE_HOURS * 3600e3
       const route = t.points.filter((p) => p.pos)
+      // each truck in its own colour (the same as its row on the page)
+      const color = t.color || NAVY
       if (isSel && route.length > 1) {
-        L.polyline(route.map((p) => p.pos), { color: stale ? RED : NAVY, weight: 4, opacity: 0.85 }).addTo(layer.current)
+        L.polyline(route.map((p) => p.pos), { color, weight: 4, opacity: 0.85, dashArray: stale ? '6 6' : null }).addTo(layer.current)
       }
       if (isSel) {
         for (const p of route.slice(0, -1)) {
-          L.circleMarker(p.pos, { radius: 5, color: NAVY, weight: 2, fillColor: '#fff', fillOpacity: 1 })
+          L.circleMarker(p.pos, { radius: 5, color, weight: 2, fillColor: '#fff', fillOpacity: 1 })
             .bindTooltip(`${esc(p.plaza)}<br>${esc(fmt(p.at))}${p.approx ? '<br><i>approximate position</i>' : ''}`).addTo(layer.current)
         }
         route.forEach((p) => bounds.push(p.pos))
       }
       // job number first on the pin; a hollow pin says no truck number is known yet
       const icon = t.mode === 'rail' ? 'train' : 'truck'
-      const html = `<div class="ix-tmark ${stale ? 'stale' : ''} ${t.hollow ? 'hollow' : ''} ${isSel ? 'sel' : ''}"><span class="ic"><i class="ti ti-${icon}"></i></span><span class="job">${esc(t.job.job_no)}</span>${esc(t.hollow ? (t.mode === 'rail' ? 'On rail' : 'No truck no.') : t.no)}</div>`
+      const html = `<div class="ix-tmark ${stale ? 'stale' : ''} ${t.hollow ? 'hollow' : ''} ${isSel ? 'sel' : ''}" style="--tc:${t.hollow ? '#8792a5' : esc(color)}"><span class="ic"><i class="ti ti-${icon}"></i></span><span class="job">${esc(t.job.job_no)}</span>${esc(t.hollow ? (t.mode === 'rail' ? 'On rail' : 'No truck no.') : t.no)}</div>`
       const what = t.hollow ? `${t.mode === 'rail' ? 'On rail' : 'On the road'} by container tracking, no truck number yet` : esc(t.no)
       L.marker(t.last.pos, { icon: L.divIcon({ className: 'ix-tpin', iconSize: [0, 0], html }), zIndexOffset: isSel ? 1000 : 0 })
         .bindTooltip(`<b>${esc(t.job.job_no)}</b> · ${what}<br>${esc(t.last.plaza)}<br>${esc(fmt(t.last.at))}${stale ? ' · <b>no newer crossing</b>' : ''}${t.last.approx ? '<br><i>approximate position</i>' : ''}`, { direction: 'top', offset: [0, -28] })
         .on('click', () => onSelect?.(t.id))
         .addTo(layer.current)
-      if (!bounds.length && !selectedId) bounds.push(t.last.pos)
     }
-    // expanded: show every truck, not just the selected one
-    if (!bounds.length || big) shown.forEach((t) => bounds.push(t.last.pos))
+    // nothing picked (or expanded): every truck in view; a picked truck: its own route
+    if (!bounds.length || big || !selectedId) shown.forEach((t) => bounds.push(t.last.pos))
     lastBounds.current = bounds
-    fit(m, bounds)
+    // (not on every redraw: a zoom with the mouse wheel stays until the picked truck or the trucks change)
+    const key = `${selectedId || ''}|${big}|${shown.map((t) => `${t.id}@${t.last.pos}`).join(',')}`
+    if (key !== fitKey.current) { fitKey.current = key; fit(m, bounds) }
     // the page layout can change size after the first draw
     setTimeout(() => { if (alive(m)) m.invalidateSize() }, 0)
   }) // redraw on every render: the lists are small
@@ -125,7 +135,6 @@ export default function TruckMap({ trucks, selectedId, onSelect, message }) {
     const m = map.current
     if (!m) return
     setTimeout(() => { if (!alive(m)) return; m.invalidateSize(); fit(m, lastBounds.current) }, 60)
-    if (big) m.scrollWheelZoom.enable(); else m.scrollWheelZoom.disable()
     if (!big) return
     const onKey = (e) => { if (e.key === 'Escape') setBig(false) }
     window.addEventListener('keydown', onKey)
@@ -143,11 +152,10 @@ export default function TruckMap({ trucks, selectedId, onSelect, message }) {
       {!shown.length && (
         <div className="ix-realmap-msg">
           <Icon name="map-pin" /> {message?.title || (trucks.length ? 'No toll crossing with a known position yet.' : 'No truck on the road.')}
-          {(message ? message.sub : trucks.length > 0 && 'Press “Where is it?” on a truck below.') && <div className="s">{message ? message.sub : 'Press “Where is it?” on a truck below.'}</div>}
+          {message?.sub && <div className="s">{message.sub}</div>}
         </div>
       )}
       <div className="ix-realmap-legend">
-        <span><i style={{ background: NAVY }} />Last toll crossing</span>
         <span><i style={{ background: RED }} />No crossing for {STALE_HOURS} h+</span>
         {trucks.some((t) => t.hollow) && <span><i className="hollow" />Moving, no truck number</span>}
         {unplaced.length > 0 && <span style={{ color: 'var(--muted)' }}>{unplaced.length} {unplaced.length === 1 ? 'place' : 'places'} we can’t put on the map</span>}

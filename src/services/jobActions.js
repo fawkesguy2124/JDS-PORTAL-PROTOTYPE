@@ -85,6 +85,27 @@ export async function assignTruck(job, { truckNo, dlNo, container }, userName) {
   return res
 }
 
+// Corrects a truck on a job in place: its number and/or its container (Jose, 1 Nov 2026:
+// "if I made a mistake I have to take the truck off and add it again; there should be an
+// edit"). The truck keeps its place in the list, when it was added and by whom.
+export async function editTruck(job, oldNo, { truckNo, container }, userName) {
+  const from = plateNo(oldNo)
+  const truck = plateNo(truckNo)
+  if (!/^([A-Z]{2}\d{1,2}[A-Z]{0,3}\d{3,4}|\d{2}BH\d{4}[A-Z]{1,2})$/.test(truck)) return { ok: false, error: 'Truck number looks wrong. Example: MH04AB1234.' }
+  const list = jobTrucks(job)
+  const i = list.findIndex((t) => t.no === from)
+  if (i < 0) return { ok: false, error: `Truck ${from} is no longer on ${job.job_no}. Press Refresh.` }
+  if (truck !== from && list.some((t) => t.no === truck)) return { ok: false, error: `Truck ${truck} is already on ${job.job_no}.` }
+  const box = container === undefined ? list[i].container : (container ? String(container).trim().toUpperCase() : null)
+  if (truck === from && box === list[i].container) return { ok: true, job }
+  list[i] = { ...list[i], no: truck, container: box }
+  const res = await updateJob(job.id, { trucks: list, truck_no: list[0].no, updated_at: new Date().toISOString() })
+  if (!res.ok) return res
+  const what = truck !== from ? `Truck ${from} corrected to ${truck}` : `Truck ${truck} now carries ${box || 'no noted container'}`
+  await log(job, 'truck_edited', `${what} — ${job.job_no}`, `${what} (by ${userName || 'staff'})`, userName, { from, truckNo: truck, container: box, enteredBy: userName })
+  return res
+}
+
 // Takes a truck off a job (typed by mistake, or replaced)
 export async function removeTruck(job, truckNo, userName) {
   const truck = plateNo(truckNo)

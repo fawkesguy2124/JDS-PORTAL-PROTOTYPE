@@ -183,3 +183,43 @@ html[data-theme="dark"] .ix .ix-shipmap2 .leaflet-container { background: #0f203
 .ix-vs-next small { font-size: var(--fs-xs); font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--muted) }
 .ix-vs-next b { font-weight: 600; white-space: nowrap }
 .ix-vs-next b .mono { font-weight: 700 }
+
+/* ── Trucks, simpler (Jose, 1 Nov 2026): a colour per truck, + beside the job, ✎ in place, ⋯ menu ── */
+/* the pin takes its truck's colour (--tc); a truck with no crossing for 6 h keeps its colour with a red ring */
+.ix .ix-tmark { border-color: var(--tc, var(--navy)) }
+.ix .ix-tmark .ic { background: var(--tc, var(--primary)) }
+.ix .ix-tmark::after { border-top-color: var(--tc, var(--navy)) }
+.ix .ix-tmark .job { color: var(--tc, var(--navy)); background: color-mix(in srgb, var(--tc, var(--navy)) 12%, var(--surface)) }
+.ix .ix-tmark.stale { border-color: var(--tc, var(--navy)); box-shadow: 0 0 0 3px var(--red), var(--shadow-pop) }
+.ix .ix-tmark.stale .ic { background: var(--tc, var(--primary)) }
+.ix .ix-tmark.stale::after { border-top-color: var(--tc, var(--navy)) }
+.ix .ix-tmark.stale .job { color: var(--tc, var(--navy)); background: color-mix(in srgb, var(--tc, var(--navy)) 12%, var(--surface)) }
+.ix .ix-tmark.hollow .ic { background: var(--surface); color: var(--tc); box-shadow: inset 0 0 0 1.5px var(--tc) }
+
+.ix-trk-tbl tr.click { cursor: pointer }
+.ix-trk-tbl tr.sel td { background: var(--navy-50) }
+.ix-trk-truck { white-space: nowrap }
+.ix-trk-truck .dot { display: inline-block; width: 12px; height: 12px; border-radius: 50%; margin-right: 8px; vertical-align: -1px; box-shadow: 0 0 0 2px var(--surface), 0 0 0 3px var(--line-2) }
+.ix-trk-truck .dot.hollow { background: transparent; border: 2px dashed var(--muted); box-shadow: none; width: 12px; height: 12px }
+.ix-trk-pen { border: 0; background: none; color: var(--muted); cursor: pointer; padding: 2px 4px; margin-left: 2px; border-radius: var(--r-sm); opacity: .55 }
+.ix-trk-tbl tr:hover .ix-trk-pen, .ix-trk-pen:focus-visible { opacity: 1 }
+.ix-trk-pen:hover { color: var(--navy); background: var(--navy-50) }
+.ix-trk-fix { display: flex; flex-wrap: wrap; align-items: center; gap: 6px }
+.ix-trk-fix input.plate { width: 130px; height: 28px; font: 700 13px var(--mono); text-transform: uppercase; padding: 0 8px; border: 1px solid var(--line-2); border-radius: var(--r-sm); background: var(--surface); color: var(--text) }
+.ix-trk-fix select { height: 28px; border: 1px solid var(--line-2); border-radius: var(--r-sm); background: var(--surface); color: var(--text) }
+.ix-trk-fix .ix-icon-btn.ok { color: var(--teal) }
+.ix-trk-fix .err { flex-basis: 100%; color: var(--red); font-size: var(--fs-sm); display: flex; gap: 4px; align-items: center; white-space: normal }
+.ix-trk-job { display: inline-flex; align-items: center; gap: 6px }
+.ix-trk-add { width: 22px; height: 22px; border-radius: 50%; border: 1px dashed var(--line-2); background: var(--surface); color: var(--navy); display: grid; place-items: center; cursor: pointer; font-size: 13px; padding: 0 }
+.ix-trk-add:hover { border-style: solid; border-color: var(--navy); background: var(--navy-50) }
+.ix-trk-more { position: relative; display: inline-flex }
+.ix-trk-more .ix-menu { position: absolute; right: 0; top: calc(100% + 4px); z-index: 30; min-width: 220px }
+.ix-trk-more .ix-menu button.danger { color: var(--red) }
+.ix-trk-papers { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; gap: 10px; align-items: start; padding: 10px 12px; border-radius: var(--r-lg); border: 1px solid var(--line); background: var(--surface) }
+.ix-trk-papers > i { font-size: 18px; color: var(--amber-dot); margin-top: 1px }
+.ix-trk-papers.bad { border-color: var(--red-line); background: var(--red-bg) } .ix-trk-papers.bad > i { color: var(--red) }
+.ix-trk-papers.ok > i { color: var(--teal) }
+.ix-trk-papers ul { margin: 4px 0 2px; padding-left: 18px }
+.ix-trk-papers li { margin: 1px 0 }
+.ix-trk-papers small { color: var(--muted); font-size: var(--fs-sm) }
+.ix-trk-more .ix-menu.up { top: auto; bottom: calc(100% + 4px) }

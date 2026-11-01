@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import NotificationBell from '../components/NotificationBell'
 import CommandPalette from './CommandPalette'
 import { ConfirmHost } from './confirm'
-import { useSystemHealth, healthTones, autoCheckLine } from './AutoStatus'
+import { useSystemHealth, healthTones } from './AutoStatus'
 import { Icon, initials } from './ui'
 import { useInstallApp } from '../services/desktopApp'
 import { applyPrefs, resolveTheme, usePrefs } from './settings'
@@ -29,7 +29,6 @@ export default function Shell({ sections, active, counts = {}, onGo, onOpenJob, 
   const app = useInstallApp() // the portal as a desktop app
   const health = useSystemHealth()
   const tones = healthTones(health)
-  const checkLine = autoCheckLine(health)
 
   useEffect(() => {
     const onKey = (e) => {
@@ -77,12 +76,7 @@ export default function Shell({ sections, active, counts = {}, onGo, onOpenJob, 
       </div>
     )
   })
-  // when the automatic checks last ran (read only; opens System health)
-  const navFoot = checkLine && (
-    <button type="button" className="ix-nav-foot" onClick={() => go('health')} title="Automatic checks of customs, port and tolls · open System health">
-      <span className={`sdot ${tones?.auto || ''}`} /><span>{checkLine}</span>
-    </button>
-  )
+  // (no "Last check · next" line at the foot of the menu: System health says it; Jose, 1 Nov 2026)
   const name = profile?.name || 'Admin'
   const role = profile?.role ? profile.role.charAt(0).toUpperCase() + profile.role.slice(1) : ''
 
@@ -114,7 +108,6 @@ export default function Shell({ sections, active, counts = {}, onGo, onOpenJob, 
 
         <nav className="ix-nav" aria-label="Main menu">
           <div className="ix-nav-scroll">{navList}</div>
-          {navFoot}
         </nav>
         <main className="ix-main" id="ix-main">{children}</main>
 
@@ -135,7 +128,6 @@ export default function Shell({ sections, active, counts = {}, onGo, onOpenJob, 
               <button type="button" className="ix-btn" onClick={() => { setMnav(false); setPalette(true) }}><Icon name="search" />Search</button>
             </div>
             {navList}
-            {navFoot}
           </div>
         </>
       )}

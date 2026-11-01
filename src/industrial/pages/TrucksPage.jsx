@@ -1,16 +1,13 @@
-import { Fragment, Suspense, lazy, useMemo, useRef, useState } from 'react'
+import { Fragment, Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  journeyFor, isDelivered, isExportJob, isActiveRow, truckNos, onTheRoad, needATruck, jobTruckEntries, truckTripOver, jobCount, daysAgo,
+  journeyFor, isExportJob, isActiveRow, truckNos, onTheRoad, needATruck, jobTruckEntries, truckTripOver, jobCount, daysAgo,
+  containerFinishedOn, TRUCK_WATCH_DAYS,
 } from '../../services/journey'
-import { assignTruck, removeTruck, setStage } from '../../services/jobActions'
-import UlipCheck from '../../components/ulip/UlipCheck'
-import { JOB_TABS } from '../../components/ulip/ulipChecks'
-import { JobPicker, TruckWorkspace, NoJobChosen } from '../JobChecks'
+import { assignTruck, editTruck, removeTruck, setStage } from '../../services/jobActions'
 import { useJourney, useFreshOnOpen } from '../JourneyContext'
 import { useAutoChecks, checkTruck, isDue } from '../autoChecks'
-import AutoStatus from '../AutoStatus'
 import {
-  Icon, Chip, fmtDate, fmtDateTime, fmtTime, timeAgo, Skeleton, PageHead, JobNo, Status, Tabs, Button, SearchBox, FreeDays, EmptyState, Dash,
+  Icon, Chip, fmtDate, fmtDateTime, timeAgo, Skeleton, PageHead, JobNo, Status, Button, SearchBox, FreeDays, EmptyState, Dash,
 } from '../ui'
 import { truckPoints } from '../truckPoints'
 import { askConfirm } from '../confirm'
@@ -18,25 +15,19 @@ import '../styles/tracking.css'
 
 // the map (and its map library) loads only when this page opens
 const TruckMap = lazy(() => import('../TruckMap'))
-const TRUCK_GROUPS = JOB_TABS.find((t) => t.id === 'truck')?.groups || []
 
-// Trucks: where each truck was last seen (toll crossings), what container tracking
-// shows moving, and jobs waiting for a truck. Opening the page looks up every truck
-// on an open job by itself and checks each truck's papers once (limits in
-// autoChecks.js). "Where is it?" still works by hand.
-// One "on the road" list (onTheRoad) drives the map, the count and the table, so they
-// always agree (audit, Jose 31 Oct 2026). Each fact once (Jose, 31 Oct 2026): no figures
-// strip (the panel heads carry the counts), the status line only when trucks are looked up.
+// Trucks (Jose, 1 Nov 2026: "simpler, less text"): one list of the trucks on the road with
+// the map beside it, and the jobs ready for a truck. Opening the page looks up every truck
+// on an open job by itself (where it is, and its papers once; limits in autoChecks.js), so
+// there is no "Where is it?" button: a truck's ↻ asks again. Each truck has its own colour
+// on its row and its map pin. The papers chip opens the saved answer (papers don't change
+// from day to day). A truck number is corrected in place (✎); "Mark delivered" and "Take
+// truck off" sit in the row's ⋯ menu. One "on the road" list (onTheRoad) drives the map,
+// the count and the table, so they always agree.
 
-const WHERE_CHECK = {
-  api: 'FASTAG/01', title: 'Where is the truck now?', description: 'Asks the toll system for the plazas this truck crossed in the last 72 hours.',
-  button: 'Find truck', refs: { vehiclenumber: 'vehicle_no' }, labels: { vehiclenumber: 'Truck number' },
-}
-const PAPERS_CHECK = {
-  api: 'VAHAN/04', title: 'Truck papers', description: 'Registration, fitness and insurance from the transport department.',
-  button: 'Check truck papers', refs: { vehiclenumber: 'vehicle_no' }, labels: { vehiclenumber: 'Truck number' },
-}
-const COLS = 8 // columns of every table on this page
+const COLS = 7 // columns of the trucks table
+// one colour per truck, on its row and its map pin (map layers cannot read CSS variables)
+const TRUCK_COLORS = ['#1a4fa0', '#d9480f', '#0f766e', '#7c3aed', '#c2255c', '#0b7285', '#5c940d', '#b08900']
 
 const sameNo = (a, b) => !!a && !!b && String(a).toUpperCase().replace(/\s+/g, '') === String(b).toUpperCase().replace(/\s+/g, '')
 const containersText = (nos) => (!nos?.length ? null : nos.length > 2 ? `${nos.length} containers` : nos.join(', '))
@@ -49,6 +40,20 @@ const byUrgency = (a, b) => {
   const fa = a.j.freeDaysLeft ?? Infinity, fb = b.j.freeDaysLeft ?? Infinity
   if (fa !== fb) return fa - fb
   return String(a.j.oocDate || '9').localeCompare(String(b.j.oocDate || '9'))
+}
+// Why a truck on an open job is no longer followed (Jose, 1 Nov 2026: "trip over, job still
+// open — what do you mean?"): its box is already back, or its 4 days are up
+function whyNotFollowed(r, t) {
+  const box = (r.j.containers?.all || []).find((b) => t.container && String(b.container_no).toUpperCase() === String(t.container).toUpperCase())
+  const done = box ? containerFinishedOn(box, r.job) : null
+  if (done) return `Box ${t.container} already back${done !== 'yes' ? ` (${fmtDate(done)})` : ''}`
+  return `Followed for ${TRUCK_WATCH_DAYS} days, now over`
+}
+// "MH46AR2016: fitness expired on 1 Jan 2026; road tax expired on 3 Feb 2026." → the problems, one per line
+const papersLines = (p) => {
+  if (!p?.summary) return []
+  if (p.tone !== 'bad') return [p.summary]
+  return p.summary.replace(/^[^:]*:\s*/, '').replace(/\.\s*$/, '').split(/;\s*/).map((s) => s.charAt(0).toUpperCase() + s.slice(1))
 }
 
 // Answers from checks made on this page, laid over the loaded data until the next full load
@@ -77,19 +82,60 @@ function useOverlay(data, rows) {
 }
 
 // papers: OK is a calm state (teal); green is kept for delivered / done
-function PapersChip({ papers, onClick, disabled }) {
+function PapersChip({ papers, onClick, disabled, open }) {
   let tone = 'grey', icon = 'shield', text = 'Not checked'
   if (papers) {
-    if (!papers.found) { tone = 'amber'; icon = 'alert-triangle'; text = 'Papers not found' }
+    if (!papers.found) { tone = 'amber'; icon = 'alert-triangle'; text = 'Not found' }
     else if (papers.tone === 'good') { tone = 'teal'; icon = 'shield-check'; text = 'Papers OK' }
     else if (papers.tone === 'bad') { tone = 'red'; icon = 'alert-triangle'; text = 'Papers problem' }
     else { tone = 'amber'; icon = 'alert-triangle'; text = 'Check papers' }
   }
-  const title = papers ? `${papers.summary || ''}${papers.checkedAt ? ` (checked ${timeAgo(papers.checkedAt)})` : ''}` : 'Press to check the truck papers'
   return (
-    <button type="button" className="ix-trk-chipbtn" onClick={onClick} disabled={disabled} title={title}>
+    <button type="button" className="ix-trk-chipbtn" onClick={onClick} disabled={disabled} aria-expanded={open}
+      title={papers ? 'Show what the papers say' : 'Check this truck’s papers'}>
       <Chip tone={tone} icon={icon}>{text}</Chip>
     </button>
+  )
+}
+
+// the row's ⋯ menu: Mark delivered, Take truck off
+function RowMenu({ items, label }) {
+  const [open, setOpen] = useState(false)
+  const [up, setUp] = useState(false)
+  const box = useRef(null)
+  useEffect(() => {
+    if (!open) return undefined
+    const close = (e) => { if (!box.current?.contains(e.target)) setOpen(false) }
+    const esc = (e) => { if (e.key === 'Escape') setOpen(false) }
+    document.addEventListener('mousedown', close)
+    document.addEventListener('keydown', esc)
+    return () => { document.removeEventListener('mousedown', close); document.removeEventListener('keydown', esc) }
+  }, [open])
+  const shown = items.filter(Boolean)
+  if (!shown.length) return null
+  return (
+    <span className="ix-trk-more" ref={box}>
+      <button type="button" className="ix-icon-btn sm" aria-haspopup="menu" aria-expanded={open} aria-label={label} title="More"
+        onClick={(e) => {
+          e.stopPropagation()
+          // near the bottom of the list the menu opens upwards (it was cut off on the last row)
+          const frame = box.current?.closest('.ix-tbl-wrap')?.getBoundingClientRect()
+          setUp(!!frame && frame.bottom - e.currentTarget.getBoundingClientRect().bottom < 110)
+          setOpen((v) => !v)
+        }}>
+        <Icon name="dots" />
+      </button>
+      {open && (
+        <div className={`ix-menu${up ? ' up' : ''}`} role="menu">
+          {shown.map((it) => (
+            <button key={it.label} type="button" role="menuitem" className={it.danger ? 'danger' : ''} disabled={it.disabled}
+              onClick={(e) => { e.stopPropagation(); setOpen(false); it.run() }}>
+              <Icon name={it.icon} />{it.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </span>
   )
 }
 
@@ -99,13 +145,11 @@ export default function TrucksPage({ currentUserName, onOpenJob, showToast, canU
   const [urlQ] = useState(() => { try { return new URLSearchParams(window.location.search).get('q') || '' } catch { return '' } })
   const [search, setSearch] = useState(urlQ)
   const [selectedId, setSelectedId] = useState(null)
-  const [checkId, setCheckId] = useState(() => new URLSearchParams(window.location.search).get('job'))
-  // a ?job= link opens the truck & driver checks for that job
-  const [view, setView] = useState(() => (new URLSearchParams(window.location.search).get('job') ? 'checks' : 'trucks'))
-  const [panel, setPanel] = useState(null)          // { key: jobId:truckNo, kind: 'where' | 'papers' }
+  const [papersOpen, setPapersOpen] = useState(null) // the truck (jobId:no) whose papers are shown
   const [forms, setForms] = useState({})            // jobId -> { truckNo, container, dlNo, error }
-  const [editing, setEditing] = useState(undefined) // the job whose truck form is open (one at a time)
-  const [busyId, setBusyId] = useState(null)        // one save at a time
+  const [editing, setEditing] = useState(undefined) // the job whose "add a truck" form is open (one at a time)
+  const [fixing, setFixing] = useState(null)        // { key, truckNo, container, error }: a truck being corrected
+  const [busyId, setBusyId] = useState(null)        // one save / look-up at a time
   const lock = useRef(false)
   const readyRef = useRef(null)
   const anyBusy = busyId !== null
@@ -115,14 +159,11 @@ export default function TrucksPage({ currentUserName, onOpenJob, showToast, canU
   const ready = useMemo(() => needATruck(rows).sort(byUrgency), [rows])
   const entries = useMemo(() => jobTruckEntries(rows), [rows]) // trucks whose trip still runs
   const open = useMemo(() => rows.filter(isActiveRow), [rows])
-  const carting = open.filter((r) => isExportJob(r.job))
   const roadKeys = new Set(road.map((x) => x.key))
   // trucks put on a job that no toll has seen in the last 4 days yet
   const waiting = entries.filter((x) => !isExportJob(x.job) && !roadKeys.has(x.key))
   // import trucks whose 4-day watch is over while the job is still open (mark it delivered?)
-  const tripOver = open.filter((r) => !isExportJob(r.job)).flatMap((r) => (r.j.trucks || []).filter((t) => truckTripOver(r, t)).map((t) => ({ key: `${r.job.id}:${t.no}`, jobId: r.job.id, r, t })))
-  const papersBad = open.flatMap((r) => (r.j.trucks || []).filter((t) => t.papers?.found && t.papers.tone === 'bad').map((t) => ({ r, t })))
-  const roadMoving = road.filter((x) => x.kind !== 'truck').length
+  const tripOver = open.filter((r) => !isExportJob(r.job)).flatMap((r) => (r.j.trucks || []).filter((t) => truckTripOver(r, t)).map((t) => ({ key: `${r.job.id}:${t.no}`, jobId: r.job.id, r, t, why: whyNotFollowed(r, t) })))
 
   const q = search.trim().toLowerCase()
   const match = (job) => !q || [...truckNos(job), job.job_no, job.client].some((v) => String(v || '').toLowerCase().includes(q))
@@ -132,21 +173,23 @@ export default function TrucksPage({ currentUserName, onOpenJob, showToast, canU
   const linkedReady = urlQ ? ready.find((r) => isLinked(r.job)) : null
   const editId = editing === undefined ? (linkedReady?.job.id ?? null) : editing
 
+  // one colour per truck (the order of the list, so it stays put while the page is open)
+  const colorOf = new Map([...entries.map((x) => x.key), ...tripOver.map((x) => x.key)].filter((k, i, a) => a.indexOf(k) === i).map((k, i) => [k, TRUCK_COLORS[i % TRUCK_COLORS.length]]))
+
   // map pins: every truck still on its trip, plus moves seen only by container tracking (hollow)
   const pins = [
-    ...entries.map((x) => ({ id: x.key, no: x.truck.no, job: x.job, points: truckPoints(x.job, x.j, resultsFor(x.job.id), x.truck.no), hasLoc: !!x.truck.location })),
+    ...entries.map((x) => ({ id: x.key, no: x.truck.no, job: x.job, color: colorOf.get(x.key), points: truckPoints(x.job, x.j, resultsFor(x.job.id), x.truck.no), hasLoc: !!x.truck.location })),
     ...road.filter((x) => x.kind !== 'truck' && x.place).map((x) => ({ id: x.key, no: null, job: x.job, hollow: true, mode: x.mode, points: placePoint(x) }))
       .filter((p) => p.points.some((pt) => pt.pos)),
   ]
   const sel = pins.find((p) => p.id === selectedId)
     || pins.find((p) => !p.hollow && isLinked(p.job, p.no))
-    || pins.find((p) => p.hasLoc)
     || null
   const mapMessage = road.length
-    ? { title: `${plural(jobCount(road), 'job')} on the road, not at a place we can put on the map yet.`, sub: roadMoving ? 'Add the truck number to follow it live.' : 'Press “Where is it?” on a truck below.' }
-    : { title: 'No truck seen on the road yet.', sub: 'Trucks on open jobs are looked up by themselves when this page opens.' }
+    ? { title: `${plural(jobCount(road), 'job')} on the road, not at a place we can put on the map yet.`, sub: '' }
+    : { title: 'No truck seen on the road yet.', sub: '' }
 
-  // ── checks this page makes by itself when opened ──
+  // ── checks this page makes by itself when opened (no line about them on screen) ──
   const fresh = useFreshOnOpen()
   const savedFor = (jobId, api, no) => [].concat(data?.resultsByJob?.[jobId]?.[api] || [])
     .filter((r) => r && sameNo(r.params?.vehiclenumber, no))
@@ -161,30 +204,23 @@ export default function TrucksPage({ currentUserName, onOpenJob, showToast, canU
       out.push({ key: `p:${t.no}`, label: `truck ${t.no} papers`, run: () => checkTruck('VAHAN/04', t.no, job.id) })
     return out
   })
-  const auto = useAutoChecks(autoItems, fresh, refresh)
-  // the status line shows only when there are trucks to look up (no "nothing to look up" line)
-  const lastLook = entries.flatMap(({ job, truck: t }) => savedFor(job.id, 'FASTAG/01', t.no).map((x) => x.checked_at)).filter(Boolean).sort().at(-1)
-  const lastLookText = lastLook ? (fmtDate(lastLook) === fmtDate(new Date().toISOString()) ? fmtTime(lastLook) : fmtDateTime(lastLook)) : null
-  const showStatus = entries.length > 0 || auto.running || auto.total > 0
-  // (each truck at most every COOLDOWN_MIN min, see autoChecks.js)
-  const idleText = `Trucks looked up automatically${lastLookText ? ` · last ${lastLookText}` : ''}`
+  useAutoChecks(autoItems, fresh, refresh)
 
   const setForm = (jobId, patch) => setForms((p) => ({ ...p, [jobId]: { ...p[jobId], ...patch } }))
-  const togglePanel = (key, kind) => setPanel((p) => (p?.key === key && p.kind === kind ? null : { key, kind }))
   const openEditor = (jobId) => { setEditing(jobId); setForms((p) => ({ ...p, [jobId]: { ...p[jobId], error: '' } })) }
   const closeEditor = (jobId) => { setEditing(null); setForms((p) => ({ ...p, [jobId]: undefined })) }
   const openJob = (job) => onOpenJob?.(job.id, isExportJob(job) ? 'export' : undefined)
 
-  const guarded = async (jobId, fn) => {
+  const guarded = async (id, fn) => {
     if (lock.current) return
     lock.current = true
-    setBusyId(jobId)
+    setBusyId(id)
     try { await fn() } finally { lock.current = false; setBusyId(null) }
   }
 
   // the job's containers no truck carries yet
-  const freeBoxes = (j) => {
-    const taken = new Set((j?.trucks || []).map((t) => t.container).filter(Boolean))
+  const freeBoxes = (j, exceptNo) => {
+    const taken = new Set((j?.trucks || []).filter((t) => t.no !== exceptNo).map((t) => t.container).filter(Boolean))
     return (j?.containers?.nos || []).filter((no) => !taken.has(no))
   }
   // one free container: it is the one on the truck, no need to pick it (Jose, 31 Oct 2026)
@@ -200,30 +236,60 @@ export default function TrucksPage({ currentUserName, onOpenJob, showToast, canU
     patchJob(res.job)
   })
 
+  // ✎: the truck number (and its container) corrected in place
+  const startFix = (key, t) => { setFixing({ key, truckNo: t.no, container: t.container || '', error: '' }); setPapersOpen(null) }
+  const saveFix = (job, t) => guarded(job.id, async () => {
+    const res = await editTruck(job, t.no, { truckNo: fixing.truckNo, container: fixing.container }, currentUserName)
+    if (!res.ok) { setFixing((f) => ({ ...f, error: res.error })); return }
+    if (res.job !== job) showToast?.(`Truck ${t.no} saved as ${String(fixing.truckNo).toUpperCase()}`, 'success')
+    setFixing(null)
+    patchJob(res.job)
+  })
+
   const unassign = async (job, no) => {
-    if (!(await askConfirm({ title: `Take truck ${no} off job ${job.job_no}?`, ok: 'Take it off' }))) return
+    if (!(await askConfirm({ title: `Take truck ${no} off ${job.job_no}?`, ok: 'Take it off', danger: true }))) return
     return guarded(job.id, async () => {
       const res = await removeTruck(job, no, currentUserName)
       if (!res.ok) { showToast?.(res.error, 'error'); return }
       showToast?.(`Truck ${no} taken off ${job.job_no}`, 'success')
-      setPanel(null)
       patchJob(res.job)
     })
   }
 
   const deliver = async (job) => {
-    if (!(await askConfirm({ title: `Mark job ${job.job_no} as delivered?`, ok: 'Mark delivered' }))) return
+    if (!(await askConfirm({ title: `Mark ${job.job_no} as delivered?`, ok: 'Mark delivered' }))) return
     return guarded(job.id, async () => {
       const res = await setStage(job, 10, 'Delivered', currentUserName)
       if (!res.ok) { showToast?.(res.error, 'error'); return }
       showToast?.(`${job.job_no} marked delivered`, 'success')
-      if (panel?.key?.startsWith(`${job.id}:`)) setPanel(null)
       patchJob(res.job)
     })
   }
 
-  // the truck form, inline under its row: truck no, which container it carries (when the
-  // job has containers) or else the driver licence; one Save
+  // ↻: where the truck is now (one toll look-up for this truck, on the map at once)
+  const reload = (job, t, key) => guarded(key, async () => {
+    const res = await checkTruck('FASTAG/01', t.no, job.id)
+    if (res.row) addResults(job.id, 'FASTAG/01', res.row)
+    setSelectedId(key)
+    if (!res.ok) showToast?.(`Could not find truck ${t.no} right now. Try again in a few minutes.`, 'error')
+    else if (!res.row?.parsed?.found) showToast?.(`No toll crossing for ${t.no} in the last 72 hours`, 'info')
+  })
+
+  // papers: the saved answer (no new look-up); only a truck never checked is looked up, once
+  const showPapers = (job, t, key) => {
+    if (papersOpen === key) { setPapersOpen(null); return }
+    setFixing(null)
+    if (t.papers) { setPapersOpen(key); return }
+    guarded(key, async () => {
+      const res = await checkTruck('VAHAN/04', t.no, job.id)
+      if (res.row) addResults(job.id, 'VAHAN/04', res.row)
+      if (!res.ok) { showToast?.(`Could not check the papers of ${t.no} right now.`, 'error'); return }
+      setPapersOpen(key)
+    })
+  }
+
+  // the "add a truck" form, inline under the job's row: truck no, which container it carries
+  // (when the job has containers) or else the driver licence; one Save
   const editorRow = (job, j) => {
     const f = forms[job.id] || {}
     const boxes = freeBoxes(j)
@@ -232,7 +298,6 @@ export default function TrucksPage({ currentUserName, onOpenJob, showToast, canU
         <td colSpan={COLS}>
           <form className="ix-trk-form" onSubmit={(e) => { e.preventDefault(); if (f.truckNo && !anyBusy) assign(job, j) }}>
             <span className="lbl">{(j.trucks || []).length ? 'Another truck for' : 'Truck for'} <JobNo no={job.job_no} /></span>
-            {/* focus goes straight to the truck number: the person just pressed "Assign truck" */}
             <input className="plate" autoFocus value={f.truckNo || ''} placeholder="MH04AB1234" aria-label={`Truck number for ${job.job_no}`} disabled={anyBusy}
               onChange={(e) => setForm(job.id, { truckNo: e.target.value.toUpperCase(), error: '' })} />
             {boxes.length === 1 ? (
@@ -256,62 +321,91 @@ export default function TrucksPage({ currentUserName, onOpenJob, showToast, canU
     )
   }
 
-  // one row per truck; the job's own actions (add a truck, delivered) sit on its first truck
-  const truckRow = (r, t, { first: firstSet, label } = {}) => {
+  // the job cell: its number, and on its first row the + that adds another truck right beside it
+  const jobCell = (job, first) => (
+    <td>
+      <span className="ix-trk-job">
+        <JobNo no={job.job_no} onClick={() => openJob(job)} />
+        {first && (
+          <button type="button" className="ix-trk-add" disabled={anyBusy} onClick={(e) => { e.stopPropagation(); openEditor(job.id) }}
+            title={`Add a truck to ${job.job_no}`} aria-label={`Add a truck to ${job.job_no}`}><Icon name="plus" /></button>
+        )}
+      </span>
+    </td>
+  )
+
+  // one row per truck: the whole row picks the truck on the map
+  const truckRow = (r, t, { first: firstSet, why } = {}) => {
     const { job, j } = r
     const key = `${job.id}:${t.no}`
     const first = firstSet ?? firstKey.get(job.id) === key
     const loc = t.location
-    const kind = panel?.key === key ? panel.kind : null
-    const many = (j.trucks || []).length > 1
+    const color = colorOf.get(key)
+    const fix = fixing?.key === key ? fixing : null
+    const boxes = fix ? freeBoxes(j, t.no) : []
     return (
       <Fragment key={key}>
-        <tr className={[sel?.id === key ? 'sel' : '', isLinked(job, t.no) ? 'hl' : '', t.papers?.found && t.papers.tone === 'bad' ? 'red' : ''].join(' ')}>
-          <td className="lvl" />
-          <td><JobNo no={job.job_no} onClick={() => openJob(job)} /></td>
-          <td className="cl">{job.client || <Dash />}</td>
-          <td><button type="button" className="ix-plate" onClick={() => setSelectedId(key)} title="Show this truck on the map">{t.no}</button></td>
-          <td className="mono">{t.container || (many ? <span className="dim">Not noted</span> : j.containers?.nos?.[0] || <Dash />)}</td>
-          <td className="two">
-            {loc
-              ? <><span className="ix-trk-place"><Icon name="map-pin" />{loc.plaza}</span><span className="sub" title={loc.checkedAt ? `Looked up ${timeAgo(loc.checkedAt)}` : undefined}>{loc.at ? fmtDateTime(loc.at) : 'Time not given'}</span></>
-              : <span className="t2">Not seen by a toll yet</span>}
+        <tr className={['click', sel?.id === key ? 'sel' : '', isLinked(job, t.no) ? 'hl' : ''].join(' ')} onClick={() => setSelectedId(key)}>
+          {jobCell(job, first)}
+          <td className="ix-trk-truck">
+            {fix ? (
+              <form className="ix-trk-fix" onClick={(e) => e.stopPropagation()} onSubmit={(e) => { e.preventDefault(); if (!anyBusy) saveFix(job, t) }}>
+                <input className="plate" autoFocus value={fix.truckNo} aria-label={`Correct truck number ${t.no}`} disabled={anyBusy}
+                  onChange={(e) => setFixing((f) => ({ ...f, truckNo: e.target.value.toUpperCase(), error: '' }))} />
+                {boxes.length > 1 && (
+                  <select value={fix.container} aria-label="Container on this truck" disabled={anyBusy}
+                    onChange={(e) => setFixing((f) => ({ ...f, container: e.target.value, error: '' }))}>
+                    <option value="">No container noted</option>
+                    {boxes.map((no) => <option key={no} value={no}>{no}</option>)}
+                  </select>
+                )}
+                <button type="submit" className="ix-icon-btn sm ok" disabled={anyBusy || !fix.truckNo} title="Save" aria-label="Save"><Icon name="check" /></button>
+                <button type="button" className="ix-icon-btn sm" onClick={() => setFixing(null)} title="Cancel" aria-label="Cancel"><Icon name="x" /></button>
+                {fix.error && <div className="err" role="alert"><Icon name="alert-triangle" />{fix.error}</div>}
+              </form>
+            ) : (
+              <>
+                <span className="dot" style={{ background: color }} />
+                <span className="ix-plate">{t.no}</span>
+                <button type="button" className="ix-trk-pen" disabled={anyBusy} onClick={(e) => { e.stopPropagation(); startFix(key, t) }}
+                  title="Correct this truck" aria-label={`Correct truck ${t.no}`}><Icon name="pencil" /></button>
+              </>
+            )}
           </td>
-          <td><PapersChip papers={t.papers} onClick={() => togglePanel(key, 'papers')} /></td>
-          <td className="act">
+          <td className="cl">{job.client || <Dash />}</td>
+          <td className="mono">{t.container || j.containers?.nos?.[0] || <Dash />}</td>
+          <td className="two">
+            {why ? <span className="t2">{why}</span> : loc
+              ? <><span className="ix-trk-place">{loc.plaza}</span><span className="sub" title={loc.checkedAt ? `Looked up ${timeAgo(loc.checkedAt)}` : undefined}>{loc.at ? fmtDateTime(loc.at) : '—'}</span></>
+              : <span className="t2">Not seen yet</span>}
+          </td>
+          <td onClick={(e) => e.stopPropagation()}>
+            <PapersChip papers={t.papers} open={papersOpen === key} disabled={busyId === key} onClick={() => showPapers(job, t, key)} />
+          </td>
+          <td className="act" onClick={(e) => e.stopPropagation()}>
             <div>
-              <Button size="sm" icon="map-pin" aria-pressed={kind === 'where'} onClick={() => { togglePanel(key, 'where'); setSelectedId(key) }}>Where is it?</Button>
-              {first && label && canUpdateStage && (
-                <Button size="sm" icon="flag" disabled={anyBusy} onClick={() => deliver(job)}>{busyId === job.id ? 'Saving…' : 'Mark delivered'}</Button>
-              )}
-              {first && (
-                <button type="button" className="ix-icon-btn sm" disabled={anyBusy} onClick={() => openEditor(job.id)} title={`Add another truck to ${job.job_no}`} aria-label={`Add another truck to ${job.job_no}`}>
-                  <Icon name="plus" />
-                </button>
-              )}
-              {first && !label && canUpdateStage && (
-                <button type="button" className="ix-icon-btn sm" disabled={anyBusy} onClick={() => deliver(job)} title={`Mark ${job.job_no} delivered`} aria-label={`Mark ${job.job_no} delivered`}>
-                  <Icon name="flag" />
-                </button>
-              )}
-              <button type="button" className="ix-icon-btn sm" disabled={anyBusy} onClick={() => unassign(job, t.no)} title={`Take truck ${t.no} off this job`} aria-label={`Remove truck ${t.no}`}>
-                <Icon name="x" />
+              <button type="button" className="ix-icon-btn sm" disabled={anyBusy} onClick={() => reload(job, t, key)}
+                title="Where is it now? (asks the toll system again)" aria-label={`Find truck ${t.no} again`}>
+                <Icon name={busyId === key ? 'loader-2' : 'refresh'} />
               </button>
+              <RowMenu label={`More for truck ${t.no}`} items={[
+                first && canUpdateStage && { label: `Mark ${job.job_no} delivered`, icon: 'flag', disabled: anyBusy, run: () => deliver(job) },
+                { label: 'Take truck off this job', icon: 'trash', danger: true, disabled: anyBusy, run: () => unassign(job, t.no) },
+              ]} />
             </div>
           </td>
         </tr>
-        {kind && (
+        {papersOpen === key && t.papers && (
           <tr className="ix-trk-sub">
             <td colSpan={COLS}>
-              <div className="in">
-                {/* the check is filled in with THIS truck's number */}
-                <UlipCheck key={`${key}:${kind}`} check={kind === 'where' ? WHERE_CHECK : PAPERS_CHECK} job={{ ...job, truck_no: t.no }} compact
-                  onResult={(row) => { if (row) addResults(job.id, kind === 'where' ? 'FASTAG/01' : 'VAHAN/04', row) }}
-                  onJobChange={patchJob} />
-                <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
-                  <Button size="sm" variant="ghost" icon="shield-check" onClick={() => { setCheckId(job.id); setView('checks') }}>More truck and driver checks</Button>
-                  <Button size="sm" variant="ghost" onClick={() => setPanel(null)}>Close</Button>
+              <div className={`ix-trk-papers ${t.papers.tone === 'bad' ? 'bad' : t.papers.tone === 'good' ? 'ok' : ''}`}>
+                <Icon name={t.papers.tone === 'good' ? 'shield-check' : 'alert-triangle'} />
+                <div>
+                  <b>Truck {t.no}</b>
+                  <ul>{papersLines(t.papers).map((l) => <li key={l}>{l}</li>)}</ul>
+                  {t.papers.checkedAt && <small>From the vehicle register, {fmtDate(t.papers.checkedAt)}</small>}
                 </div>
+                <button type="button" className="ix-icon-btn sm" onClick={() => setPapersOpen(null)} aria-label="Close"><Icon name="x" /></button>
               </div>
             </td>
           </tr>
@@ -327,23 +421,15 @@ export default function TrucksPage({ currentUserName, onOpenJob, showToast, canU
     const text = x.kind === 'left' ? `Left ${j.containers?.exitFrom || 'CFS'}` : x.mode === 'rail' ? 'On rail' : 'On the road'
     return (
       <Fragment key={x.key}>
-        <tr className={[sel?.id === x.key ? 'sel' : '', isLinked(job) ? 'hl' : ''].join(' ')}>
-          <td className="lvl" />
+        <tr className={['click', sel?.id === x.key ? 'sel' : '', isLinked(job) ? 'hl' : ''].join(' ')} onClick={() => pins.some((p) => p.id === x.key) && setSelectedId(x.key)}>
           <td><JobNo no={job.job_no} onClick={() => openJob(job)} /></td>
+          <td className="ix-trk-truck"><span className="dot hollow" /><span className="t2">No truck no.</span></td>
           <td className="cl">{job.client || <Dash />}</td>
-          {/* no truck number: a dash (the Add truck number button is on the row; "On rail" is in the status) */}
-          <td><Dash /></td>
           <td className="mono">{containersText(j.containers?.nos) || <Dash />}</td>
-          <td className="two">
-            <Status tone="blue">{text}{x.place ? ` · ${x.place}` : ''}</Status>
-            <span className="sub">{x.at ? `${fmtDateTime(x.at)} · ` : ''}container tracking</span>
-          </td>
+          <td className="two"><Status tone="blue">{text}{x.place ? ` · ${x.place}` : ''}</Status>{x.at && <span className="sub">{fmtDateTime(x.at)}</span>}</td>
           <td><Dash /></td>
-          <td className="act">
-            <div>
-              {pins.some((p) => p.id === x.key) && <Button size="sm" variant="ghost" icon="map-pin" onClick={() => setSelectedId(x.key)}>Map</Button>}
-              {x.mode !== 'rail' && editId !== job.id && <Button size="sm" icon="plus" onClick={() => openEditor(job.id)}>Add truck number</Button>}
-            </div>
+          <td className="act" onClick={(e) => e.stopPropagation()}>
+            <div>{x.mode !== 'rail' && editId !== job.id && <Button size="sm" icon="plus" onClick={() => openEditor(job.id)}>Add truck</Button>}</div>
           </td>
         </tr>
         {editId === job.id && !firstKey.has(job.id) && editorRow(job, j)}
@@ -351,7 +437,7 @@ export default function TrucksPage({ currentUserName, onOpenJob, showToast, canU
     )
   }
 
-  // a job with no truck yet (Ready for a truck, export carting)
+  // a job with no truck yet (Ready for a truck)
   const readyRow = (r) => {
     const { job, j } = r
     const urgent = j.freeDaysLeft !== null && j.freeDaysLeft !== undefined && j.freeDaysLeft <= 2
@@ -361,8 +447,7 @@ export default function TrucksPage({ currentUserName, onOpenJob, showToast, canU
           <td className="lvl" />
           <td><JobNo no={job.job_no} onClick={() => openJob(job)} /></td>
           <td className="cl">{job.client || <Dash />}</td>
-          <td>{j.oocDate ? fmtDate(j.oocDate) : <Chip tone="amber">OOC date missing</Chip>}</td>
-          <td className="r" title={j.oocDate ? 'Days since OOC' : undefined}>{j.oocDate ? `${daysAgo(j.oocDate)} d` : <Dash />}</td>
+          <td>{j.oocDate ? <>{fmtDate(j.oocDate)} <span className="t2">· {daysAgo(j.oocDate)} d</span></> : <Chip tone="amber">OOC date missing</Chip>}</td>
           <td className="mono">{containersText(j.containers?.nos) || <Dash />}</td>
           <td className="r"><FreeDays value={j.freeDaysLeft} till={j.freeTill ? fmtDate(j.freeTill) : null} /></td>
           <td className="act">
@@ -378,37 +463,24 @@ export default function TrucksPage({ currentUserName, onOpenJob, showToast, canU
     )
   }
 
-  const truckHead = (
-    <thead><tr>
-      <th className="lvl" /><th>Job</th><th>Client</th><th>Truck</th><th>Container</th><th>Last seen</th><th>Papers</th><th className="r" aria-label="Actions" />
-    </tr></thead>
-  )
-  const group = (icon, title, n, hint) => (
-    <tr className="grp"><td colSpan={COLS}><Icon name={icon} />{title}<span className="n">{n}</span>{hint && <span className="hint hide-m">{hint}</span>}</td></tr>
-  )
   const roadShown = road.filter((x) => match(x.job))
   const waitingShown = waiting.filter((x) => match(x.job))
   const overShown = tripOver.filter((x) => match(x.r.job))
   const readyShown = ready.filter((r) => match(r.job))
-  const cartingShown = carting.filter((r) => match(r.job))
-  // the job's own actions (add a truck, delivered, its truck form) go on its first truck row in the table
+  // the job's own + (add a truck) and its truck form go on its first truck row in the table
   const firstKey = new Map()
   for (const x of [...roadShown.filter((e) => e.kind === 'truck'), ...waitingShown, ...overShown]) if (!firstKey.has(x.jobId)) firstKey.set(x.jobId, x.key)
   const anyTruckRows = roadShown.length + waitingShown.length + overShown.length > 0
   const showMap = road.length > 0 || entries.length > 0
+  const group = (title, n) => <tr className="grp"><td colSpan={COLS}>{title}<span className="n">{n}</span></td></tr>
 
   return (
     <>
       <PageHead title="Trucks"
         actions={<>
-          {view === 'trucks' && <SearchBox value={search} onChange={setSearch} placeholder="Truck, job or client" width={260} />}
+          <SearchBox value={search} onChange={setSearch} placeholder="Truck, job or client" width={240} />
           <Button size="sm" variant="ghost" icon="refresh" onClick={refresh} disabled={loading}>{loading ? 'Loading…' : 'Refresh'}</Button>
         </>} />
-
-      <Tabs className="ix-trk-tabs" value={view} onChange={setView} tabs={[
-        { id: 'trucks', label: 'Trucks', icon: 'truck' },
-        { id: 'checks', label: 'Truck & driver checks', icon: 'shield-check' },
-      ]} />
 
       {error && (
         <div className="ix-error">
@@ -417,143 +489,66 @@ export default function TrucksPage({ currentUserName, onOpenJob, showToast, canU
         </div>
       )}
 
-      {view === 'checks' ? (
-        <div className="ix-split">
-          <JobPicker
-            title="Find a job or truck"
-            rows={allRows.filter((r) => !isDelivered(r.job))}
-            selectedId={checkId}
-            onSelect={setCheckId}
-            placeholder="Job no, client, truck no…"
-            lists={[
-              { title: 'Trucks on open jobs', icon: 'truck', color: 'var(--navy)', rows: [...new Map(entries.map((x) => [x.jobId, { job: x.job, j: x.j }])).values()], empty: 'No truck on an open job.', sub: ({ job }) => `Truck ${truckNos(job).join(', ')}` },
-              { title: 'Ready for a truck', icon: 'truck-loading', color: 'var(--amber)', rows: ready, empty: 'No job waiting for a truck.', sub: ({ j }) => (j.oocDate ? `OOC ${fmtDate(j.oocDate)}, no truck yet` : 'OOC done, no truck yet') },
-            ]}
-          />
-          {checkId
-            ? <TruckWorkspace jobId={checkId} onOpenJob={onOpenJob} groups={TRUCK_GROUPS} />
-            : <NoJobChosen text="Pick a job on the left. Each check asks the government system only when you press its button." />}
-        </div>
-      ) : (
+      {loading && !data ? (
+        <div className="ix-card"><Skeleton rows={6} /></div>
+      ) : error ? null : (
         <>
-          {showStatus && <AutoStatus auto={auto} fresh={fresh} what="trucks" idle={idleText} />}
+          <section className="ix-card ix-trk-panel">
+            <div className="ix-card-head">
+              <Icon name="road" />
+              <h2>On the road</h2><span className="n">{jobCount(road)}</span>
+            </div>
+            {showMap ? (
+              <Suspense fallback={<div className="ix-realmap"><div className="ix-realmap-msg">Loading map…</div></div>}>
+                <TruckMap trucks={pins} selectedId={sel?.id || null} onSelect={setSelectedId} message={mapMessage} />
+              </Suspense>
+            ) : (
+              <EmptyState line icon="truck" title="No truck on the road ·"
+                action={ready.length
+                  ? <button type="button" className="ix-link" onClick={() => readyRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>{plural(ready.length, 'job')} ready for a truck →</button>
+                  : <span className="t2">no job waiting for a truck</span>} />
+            )}
+            {anyTruckRows ? (
+              <div className="ix-tbl-wrap">
+                <table className="ix-tbl ix-trk-tbl">
+                  <thead><tr>
+                    <th>Job</th><th>Truck</th><th>Client</th><th>Container</th><th>Last seen</th><th>Papers</th><th className="r" aria-label="Actions" />
+                  </tr></thead>
+                  <tbody>
+                    {roadShown.map((x) => {
+                      if (x.kind !== 'truck') return movingRow(x)
+                      const t = (x.j.trucks || []).find((tr) => tr.no === x.truckNo)
+                      return t ? truckRow({ job: x.job, j: x.j }, t) : null
+                    })}
+                    {waitingShown.length > 0 && group('Not seen by a toll yet', waitingShown.length)}
+                    {waitingShown.map((x) => truckRow({ job: x.job, j: x.j }, x.truck))}
+                    {overShown.length > 0 && group('No longer followed', overShown.length)}
+                    {overShown.map((x) => truckRow(x.r, x.t, { why: x.why }))}
+                  </tbody>
+                </table>
+              </div>
+            ) : q && road.length + waiting.length + tripOver.length > 0 ? <EmptyState line icon="search" title="No truck matches your search." /> : null}
+          </section>
 
-          {loading && !data ? (
-            <div className="ix-card"><Skeleton rows={6} /></div>
-          ) : error ? null : (
-            <>
-              {/* papers problems: a red line only when there is one */}
-              {papersBad.length > 0 && (
-                <div className="ix-trk-alerts" role="alert">
-                  <div className="ix-trk-al red">
-                    <Icon name="alert-triangle" />
-                    <p>
-                      <span>{papersBad.length === 1 ? 'Truck papers problem' : `${papersBad.length} truck papers problems`}</span>
-                      {papersBad.map(({ r, t }) => (
-                        <span key={`${r.job.id}:${t.no}`} className="t" title={t.papers?.summary || undefined}>
-                          <JobNo no={r.job.job_no} onClick={() => openJob(r.job)} /> truck {t.no}
-                        </span>
-                      ))}
-                    </p>
-                  </div>
-                </div>
-              )}
-
-              <section className="ix-card ix-trk-panel">
-                <div className="ix-card-head">
-                  <Icon name="road" />
-                  <h2>On the road</h2><span className="n">{jobCount(road)}</span>
-                  <span className="sub hide-m">Last toll crossing of each truck (last 4 days), and boxes container tracking sees moving</span>
-                </div>
-                {showMap ? (
-                  <Suspense fallback={<div className="ix-realmap"><div className="ix-realmap-msg">Loading map…</div></div>}>
-                    <TruckMap trucks={pins} selectedId={sel?.id || null} onSelect={setSelectedId} message={mapMessage} />
-                  </Suspense>
-                ) : (
-                  <EmptyState line icon="truck" title="No truck on the road ·"
-                    action={ready.length
-                      ? <button type="button" className="ix-link" onClick={() => readyRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>{plural(ready.length, 'job')} ready for a truck →</button>
-                      : <span className="t2">no job waiting for a truck</span>} />
-                )}
-                {anyTruckRows ? (
-                  <div className="ix-tbl-wrap">
-                    <table className="ix-tbl">
-                      {truckHead}
-                      <tbody>
-                        {/* (no 'On the road' group row: the panel head above already says it) */}
-                        {roadShown.map((x) => {
-                          if (x.kind !== 'truck') return movingRow(x)
-                          const t = (x.j.trucks || []).find((tr) => tr.no === x.truckNo)
-                          return t ? truckRow({ job: x.job, j: x.j }, t) : null
-                        })}
-                        {waitingShown.length > 0 && group('clock', 'Waiting for a toll crossing', waitingShown.length, 'Put on the job, no toll has seen it yet')}
-                        {waitingShown.map((x) => truckRow({ job: x.job, j: x.j }, x.truck))}
-                        {overShown.length > 0 && group('flag', 'Trip over, job still open', overShown.length, 'No more look-ups after 4 days or once the box is back')}
-                        {overShown.map((x) => truckRow(x.r, x.t, { label: true }))}
-                      </tbody>
-                    </table>
-                  </div>
-                ) : q && road.length + waiting.length + tripOver.length > 0 ? <EmptyState line icon="search" title="No truck matches your search." /> : null}
-              </section>
-
-              <section className="ix-card ix-trk-panel" ref={readyRef}>
-                <div className="ix-card-head">
-                  <Icon name="truck-loading" />
-                  <h2>Ready for a truck</h2><span className={`n${ready.length ? ' amber' : ''}`}>{ready.length}</span>
-                  <span className="sub hide-m">OOC done, no truck yet · most urgent first</span>
-                </div>
-                {readyShown.length ? (
-                  <div className="ix-tbl-wrap">
-                    <table className="ix-tbl">
-                      <thead><tr>
-                        <th className="lvl" /><th>Job</th><th>Client</th><th>OOC</th><th className="r">Waiting</th><th>Containers</th><th className="r">Free days</th><th className="r" aria-label="Actions" />
-                      </tr></thead>
-                      <tbody>{readyShown.map(readyRow)}</tbody>
-                    </table>
-                  </div>
-                ) : (
-                  <EmptyState line icon={search ? 'search' : 'circle-check'} tone={search ? 'grey' : 'green'}
-                    title={search ? 'No waiting job matches your search.' : 'No job waiting for a truck.'} />
-                )}
-              </section>
-
-              <section className="ix-card ix-trk-panel">
-                <div className="ix-card-head">
-                  <Icon name="package-export" />
-                  <h2>Export carting</h2><span className="n">{carting.length}</span>
-                  <span className="sub hide-m">Export cargo going to the port</span>
-                </div>
-                {cartingShown.length ? (
-                  <div className="ix-tbl-wrap">
-                    <table className="ix-tbl">
-                      {truckHead}
-                      <tbody>
-                        {cartingShown.flatMap((r) => (truckNos(r.job).length
-                          ? (r.j.trucks || []).map((t, i) => truckRow(r, t, { first: i === 0, label: true }))
-                          : [(
-                            <Fragment key={r.job.id}>
-                              <tr className={isLinked(r.job) ? 'hl' : ''}>
-                                <td className="lvl" />
-                                <td><JobNo no={r.job.job_no} onClick={() => openJob(r.job)} /></td>
-                                <td className="cl">{r.job.client || <Dash />}</td>
-                                <td><span className="ix-plate none">No truck yet</span></td>
-                                <td><Dash /></td>
-                                <td className="t2">Export cargo to the port</td>
-                                <td><Dash /></td>
-                                <td className="act"><div>{editId !== r.job.id && <Button size="sm" icon="truck" disabled={anyBusy} onClick={() => openEditor(r.job.id)}>Assign truck</Button>}</div></td>
-                              </tr>
-                              {editId === r.job.id && editorRow(r.job, r.j)}
-                            </Fragment>
-                          )]))}
-                      </tbody>
-                    </table>
-                  </div>
-                ) : (
-                  <EmptyState line icon={search ? 'search' : 'package'} title={search ? 'No export job matches your search.' : 'No export jobs waiting for cargo to reach the port.'} />
-                )}
-              </section>
-            </>
-          )}
+          <section className="ix-card ix-trk-panel" ref={readyRef}>
+            <div className="ix-card-head">
+              <Icon name="truck-loading" />
+              <h2>Ready for a truck</h2><span className={`n${ready.length ? ' amber' : ''}`}>{ready.length}</span>
+            </div>
+            {readyShown.length ? (
+              <div className="ix-tbl-wrap">
+                <table className="ix-tbl">
+                  <thead><tr>
+                    <th className="lvl" /><th>Job</th><th>Client</th><th>OOC</th><th>Containers</th><th className="r">Free days</th><th className="r" aria-label="Actions" />
+                  </tr></thead>
+                  <tbody>{readyShown.map(readyRow)}</tbody>
+                </table>
+              </div>
+            ) : (
+              <EmptyState line icon={search ? 'search' : 'circle-check'} tone={search ? 'grey' : 'green'}
+                title={search ? 'No waiting job matches your search.' : 'No job waiting for a truck.'} />
+            )}
+          </section>
         </>
       )}
     </>
