@@ -6,6 +6,7 @@
 import { jobTrucks, plateNo, parseContainerNos, BE_STAGES } from '../_shared/portal/journeyCore.js'
 import { jobsFor, BOT_NUMBERS, LEVEL_LABEL } from '../_shared/portal/botMessages.js'
 import { isLineNotShip, lineName } from '../_shared/portal/shippingLines.js'
+import { containerOk } from '../_shared/portal/postReader.js'
 import { beFill } from './bereader.ts'
 import { docFill } from './docfill.ts'
 
@@ -28,14 +29,16 @@ export const ACTIONS = ['mark_delivered', 'add_truck', 'remove_truck', 'record_b
   // added 24 Oct 2026 (2): a new job by chat, the CFS payment, a task for a teammate
   'create_job', 'record_payment', 'assign_task',
   // who may use the bot (admins only)
-  'set_access']
+  'set_access',
+  // added 2 Nov 2026: Sea FCL / Sea LCL / Air / BPT-MBPT (a live test asked to make J-9901 LCL)
+  'set_mode']
 const MODES = ['Sea FCL', 'Sea LCL', 'Air', 'BPT/MBPT']
 const SIZES = ['20GP', '40GP', '40HC', '45HC', '20RF', '40RF', '40RFHC', '20OT', '40OT', '20FR', '40FR', '20TK', 'LCL']
 const DOC_TYPES = ['BE', 'BL', 'Invoice', 'Packing List', 'COO', 'Insurance', 'Examination Order', 'OOC', 'E-Way Bill', 'POD', 'Other']
 
 export const CHANGE_TOOL = {
   name: 'propose_change',
-  description: 'Make a change in the portal for the person: mark_delivered, add_truck (truck_no, optional container), remove_truck (truck_no), record_be (be_no 7 digits, be_date YYYY-MM-DD), set_leaves_by (mode truck/rail), set_delivery_by (by jds/client), add_note (note), attach_document (the file the person just sent; doc_type), set_eta (date YYYY-MM-DD), set_imo (imo = the 7-digit IMO number of the ship), set_vessel (vessel = the SHIP\'s name, never the shipping line), set_shipping_line (line), set_cfs (cfs), set_free_days (days), set_priority (priority normal/high/urgent), set_owner (owner = staff name), add_container (container, size), remove_container (container), record_ooc (ooc_no, ooc_date YYYY-MM-DD; OOC seen in LiveImpex), set_be_stage (stage = where the BE is with Customs: rms / ao / query / ac / assessed / duty_paid / exam; note optional, e.g. the query text), create_job (job = the NEW job no; client, job_mode, port, bl_no, containers, size, vessel, eta, line, be_no, be_date, days), record_payment (amount in rupees = the CFS amount), assign_task (to = teammate name, task, due = YYYY-MM-DD HH:MM India time), set_access (admins only; gives, changes or removes WhatsApp bot access: phone = 10-digit mobile, to = the name of the person, level = view / staff / admin / remove). The SAME change on several jobs: give them all in jobs (e.g. ["J-519","J-633"]) in ONE call. Call it ONCE; the bot then asks the person to confirm. Nothing changes until they do.',
+  description: 'Make a change in the portal for the person: mark_delivered, add_truck (truck_no, optional container), remove_truck (truck_no), record_be (be_no 7 digits, be_date YYYY-MM-DD), set_leaves_by (mode truck/rail), set_delivery_by (by jds/client), add_note (note), attach_document (the file the person just sent; doc_type), set_eta (date YYYY-MM-DD), set_imo (imo = the 7-digit IMO number of the ship), set_vessel (vessel = the SHIP\'s name, never the shipping line), set_shipping_line (line), set_cfs (cfs), set_free_days (days), set_priority (priority normal/high/urgent), set_owner (owner = staff name), add_container (container, size), remove_container (container), record_ooc (ooc_no, ooc_date YYYY-MM-DD; OOC seen in LiveImpex), set_be_stage (stage = where the BE is with Customs: rms / ao / query / ac / assessed / duty_paid / exam; note optional, e.g. the query text), create_job (job = the NEW job no; client, job_mode, port, bl_no, containers, size, vessel, eta, line, be_no, be_date, days), record_payment (amount in rupees = the CFS amount), assign_task (to = teammate name, task, due = YYYY-MM-DD HH:MM India time), set_access (admins only; gives, changes or removes WhatsApp bot access: phone = 10-digit mobile, to = the name of the person, level = view / staff / admin / remove), set_mode (job_mode = Sea FCL / Sea LCL / Air / BPT/MBPT: the mode of the job, e.g. "it is LCL"; port optional). The SAME change on several jobs: give them all in jobs (e.g. ["J-519","J-633"]) in ONE call. Call it ONCE; the bot then asks the person to confirm. Nothing changes until they do.',
   parameters: {
     type: 'OBJECT',
     properties: {
@@ -133,6 +136,8 @@ function prepareCreate(args: any, data: any, person: Person): Prepared {
   const port = String(args?.port || '').toUpperCase().match(/INNSA1|INBOM1|INBOM4/)?.[0] || (mode === 'Air' ? 'INBOM4' : mode === 'BPT/MBPT' ? 'INBOM1' : 'INNSA1')
   const boxes = [...new Set(String(args?.containers || '').toUpperCase().split(/[\s,;/]+/).filter((b) => /^[A-Z]{4}\d{7}$/.test(b)))]
   if ((mode === 'Sea FCL' || mode === 'Sea LCL') && !boxes.length) return { ok: false, error: 'A sea job needs its container number(s).' }
+  const badBox = boxes.find((b) => !containerOk(b))
+  if (badBox) return { ok: false, error: `${badBox} doesn't look right (its last digit doesn't match). Please check the container number.` }
   const vessel = String(args?.vessel || '').trim().toUpperCase()
   if (vessel && isLineNotShip(vessel, args?.line)) return { ok: false, error: `${vessel} is a shipping line, not a ship. Give the ship's own name from the BL, or leave it out.` }
   const eta = String(args?.eta || args?.date || '').slice(0, 10)
@@ -242,6 +247,16 @@ function prepareOne(args: any, data: any, person: Person, extra: ChangeContext =
     if (cfs.length < 2) return { ok: false, error: 'Which CFS?' }
     return p(`Set the CFS of ${who} to *${cfs}*${job.cfs_name ? ` (was ${job.cfs_name})` : ''}`, { cfs })
   }
+  if (action === 'set_mode') {
+    // "LCL" / "FCL" / "air" / "Mumbai port" as people say it
+    const said = norm(args?.job_mode || args?.note || '')
+    const mode = MODES.find((m) => norm(m) === said) || (said === 'LCL' ? 'Sea LCL' : said === 'FCL' ? 'Sea FCL' : /^(BPT|MBPT|MUMBAIPORT|MUMBAI)$/.test(said) ? 'BPT/MBPT' : /^AIR/.test(said) ? 'Air' : null)
+    if (!mode) return { ok: false, error: 'Which mode: Sea FCL, Sea LCL, Air or BPT/MBPT?' }
+    if (job.mode === mode) return { ok: false, error: `${job.job_no} is already ${mode}.` }
+    const typed = String(args?.port || '').toUpperCase().match(/INNSA1|INBOM1|INBOM4/)?.[0]
+    const port = typed || (mode === 'Air' ? 'INBOM4' : mode === 'BPT/MBPT' ? 'INBOM1' : ['INBOM4', 'INBOM1'].includes(job.port_code) || !job.port_code ? 'INNSA1' : job.port_code)
+    return p(`Change ${who} from ${job.mode || 'no mode'} to *${mode}*${port !== job.port_code ? ` (port ${port})` : ''}`, { mode_to: mode, port })
+  }
   if (action === 'set_free_days') {
     const days = Number(args?.days)
     if (!Number.isInteger(days) || days < 0 || days > 120) return { ok: false, error: 'Free days must be a whole number, for example 14.' }
@@ -269,6 +284,7 @@ function prepareOne(args: any, data: any, person: Person, extra: ChangeContext =
     // the number, wherever the AI put it (it sometimes uses "note")
     const box = norm(args?.container) || (Object.values(args || {}).map((v) => norm(v)).find((v) => /^[A-Z]{4}\d{7}$/.test(v)) || '')
     if (!/^[A-Z]{4}\d{7}$/.test(box)) return { ok: false, error: 'The container number looks wrong. Example: MSKU1234567.' }
+    if (action === 'add_container' && !containerOk(box)) return { ok: false, error: `${box} doesn't look right (its last digit doesn't match). Please check the container number.` }
     const has = parseContainerNos(job.containers).includes(box)
     if (action === 'remove_container') {
       if (!has) return { ok: false, error: `Container ${box} is not on ${job.job_no}.` }
@@ -488,6 +504,7 @@ They should send any message to the bot to start. While the bot uses Meta's test
     set_shipping_line: [{ shipping_line: a.line }, `shipping line set to ${a.line}`],
     set_cfs: [{ cfs_name: a.cfs }, `CFS set to ${a.cfs}`],
     set_free_days: [{ free_days: a.days }, `free days set to ${a.days}`],
+    set_mode: [{ mode: a.mode_to, port_code: a.port }, `mode changed to ${a.mode_to}`],
     set_priority: [{ priority: a.priority }, `priority set to ${a.priority}`],
     set_owner: [{ assigned_to: a.owner_id }, `owner set to ${a.owner_name}`],
   }

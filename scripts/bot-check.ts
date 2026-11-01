@@ -9,7 +9,7 @@
 //   npx deno@2 run --allow-read --allow-write --allow-net --allow-env scripts/bot-check.ts [--update] [folder]
 // --update: take the current readings as the new snapshot (after checking the changes by eye)
 import { answerQuestion } from '../supabase/functions/wa-bot/questions.ts'
-import { isYes, isNo, isYesSaid, isNoSaid } from '../supabase/functions/wa-bot/actions.ts'
+import { isYes, isNo, isYesSaid, isNoSaid, prepareChange } from '../supabase/functions/wa-bot/actions.ts'
 import { toRoman, normalizeSpoken, jobNoFromText } from '../supabase/functions/wa-bot/media.ts'
 import { readDocFile } from '../supabase/functions/wa-bot/docfill.ts'
 import { readPost } from '../supabase/functions/_shared/portal/postReader.js'
@@ -44,6 +44,20 @@ const LANG: [string, boolean][] = [
   ['what is the ETA of J-674', false], ['how do I add a truck', false], ['job 689', false], ['can you do it now', false], ['ok thanks', false],
 ]
 for (const [t, want] of LANG) if (isHinglish(t) !== want) fail(`"${t}" read as ${isHinglish(t) ? 'Hinglish' : 'English'}`)
+// changes the bot prepares (found in the live test of 2 Nov 2026): the mode, container numbers
+const DATA = { jobs: [{ id: 'x', job_no: 'J-9901', client: 'Test', mode: 'Sea FCL', port_code: 'INNSA1', containers: 'CCLU7885874', field_meta: {} }], documents: [] }
+const ME = { id: 'p', name: 'Test', role: 'admin', phone: '91', level: 'admin' }
+const CHANGES: [Record<string, unknown>, RegExp | null][] = [
+  [{ action: 'set_mode', job: 'J-9901', job_mode: 'Sea LCL' }, /Sea LCL/], [{ action: 'set_mode', job: 'J-9901', job_mode: 'LCL' }, /Sea LCL/],
+  [{ action: 'set_mode', job: 'J-9901', job_mode: 'Air' }, /Air.*INBOM4/], [{ action: 'set_mode', job: 'J-9901', job_mode: 'Sea FCL' }, null],
+  [{ action: 'add_container', job: 'J-9901', container: 'TEST1234567' }, null], [{ action: 'add_container', job: 'J-9901', container: 'OOCU9074031' }, /OOCU9074031/],
+  [{ action: 'create_job', job: 'J-9902', client: 'Test', job_mode: 'Sea FCL', containers: 'TEST1234567' }, null],
+  [{ action: 'create_job', job: 'J-9902', client: 'Test', job_mode: 'Sea FCL', containers: 'OOCU9074031' }, /Create \*J-9902\*/],
+]
+for (const [a, want] of CHANGES) {
+  const r: any = prepareChange(a, DATA, ME as any)
+  if (want ? !(r.ok && want.test(r.pending.summary)) : r.ok) fail(`change ${JSON.stringify(a)} → ${r.ok ? r.pending.summary : r.error}`)
+}
 const NAMES: [string, string | null][] = [['Processed_BE_736_20261030_2022.pdf', 'J-736'], ['Out of Charge_1004_20260411_0746.pdf', 'J-1004'], ['J-00117 Green Soul Docs.pdf', 'J-117'], ['AWSSE260900057.pdf', null]]
 for (const [n, want] of NAMES) if (jobNoFromText(n) !== want) fail(`file "${n}" → ${jobNoFromText(n)}, should be ${want}`)
 

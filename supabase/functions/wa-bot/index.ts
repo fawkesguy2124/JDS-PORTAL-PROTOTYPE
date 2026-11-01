@@ -668,7 +668,10 @@ async function handleInbound(admin: Admin, payload: any) {
     // a change waiting for this person's YES (asked in their previous message)
     const held: Pending | null = inboxRes?.data?.pending || null
     // what the last post saved stays undoable for UNDO_MINUTES, whatever comes in between
-    const undoable = held?.action === 'undo_post' && Date.now() - new Date(held.at).getTime() < UNDO_MINUTES * 60_000 ? held : null
+    // (a Yes / No question asked since keeps it inside, in .undo, so a question in between
+    // never takes the undo away; live test 2 Nov 2026: J-9901 could not be undone after one)
+    const freshUndo = (u: any) => u?.action === 'undo_post' && Date.now() - new Date(u.at).getTime() < UNDO_MINUTES * 60_000
+    const undoable = freshUndo(held) ? held : freshUndo((held as any)?.undo) ? (held as any).undo : null
     const pending: Pending | null = held?.action === 'undo_post' ? null : held
     const live = pending && Date.now() - new Date(pending.at).getTime() < PENDING_MINUTES * 60_000
     let reply: string | null = null
@@ -712,10 +715,10 @@ async function handleInbound(admin: Admin, payload: any) {
     } else if (pending && isYes(text)) {
       reply = `That request is more than ${PENDING_MINUTES} minutes old, so nothing was changed. Please ask again.`
     }
-    else if (!pending && isYes(text)) {
-      reply = 'Nothing is waiting for a YES right now. Tell me the change, for example: "mark J-638 delivered".'
-    } else if (!pending && isNo(text)) {
-      reply = 'OK, nothing was changed.'
+    // a bare yes / no with nothing waiting: if the bot's last message asked something, the
+    // assistant follows the conversation; otherwise a short plain answer
+    else if (!pending && (isYes(text) || isNo(text)) && !/\?\s*(\[checked:[^\]]*\])?\s*$/.test(String([...history].reverse().find((t: any) => t.role === 'model')?.text || ''))) {
+      reply = isYes(text) ? (isHinglish(text) || /^(haan|ha|han|haa|ji)\b/i.test(text) ? 'Abhi kuch pending nahi hai. Kya karna hai, bataiye.' : "There's nothing waiting for a yes right now. What would you like to do?") : 'OK.'
     }
     // the team's own "BE filed" / truck-out post (sent or forwarded): saved at once, UNDO for 30 min
     if (!reply) {
@@ -751,8 +754,8 @@ async function handleInbound(admin: Admin, payload: any) {
       if (!ai.text && !ask) await recordFailure(admin, person.phone, 'the AI did not answer', String(ai.note || 'no answer').slice(0, 300))
     }
     if (pending && live && !isYes(text) && !isYesSaid(text) && !isNo(text) && !isNoSaid(text) && !ask) reply = `(The earlier change was not made: ${pending.summary.replace(/\*/g, '')}.)\n\n${reply}`
-    // (one waiting slot: a Yes / No question wins over the undo of an earlier post)
-    if (ask) await admin.from('bot_inbox').update({ pending: ask }).eq('phone', person.phone)
+    // (one waiting slot: a Yes / No question goes in it, carrying the undo of an earlier post)
+    if (ask) await admin.from('bot_inbox').update({ pending: undoNext ? { ...ask, undo: undoNext } : ask }).eq('phone', person.phone)
     else if (undoNext !== undoable) await admin.from('bot_inbox').update({ pending: undoNext }).eq('phone', person.phone)
     // (a voice note is answered directly; what was heard is not repeated — Jose, 24 Oct 2026)
     // a reply to the person is plain conversation (no Yes / No buttons: those are only on the
