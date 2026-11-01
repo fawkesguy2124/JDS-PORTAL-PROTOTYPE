@@ -117,9 +117,20 @@ input[type=date].ix-cj-in { padding-right: 6px }
   .ix .ix-cj-affix input[type=text] { min-height: 0 }
   .ix-cj-box { grid-template-columns: minmax(0, 1fr) minmax(76px, 110px) 36px }
   .ix-cj .ix-icon-btn.sm { width: 36px; height: 36px }
+  /* drop-downs drawn like the typed fields: iPhone's own drop-down look made their text
+     look bigger than the rest (Jose, 1 Nov 2026) */
+  select.ix-cj-in { appearance: none; -webkit-appearance: none; padding-right: 32px; font-family: inherit; font-weight: 400;
+    background: var(--surface) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238792a5' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E") no-repeat right 12px center }
+  select.ix-cj-in.filled { background-color: var(--navy-50) }
+  select.ix-cj-in:disabled { background-color: var(--surface-3) }
+  .ix-cj-in.mono, .ix-cj-affix input { font-family: inherit }
 }
 @media (max-width: 560px) {
   .ix-cj-root.page { padding: 0 }
+  /* the pop-up is a sheet from the bottom, like iPhone's own, clear of the notch */
+  .ix-modal-bg:has(.ix-cj-root.modal) { align-items: flex-end; padding: max(10px, env(safe-area-inset-top, 0px)) 0 0 }
+  .ix-modal:has(.ix-cj-root.modal) { max-width: none; border: 0; border-radius: 16px 16px 0 0; animation: ixSheetUp .36s cubic-bezier(.32, .72, 0, 1) both }
+  .ix-cj-root.modal .ix-cj { height: calc(100dvh - max(10px, env(safe-area-inset-top, 0px))); max-height: none }
   /* full screen, so the footer still sits at the bottom while the body scrolls */
   .ix-cj-root.page .ix-cj { max-height: none; height: 100vh; height: 100dvh; border: 0; border-radius: 0 }
   .ix-cj-head { padding: 12px var(--s3) 10px var(--s4) }

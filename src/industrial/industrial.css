@@ -742,8 +742,9 @@ button.ix-jobno:focus-visible { outline: none; box-shadow: var(--focus); border-
 /* panels scroll on their own, never the page behind them */
 .ix-drawer, .ix-mnav, .ix-q-list, .ix-pick-list { overscroll-behavior: contain }
 @media (max-width: 760px) {
-  /* iPhone zooms the whole page when a field with text under 16 px is tapped */
-  input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=file]), select, textarea { font-size: 16px !important }
+  /* one text size in every field on phones (Jose, 1 Nov 2026: some looked bigger than
+     others). iPhone would zoom the page into a field under 16 px; index.html stops that */
+  input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=file]), select, textarea { font-size: 15px !important }
   /* finger-sized buttons and fields (Apple asks 44 px, Android 48 px) */
   .ix-btn { height: 42px; padding: 0 14px }
   .ix-btn.sm { height: 38px; padding: 0 12px; font-size: calc(13px * var(--ts, 1)) }

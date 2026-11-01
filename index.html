@@ -15,6 +15,14 @@
     <meta name="mobile-web-app-capable" content="yes" />
     <title>JDS Logistics Portal</title>
     <script>
+      // iPhone zooms the page into any field with text under 16 px and stays zoomed. The
+      // fields are 15 px on phones (one size everywhere), so iPhones get maximum-scale=1:
+      // that stops only the automatic zoom, pinch-zoom still works there (1 Nov 2026).
+      if (/iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)) {
+        document.querySelector('meta[name=viewport]').setAttribute('content', 'width=device-width, initial-scale=1.0, maximum-scale=1, viewport-fit=cover')
+      }
+    </script>
+    <script>
       // The theme chosen in Settings (jds_prefs_v1, src/industrial/settings.js), set
       // before anything is drawn so a dark portal never flashes white (31 Oct 2026).
       (function () {

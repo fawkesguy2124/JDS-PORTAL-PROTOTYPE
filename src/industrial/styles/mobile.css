@@ -17,9 +17,11 @@
   /* landscape on a notched iPhone: keep clear of the notch on the sides */
   .ix .ix-main, .ix .ix-top, .ix .ix-tabbar { padding-left: max(env(safe-area-inset-left, 0px), 0px); padding-right: max(env(safe-area-inset-right, 0px), 0px) }
   .ix .ix-top { padding-left: max(8px, env(safe-area-inset-left, 0px)); padding-right: max(8px, env(safe-area-inset-right, 0px)) }
-  /* the page scrolls with momentum and never sideways */
-  .ix .ix-main { -webkit-overflow-scrolling: touch; overflow-x: hidden; scroll-behavior: smooth }
-  .ix .ix-tbl-wrap, .ix .ix-jp-stepwrap, .ix .ix-tabs { -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain }
+  /* the page never scrolls sideways. (No -webkit-overflow-scrolling: iPhones scroll with
+     momentum anyway, and on iPhone it put the top bar and the bottom tabs OVER pop-ups
+     opened from the page, e.g. Create job; Jose, 1 Nov 2026) */
+  .ix .ix-main { overflow-x: hidden; scroll-behavior: smooth }
+  .ix .ix-tbl-wrap, .ix .ix-jp-stepwrap, .ix .ix-tabs { overscroll-behavior-x: contain }
   /* a pressed feel on every tap (iOS dims and shrinks a touched control a little) */
   .ix .ix-btn, .ix .ix-icon-btn, .ix .ix-tabbar button, .ix .ix-kstat, .ix .ix-chipbtn, .ix .ix-trk-chipbtn { transition: transform .12s ease, opacity .12s ease, background-color .15s ease }
   .ix .ix-btn:active, .ix .ix-icon-btn:active, .ix .ix-kstat:active, .ix .ix-trk-chipbtn:active { transform: scale(.96); opacity: .85 }
