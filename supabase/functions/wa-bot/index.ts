@@ -346,7 +346,7 @@ const BOT_CHECK_GAP_MIN = 30
 const istWhen = (iso: string) => new Date(iso).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' })
 const istDay = (iso: string) => new Date(String(iso).length <= 10 ? `${iso}T12:00:00+05:30` : iso).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' })
 
-function customsChecker(admin: Admin, person: Person, data: any, opts: { test?: boolean } = {}) {
+function customsChecker(admin: Admin, person: Person, data: any, opts: { test?: boolean; notify?: (text: string) => Promise<unknown> } = {}) {
   return async (ref: string) => {
     const want = String(ref || '').replace(/\D/g, '')
     const job = (data?.jobs || []).find((j: any) => String(j.job_no || '').replace(/\D/g, '') === want)
@@ -367,6 +367,8 @@ function customsChecker(admin: Admin, person: Person, data: any, opts: { test?: 
     if (opts.test) return { started: true, test_mode: 'test mode: Customs was NOT asked', tell_the_person: 'Say you are checking with Customs now and the result will follow in a separate message.' }
     // asked now and answered in this same reply (about a minute; WhatsApp shows typing):
     // no "checking with Customs now…" message first (Jose, 1 Nov 2026)
+    // Customs takes about a minute: one short line first, then the answer (Jose, 1 Nov 2026)
+    await opts.notify?.(`🛃 Checking ${job.job_no} with Customs, this takes a minute…`).catch(() => {})
     const text = await runCustomsCheck(admin, person, job, false)
     return { checked_now: true, say_text: text, tell_the_person: 'Customs was asked just now and the bot\'s own message already gives the result; add nothing unless asked.' }
   }
@@ -642,7 +644,7 @@ async function handleInbound(admin: Admin, payload: any) {
     if (!reply) {
       const aiStart = Date.now()
       const ai = await askAssistant(text, history, data, person, {
-        checkCustoms: customsChecker(admin, person, data),
+        checkCustoms: customsChecker(admin, person, data, { notify: (t) => send(person.phone, { text: t }) }),
         server: makeServerTools({ admin, person, data, team, send: (t) => send(person.phone, { text: t }), sendFile: true, after, dataChanged: () => { dataCache = null }, customsOne: (job) => runCustomsCheck(admin, person, job, false) }),
         change: { lastFile: inboxRes?.data?.last_file || null, team },
       })
