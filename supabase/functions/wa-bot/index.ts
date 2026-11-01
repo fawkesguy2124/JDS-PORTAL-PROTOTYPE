@@ -23,6 +23,8 @@ import { downloadMedia, transcribe, normalizeSpoken, docTypeFromName, jobFromTex
 import { makeServerTools, sendDueReminders, checkWatches, checkTasks } from './servertools.ts'
 import { readBeFile, jobForBe, beLine } from './bereader.ts'
 import { pushAlerts, pushTest } from './push.ts'
+import { handlePost, undoPost, isUndo, UNDO_MINUTES } from './posts.ts'
+import { runQuestions, answerQuestion, questionsDue } from './questions.ts'
 
 const PORTAL = 'https://jds-portal-prototype.vercel.app'
 
@@ -304,7 +306,20 @@ async function runAlerts(admin: Admin) {
     for (const person of team) out.push(await sendOnce(admin, alert.key, person, alert.kind, alert))
   }
   if (sendingOn()) await admin.from('bot_state').upsert({ id: 1, alerts_checked_at: now })
+  // the bot's calm questions (only when the BOT_ASKING switch is on; questions.ts)
+  await runQuestions(admin, data, team, questionDeps(admin)).catch((e) => console.warn(`[wa-bot] questions: ${(e as Error).message}`))
   return out
+}
+
+// what the question run needs from here: sending one message, and the 24-hour window
+const questionDeps = (admin: Admin) => ({
+  send: async (p: Person, text: string) => (await send(p.phone, { text })).ok === true,
+  windowOpen: (phone: string) => windowOpen(admin, phone),
+})
+// "Is J-583 delivered?" answered YES: the same change as "mark J-583 delivered"
+async function markDeliveredFor(admin: Admin, person: Person, data: any, jobNo: string) {
+  const r = prepareChange({ action: 'mark_delivered', job: jobNo }, data, person)
+  return r.ok ? await applyChange(admin, r.pending, person) : `Couldn't mark ${jobNo} delivered: ${r.error}`
 }
 
 // ── Meta webhook ──
@@ -562,14 +577,33 @@ async function handleInbound(admin: Admin, payload: any) {
     const history = Array.isArray(inboxRes?.data?.history) ? inboxRes.data.history : []
     if (!text) { await send(person.phone, { text: 'Please send text: ask a question, or a job no, a container no or SUMMARY.' }); continue }
     // a change waiting for this person's YES (asked in their previous message)
-    const pending: Pending | null = inboxRes?.data?.pending || null
+    const held: Pending | null = inboxRes?.data?.pending || null
+    // what the last post saved stays undoable for UNDO_MINUTES, whatever comes in between
+    const undoable = held?.action === 'undo_post' && Date.now() - new Date(held.at).getTime() < UNDO_MINUTES * 60_000 ? held : null
+    const pending: Pending | null = held?.action === 'undo_post' ? null : held
     const live = pending && Date.now() - new Date(pending.at).getTime() < PENDING_MINUTES * 60_000
     let reply: string | null = null
     const after: Message[] = [] // menus a tool asks to send after the reply
     let checked: string[] = []
     let ask: Pending | null = null
-    if (pending) await admin.from('bot_inbox').update({ pending: null }).eq('phone', person.phone) // a proposal is answered once
-    if (live && isYes(text)) {
+    let undoNext: Pending | null = undoable // kept unless undone or replaced by a newer post
+    if (pending) await admin.from('bot_inbox').update({ pending: undoable }).eq('phone', person.phone) // a proposal is answered once
+    // a reply to one of the bot's own questions ("1 MH43U3271", "4588199 22.10", "YES", "skip"),
+    // unless a Yes / No change is waiting (that comes first)
+    let answered: { reply: string; undo?: any } | null = null
+    if (!live && !isUndo(text)) {
+      answered = await answerQuestion(admin, person, text, data, { markDelivered: (_id, jobNo) => markDeliveredFor(admin, person, data, jobNo) })
+        .catch((e) => { console.warn(`[wa-bot] answer: ${(e as Error).message}`); return null })
+    }
+    if (answered) {
+      reply = answered.reply
+      if (answered.undo) undoNext = answered.undo
+      dataCache = null
+      checked = ['answer to the bot\'s question']
+    } else if (isUndo(text)) {
+      if (undoable) { reply = await undoPost(admin, undoable, person); undoNext = null; dataCache = null }
+      else reply = held?.action === 'undo_post' ? `That post was saved more than ${UNDO_MINUTES} minutes ago, so it can't be undone here. Please correct it in the portal.` : 'Nothing to undo right now.'
+    } else if (live && isYes(text)) {
       reply = await applyChange(admin, pending, person, { tell: (phone, t, jobNo) => tellTeammate(admin, team, phone, t, jobNo) })
       if (pending.action === 'set_access') teamCache = null // the new access counts from the next message
       dataCache = null // the next answer shows the change
@@ -583,6 +617,17 @@ async function handleInbound(admin: Admin, payload: any) {
       reply = 'Nothing is waiting for a YES right now. Tell me the change, for example: "mark J-638 delivered".'
     } else if (!pending && isNo(text)) {
       reply = 'OK, nothing was changed.'
+    }
+    // the team's own "BE filed" / truck-out post (sent or forwarded): saved at once, UNDO for 30 min
+    if (!reply) {
+      const post = await handlePost(admin, person, text, data, { allowedChange: allowed(person, 'change') })
+      if (post) {
+        reply = post.reply
+        if (post.undo) undoNext = post.undo
+        if (post.confirm) ask = post.confirm
+        if (post.saved) dataCache = null
+        checked = ['read a team post']
+      }
     }
     // fixed commands are instant and free; anything else goes to the assistant
     if (!reply) reply = answer(data, text, person, new Date(), { fallback: false })
@@ -605,7 +650,9 @@ async function handleInbound(admin: Admin, payload: any) {
       else reply = ai.text ? toWhatsApp(ai.text) : "⏳ The AI is busy right now, so I couldn't answer that question. Please ask again in a minute.\n\nThese always work instantly: a job no (J-193), a container no, a BE no, SUMMARY or URGENT."
     }
     if (pending && live && !isYes(text) && !isNo(text) && !ask) reply = `(The earlier change was not made: ${pending.summary.replace(/\*/g, '')}.)\n\n${reply}`
+    // (one waiting slot: a Yes / No question wins over the undo of an earlier post)
     if (ask) await admin.from('bot_inbox').update({ pending: ask }).eq('phone', person.phone)
+    else if (undoNext !== undoable) await admin.from('bot_inbox').update({ pending: undoNext }).eq('phone', person.phone)
     // (a voice note is answered directly; what was heard is not repeated — Jose, 24 Oct 2026)
     // a change waiting for a YES gets Yes / No buttons; a menu from a tool comes after the reply
     await send(person.phone, ask ? { text: reply, buttons: YES_NO } : { text: reply })
@@ -746,6 +793,27 @@ Deno.serve(async (req) => {
           const m = be ? jobForBe(be, (await loadDataCached(admin)).jobs) : null
           return json({ success: true, ms: Date.now() - t0, be: be ? { be_no: be.be_no, be_date: be.be_date, igm_no: be.igm_no, igm_date: be.igm_date, bl_no: be.bl_no, copy: be.copy_type, containers: be.containers } : null, line: be ? beLine(be) : null, job: m ? `${m.job.job_no} by ${m.how}` : null })
         } catch (e) { return json({ success: false, error: (e as Error).message }) }
+      }
+      // test: team posts ("BE filed", truck out) read against the live jobs; the replies are
+      // returned here and NOTHING is saved
+      if (run === 'post-test') {
+        const texts: string[] = (JSON.parse(raw).texts || []).slice(0, 40)
+        const [team, data] = await Promise.all([loadTeam(admin), loadData(admin)])
+        const person = team[0]
+        const out = []
+        for (const t of texts) {
+          const r = await handlePost(admin, person, t, data, { test: true })
+          out.push({ text: t.slice(0, 80), post: !!r, reply: r?.reply || null, confirm: r?.confirm?.summary || null })
+        }
+        return json({ success: true, results: out })
+      }
+      // test: the bot's questions worked out on the live data: what is due, and what each
+      // person would get right now and why not (NOTHING is sent or stored)
+      if (run === 'questions-test') {
+        const [team, data] = await Promise.all([loadTeam(admin), loadData(admin)])
+        const due = questionsDue(data)
+        const people = await runQuestions(admin, data, team, questionDeps(admin), { test: true })
+        return json({ success: true, switch: Deno.env.get('BOT_ASKING') || 'off', due: due.map((q) => ({ job: q.job_no, kind: q.kind, text: q.text })), people })
       }
       // test: the "check customs now" path for one job, as the first team member;
       // the reply is returned here, not sent on WhatsApp
