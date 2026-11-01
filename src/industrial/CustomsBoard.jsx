@@ -8,7 +8,7 @@ import UlipSection from '../components/ulip/UlipSection'
 import { useJourney } from './JourneyContext'
 import { DayTag } from './JobChecks'
 import BeStage from './BeStage'
-import { Icon, JobNo, PhaseStatus, Status, Chip, FreeDays, Dash, Button, SearchBox, worst, fmtDate, fmtDateTime } from './ui'
+import { Icon, JobNo, PhaseStatus, Status, Chip, FreeDays, Dash, Button, worst, fmtDate, fmtDateTime } from './ui'
 import './styles/customs.css'
 
 // BE & OOC as a board (Jose, 2 Nov 2026: "every API, I just scroll down… this is not the
@@ -17,7 +17,6 @@ import './styles/customs.css'
 // customs story (where it is, what comes next, one button to ask Customs), and the other
 // government records stay folded away at the bottom of the panel.
 
-const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`
 const levelOf = (j) => { const w = worst(j); return w === 'red' || w === 'amber' ? w : '' }
 // oldest first, a missing date last
 const byDate = (get) => (a, b) => {
@@ -48,22 +47,6 @@ function lanesOf(rows) {
     { id: 'ooc', title: 'OOC granted', hint: 'Move the cargo', tone: 'teal', always: true,
       rows: inPhase('release').sort(byDate((r) => r.j.oocDate)) },
   ]
-}
-
-// One short line about the whole desk, so the page says what matters before any card
-function Pulse({ lanes }) {
-  const get = (id) => lanes.find((l) => l.id === id)?.rows || []
-  const atCustoms = [...get('customs'), ...get('assessed'), ...get('paid')]
-  const oldest = [...atCustoms].sort(byDate((r) => r.job.be_date))[0]
-  const queries = atCustoms.filter((r) => r.j.beStage?.id === 'query')
-  const toMove = get('ooc'), toFile = get('file')
-  const parts = []
-  if (atCustoms.length) parts.push(<span key="c"><b>{plural(atCustoms.length, 'BE')}</b> at Customs{oldest?.job.be_date ? <>, oldest <b>{oldest.job.job_no}</b> on day {Math.max(0, daysAgo(oldest.job.be_date))}</> : null}</span>)
-  if (queries.length) parts.push(<span key="q" className="red"><b>{plural(queries.length, 'query')}</b> to answer</span>)
-  if (toMove.length) parts.push(<span key="m"><b>{toMove.length}</b> OOC to move</span>)
-  if (toFile.length) parts.push(<span key="f"><b>{plural(toFile.length, 'BE')}</b> to file</span>)
-  if (!parts.length) return <div className="cb-pulse"><Icon name="circle-check" />Nothing waiting at Customs.</div>
-  return <div className="cb-pulse"><Icon name="activity" />{parts.reduce((a, p, i) => (i ? [...a, <span key={`d${i}`} className="dot">·</span>, p] : [p]), [])}</div>
 }
 
 // A job on the board: the job and client, the BE and its age, and in "With Customs"
@@ -97,8 +80,8 @@ function Card({ r, lane, selected, onPick }) {
   )
 }
 
-export function CustomsBoard({ rows, allRows, selectedId, onPick }) {
-  const [q, setQ] = useState('')
+// q: the search typed in the page head
+export function CustomsBoard({ rows, allRows, q = '', selectedId, onPick }) {
   const lanes = useMemo(() => lanesOf(rows), [rows])
   const needle = q.trim().toLowerCase().replace(/\s+/g, '')
   const match = ({ job }) => [job.job_no, job.client, job.be_no, job.bl_no, ...truckNos(job), job.ulip_refs?.igm_no, ...parseContainerNos(job.containers)]
@@ -111,10 +94,6 @@ export function CustomsBoard({ rows, allRows, selectedId, onPick }) {
 
   return (
     <div className="cb">
-      <div className="cb-top">
-        <Pulse lanes={lanes} />
-        <div className="cb-search"><SearchBox value={q} onChange={setQ} placeholder="Find a job, client, BE, container…" /></div>
-      </div>
       {needle && (others.length > 0 || hits === 0) && (
         <div className="cb-others">
           {others.length ? <>

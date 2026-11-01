@@ -240,13 +240,7 @@
 /* ── BE & OOC board (Jose, 2 Nov 2026): one column per step at Customs, a card per job,
    a side panel per job instead of a long page of checks ── */
 .cb { display: flex; flex-direction: column; gap: var(--s3) }
-.cb-top { display: flex; align-items: center; gap: var(--s3); flex-wrap: wrap }
-.cb-pulse { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; flex: 1; min-width: 0; font-size: var(--fs-md); color: var(--text-2) }
-.cb-pulse .ti { color: var(--navy); font-size: 16px }
-.cb-pulse b { color: var(--text); font-weight: 600 }
-.cb-pulse .red, .cb-pulse .red b { color: var(--red) }
-.cb-pulse .dot { color: var(--faint) }
-.cb-search { width: 300px; max-width: 100% }
+.cb-search { width: 280px; max-width: 100% }
 .cb-search .ix-tsearch { width: 100% }
 .cb-others { display: flex; align-items: center; gap: var(--s2); flex-wrap: wrap; font-size: var(--fs-sm) }
 .cb-others .k { color: var(--muted) }
@@ -254,7 +248,7 @@
 .cb-other:hover { border-color: var(--line-hover); background: var(--surface-2) }
 .cb-other .cl { color: var(--text-2); max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
 
-.cb-lanes { display: grid; grid-template-columns: repeat(var(--lanes, 5), minmax(200px, 1fr)); gap: var(--s3); align-items: start; overflow-x: auto; padding-bottom: 2px }
+.cb-lanes { display: grid; grid-template-columns: repeat(var(--lanes, 5), minmax(170px, 1fr)); gap: var(--s3); align-items: start; overflow-x: auto; padding-bottom: 2px }
 .cb-lane { background: var(--surface-2); border: 1px solid var(--line); border-top: 3px solid var(--faint); border-radius: var(--r-lg); min-width: 0; display: flex; flex-direction: column }
 .cb-lane.blue { border-top-color: var(--navy) }
 .cb-lane.amber { border-top-color: var(--amber-dot) }
@@ -335,14 +329,13 @@
 .cb-more-body { padding: var(--s3); border-top: 1px solid var(--line) }
 
 /* a narrower screen: the columns scroll sideways, one snap per column */
-@media (max-width: 1100px) {
-  .cb-lanes { grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: minmax(240px, 1fr); scroll-snap-type: x proximity }
+@media (max-width: 1000px) {
+  .cb-lanes { grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: minmax(220px, 1fr); scroll-snap-type: x proximity }
   .cb-lane { scroll-snap-align: start }
 }
 /* phones: the columns stack (empty ones hidden), the panel takes the screen */
 @media (max-width: 760px) {
-  .cb-top { flex-direction: column; align-items: stretch }
-  .cb-search { width: 100% }
+  .cb-search { flex: 1; width: auto }
   .cb-lanes { display: flex; flex-direction: column; align-items: stretch; overflow: visible }
   .cb-lane.empty { display: none }
   .cb-cards { max-height: none; overflow: visible }
