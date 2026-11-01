@@ -105,10 +105,6 @@ export default function Shell({ sections, active, counts = {}, onGo, onOpenJob, 
         </div>
 
         <header className="ix-top">
-          <button type="button" className="ix-icon-btn hide-m" onClick={() => setPref('navCollapsed', !collapsed)}
-            aria-label={collapsed ? 'Expand menu' : 'Collapse menu'} title={collapsed ? 'Expand menu' : 'Collapse menu'}>
-            <Icon name={collapsed ? 'layout-sidebar-left-expand' : 'layout-sidebar-left-collapse'} />
-          </button>
           {pageLabel && <div className="ix-crumb">{pageLabel}</div>}
           <div className="ix-search" role="button" tabIndex={0} aria-label="Search (Ctrl K)" onClick={() => setPalette(true)}
             onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setPalette(true) } }}>
@@ -124,6 +120,12 @@ export default function Shell({ sections, active, counts = {}, onGo, onOpenJob, 
 
         <nav className="ix-nav" aria-label="Main menu">
           <div className="ix-nav-scroll">{navList}</div>
+          {/* open / close the menu: at the foot of the menu itself, below Settings, as in most
+              software, just the icon (Jose, 1 Nov 2026; it was in the top bar) */}
+          <button type="button" className="ix-nav-foot ix-nav-toggle" onClick={() => setPref('navCollapsed', !collapsed)}
+            aria-label={collapsed ? 'Expand menu' : 'Collapse menu'} title={collapsed ? 'Expand menu' : 'Collapse menu'}>
+            <Icon name={collapsed ? 'layout-sidebar-left-expand' : 'layout-sidebar-left-collapse'} />
+          </button>
         </nav>
         <main className="ix-main" id="ix-main">{children}</main>
 
