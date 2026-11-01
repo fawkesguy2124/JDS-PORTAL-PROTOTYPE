@@ -277,3 +277,10 @@ button.ix-jp-paper.miss:hover { border-color: var(--navy-200); color: var(--navy
 .ix-jp-body .ix-section-t .ix-jp-up .ix-btn { height: 28px }
 .ix-jp-body .ix-bestage { margin-bottom: 12px }
 .ix-jb-filters { display: contents }
+/* truck papers problem: a red ! next to the truck on the step bar, the problem on hover */
+.ix-jp-warn { display: inline-flex; vertical-align: -3px; margin-left: 5px; padding: 0; border: 0; background: none; color: var(--red); cursor: pointer; line-height: 1 }
+.ix-jp-warn .ti { font-size: 16px }
+.ix-jp-warn:hover { color: var(--red-ink, var(--red)); transform: scale(1.12) }
+.ix-jp-warn { position: relative }
+.ix-jp-warn::after { content: attr(data-tip); position: absolute; top: calc(100% + 6px); right: -8px; z-index: 30; width: max-content; max-width: 280px; padding: 7px 10px; border-radius: var(--r-md, 6px); background: var(--text, #1b2230); color: #fff; font-size: var(--fs-sm); font-weight: 500; line-height: 1.4; text-align: left; white-space: pre-line; box-shadow: 0 4px 14px rgb(0 0 0 / .18); opacity: 0; pointer-events: none; transform: translateY(-2px); transition: opacity .12s, transform .12s }
+.ix-jp-warn:hover::after, .ix-jp-warn:focus-visible::after { opacity: 1; transform: none }

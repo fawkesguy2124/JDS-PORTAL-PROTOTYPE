@@ -320,6 +320,12 @@ export default function JobDrawer({ jobId, onClose, onOpenFull, onOpenTruck, cur
   const askTruck = !isExport && j.attention.some((a) => a.action === 'truck' && /add the truck number/.test(a.text))
   if (!cta && askTruck) cta = { key: 'truck', step: 'truck', label: 'Add truck number', icon: 'truck', run: () => onOpenTruck(job.id), onDone: true }
 
+  // truck papers problems (road tax, insurance …): a red ! next to the truck on the step bar,
+  // the problem on hover, instead of a banner (Jose, 1 Nov 2026)
+  const hasTruckStep = j.steps.some((s) => s.id === 'truck')
+  const paperWarns = hasTruckStep ? j.attention.map((a) => a.text.match(/^Truck (\S+) papers problem: (.*)$/)).filter(Boolean)
+    .map(([, no, what]) => `Truck ${no} papers problem: ${plain(what).replace(new RegExp(`^${no}:\\s*`), '')}`) : []
+
   // where the BE is now, after filing: the Customs stage card (one tap)
   const showBeStage = !isExport && j.beFiled && !j.oocDone && !delivered
   // ── alerts, each with its own action (never the same as the primary one) ──
@@ -329,6 +335,7 @@ export default function JobDrawer({ jobId, onClose, onOpenFull, onOpenTruck, cur
     .filter((a) => !(a.action === 'truck' && /^OOC done/.test(a.text)))
     .filter((a) => !(a.action === 'customs' && /^BE filed \d+ days? ago/.test(a.text)))
     .filter((a) => !(a.action === 'truck' && /add the truck number/.test(a.text)))
+    .filter((a) => !(paperWarns.length && /^Truck \S+ papers problem:/.test(a.text)))
     // while the Customs stage card is shown, it already says where the BE is ("BE assessed —
     // pay the duty", "Customs query raised" …): no second copy as an alert (Jose, 31 Oct 2026)
     .filter((a) => !(showBeStage && a.action === 'customs'))
@@ -551,11 +558,16 @@ export default function JobDrawer({ jobId, onClose, onOpenFull, onOpenTruck, cur
               {j.steps.map((s) => {
                 const since = s.current && stageSince ? stageSince.replace(/^·\s*/, '') : null
                 const sub = since || (s.sub ? plain(s.sub) : (s.id === 'delivered' && !s.done && !isExport ? (deliveryBy(job) === 'client' ? 'Client collects' : 'JDS delivers') : null))
+                const warn = s.id === 'truck' && paperWarns.length > 0 && (
+                  <button type="button" className="ix-jp-warn" data-tip={paperWarns.join('\n')} aria-label={paperWarns.join('. ')} onClick={() => onOpenTruck(job.id)}>
+                    <Icon name="alert-circle" />
+                  </button>
+                )
                 return (
                   <div key={s.id} className={`ix-jp-step ${s.done ? 'done' : s.current ? 'now' : 'todo'}`}>
                     <span className="dot">{s.done && <Icon name="check" />}</span>
                     <b>{s.label}</b>
-                    <div className="w">{s.when}{sub && <span>{sub}</span>}</div>
+                    <div className="w">{s.when}{(sub || warn) && <span>{sub}{warn}</span>}</div>
                     {/* the step's own action, only while the step is still to do (e.g. Check OOC
                         until OOC is granted); Add truck number also once the box has left */}
                     {cta && (!s.done || cta.onDone) && (cta.step || (s.current && s.id)) === s.id && (

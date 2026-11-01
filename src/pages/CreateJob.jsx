@@ -122,13 +122,6 @@ const INITIAL_FORM = {
   delay_reason: '',
 }
 
-// plain names for the "filled from the document" list (keys of autoFillApplied)
-const FILLED_LABELS = {
-  client: 'Client', bl_no: 'BL number', containers: 'Containers', mode: 'Mode',
-  container_size: 'Container size', shipping_line: 'Shipping line', vessel: 'Vessel', eta: 'ETA',
-  goods: 'Goods', hs_code: 'HS code', be_no: 'BE number', be_date: 'BE date',
-  igm_no: 'IGM number', igm_date: 'IGM date', igm_item_no: 'IGM item', rms_status: 'RMS status',
-}
 // RMS codes stay in capitals; the plain words get sentence case
 const rmsLabel = (s) => (['pending', 'check', 'hold'].includes(s) ? s.charAt(0).toUpperCase() + s.slice(1) : s.toUpperCase())
 const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1)
@@ -683,8 +676,8 @@ export default function CreateJob({ isModal = false, onCancel, onCreated, initia
       <div className="ix-cj" role={isModal ? 'dialog' : undefined} aria-modal={isModal || undefined} aria-labelledby="cj-title">
         <header className="ix-cj-head">
           <div className="ix-cj-title">
+            {/* (no "Upload the BL or BE… · * required" line: self-explanatory, Jose 1 Nov 2026) */}
             <h2 id="cj-title">Create job</h2>
-            <p>Upload the BL or BE to fill most fields · <span className="req">*</span> required</p>
           </div>
           {isModal && (
             <button type="button" className="ix-icon-btn" onClick={handleCancel} disabled={busy} aria-label="Close create job">
@@ -703,7 +696,6 @@ export default function CreateJob({ isModal = false, onCancel, onCreated, initia
                 <Icon name="file-upload" />
                 <div className="txt">
                   <b>Fill from a document</b>
-                  <span>Choose or drop the BL (or BE). The type is worked out from the PDF, or pick it. PDFs are read on this computer and only empty fields are filled.</span>
                 </div>
               </div>
 
@@ -752,7 +744,8 @@ export default function CreateJob({ isModal = false, onCancel, onCreated, initia
                   onChange={e => { setAddDocType(e.target.value); setAddDocError('') }}
                   className="ix-cj-in"
                 >
-                  <option value="">Type: found by itself</option>
+                  {/* (left as is, the type is worked out from the PDF) */}
+                  <option value="">Type</option>
                   {availableTypes(usedTypes()).map(t => <option key={t} value={t}>{docTypeLabel(t)}</option>)}
                 </select>
                 <input
@@ -802,21 +795,10 @@ export default function CreateJob({ isModal = false, onCancel, onCreated, initia
                 </p>
               )}
 
-              {filledKeys.length > 0 && (
-                <div className="ix-cj-applied">
-                  <p className="t">
-                    <Icon name="check" />
-                    Filled {filledKeys.length} {plural(filledKeys.length, 'field', 'fields')} from the documents
-                    {extractedFields?._source === 'pdf-text' && <span className="muted">· read from the PDF on this computer, no AI used</span>}
-                  </p>
-                  {extractedFields?._found && <p className="sub">Found: {extractedFields._found}</p>}
-                  {!extractedFields?._irrelevant && unreadable.length > 0 && (
-                    <p className="sub amber">{picturePages(unreadable)}, so nothing was read from {unreadable.length === 1 ? 'it' : 'them'}.</p>
-                  )}
-                  <div className="keys">
-                    {filledKeys.map(k => <Chip key={k} tone="blue">{FILLED_LABELS[k] || cap(k.replace(/_/g, ' '))}</Chip>)}
-                  </div>
-                </div>
+              {/* (no "Filled 13 fields" box: the filled fields are highlighted in the form below;
+                  Jose, 1 Nov 2026) only pages that could not be read are mentioned */}
+              {filledKeys.length > 0 && !extractedFields?._irrelevant && unreadable.length > 0 && (
+                <p className="ix-cj-msg amber"><Icon name="alert-triangle" /><span>{picturePages(unreadable)}, so nothing was read from {unreadable.length === 1 ? 'it' : 'them'}.</span></p>
               )}
             </div>
 
