@@ -1157,13 +1157,17 @@ html[data-theme="dark"] .ix .maplibregl-popup-anchor-top .maplibregl-popup-tip {
   .ix .ix-tbl.ix-jb-tbl td.act { display: block; grid-area: act; align-self: start; margin: -6px -8px 0 0; width: auto }
 }
 
-/* the menu's own open / close button at its foot (Jose, 1 Nov 2026) */
-.ix-nav-toggle { cursor: pointer; font-size: var(--fs-md); gap: 10px }
+/* the menu's open / close button, right of "JDS Logistics" (Jose, 1 Nov 2026). Closed, it
+   covers the logo and appears when the pointer is over it */
+.ix-brandcell { position: relative }
+.ix-nav-toggle { margin-left: auto; flex-shrink: 0; display: grid; place-items: center; width: 30px; height: 30px; padding: 0; border: 0; border-radius: var(--r-md); background: none; color: var(--nav-text-2); cursor: pointer }
+.ix-nav-toggle:hover, .ix-nav-toggle:focus-visible { background: rgba(255, 255, 255, .08); color: var(--nav-strong); outline: none }
 .ix-nav-toggle > i { font-size: 18px }
-.ix.nav-collapsed .ix-nav .ix-nav-toggle > span { display: none }
+.ix.nav-collapsed .ix-nav-toggle { position: absolute; left: 50%; top: 50%; margin: -15px 0 0 -15px; opacity: 0; background: var(--navy-900) }
+.ix.nav-collapsed .ix-brandcell:hover .ix-nav-toggle, .ix.nav-collapsed .ix-nav-toggle:focus-visible { opacity: 1 }
 /* the menu never shows a scroller (Jose, 1 Nov 2026): on shorter screens the gaps get
    smaller so every page still fits; a scrollbar is never drawn */
 .ix-nav-scroll { scrollbar-width: none }
 .ix-nav-scroll::-webkit-scrollbar { display: none }
-@media (min-width: 761px) and (max-height: 820px) { .ix-nav .ix-nav-label { padding-top: 9px; padding-bottom: 3px } .ix-nav-toggle { min-height: 34px; padding-top: 6px; padding-bottom: 6px } }
+@media (min-width: 761px) and (max-height: 820px) { .ix-nav .ix-nav-label { padding-top: 9px; padding-bottom: 3px } }
 @media (min-width: 761px) and (max-height: 700px) { .ix-nav .ix-nav-item { height: 27px } .ix-nav .ix-nav-label { padding-top: 6px; padding-bottom: 2px; font-size: 10px } }

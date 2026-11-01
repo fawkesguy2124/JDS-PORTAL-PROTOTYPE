@@ -102,6 +102,12 @@ export default function Shell({ sections, active, counts = {}, onGo, onOpenJob, 
         <div className="ix-brandcell">
           <div className="ix-logo">JDS</div>
           <div className="ix-brand-text"><b>JDS Logistics</b><small>Operations portal</small></div>
+          {/* open / close the menu: just the icon, to the right of "JDS Logistics" (Jose, 1 Nov
+              2026). Closed, it sits on the logo and shows when the pointer is over it */}
+          <button type="button" className="ix-nav-toggle hide-m" onClick={() => setPref('navCollapsed', !collapsed)}
+            aria-label={collapsed ? 'Expand menu' : 'Collapse menu'} title={collapsed ? 'Expand menu' : 'Collapse menu'}>
+            <Icon name={collapsed ? 'layout-sidebar-left-expand' : 'layout-sidebar-left-collapse'} />
+          </button>
         </div>
 
         <header className="ix-top">
@@ -120,12 +126,6 @@ export default function Shell({ sections, active, counts = {}, onGo, onOpenJob, 
 
         <nav className="ix-nav" aria-label="Main menu">
           <div className="ix-nav-scroll">{navList}</div>
-          {/* open / close the menu: at the foot of the menu itself, below Settings, as in most
-              software, just the icon (Jose, 1 Nov 2026; it was in the top bar) */}
-          <button type="button" className="ix-nav-foot ix-nav-toggle" onClick={() => setPref('navCollapsed', !collapsed)}
-            aria-label={collapsed ? 'Expand menu' : 'Collapse menu'} title={collapsed ? 'Expand menu' : 'Collapse menu'}>
-            <Icon name={collapsed ? 'layout-sidebar-left-expand' : 'layout-sidebar-left-collapse'} />
-          </button>
         </nav>
         <main className="ix-main" id="ix-main">{children}</main>
 
