@@ -503,7 +503,8 @@ async function handleFile(admin: Admin, person: Person, m: any, data: any) {
       // a BE of a job the portal doesn't have yet (its number is in LiveImpex's file name,
       // "Processed_BE_736_…", or the caption): offer to make the job (Jose, 2 Nov 2026).
       // Like a BE post: only a recent BE (an old one is an old job), never a BE already on a job.
-      const jobNo = be && be.copy_type !== 'OOC' ? jobNoFromText(`${caption} ${name}`) : null
+      const namedNo = jobNoFromText(`${caption} ${name}`) // also named in the reply when no job is made
+      const jobNo = be && be.copy_type !== 'OOC' ? namedNo : null
       const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' })
       const age = be ? (new Date(today).getTime() - new Date(be.be_date).getTime()) / 864e5 : 99
       const onJob = be ? (data?.jobs || []).find((x: any) => String(x.be_no || '') === String(be.be_no)) : null
@@ -523,7 +524,9 @@ async function handleFile(admin: Admin, person: Person, m: any, data: any) {
         await reply(`📄 *${what}*\n\n*${jobNo}* isn't in the portal yet. Create it?\n${line}`, userText, YES_NO)
         return
       }
-      const why = onJob ? `It is already on *${onJob.job_no}*, which is closed. ` : jobNo && be && age > 10 ? `${jobNo} isn't in the portal, and this BE is old, so I didn't make a job from it. ` : ''
+      const why = onJob ? `It is already on *${onJob.job_no}*, which is closed. `
+        : jobNo && age > 10 ? `*${jobNo}* isn't in the portal, and this BE is old, so I didn't make a job from it. `
+        : namedNo ? `*${namedNo}* isn't in the portal. ` : ''
       await reply(`📄 *${what}*\n\n${why || "I couldn't find its job in the portal. "}Which job is it? (e.g. J-652)`, userText)
       return
     }
