@@ -125,7 +125,8 @@ function changeFor(post: any, job: any, person: Person, today: string, now: stri
     }
     if (added.length || filled.size) { update.trucks = list; update.truck_no = list[0].no }
     if (added.length) said.push(`${added.length === 1 ? 'new truck' : `${added.length} new trucks`}: ${added.join(', ')}`)
-    if (filled.size) said.push(`${filled.size === 1 ? `${[...filled][0]} was` : `the ${filled.size} trucks were`} already there, so I added the ${[...what].join(' and ')}`)
+    // ("driver mobiles" for several trucks, "driver mobile" for one)
+    if (filled.size) said.push(`${filled.size === 1 ? `${[...filled][0]} was` : `the ${filled.size} trucks were`} already there, so I added the ${[...what].map((w) => (filled.size > 1 && w !== 'packages' ? `${w}s` : w)).join(' and ')}`)
     if (post.pending) {
       const meta2 = (update.field_meta as any) || meta
       if (meta2.dispatch_pending?.text !== post.pending) {
