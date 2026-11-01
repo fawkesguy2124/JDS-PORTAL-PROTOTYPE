@@ -307,8 +307,10 @@ function prepareOne(args: any, data: any, person: Person, extra: ChangeContext =
   return p(`Add a note to ${who}: "${note.length > 120 ? `${note.slice(0, 117)}…` : note}"`, { note })
 }
 
+// a reply to what the person sent: asked in plain words and answered the same way, typed or
+// spoken (no buttons: those are only for the bot's own questions; Jose, 2 Nov 2026)
 export const confirmText = (pending: Pending) =>
-  `Please confirm:\n${pending.summary}\n\nTap *Yes* or *No* (or reply YES / NO).`
+  `${pending.summary}\n\nShall I go ahead?`
 
 // What a confirmed change may need besides the database: messaging a teammate
 export type ApplyDeps = { tell?: (phone: string, text: string, jobNo: string | null) => Promise<unknown> }
@@ -557,3 +559,16 @@ They should send any message to the bot to start. While the bot uses Meta's test
 // "yes" / "no" in the ways the team writes them
 export const isYes = (t: string) => /^\s*(yes|y|yess|yeah|yep|ok|okay|confirm|confirmed|haan|ha|han|haa|ji|sure|do it)\s*[.!👍]*\s*$/i.test(t)
 export const isNo = (t: string) => /^\s*(no|n|nope|cancel|stop|nahi|nahin|na|mat karo|don'?t)\s*[.!]*\s*$/i.test(t)
+// the same said in a few words, as people talk or speak a voice note ("haan add karo",
+// "yes please go ahead", "theek hai", "nahi rehne do"); only used while a change is waiting
+// ("ok thanks" is a thank-you, not a yes)
+const NEGATION = /\b(no|not|nahi|nahin|nhi|mat|don'?t|cancel|wrong|galat|wait|ruko|thanks?|thank you|thx|shukriya|dhanyavad)\b/i
+export const isYesSaid = (t: string) => {
+  const s = String(t || '').trim()
+  if (s.length > 60 || NEGATION.test(s)) return false
+  return /^(yes|yess|yeah|yep|ok|okay|confirm|confirmed|haan|ha|han|haa|ji|sure|do it|go ahead|please do|kar do|kardo|karo|add karo|add kar do|save karo|bana do|theek hai|thik hai|done|correct|sahi hai|right)\b/i.test(s)
+}
+export const isNoSaid = (t: string) => {
+  const s = String(t || '').trim()
+  return s.length <= 60 && /^(no|nope|nahi|nahin|nhi|na|cancel|stop|mat|don'?t|leave it|rehne do|chhodo|chodo|wrong|galat)\b/i.test(s)
+}

@@ -235,7 +235,7 @@ type Ctx = { used: string[]; proposal: Pending | null; checkCustoms?: (job: stri
 // (not after the bot already asked YES/NO: then the next message is a new question)
 const afterChangeTry = (history: Turn[]) => {
   const last = String([...history].reverse().find((t) => t.role === 'model')?.text || '')
-  return /\[checked:[^\]]*propose_change/.test(last) && !/^Please confirm:/.test(last)
+  return /\[checked:[^\]]*propose_change/.test(last) && !/Shall I go ahead\?\s*$/.test(last)
 }
 // the rules, today's basics, and the file the person sent last (if any)
 function systemText(person: Person, data: unknown, ctx: Ctx) {

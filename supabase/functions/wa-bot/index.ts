@@ -18,7 +18,7 @@ import { adminClient, json } from '../_shared/ulip.ts'
 import { buildJourneyData, buildSeaByJob } from '../_shared/portal/journeyCore.js'
 import { morningSummary, instantAlerts, answer, teamFromProfiles, BOT_NUMBERS, missingDetails, allowed, LEVELS, LEVEL_LABEL } from '../_shared/portal/botMessages.js'
 import { askAssistant, groqInfo } from './assistant.ts'
-import { applyChange, confirmText, isNo, isYes, PENDING_MINUTES, prepareChange, type Pending } from './actions.ts'
+import { applyChange, confirmText, isNo, isYes, isNoSaid, isYesSaid, PENDING_MINUTES, prepareChange, type Pending } from './actions.ts'
 import { downloadMedia, transcribe, normalizeSpoken, docTypeFromName, jobFromText, jobNoFromText, safeName, MAX_FILE_BYTES } from './media.ts'
 import { makeServerTools, sendDueReminders, checkWatches, checkTasks } from './servertools.ts'
 import { readBeFile, jobForBe, beLine } from './bereader.ts'
@@ -200,7 +200,6 @@ async function send(to: string, message: Message) {
   }
   return { ok: res.ok, dryRun: false, id: out?.messages?.[0]?.id || null, error: res.ok ? null : (out?.error?.message || `HTTP ${res.status}`) }
 }
-const YES_NO: Button[] = [{ id: 'YES', title: '✅ Yes' }, { id: 'NO', title: '❌ No' }]
 
 // Has this person written to the bot in the last 24 hours? Then a normal
 // message is allowed; otherwise WhatsApp only allows an approved template.
@@ -318,7 +317,17 @@ async function runAlerts(admin: Admin) {
 
 // what the question run needs from here: sending one message, and the 24-hour window
 const questionDeps = (admin: Admin) => ({
-  send: async (p: Person, text: string) => (await send(p.phone, { text })).ok === true,
+  send: async (p: Person, text: string, buttons?: Button[]) => {
+    const ok = (await send(p.phone, buttons?.length ? { text, buttons } : { text })).ok === true
+    // the question goes into the chat history too, so a reply in the person's own words
+    // ("haan, bhar diya") makes sense to the assistant (Jose, 2 Nov 2026: conversational)
+    if (ok) {
+      const { data: inbox } = await admin.from('bot_inbox').select('history').eq('phone', p.phone).maybeSingle()
+      const history = Array.isArray(inbox?.history) ? inbox.history : []
+      await admin.from('bot_inbox').update({ history: [...history, { role: 'model', text: text.slice(0, 1500) }].slice(-10) }).eq('phone', p.phone)
+    }
+    return ok
+  },
   windowOpen: (phone: string) => windowOpen(admin, phone),
 })
 // "Is J-583 delivered?" answered YES: the same change as "mark J-583 delivered"
@@ -521,7 +530,7 @@ async function handleFile(admin: Admin, person: Person, m: any, data: any) {
         }
         const line = [client, mode, f.bl_no ? `${mode === 'Air' ? 'MAWB' : 'BL'} ${f.bl_no}` : null, mode !== 'Air' && boxes.length ? (boxes.length === 1 ? `Container ${boxes[0]}` : `${boxes.length} containers`) : null].filter(Boolean).join(' · ')
         await admin.from('bot_inbox').update({ pending }).eq('phone', person.phone)
-        await reply(`📄 *${what}*\n\n*${jobNo}* isn't in the portal yet. Create it?\n${line}`, userText, YES_NO)
+        await reply(`📄 *${what}*\n\n*${jobNo}* isn't in the portal yet. Shall I create it?\n${line}`, userText)
         return
       }
       const why = onJob ? `It is already on *${onJob.job_no}*, which is closed. `
@@ -558,7 +567,8 @@ async function handleFile(admin: Admin, person: Person, m: any, data: any) {
     const warn = fill.mismatch ? `\n\n⚠ Its containers are not ${j.job_no}'s, so I won't fill anything from it. Wrong job?` : ''
     if (!items.length) { await reply(`${head}\n\n${fill.mismatch ? warn.trim() : 'It already has everything in this paper 👍'}`, userText); return }
     const list = adds.join(' · ')
-    const ask = att.ok && adds.length ? `Save the file and add what's missing?\n${list}` : att.ok ? 'Save the file to it?' : `Add what's missing?\n${list}`
+    // asked in plain words; answered "yes", "haan add karo", or by voice (Jose, 2 Nov 2026)
+    const ask = att.ok && adds.length ? `Shall I save the file and add ${list}?` : att.ok ? 'Shall I save the file to it?' : `Shall I add ${list}?`
     const pending: Pending = {
       action: 'batch', job_id: j.id, job_no: j.job_no,
       // one plain "done" line instead of one line per change
@@ -566,7 +576,7 @@ async function handleFile(admin: Admin, person: Person, m: any, data: any) {
       summary: `Update ${j.job_no} from ${what}${adds.length ? ` (${adds.join(', ')})` : ''}`, at: new Date().toISOString(),
     }
     await admin.from('bot_inbox').update({ pending }).eq('phone', person.phone)
-    await reply(`${head}\n\n${ask}${warn}`, userText, YES_NO)
+    await reply(`${head}\n\n${ask}${warn}`, userText)
     return
   }
   const job = jobFromText(`${caption} ${name}`, data?.jobs || [])
@@ -574,7 +584,7 @@ async function handleFile(admin: Admin, person: Person, m: any, data: any) {
     const res = prepareChange({ action: 'attach_document', job: job.job_no, doc_type: docType }, data, person, { lastFile })
     if (res.ok) {
       await admin.from('bot_inbox').update({ pending: res.pending }).eq('phone', person.phone)
-      await reply(`📎 Save *${name}* to *${job.job_no}* as *${docType}*?`, userText, YES_NO)
+      await reply(`📎 Shall I save *${name}* to *${job.job_no}* as *${docType}*?`, userText)
       return
     }
     await reply(`📎 Got *${name}* and kept it safely. ${res.error}`, userText)
@@ -652,8 +662,13 @@ async function handleInbound(admin: Admin, payload: any) {
     // a reply to one of the bot's own questions ("1 MH43U3271", "4588199 22.10", "YES", "skip"),
     // unless a Yes / No change is waiting (that comes first)
     let answered: { reply: string; undo?: any } | null = null
-    if (!live && !isUndo(text)) {
-      answered = await answerQuestion(admin, person, text, data, { markDelivered: (_id, jobNo) => markDeliveredFor(admin, person, data, jobNo) })
+    // (a tapped question button always counts, even with a Yes / No change waiting)
+    if ((!live || /^Q\|/.test(text)) && !isUndo(text)) {
+      answered = await answerQuestion(admin, person, text, data, {
+        markDelivered: (_id, jobNo) => markDeliveredFor(admin, person, data, jobNo),
+        // a one-tap answer is the change itself (the tap was the yes)
+        change: async (action) => { const r = prepareChange(action, data, person); return r.ok ? await applyChange(admin, r.pending, person) : `❌ ${r.error}` },
+      })
         .catch((e) => { console.warn(`[wa-bot] answer: ${(e as Error).message}`); return null })
     }
     if (answered) {
@@ -669,12 +684,12 @@ async function handleInbound(admin: Admin, payload: any) {
     } else if (held?.action === 'undo_post' && /^\s*undo\b/i.test(text)) {
       // (any other way of saying it goes to the assistant, which talks it through)
       reply = `That was saved more than ${UNDO_MINUTES} minutes ago, so I can't undo it from here any more. Tell me what's wrong and I'll fix it, or correct it in the portal.`
-    } else if (live && isYes(text)) {
+    } else if (live && (isYes(text) || isYesSaid(text))) {
       reply = await applyChange(admin, pending, person, { tell: (phone, t, jobNo) => tellTeammate(admin, team, phone, t, jobNo) })
       if (pending.action === 'set_access') teamCache = null // the new access counts from the next message
       dataCache = null // the next answer shows the change
       checked = [`made the change: ${pending.summary}`]
-    } else if (pending && isNo(text)) {
+    } else if (pending && (isNo(text) || isNoSaid(text))) {
       reply = `Cancelled. Nothing was changed.`
     } else if (pending && isYes(text)) {
       reply = `That request is more than ${PENDING_MINUTES} minutes old, so nothing was changed. Please ask again.`
@@ -715,13 +730,14 @@ async function handleInbound(admin: Admin, payload: any) {
       else if (ai.text && /reply\s*\*?yes/i.test(ai.text)) reply = "I couldn't prepare that change. Please send it again in one message with all the details, for example: record BE 1234567 dated 18 Oct on J-509."
       else reply = ai.text ? (askedForLink(text) ? toWhatsApp(ai.text) : noLinks(toWhatsApp(ai.text))) : "⏳ The AI is busy right now, so I couldn't answer that question. Please ask again in a minute.\n\nThese always work instantly: a job no (J-193), a container no, a BE no, SUMMARY or URGENT."
     }
-    if (pending && live && !isYes(text) && !isNo(text) && !ask) reply = `(The earlier change was not made: ${pending.summary.replace(/\*/g, '')}.)\n\n${reply}`
+    if (pending && live && !isYes(text) && !isYesSaid(text) && !isNo(text) && !isNoSaid(text) && !ask) reply = `(The earlier change was not made: ${pending.summary.replace(/\*/g, '')}.)\n\n${reply}`
     // (one waiting slot: a Yes / No question wins over the undo of an earlier post)
     if (ask) await admin.from('bot_inbox').update({ pending: ask }).eq('phone', person.phone)
     else if (undoNext !== undoable) await admin.from('bot_inbox').update({ pending: undoNext }).eq('phone', person.phone)
     // (a voice note is answered directly; what was heard is not repeated — Jose, 24 Oct 2026)
-    // a change waiting for a YES gets Yes / No buttons; a menu from a tool comes after the reply
-    await send(person.phone, ask ? { text: reply, buttons: YES_NO } : { text: reply })
+    // a reply to the person is plain conversation (no Yes / No buttons: those are only on the
+    // bot's own questions; Jose, 2 Nov 2026); a menu from a tool comes after the reply
+    await send(person.phone, { text: reply })
     for (const extra of after) await send(person.phone, extra)
     const note = checked.length ? `\n[checked: ${checked.join('; ').slice(0, 400)}]` : ''
     const next = [...history, { role: 'user', text: String(text).slice(0, 500) }, { role: 'model', text: `${String(reply).slice(0, 1500)}${note}` }].slice(-10)
