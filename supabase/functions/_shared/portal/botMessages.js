@@ -469,7 +469,6 @@ export function missingDetails(data, person) {
         `🧩 *Details missing*`,
         ...items.slice(0, 6).map(({ job, missing }) => `• *${job.job_no}*: ${missing.join(', ')}`),
         ...(items.length > 6 ? [`+${items.length - 6} more`] : []),
-        `_e.g. "ETA of ${items[0].job.job_no} is 28 Oct"_`,
       ].join('\n')
     : null
   return { items, text, rows }

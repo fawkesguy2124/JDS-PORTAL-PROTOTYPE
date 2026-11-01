@@ -147,7 +147,7 @@ export async function handlePost(admin: Admin, person: Person, text: string, dat
   if (opts.allowedChange === false) return { saved: false, reply: '🔒 Your WhatsApp access is view only, so posts can\'t change jobs from your number. Please send it to Jose.' }
   const kind = post.kind === 'be' ? 'BE post' : 'truck post'
   const refs = post.jobs
-  if (!refs.length) return { saved: false, reply: `I read this as a ${kind}, but it has no job number, so nothing was saved. Which job is it? Send it again with the job no (e.g. J-00583) at the top.` }
+  if (!refs.length) return { saved: false, reply: `I read this as a ${kind}, but it has no job number, so nothing was saved. Which job is it? Send it again with the job no at the top.` }
   const now = new Date().toISOString()
   const lines: string[] = []
   const notes: string[] = []
@@ -239,7 +239,7 @@ async function createFromBePost(admin: Admin, post: any, jobNo: string, data: an
   if (clash) { notes.push(`⚠ BE ${post.be_no} is already on *${clash.job_no}*, so I didn't make ${jobNo}. Please check which job it belongs to.`); return { line: null, notes, undo: null } }
   // the client: the job line without the job no, "Air" and the place
   const written = String(post.client || '').replace(/\b(air|mumbai|pune|goa|mbpt|bpt|lcl|fcl)\b/gi, ' ').replace(/[()]/g, ' ').replace(/\s+/g, ' ').trim()
-  if (!written) { notes.push(`${jobNo} isn't in the portal and the post has no client name, so I didn't make it. Send it with the client after the job no (e.g. "J-00721 TRW Air").`); return { line: null, notes, undo: null } }
+  if (!written) { notes.push(`${jobNo} isn't in the portal and the post has no client name, so I didn't make it. Send it with the client name after the job no.`); return { line: null, notes, undo: null } }
   const client = knownClient(written, data)
   const header = String(post.client || '')
   const mode = post.air ? 'Air' : /\b(mumbai|mbpt|bpt)\b/i.test(header) ? 'BPT/MBPT' : /\blcl\b/i.test(header) ? 'Sea LCL' : 'Sea FCL'

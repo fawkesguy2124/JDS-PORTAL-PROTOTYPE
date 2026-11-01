@@ -46,14 +46,14 @@ export function questionsDue(data: any): Question[] {
     const leftAt = j.c?.lastExitAt || j.leftAt || null
     if (leftNote && deliveryBy(job) === 'jds' && (hoursSince(leftAt) ?? 99) >= 1) {
       const what = String(leftNote.text).split(' — ')[0]
-      out.push({ key: `${job.id}:truck`, job_id: job.id, job_no: job.job_no, kind: 'truck', text: `${who}: ${what}. Which truck took it? (e.g. MH46CU9963)` })
+      out.push({ key: `${job.id}:truck`, job_id: job.id, job_no: job.job_no, kind: 'truck', text: `${who}: ${what}. Which truck took it?` })
       continue
     }
     // 2. the ship (or flight) is in, half a day has passed, and there is no BE
     const arrived = j.arrivedAt || (j.steps?.[0]?.done ? job.eta : null)
     const since = hoursSince(arrived)
     if (!job.be_no && arrived && since !== null && since >= 12 && since <= 10 * 24) {
-      out.push({ key: `${job.id}:be`, job_id: job.id, job_no: job.job_no, kind: 'be', text: `${who}: the ${isAirJob(job) ? 'flight' : 'ship'} arrived on ${istDay(arrived)} and no BE is in the portal. Is it filed? Reply with the BE no and date (e.g. 4588199 22.10), or forward the BE post.` })
+      out.push({ key: `${job.id}:be`, job_id: job.id, job_no: job.job_no, kind: 'be', text: `${who}: the ${isAirJob(job) ? 'flight' : 'ship'} arrived on ${istDay(arrived)} and no BE is in the portal. Is it filed? Reply with the BE no and date, or forward the BE post.` })
       continue
     }
     // 3. nothing has moved for days: finished?
@@ -99,7 +99,7 @@ export async function runQuestions(admin: Admin, data: any, team: Person[], deps
     if ((hoursSince(lastMsg?.last_asked_at) ?? 99) < GAP_HOURS) why.push(`asked less than ${GAP_HOURS} h ago`)
     const pick = askable.slice(0, MAX_PER_MESSAGE)
     if (!pick.length) why.push('nothing to ask')
-    const text = pick.length ? [`🙋 A quick ${pick.length === 1 ? 'question' : `${pick.length} questions`} (reply when you can):`, ...pick.map((q, i) => `${pick.length > 1 ? `${i + 1}. ` : ''}${q.text}`), pick.length > 1 ? '\nReply with the number first, e.g. "1 MH46CU9963". "skip" if you don\'t know.' : '\n"skip" if you don\'t know.'].join('\n') : null
+    const text = pick.length ? [`🙋 A quick ${pick.length === 1 ? 'question' : `${pick.length} questions`} (reply when you can):`, ...pick.map((q, i) => `${pick.length > 1 ? `${i + 1}. ` : ''}${q.text}`), pick.length > 1 ? '\nReply with the number first. "skip" if you don\'t know.' : '\n"skip" if you don\'t know.'].join('\n') : null
     report.push({ to: person.name, wouldSend: !why.length, why, text })
     if (opts.test || why.length || !text) continue
     if (!(await deps.send(person, text))) continue
@@ -148,7 +148,7 @@ export async function answerQuestion(admin: Admin, person: Person, text: string,
     const be = rest.match(/\b(\d{7})\b/)
     if (!be) return null
     const d = rest.match(/\b(\d{1,2})\s*[./-]\s*(\d{1,2})(?:\s*[./-]\s*(\d{2,4}))?\b(?!\d)/)
-    if (!d) return { reply: `Thanks. What is the date of BE ${be[1]}? (e.g. ${be[1]} 22.10)` }
+    if (!d) return { reply: `Thanks. What is the date of BE ${be[1]}?` }
     const year = d[3] ? (d[3].length === 2 ? `20${d[3]}` : d[3]) : new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }).slice(0, 4)
     const r = await handlePost(admin, person, `${q.job_no}\nBE ${be[1]}/${d[1]}.${d[2]}.${year}`, data)
     if (!r) return null

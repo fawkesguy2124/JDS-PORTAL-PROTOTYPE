@@ -527,7 +527,7 @@ async function handleFile(admin: Admin, person: Person, m: any, data: any) {
       const why = onJob ? `It is already on *${onJob.job_no}*, which is closed. `
         : jobNo && age > 10 ? `*${jobNo}* isn't in the portal, and this BE is old, so I didn't make a job from it. `
         : namedNo ? `*${namedNo}* isn't in the portal. ` : ''
-      await reply(`📄 *${what}*\n\n${why || "I couldn't find its job in the portal. "}Which job is it? (e.g. J-652)`, userText)
+      await reply(`📄 *${what}*\n\n${why || "I couldn't find its job in the portal. "}Which job is it?`, userText)
       return
     }
     const j = match.job
@@ -580,7 +580,7 @@ async function handleFile(admin: Admin, person: Person, m: any, data: any) {
     await reply(`📎 Got *${name}* and kept it safely. ${res.error}`, userText)
     return
   }
-  await reply(`📎 Got *${name}*. Which job is it for, and what is it? (e.g. "J-652, BE")`, userText)
+  await reply(`📎 Got *${name}*. Which job is it for, and what is it?`, userText)
 }
 
 async function handleInbound(admin: Admin, payload: any) {

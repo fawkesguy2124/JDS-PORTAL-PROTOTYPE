@@ -276,7 +276,7 @@ function prepareOne(args: any, data: any, person: Person, extra: ChangeContext =
     }
     if (has) return { ok: false, error: `Container ${box} is already on ${job.job_no}.` }
     const size = String(args?.size || '').toUpperCase().replace(/\s+/g, '').replace(/^(20|40|45)(FT|')?$/, '$1GP').replace(/HQ$/, 'HC')
-    if (size && !SIZES.includes(size)) return { ok: false, error: `Size ${args?.size} is not one the portal knows (e.g. 20GP, 40HC).` }
+    if (size && !SIZES.includes(size)) return { ok: false, error: `Size ${args?.size} is not one the portal knows.` }
     return p(`Add container *${box}*${size ? ` (${size})` : ''} to ${who}`, { container: box, size: size || null })
   }
   if (action === 'record_payment') {
@@ -342,7 +342,7 @@ export async function applyChange(admin: Admin, pending: Pending, person: Person
       ? `✅ Done: *${a.name}* (${shown}) can no longer use the bot. Their messages are now ignored.`
       : `✅ Done: *${a.name}* (${shown}) now has *${LEVEL_LABEL[a.level]}* access.
 
-They should send any message (e.g. "hi") to the bot to start. While the bot uses Meta's test number, the number must also be on Meta's test recipient list, or the bot's replies will not reach them.`
+They should send any message to the bot to start. While the bot uses Meta's test number, the number must also be on Meta's test recipient list, or the bot's replies will not reach them.`
   }
   // a new job from a BE PDF sent on WhatsApp (Jose, 2 Nov 2026: "it should say, should I
   // create a job?"): the job, then everything else the papers give, then the file itself
