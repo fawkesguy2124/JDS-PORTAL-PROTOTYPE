@@ -398,13 +398,12 @@ export default function TrucksPage({ currentUserName, onOpenJob, showToast, canU
         {papersOpen === key && t.papers && (
           <tr className="ix-trk-sub">
             <td colSpan={COLS}>
+              {/* one thin line (Jose, 1 Nov 2026): truck · what is wrong · where it is from */}
               <div className={`ix-trk-papers ${t.papers.tone === 'bad' ? 'bad' : t.papers.tone === 'good' ? 'ok' : ''}`}>
                 <Icon name={t.papers.tone === 'good' ? 'shield-check' : 'alert-triangle'} />
-                <div>
-                  <b>Truck {t.no}</b>
-                  <ul>{papersLines(t.papers).map((l) => <li key={l}>{l}</li>)}</ul>
-                  {t.papers.checkedAt && <small>From the vehicle register, {fmtDate(t.papers.checkedAt)}</small>}
-                </div>
+                <b>{t.no}</b>
+                <span className="what">{papersLines(t.papers).join(' · ')}</span>
+                {t.papers.checkedAt && <small>From the vehicle register, {fmtDate(t.papers.checkedAt)}</small>}
                 <button type="button" className="ix-icon-btn sm" onClick={() => setPapersOpen(null)} aria-label="Close"><Icon name="x" /></button>
               </div>
             </td>

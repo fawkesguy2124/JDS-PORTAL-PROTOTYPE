@@ -65,11 +65,13 @@ function groupByDay(notifications) {
   return groups
 }
 
-const ROLE_FILTERS = {
-  admin:     null,
-  field_ops: ['container_update', 'detention_alert', 'ooc_granted', 'ship_arrived', 'eta_changed', 'air_igm', 'truck_stuck', 'truck_papers', 'be_stage'],
-  employee:  ['container_update', 'detention_alert', 'job_created', 'stage_update', 'document_upload', 'ooc_granted', 'ship_arrived', 'eta_changed', 'air_igm', 'truck_stuck', 'truck_papers', 'be_stage'],
-}
+// Only what the systems report by themselves (Jose, 1 Nov 2026: "notifications only for
+// updates from the API side; nothing JDS entered by hand"): container moves and free days
+// (port / CFS), OOC from Customs, the air manifest, ship arrivals and ETA changes, truck
+// papers and trucks that stopped moving. Jobs created, trucks added, papers uploaded, BE
+// stages and stage changes are what staff did themselves, so they never reach the bell
+// (they stay in each job's timeline). Same list for every role.
+const BELL_TYPES = ['container_update', 'detention_alert', 'ooc_granted', 'air_igm', 'ship_arrived', 'eta_changed', 'truck_papers', 'truck_stuck']
 
 export default function NotificationBell({ onNavigate, profile }) {
   const [open, setOpen] = useState(false)
@@ -94,16 +96,12 @@ export default function NotificationBell({ onNavigate, profile }) {
 
   useEffect(() => {
     const load = async () => {
-      const allowedTypes = ROLE_FILTERS[profile?.role] ?? ['container_update', 'detention_alert', 'ooc_granted', 'ship_arrived']
-      let query = supabase
+      const { data } = await supabase
         .from('activity_log')
         .select('*')
+        .in('type', BELL_TYPES)
         .order('created_at', { ascending: false })
         .limit(50)
-      if (profile?.role !== 'admin') {
-        query = query.in('type', allowedTypes)
-      }
-      const { data } = await query
       if (data) setNotifications(data)
     }
     load()
@@ -112,8 +110,7 @@ export default function NotificationBell({ onNavigate, profile }) {
     const channel = supabase
       .channel('activity_log_changes')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'activity_log' }, payload => {
-        const allowedTypes = ROLE_FILTERS[profile?.role] ?? ['container_update', 'detention_alert', 'ooc_granted', 'ship_arrived']
-        if (profile?.role === 'admin' || allowedTypes.includes(payload.new.type)) {
+        if (BELL_TYPES.includes(payload.new.type)) {
           setNotifications(prev => [payload.new, ...prev].slice(0, 50))
           // one beep for a new update of a kind that is shown (a burst of
           // updates from one check beeps once)
@@ -201,9 +198,9 @@ export default function NotificationBell({ onNavigate, profile }) {
         const t = n.type || n.action || ''
 if (filter === 'container') return t.includes('container') || t === 'detention_alert'
       if (filter === 'alert') return t === 'detention_alert'
-      if (filter === 'job') return t.includes('job') || t.includes('stage') || t === 'job_created'
-      if (filter === 'document') return t.includes('upload') || t.includes('document')
-      if (filter === 'ulip') return t === 'be_status_check' || t === 'ooc_granted' || t.includes('ulip')
+      if (filter === 'ship') return t === 'ship_arrived' || t === 'eta_changed'
+      if (filter === 'truck') return t.startsWith('truck')
+      if (filter === 'ulip') return t === 'ooc_granted' || t === 'air_igm'
         return true
       })
 
@@ -293,7 +290,7 @@ if (filter === 'container') return t.includes('container') || t === 'detention_a
           </div>
 
           <div style={{ display: 'flex', gap: '5px', padding: '8px 16px', borderBottom: '1px solid var(--line)', overflowX: 'auto' }}>
-            {['all', 'container', 'alert', 'job', 'document', 'ulip'].map(f => (
+            {['all', 'container', 'ship', 'truck', 'ulip', 'alert'].map(f => (
               <button
                 key={f}
                 onClick={() => setFilter(f)}

@@ -215,11 +215,13 @@ html[data-theme="dark"] .ix .ix-shipmap2 .leaflet-container { background: #0f203
 .ix-trk-more { position: relative; display: inline-flex }
 .ix-trk-more .ix-menu { position: absolute; right: 0; top: calc(100% + 4px); z-index: 30; min-width: 220px }
 .ix-trk-more .ix-menu button.danger { color: var(--red) }
-.ix-trk-papers { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; gap: 10px; align-items: start; padding: 10px 12px; border-radius: var(--r-lg); border: 1px solid var(--line); background: var(--surface) }
-.ix-trk-papers > i { font-size: 18px; color: var(--amber-dot); margin-top: 1px }
+.ix-trk-papers { display: flex; align-items: center; gap: 10px; height: 26px; padding: 0 2px 0 12px; font-size: var(--fs-sm); border-radius: var(--r-md); border: 1px solid var(--line); background: var(--surface); white-space: nowrap }
+.ix-trk-papers > i { font-size: 16px; color: var(--amber-dot) }
 .ix-trk-papers.bad { border-color: var(--red-line); background: var(--red-bg) } .ix-trk-papers.bad > i { color: var(--red) }
 .ix-trk-papers.ok > i { color: var(--teal) }
-.ix-trk-papers ul { margin: 4px 0 2px; padding-left: 18px }
-.ix-trk-papers li { margin: 1px 0 }
+.ix-trk-papers b { font: 700 12.5px var(--mono) }
+.ix-trk-papers .what { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis }
 .ix-trk-papers small { color: var(--muted); font-size: var(--fs-sm) }
+.ix-trk-tbl tr.ix-trk-sub > td { padding-top: 2px; padding-bottom: 2px; height: auto }
+.ix-trk-papers .ix-icon-btn.sm { width: 22px; height: 22px }
 .ix-trk-more .ix-menu.up { top: auto; bottom: calc(100% + 4px) }

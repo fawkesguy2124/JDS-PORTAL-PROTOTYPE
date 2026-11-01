@@ -23,13 +23,11 @@ export const LANDING_PAGES = [
 // The kinds of update the bell shows; each one can be hidden (bellMuted).
 // Same grouping as the alert links (supabase/functions/_shared/portal/alertLinks.js).
 export const BELL_KINDS = [
+  // (only what the systems report: the bell never shows what staff entered; 1 Nov 2026)
   { id: 'container', label: 'Container moves and free days' },
-  { id: 'customs', label: 'Customs: BE stages and OOC' },
+  { id: 'customs', label: 'Customs: OOC' },
   { id: 'arrival', label: 'Ship arrivals and ETA changes' },
-  { id: 'truck', label: 'Trucks' },
-  { id: 'document', label: 'Documents' },
-  { id: 'job', label: 'Jobs and stages' },
-  { id: 'system', label: 'System notices' },
+  { id: 'truck', label: 'Truck papers and stopped trucks' },
 ]
 // an activity type ('ooc_granted', 'container_update' …) → its BELL_KINDS id
 export function bellKindOf(type) {
