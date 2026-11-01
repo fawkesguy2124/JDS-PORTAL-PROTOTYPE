@@ -3,18 +3,17 @@ import { journeyFor, isExportJob } from '../../services/journey'
 import { markBeFiled, markSbFiled } from '../../services/jobActions'
 import UlipCheck from '../../components/ulip/UlipCheck'
 import { CUSTOMS_TAB_GROUPS, SHIP_GROUPS } from '../../components/ulip/ulipChecks'
-import { JobPicker, CustomsWorkspace, DayTag } from '../JobChecks'
+import { DayTag } from '../JobChecks'
+import { CustomsBoard, CustomsPanel } from '../CustomsBoard'
 import { useJourney, useFreshOnOpen } from '../JourneyContext'
 import { useAutoChecks, checkCustoms, isDue } from '../autoChecks'
 import AutoStatus from '../AutoStatus'
-import { Icon, JobNo, Status, Chip, FreeDays, Button, Segmented, PageHead, Panel, EmptyState, Skeleton, worst, fmtDate, fmtDateTime, fmtTime } from '../ui'
+import { Icon, JobNo, Button, Segmented, PageHead, Panel, EmptyState, Skeleton, fmtDate, fmtDateTime, fmtTime } from '../ui'
 import '../styles/customs.css'
 
-// BE & OOC desk (Control tower, Jose 31 Oct 2026). Imports: the work list on the
-// left (waiting for OOC oldest BE first, OOC granted, BE to file; empty groups are
-// hidden), and on the right the picked job's customs facts and checks, or a quiet
-// "pick a job" note (no second copy of the list; Jose, 31 Oct 2026). The counts are in
-// the list's group heads, not again in the page sub-line. Exports: SB & LEO queues.
+// BE & OOC desk. Imports: a board, one column per step at Customs (BE to file, with
+// Customs, assessed, duty paid, OOC granted), each job a card; a card opens the job's
+// customs panel (Jose, 2 Nov 2026: no long page of checks). Exports: SB & LEO queues.
 // Opening the page checks customs by itself for import jobs still waiting for
 // OOC (see autoChecks.js for the limits). Once OOC is granted a job is never
 // checked again. Every other check runs only when its button is pressed.
@@ -30,10 +29,6 @@ const byDate = (get) => (a, b) => {
   if (!y) return -1
   return String(x).localeCompare(String(y))
 }
-// the row's 3px edge: the job's worst problem (same rule as Today)
-const levelOf = ({ j }) => { const w = worst(j); return w === 'red' || w === 'amber' ? w : '' }
-const oocText = (j) => (j.oocDate ? `OOC ${fmtDate(j.oocDate)}` : j.steps?.find((s) => s.id === 'ooc')?.sub || 'OOC recorded by staff')
-const whereText = (j) => j.steps?.find((s) => s.id === 'out')?.sub || null
 
 // Answers from checks made on this page, laid over the loaded data until the next full load
 function useOverlay(data, rows) {
@@ -93,15 +88,6 @@ function Queue({ title, items, empty, note, render }) {
   )
 }
 
-// No job picked: a quiet note (the left list is the queue; Jose, 31 Oct 2026)
-function PickJob() {
-  return (
-    <div className="ix-card cu-pick">
-      <EmptyState line icon="hand-click" title="Pick a job on the left to see its BE, OOC and checks" />
-    </div>
-  )
-}
-
 export default function CustomsPage({ currentUserName, onOpenJob, showToast, canEditBE, canUpdateStage }) {
   const { data, active, rows, loading, error, refresh, patchJob } = useJourney()
   const [view, rowsAdd] = useOverlay(data, active)
@@ -139,9 +125,7 @@ export default function CustomsPage({ currentUserName, onOpenJob, showToast, can
   const mine = view.filter((r) => (kind === 'export' ? isExportJob(r.job) : !isExportJob(r.job)))
   const inPhase = (...ids) => mine.filter((r) => ids.includes(r.j.phase))
   // imports: oldest BE first, so the longest wait is on top (audit, 31 Oct 2026)
-  const waiting = inPhase('ooc').sort(byDate((r) => r.job.be_date))
-  const toMove = inPhase('release').sort(byDate((r) => r.j.oocDate))
-  const toFile = inPhase('docs').sort(byDate((r) => r.j.arrivedAt))
+  const waiting = inPhase('ooc')
   // a BE filed before the ship came in: waits for the ship first (still checked for OOC)
   const advance = mine.filter((r) => r.j.phase === 'arrival' && r.j.beFiled).sort(byDate((r) => r.job.be_date))
   const lastCheck = active.filter((r) => !isExportJob(r.job)).map((r) => r.j.customs?.checked_at).filter(Boolean).sort().at(-1)
@@ -163,22 +147,6 @@ export default function CustomsPage({ currentUserName, onOpenJob, showToast, can
     setFormFor(null)
     showToast?.(which === 'be' ? `BE saved for ${job.job_no}` : `Shipping bill saved for ${job.job_no}`, 'success')
   }
-
-  // ── import list groups (the left list) ──
-  const groups = [
-    { title: 'Waiting for OOC', rows: waiting, empty: 'No BE waiting for OOC.', level: levelOf,
-      sub: ({ job, j }) => <>BE <span className="mono">{job.be_no}</span> · {fmtDate(job.be_date)}{j.beStage ? ` · ${j.beStage.short}` : ''}</>,
-      tag: ({ job }) => <DayTag since={job.be_date} /> },
-    { title: 'OOC granted — to move', rows: toMove, empty: 'No job with OOC granted still to move.', level: levelOf,
-      sub: ({ j }) => [oocText(j), whereText(j)].filter(Boolean).join(' · '),
-      tag: ({ j }) => <>{j.onwardMode === 'rail' && <Chip>Rail</Chip>}<FreeDays value={j.freeDaysLeft} /></> },
-    { title: 'BE to file', rows: toFile, empty: 'No BE to file.', level: levelOf,
-      sub: ({ job, j }) => [j.arrivedAt ? `Arrived ${fmtDate(j.arrivedAt)}` : job.eta ? `ETA ${fmtDate(job.eta)}` : null, job.mode].filter(Boolean).join(' · ') || 'File in LiveImpex',
-      tag: () => <Chip>LiveImpex</Chip> },
-    { title: 'BE filed — ship not in yet', rows: advance, empty: 'No BE filed ahead of arrival.', level: levelOf,
-      sub: ({ job }) => <>BE <span className="mono">{job.be_no}</span> · {fmtDate(job.be_date)}{job.eta ? ` · ETA ${fmtDate(job.eta)}` : ''}</>,
-      tag: () => <Status tone="blue">Ship due</Status> },
-  ]
 
   // ── export rows ──
   const rowView = ({ job, sub, tag, action, children }) => (
@@ -238,14 +206,8 @@ export default function CustomsPage({ currentUserName, onOpenJob, showToast, can
     sub: <>SB <span className="mono">{j.sbNo}</span> · LEO given {fmtDate(j.leoDate)}</>,
   })
 
-  // only the groups that have jobs (no 'BE to file 0 / No BE to file.' rows)
-  const shownGroups = groups.filter((g) => g.rows.length)
-  const listGroups = shownGroups.length ? shownGroups : [{ title: 'Work list', rows: [], empty: 'Nothing waiting at customs.' }]
-
   const switchKind = (k) => { setKind(k); setFormFor(null); setLeoFor(null) }
   const isImport = kind === 'import'
-  // a shorter search hint on phones: the long one was cut off
-  const phone = typeof window !== 'undefined' && window.matchMedia?.('(max-width: 760px)').matches
   // (no counts in the sub-line: the list's group heads and the export queue heads carry them)
   const lastCheckText = lastCheck ? (fmtDate(lastCheck) === fmtDate(new Date().toISOString()) ? fmtTime(lastCheck) : fmtDateTime(lastCheck)) : null
 
@@ -278,20 +240,13 @@ export default function CustomsPage({ currentUserName, onOpenJob, showToast, can
       {loading && !data ? (
         <div className="ix-card"><Skeleton rows={6} /></div>
       ) : error ? null : isImport ? (
-        <div className={`cu-desk${selId ? ' has-sel' : ''}`}>
-          <JobPicker
-            title="Customs work list"
-            rows={rows.filter((r) => !isExportJob(r.job))}
-            selectedId={selId}
-            onSelect={select}
-            placeholder={phone ? 'Job, client, BE, container' : 'Any import job: job no, client, BE, container…'}
-            lists={listGroups}
-          />
-          {selId
-            ? <CustomsWorkspace jobId={selId} onOpenJob={onOpenJob} canEditBE={canEditBE} canUpdateStage={canUpdateStage} onClose={unselect}
-                currentUserName={currentUserName} showToast={showToast} groups={[...CUSTOMS_TAB_GROUPS, ...SHIP_GROUPS]} />
-            : <PickJob />}
-        </div>
+        <>
+          <CustomsBoard rows={view.filter((r) => !isExportJob(r.job))} allRows={rows.filter((r) => !isExportJob(r.job))} selectedId={selId} onPick={select} />
+          {selId && (
+            <CustomsPanel jobId={selId} onOpenJob={onOpenJob} canEditBE={canEditBE} canUpdateStage={canUpdateStage} onClose={unselect}
+              currentUserName={currentUserName} showToast={showToast} groups={[...CUSTOMS_TAB_GROUPS, ...SHIP_GROUPS]} />
+          )}
+        </>
       ) : (
         <div className="ix-queues">
           <Queue title="Shipping bill to file" items={inPhase('sb')}
