@@ -38,7 +38,7 @@ const DOC_TYPES = ['BE', 'BL', 'Invoice', 'Packing List', 'COO', 'Insurance', 'E
 
 export const CHANGE_TOOL = {
   name: 'propose_change',
-  description: 'Make a change in the portal for the person: mark_delivered, add_truck (truck_no, optional container), remove_truck (truck_no), record_be (be_no 7 digits, be_date YYYY-MM-DD), set_leaves_by (mode truck/rail), set_delivery_by (by jds/client), add_note (note), attach_document (the file the person just sent; doc_type), set_eta (date YYYY-MM-DD), set_imo (imo = the 7-digit IMO number of the ship), set_vessel (vessel = the SHIP\'s name, never the shipping line), set_shipping_line (line), set_cfs (cfs), set_free_days (days), set_priority (priority normal/high/urgent), set_owner (owner = staff name), add_container (container, size), remove_container (container), record_ooc (ooc_no, ooc_date YYYY-MM-DD; OOC seen in LiveImpex), set_be_stage (stage = where the BE is with Customs: rms / ao / query / ac / assessed / duty_paid / exam; note optional, e.g. the query text), create_job (job = the NEW job no; client, job_mode, port, bl_no, containers, size, vessel, eta, line, be_no, be_date, days), record_payment (amount in rupees = the CFS amount), assign_task (to = teammate name, task, due = YYYY-MM-DD HH:MM India time), set_access (admins only; gives, changes or removes WhatsApp bot access: phone = 10-digit mobile, to = the name of the person, level = view / staff / admin / remove), set_mode (job_mode = Sea FCL / Sea LCL / Air / BPT/MBPT: the mode of the job, e.g. "it is LCL"; port optional). The SAME change on several jobs: give them all in jobs (e.g. ["J-519","J-633"]) in ONE call. Call it ONCE; the bot then asks the person to confirm. Nothing changes until they do.',
+  description: 'Make a change in the portal for the person: mark_delivered, add_truck (truck_no, optional container), remove_truck (truck_no), record_be (be_no 7 digits, be_date YYYY-MM-DD), set_leaves_by (mode truck/rail), set_delivery_by (by jds/client), add_note (note), attach_document (the file the person just sent; doc_type), set_eta (date YYYY-MM-DD), set_imo (imo = the 7-digit IMO number of the ship), set_vessel (vessel = the SHIP\'s name, never the shipping line), set_shipping_line (line), set_cfs (cfs), set_free_days (days), set_priority (priority normal/high/urgent), set_owner (owner = staff name), add_container (container, size), remove_container (container), record_ooc (ooc_no, ooc_date YYYY-MM-DD; OOC seen in LiveImpex), set_be_stage (stage = where the BE is with Customs: rms / ao / query / ac / assessed / duty_paid / exam; note optional, e.g. the query text), create_job (job = the NEW job no; client, job_mode, port, bl_no, containers, size, vessel, eta, line, be_no, be_date, days), record_payment (amount in rupees = the CFS amount), assign_task (to = teammate name, task, due = YYYY-MM-DD HH:MM India time), set_access (admins only; gives, changes or removes WhatsApp bot access: phone = 10-digit mobile, to = the name of the person, level = view / staff / admin / remove), set_mode (job_mode = Sea FCL / Sea LCL / Air / BPT/MBPT: the mode of the job, e.g. "it is LCL"; port optional). The SAME change on several jobs: give them all in jobs (e.g. ["J-519","J-633"]) in ONE call. DIFFERENT changes in one message (e.g. ETA and shipping line): call it once for EACH change; the bot asks for all of them together. set_vessel: put the voyage after " / " when given (e.g. "MSC ANNA / 512W"). The bot then asks the person to confirm. Nothing changes until they do.',
   parameters: {
     type: 'OBJECT',
     properties: {
@@ -52,7 +52,7 @@ export const CHANGE_TOOL = {
       mode: { type: 'STRING', enum: ['truck', 'rail'] },
       by: { type: 'STRING', enum: ['jds', 'client'] },
       note: { type: 'STRING' },
-      doc_type: { type: 'STRING', enum: DOC_TYPES }, date: { type: 'STRING' }, vessel: { type: 'STRING' }, imo: { type: 'STRING' }, line: { type: 'STRING' },
+      doc_type: { type: 'STRING', enum: DOC_TYPES }, date: { type: 'STRING' }, vessel: { type: 'STRING' }, voyage: { type: 'STRING' }, imo: { type: 'STRING' }, line: { type: 'STRING' },
       cfs: { type: 'STRING' }, days: { type: 'NUMBER' }, priority: { type: 'STRING', enum: ['normal', 'high', 'urgent'] },
       owner: { type: 'STRING' }, size: { type: 'STRING' }, ooc_no: { type: 'STRING' }, ooc_date: { type: 'STRING' },
       phone: { type: 'STRING' }, level: { type: 'STRING', enum: ['view', 'staff', 'admin', 'remove'] },
@@ -232,7 +232,10 @@ function prepareOne(args: any, data: any, person: Person, extra: ChangeContext =
     return p(`Set the ship's IMO of ${who} to *${imo}*${was ? ` (was ${was})` : ''}`, { imo })
   }
   if (action === 'set_vessel') {
-    const vessel = String(args?.vessel || '').trim().toUpperCase().replace(/\s+/g, ' ').slice(0, 60)
+    // the voyage goes after " / ", as on the rest of the portal ("MSC ANNA / 512W")
+    const voyage = String(args?.voyage || '').trim().toUpperCase().replace(/\s+/g, '')
+    const named = String(args?.vessel || '').trim().toUpperCase().replace(/\s+/g, ' ')
+    const vessel = (voyage && !named.includes('/') ? `${named} / ${voyage}` : named).slice(0, 60)
     if (vessel.length < 3) return { ok: false, error: 'What is the ship\'s name? It is on the BL, for example EVER LENIENT.' }
     if (isLineNotShip(vessel, job.shipping_line)) return { ok: false, error: `${vessel} is a shipping line, not a ship. The ship's own name is on the BL (for example EVER LENIENT).` }
     return p(`Set the ship of ${who} to *${vessel}*${job.vessel ? ` (was ${job.vessel})` : ''}`, { vessel })

@@ -19,12 +19,18 @@ const num = (jobNo: string) => String(jobNo || '').toUpperCase().replace(/[^A-Z0
 // will say 'can you undo this?'"): "undo", "please undo that", "revert it", "that's wrong,
 // take it back", "galat hai, wapas karo", "hata do". Only used while a post's save can be
 // undone, and never for a message that names something else (a truck, a BE, a container)
-const UNDO_WORDS = /\b(undo|un-do|revert|reverse|roll\s*back|take\s+(it|that|this)\s+back|cancel\s+(it|that|this|the\s+last|last|what)|remove\s+(it|that|this|what\s+you)|delete\s+(it|that|this|what\s+you)|put\s+(it|that)\s+back|galat|wapas|vapas|hata\s*(do|de|dijiye)|mat\s+(save|daalo|dalo)|wrong\s+(entry|post|one|job)|that'?s\s+wrong|it'?s\s+wrong|not\s+correct)\b/i
+const UNDO_WORDS = /\b(undo|un-do|revert|reverse|roll\s*back|take\s+(it|that|this)\s+back|cancel\s+(it|that|this|the\s+last|last|what)|remove\s+(it|that|this|what\s+you)|delete\s+(it|that|this|what\s+you)|put\s+(it|that)\s+back|galat|wapas|vapas|hata\s*(do|de|dijiye)|mat\s+(save|daalo|dalo)|wrong\s+(entry|post|one|job)|that'?s\s+wrong|it'?s\s+wrong|(that|it|this)\s+is\s+wrong|not\s+correct)\b/i
+// a message that names a field and a new value is a change, not an undo ("mode wapas FCL
+// kar do" = set the mode; live test 2 Nov 2026 took it as UNDO)
+const CHANGE_WORDS = /\b(mode|fcl|lcl|air|bpt|mbpt|eta|line|cfs|free\s*days?|priority|urgent|truck|trucks|rail|train|vessel|ship|client|deliver\w*|note|stage|query|assess\w*|duty|ooc|be\s*no|bl)\b/i
 export const isUndo = (t: string) => {
   const s = String(t || '').trim()
   if (!s || s.length > 120 || !UNDO_WORDS.test(s)) return false
   // a truck, a BE no or a container in the message: it's a new instruction, not an undo
-  return !/\b[A-Z]{2}\s*\d{1,2}\s*[A-Z]{1,3}\s*\d{4}\b|\b\d{7}\b|\b[A-Z]{3}U\d{7}\b/i.test(s)
+  if (/\b[A-Z]{2}\s*\d{1,2}\s*[A-Z]{1,3}\s*\d{4}\b|\b\d{7}\b|\b[A-Z]{3}U\d{7}\b/i.test(s)) return false
+  // "undo" / "revert" said outright is an undo; "wapas", "galat", "hata do" only when
+  // nothing else is being changed
+  return /\b(undo|un-do|revert|roll\s*back)\b/i.test(s) || !CHANGE_WORDS.test(s)
 }
 
 export { readPost }
@@ -144,6 +150,15 @@ export async function handlePost(admin: Admin, person: Person, text: string, dat
   const today = todayIst()
   const post: any = readPost(text, { postDate: today })
   if (!post) return null
+  // a BE written in a sentence, with neither the group (Gr.) nor the RMS / APR / ACL line of a
+  // real BE card, goes through "Shall I go ahead?" like any typed change (live test 2 Nov
+  // 2026: "J-598 ka BE 1234567 dated 15.11.2026" was saved straight onto a real job)
+  if (post.kind === 'be' && !post.group && !post.lane) return null
+  // a BE dated after today is never saved
+  if (post.kind === 'be') {
+    const { date } = fixYear(post.be_date, today)
+    if (date && date > today) return { saved: false, reply: `The BE date ${nice(date)} is in the future, so nothing was saved. Please check the date.` }
+  }
   if (opts.allowedChange === false) return { saved: false, reply: '🔒 Your WhatsApp access is view only, so posts can\'t change jobs from your number. Please send it to Jose.' }
   const kind = post.kind === 'be' ? 'BE post' : 'truck post'
   const refs = post.jobs
@@ -290,5 +305,11 @@ export async function undoPost(admin: Admin, pending: Pending, person: Person): 
     await admin.from('activity_log').insert({ type: 'note', action: 'note', title: `${it.job_no} — post undone`, note: `${person.name} undid what their WhatsApp post saved`, job_id: it.job_id, job_no: it.job_no, done_by_name: `${person.name} via WhatsApp`, meta: { job_id: it.job_id, via: 'whatsapp_post' } })
     out.push(`${it.job_no} is back the way it was`)
   }
-  return out.length === 1 ? `↩️ Done, I've undone that: ${out[0]}.` : `↩️ Done, I've undone that:\n${out.map((l) => `• ${l}`).join('\n')}`
+  // never "Done" for what could not be undone (live test 2 Nov 2026)
+  const failed = (l: string) => /changed again since|not found|could not/.test(l)
+  const tidy = (l: string) => l.replace(/\.+$/, '')
+  const ok = out.filter((l) => !failed(l)), bad = out.filter(failed)
+  if (!bad.length) return ok.length === 1 ? `↩️ Done, I've undone that: ${tidy(ok[0])}.` : `↩️ Done, I've undone that:\n${ok.map((l) => `• ${tidy(l)}`).join('\n')}`
+  const lines = [...(ok.length ? [`↩️ Undone: ${ok.map(tidy).join('; ')}.`] : []), `⚠️ Couldn't undo: ${bad.map(tidy).join('; ')}.`]
+  return lines.join('\n')
 }

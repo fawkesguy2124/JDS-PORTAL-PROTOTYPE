@@ -14,6 +14,7 @@ import { toRoman, normalizeSpoken, jobNoFromText } from '../supabase/functions/w
 import { readDocFile } from '../supabase/functions/wa-bot/docfill.ts'
 import { readPost } from '../supabase/functions/_shared/portal/postReader.js'
 import { isHinglish } from '../supabase/functions/wa-bot/assistant.ts'
+import { isUndo, handlePost } from '../supabase/functions/wa-bot/posts.ts'
 
 const args = Deno.args.filter((a) => !a.startsWith('--'))
 const UPDATE = Deno.args.includes('--update')
@@ -54,6 +55,20 @@ const CHANGES: [Record<string, unknown>, RegExp | null][] = [
   [{ action: 'create_job', job: 'J-9902', client: 'Test', job_mode: 'Sea FCL', containers: 'TEST1234567' }, null],
   [{ action: 'create_job', job: 'J-9902', client: 'Test', job_mode: 'Sea FCL', containers: 'OOCU9074031' }, /Create \*J-9902\*/],
 ]
+CHANGES.push([{ action: 'set_vessel', job: 'J-9901', vessel: 'MSC ANNA', voyage: '512W' }, /MSC ANNA \/ 512W/])
+// undo, or a change? (live test 2 Nov 2026: "mode wapas FCL kar do" was taken as undo)
+const UNDO: [string, boolean][] = [
+  ['undo', true], ['undo kar do', true], ['J-9902 wala post undo kar do', true], ['galat hai, wapas karo', true], ['hata do', true], ['that is wrong', true],
+  ['J-9903 ka mode wapas FCL kar do', false], ['truck galat hai hata do', false], ['ETA wapas 5 Nov kar do', false], ['MH46AR2016 galat hai', false],
+]
+for (const [t, want] of UNDO) if (isUndo(t) !== want) fail(`"${t}" read as ${isUndo(t) ? 'undo' : 'not undo'}`)
+// a BE typed in a sentence is not saved as a post; a future BE date is never saved
+{
+  const one = await handlePost({} as any, ME as any, 'J-598 ka BE 1234567 dated 15.10.2026', DATA)
+  if (one !== null) fail(`a BE in a sentence was handled as a post: ${one?.reply}`)
+  const future = await handlePost({} as any, ME as any, 'J-598 PCM\nBE 1234567/15.12.2026\nGr.5\nRMS\n\nPrior', DATA)
+  if (!future || future.saved || !/future/.test(future.reply)) fail(`a future BE date: ${future?.reply}`)
+}
 for (const [a, want] of CHANGES) {
   const r: any = prepareChange(a, DATA, ME as any)
   if (want ? !(r.ok && want.test(r.pending.summary)) : r.ok) fail(`change ${JSON.stringify(a)} → ${r.ok ? r.pending.summary : r.error}`)

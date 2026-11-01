@@ -98,11 +98,21 @@ async function loadData(admin: Admin) {
 // between messages), so a follow-up question doesn't wait for a fresh load.
 // Scheduled alerts and the summary always load fresh.
 const DATA_FRESH_MS = 6 * 60_000 // refreshed every 5 min by the 'warm' run
-let dataCache: { at: number; data: any } | null = null
+let dataCache: { at: number; data: any; newest: string; count: number } | null = null
+// the newest job change and the number of jobs: a kept copy is used only while both are
+// the same (live test 2 Nov 2026: a BE saved a moment before was "not there yet", because
+// another copy of the bot still had the old data)
+async function jobsStamp(admin: Admin) {
+  const { data, count } = await admin.from('jobs').select('updated_at', { count: 'exact' }).order('updated_at', { ascending: false }).limit(1)
+  return { newest: String(data?.[0]?.updated_at || ''), count: count ?? -1 }
+}
 async function loadDataCached(admin: Admin) {
-  if (dataCache && Date.now() - dataCache.at < DATA_FRESH_MS) return dataCache.data
-  const data = await loadData(admin)
-  dataCache = { at: Date.now(), data }
+  if (dataCache && Date.now() - dataCache.at < DATA_FRESH_MS) {
+    const now = await jobsStamp(admin).catch(() => null)
+    if (now && now.newest === dataCache.newest && now.count === dataCache.count) return dataCache.data
+  }
+  const [data, stamp] = await Promise.all([loadData(admin), jobsStamp(admin).catch(() => ({ newest: '', count: -1 }))])
+  dataCache = { at: Date.now(), data, ...stamp }
   return data
 }
 
@@ -159,6 +169,8 @@ async function loadTeam(admin: Admin): Promise<Person[]> {
 type Button = { id: string; title: string }
 type ListRow = { id: string; title: string; description?: string }
 type Message = { text?: string; template?: Template; buttons?: Button[]; list?: { button: string; rows: ListRow[] } }
+// under every "Shall I…?": one tap, or say it in any words (Jose, 2 Nov 2026)
+const YES_NO: Button[] = [{ id: 'YES', title: '✅ Yes' }, { id: 'NO', title: '❌ No' }]
 async function send(to: string, message: Message) {
   const cut = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1)}…` : s)
   const interactive = message.text && message.buttons?.length
@@ -541,7 +553,7 @@ async function handleFile(admin: Admin, person: Person, m: any, data: any) {
         }
         const line = [client, mode, f.bl_no ? `${mode === 'Air' ? 'MAWB' : 'BL'} ${f.bl_no}` : null, mode !== 'Air' && boxes.length ? (boxes.length === 1 ? `Container ${boxes[0]}` : `${boxes.length} containers`) : null].filter(Boolean).join(' · ')
         await admin.from('bot_inbox').update({ pending }).eq('phone', person.phone)
-        await reply(`📄 *${what}*\n\n*${jobNo}* isn't in the portal yet. Shall I create it?\n${line}`, userText)
+        await reply(`📄 *${what}*\n\n*${jobNo}* isn't in the portal yet. Shall I create it?\n${line}`, userText, YES_NO)
         return
       }
       const why = onJob ? `It is already on *${onJob.job_no}*, which is closed. `
@@ -587,7 +599,7 @@ async function handleFile(admin: Admin, person: Person, m: any, data: any) {
       summary: `Update ${j.job_no} from ${what}${adds.length ? ` (${adds.join(', ')})` : ''}`, at: new Date().toISOString(),
     }
     await admin.from('bot_inbox').update({ pending }).eq('phone', person.phone)
-    await reply(`${head}\n\n${ask}${warn}`, userText)
+    await reply(`${head}\n\n${ask}${warn}`, userText, YES_NO)
     return
   }
   const job = jobFromText(`${caption} ${name}`, data?.jobs || [])
@@ -595,7 +607,7 @@ async function handleFile(admin: Admin, person: Person, m: any, data: any) {
     const res = prepareChange({ action: 'attach_document', job: job.job_no, doc_type: docType }, data, person, { lastFile })
     if (res.ok) {
       await admin.from('bot_inbox').update({ pending: res.pending }).eq('phone', person.phone)
-      await reply(`📎 Shall I save *${name}* to *${job.job_no}* as *${docType}*?`, userText)
+      await reply(`📎 Shall I save *${name}* to *${job.job_no}* as *${docType}*?`, userText, YES_NO)
       return
     }
     await reply(`📎 Got *${name}* and kept it safely. ${res.error}`, userText)
@@ -753,14 +765,19 @@ async function handleInbound(admin: Admin, payload: any) {
       else reply = ai.text ? (askedForLink(text) ? toWhatsApp(ai.text) : noLinks(toWhatsApp(ai.text))) : "⏳ The AI is busy right now, so I couldn't answer that question. Please ask again in a minute.\n\nThese always work instantly: a job no (J-193), a container no, a BE no, SUMMARY or URGENT."
       if (!ai.text && !ask) await recordFailure(admin, person.phone, 'the AI did not answer', String(ai.note || 'no answer').slice(0, 300))
     }
-    if (pending && live && !isYes(text) && !isYesSaid(text) && !isNo(text) && !isNoSaid(text) && !ask) reply = `(The earlier change was not made: ${pending.summary.replace(/\*/g, '')}.)\n\n${reply}`
+    // an unanswered "Shall I go ahead?" replaced by something else is never dropped silently
+    // (live test 2 Nov 2026: a CFS change vanished when a note was asked next)
+    if (pending && live && !isYes(text) && !isYesSaid(text) && !isNo(text) && !isNoSaid(text) && pending.summary !== ask?.summary) {
+      const was = pending.summary.replace(/\*/g, '').replace(/^•\s*/gm, '').split('\n').join('; ')
+      reply = `${isHinglish(text) ? `(Pichla change nahi kiya: ${was}. Chahiye to dobara bolo.)` : `(I didn't make the earlier change: ${was}. Say it again if you still want it.)`}\n\n${reply}`
+    }
     // (one waiting slot: a Yes / No question goes in it, carrying the undo of an earlier post)
     if (ask) await admin.from('bot_inbox').update({ pending: undoNext ? { ...ask, undo: undoNext } : ask }).eq('phone', person.phone)
     else if (undoNext !== undoable) await admin.from('bot_inbox').update({ pending: undoNext }).eq('phone', person.phone)
     // (a voice note is answered directly; what was heard is not repeated — Jose, 24 Oct 2026)
-    // a reply to the person is plain conversation (no Yes / No buttons: those are only on the
-    // bot's own questions; Jose, 2 Nov 2026); a menu from a tool comes after the reply
-    const delivered = await send(person.phone, { text: reply })
+    // "Shall I go ahead?" gets Yes / No buttons for one tap; "haan", "theek hai" or a voice
+    // note work just the same (Jose, 2 Nov 2026); a menu from a tool comes after the reply
+    const delivered = await send(person.phone, ask ? { text: reply, buttons: YES_NO } : { text: reply })
     sentReply = true
     if (!delivered.ok) await recordFailure(admin, person.phone, 'the reply was not delivered', delivered.error || 'WhatsApp refused it')
     for (const extra of after) await send(person.phone, extra)

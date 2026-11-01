@@ -319,7 +319,15 @@ async function runOneTool(ctx: Ctx, name: string, args: any, data: any, person: 
   if (name !== CHANGE_TOOL.name) { ctx.readTools = true; return runTool(name, args || {}, data, person) }
   const res = prepareChange(args, data, person, ctx.change || {})
   if (!res.ok) return { not_done: res.error }
-  ctx.proposal = res.pending
+  // several different changes in one message ("ETA 5 Nov and line MSC"): asked together,
+  // never just the first (live test 2 Nov 2026: the second change was dropped silently)
+  const prev = ctx.proposal
+  if (prev) {
+    const items: Pending[] = prev.args?.multi ? [...prev.args.items] : [prev]
+    if (items.some((x) => x.summary === res.pending.summary)) return { already_waiting: res.pending.summary }
+    items.push(res.pending)
+    ctx.proposal = { action: 'batch', job_id: res.pending.job_id, job_no: res.pending.job_no, args: { items, multi: true }, summary: items.map((x) => `• ${x.summary}`).join('\n'), at: new Date().toISOString() }
+  } else ctx.proposal = res.pending
   return { waiting_for_yes: res.pending.summary, tell_the_person: 'The bot is now asking them to reply YES. Do not say it is done.' }
 }
 
