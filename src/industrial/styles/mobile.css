@@ -1,0 +1,131 @@
+/* ── The portal on a phone, iPhone-smooth (Jose, 1 Nov 2026: "as smooth as an iPhone") ──
+   Everything here is for phones only (up to 760 px wide; the card lists up to 640 px), so
+   the desktop look does not change. Loaded once by the Shell.
+   1. iPhone basics: notch and home bar, frosted top and bottom bars, a pressed feel
+   2. long tables become one card per row (All jobs, Containers, Trucks)
+   3. sheets that slide up like iOS (job panel, More menu)
+   4. page fixes: Today, All jobs filters, the job panel's steps */
+
+/* iOS's own curve for sheets and panels */
+.ix { --ios-ease: cubic-bezier(.32, .72, 0, 1) }
+
+@media (max-width: 760px) {
+  /* ── 1. iPhone basics ── */
+  /* frosted bars, like Safari and the iOS apps (solid where the browser can't blur) */
+  .ix .ix-top { background: color-mix(in srgb, var(--surface) 82%, transparent); -webkit-backdrop-filter: saturate(180%) blur(18px); backdrop-filter: saturate(180%) blur(18px) }
+  .ix .ix-tabbar { background: color-mix(in srgb, var(--surface) 86%, transparent); -webkit-backdrop-filter: saturate(180%) blur(20px); backdrop-filter: saturate(180%) blur(20px); border-top-color: color-mix(in srgb, var(--line) 70%, transparent) }
+  /* landscape on a notched iPhone: keep clear of the notch on the sides */
+  .ix .ix-main, .ix .ix-top, .ix .ix-tabbar { padding-left: max(env(safe-area-inset-left, 0px), 0px); padding-right: max(env(safe-area-inset-right, 0px), 0px) }
+  .ix .ix-top { padding-left: max(8px, env(safe-area-inset-left, 0px)); padding-right: max(8px, env(safe-area-inset-right, 0px)) }
+  /* the page scrolls with momentum and never sideways */
+  .ix .ix-main { -webkit-overflow-scrolling: touch; overflow-x: hidden; scroll-behavior: smooth }
+  .ix .ix-tbl-wrap, .ix .ix-jp-stepwrap, .ix .ix-tabs { -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain }
+  /* a pressed feel on every tap (iOS dims and shrinks a touched control a little) */
+  .ix .ix-btn, .ix .ix-icon-btn, .ix .ix-tabbar button, .ix .ix-kstat, .ix .ix-chipbtn, .ix .ix-trk-chipbtn { transition: transform .12s ease, opacity .12s ease, background-color .15s ease }
+  .ix .ix-btn:active, .ix .ix-icon-btn:active, .ix .ix-kstat:active, .ix .ix-trk-chipbtn:active { transform: scale(.96); opacity: .85 }
+  .ix .ix-tabbar button:active { transform: scale(.92) }
+  .ix .ix-tbl.click tbody tr:active, .ix .ix-trk-tbl tbody tr.click:active, .ix .ix-td-todo .it:active { background: var(--surface-2) }
+  /* the bottom tabs: the active one in the brand colour, its icon a little bigger */
+  .ix .ix-tabbar button.active i { transform: scale(1.06) }
+  .ix .ix-tabbar button.active::before { display: none }
+
+  /* ── 3. sheets ── */
+  /* the job panel: a full-screen sheet that slides up (iOS), the page dims behind it */
+  .ix .ix-drawer { width: 100vw !important; border-left: 0; animation: ixSheetUp .38s var(--ios-ease) both; box-shadow: none }
+  .ix .ix-backdrop { animation: ixFadeIn .25s ease both }
+  /* the More menu: a sheet from the bottom with a grab handle, like iOS share sheets */
+  .ix .ix-mnav { top: auto !important; left: 8px; right: 8px; bottom: calc(8px + env(safe-area-inset-bottom, 0px)); width: auto !important; max-height: 78dvh; border-radius: 18px; padding: 22px 10px 12px; animation: ixSheetUp .36s var(--ios-ease) both; box-shadow: 0 -8px 40px rgba(15, 23, 42, .35) }
+  .ix .ix-mnav::before { content: ''; position: absolute; top: 8px; left: 50%; width: 38px; height: 5px; margin-left: -19px; border-radius: 3px; background: rgba(255, 255, 255, .28) }
+  .ix .ix-mnav.closing { animation: ixSheetDown .22s ease-in both }
+  .ix .ix-mnav-bg { animation: ixFadeIn .25s ease both; -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px) }
+  .ix .ix-mnav-bg.closing { animation: ixFadeOut .22s ease-in both }
+  /* menus and the papers box fade in instead of popping */
+  .ix .ix-menu, .ix .ix-trk-pop { animation: ixPop .16s ease-out both; transform-origin: top right }
+
+  /* ── 4. page fixes ── */
+  /* page title row: small buttons (Refresh) stay on the title's line; search boxes take the full width */
+  .ix .ix-page-head { align-items: center }
+  .ix .ix-page-head .right { width: auto; margin-left: auto }
+  .ix .ix-page-head .right:has(input, .ix-tsearch) { width: 100%; margin-left: 0 }
+  /* Today: the three highlights side by side */
+  .ix .ix-td-kpis { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)) }
+  .ix .ix-td-kpis .ix-kstat { padding: 10px 10px 11px }
+  .ix .ix-td-kpis .ix-kstat .sub, .ix .ix-td-kpis .ix-kstat small { font-size: 11px; line-height: 1.3 }
+  /* Today: the free time runway readable on a phone (job number column, day numbers only) */
+  .ix .ix-td-runway .runway { padding: 6px 10px 10px }
+  .ix .ix-td-runway .rw-row { grid-template-columns: 62px minmax(0, 1fr) }
+  .ix .ix-td-runway .who span:not(:first-child) { display: none }
+  .ix .ix-td-runway .rw-head .rw-track div { font-size: 0; line-height: 1 }
+  .ix .ix-td-runway .rw-head .rw-track div b { font-size: 10px }
+  .ix .ix-td-runway .rw-bar span { font-size: 10px }
+  /* All jobs: the filters in one row that swipes sideways, not five rows */
+  .ix .ix-jb-filters { display: flex !important; gap: 8px; width: 100%; flex-wrap: nowrap !important; overflow-x: auto; scrollbar-width: none; padding-bottom: 2px }
+  .ix .ix-jb-filters::-webkit-scrollbar { display: none }
+  .ix .ix-jb-filters > * { flex: 0 0 auto; width: auto }
+  /* tabs above lists swipe sideways too, without a scroll bar */
+  .ix .ix-tabs { scrollbar-width: none } .ix .ix-tabs::-webkit-scrollbar { display: none }
+  /* job panel steps: swipe sideways, each step snaps into place */
+  .ix .ix-jp-stepwrap { scroll-snap-type: x proximity; scrollbar-width: none }
+  .ix .ix-jp-stepwrap::-webkit-scrollbar { display: none }
+  .ix .ix-jp-step { scroll-snap-align: start }
+}
+
+/* ── 2. long tables as cards (one per row) ── */
+@media (max-width: 640px) {
+  .ix .ix-jb-tbl, .ix .ix-cn-tbl, .ix .ix-trk-tbl { display: block; min-width: 0 !important; width: 100% }
+  .ix .ix-jb-tbl thead, .ix .ix-cn-tbl thead, .ix .ix-trk-tbl thead { display: none }
+  .ix .ix-jb-tbl tbody, .ix .ix-cn-tbl tbody, .ix .ix-trk-tbl tbody { display: block }
+  .ix .ix-jb-tbl tbody tr, .ix .ix-cn-tbl tbody tr, .ix .ix-trk-tbl tbody tr { display: grid; position: relative; gap: 3px 12px; padding: 12px 14px 12px 16px; border-bottom: 1px solid var(--line); height: auto; align-items: center }
+  .ix .ix-jb-tbl td, .ix .ix-cn-tbl td, .ix .ix-trk-tbl td { display: none; border: 0 !important; padding: 0 !important; height: auto !important; min-width: 0; max-width: none; background: none }
+  /* the urgency stripe stays on the left edge */
+  .ix .ix-jb-tbl td.lvl, .ix .ix-cn-tbl td.lvl { display: block; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; padding: 0 !important }
+  /* group rows, empty and loading rows: full width */
+  .ix .ix-jb-tbl tr > td[colspan], .ix .ix-cn-tbl tr > td[colspan], .ix .ix-trk-tbl tr > td[colspan] { display: block; grid-column: 1 / -1 }
+  .ix .ix-cn-tbl tr.grp, .ix .ix-trk-tbl tr.grp { padding: 8px 14px; background: var(--surface-2) }
+
+  /* All jobs: job + free days / status / where now / next step */
+  .ix .ix-jb-tbl tbody tr { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: 'job free' 'status status' 'where where' 'next next' }
+  .ix .ix-jb-tbl td.jobc { display: block; grid-area: job }
+  .ix .ix-jb-tbl td:nth-child(7) { display: block; grid-area: status; margin-top: 4px }
+  .ix .ix-jb-tbl td.ix-jb-where { display: block; grid-area: where; color: var(--text-2); font-size: 13px }
+  .ix .ix-jb-tbl td:nth-child(10) { display: block; grid-area: free; justify-self: end; align-self: start }
+  .ix .ix-jb-tbl td.ix-jb-next { display: block; grid-area: next; font-size: 13px }
+  .ix .ix-jb-tbl td.ix-jb-next.dim { display: none }
+  .ix .ix-jb-tbl .ix-jb-ell, .ix .ix-jb-tbl .ix-jb-nx .t { white-space: normal }
+
+  /* Containers: container + free till / job + where now */
+  .ix .ix-cn-tbl tbody tr { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: 'box free' 'job where' }
+  .ix .ix-cn-tbl td:nth-child(4) { display: block; grid-area: box; font-weight: 600 }
+  .ix .ix-cn-tbl td:nth-child(9) { display: block; grid-area: free; justify-self: end }
+  .ix .ix-cn-tbl td:nth-child(2) { display: block; grid-area: job }
+  .ix .ix-cn-tbl td.ix-cn-where { display: block; grid-area: where; justify-self: end; text-align: right; font-size: 13px }
+
+  /* Trucks: truck + ⋯ / job + container / last seen + papers */
+  .ix .ix-trk-tbl tbody tr.click, .ix .ix-trk-tbl tbody tr:not(.grp):not(.ix-trk-sub) { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: 'truck act' 'job box' 'seen papers' }
+  .ix .ix-trk-tbl td:nth-child(1) { display: block; grid-area: job }
+  .ix .ix-trk-tbl td:nth-child(2) { display: block; grid-area: truck }
+  .ix .ix-trk-tbl td:nth-child(4) { display: block; grid-area: box; justify-self: end; font-size: 12px; color: var(--text-2) }
+  .ix .ix-trk-tbl td:nth-child(5) { display: block; grid-area: seen; font-size: 13px }
+  .ix .ix-trk-tbl td:nth-child(6) { display: block; grid-area: papers; justify-self: end }
+  .ix .ix-trk-tbl td:nth-child(7) { display: block; grid-area: act; justify-self: end }
+  .ix .ix-trk-tbl tbody tr.ix-trk-sub { display: block; padding: 10px 14px }
+  .ix .ix-trk-tbl tbody tr.ix-trk-sub > td { display: block }
+  .ix .ix-trk-pop { width: min(280px, 86vw) }
+}
+
+@keyframes ixSheetUp { from { transform: translateY(100%) } to { transform: none } }
+@keyframes ixSheetDown { from { transform: none } to { transform: translateY(110%) } }
+@keyframes ixFadeIn { from { opacity: 0 } to { opacity: 1 } }
+@keyframes ixFadeOut { from { opacity: 1 } to { opacity: 0 } }
+@keyframes ixPop { from { opacity: 0; transform: scale(.96) } to { opacity: 1; transform: none } }
+
+/* people who switched off motion on their phone get none */
+@media (prefers-reduced-motion: reduce) {
+  .ix *, .ix *::before, .ix *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; scroll-behavior: auto !important }
+}
+
+@media (max-width: 760px) {
+  /* job panel steps: each step wide enough for its button ("Check OOC" was cut); they swipe */
+  .ix .ix-jp-steps { min-width: 690px !important }
+  .ix .ix-jp-step .act .ix-btn { white-space: nowrap }
+}

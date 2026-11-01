@@ -276,3 +276,4 @@ button.ix-jp-paper.miss:hover { border-color: var(--navy-200); color: var(--navy
 .ix-jp-body .ix-section .ix-jp-papers, .ix-jp-body .ix-section .ix-jp-ship { margin-bottom: 0 }
 .ix-jp-body .ix-section-t .ix-jp-up .ix-btn { height: 28px }
 .ix-jp-body .ix-bestage { margin-bottom: 12px }
+.ix-jb-filters { display: contents }

@@ -69,7 +69,12 @@ const fit = (m, bounds) => {
   // normal view of that spot. Fitting a zero-size box zoomed the map in as far as it goes,
   // onto a blank green field (Jose, 1 Nov 2026). Never closer than street level either.
   if (box.getNorthEast().distanceTo(box.getSouthWest()) < 300) m.setView(box.getCenter(), 11)
-  else m.fitBounds(box.pad(0.25), { maxZoom: 13 })
+  else {
+    // room for half a pin label on each side (the labels are centred on the truck and about
+    // 180 px wide: on a phone they hung over the edge) and for the pin above its point
+    const side = Math.min(110, Math.round(m.getSize().x / 4))
+    m.fitBounds(box, { paddingTopLeft: [side, 50], paddingBottomRight: [side, 30], maxZoom: 13 })
+  }
 }
 
 export default function TruckMap({ trucks, selectedId, onSelect, message }) {
@@ -79,6 +84,7 @@ export default function TruckMap({ trucks, selectedId, onSelect, message }) {
   const [big, setBig] = useState(false) // expanded to fill the screen
   const lastBounds = useRef([])
   const fitKey = useRef('') // the view is refitted only when the picked truck or the trucks change
+  const [, setSizeTick] = useState(0)
 
   useEffect(() => {
     if (!box.current || map.current) return
@@ -87,6 +93,8 @@ export default function TruckMap({ trucks, selectedId, onSelect, message }) {
     map.current.attributionControl.setPrefix(false) // no "Leaflet" credit; the map credits sit behind the small ⓘ
     addBaseMap(map.current)
     layer.current = L.layerGroup().addTo(map.current)
+    // a new size redraws, so the trucks are framed again for it (phone width, rotation)
+    map.current.on('resize', () => setSizeTick((n) => n + 1))
     return () => {
       // a mouse-wheel zoom still finishing when the page closes would run on the removed map
       // (Leaflet's queued zoom-end step returns early when no zoom is marked as running)
@@ -134,7 +142,9 @@ export default function TruckMap({ trucks, selectedId, onSelect, message }) {
     if (!bounds.length || big || !selectedId) shown.forEach((t) => bounds.push(t.last.pos))
     lastBounds.current = bounds
     // (not on every redraw: a zoom with the mouse wheel stays until the picked truck or the trucks change)
-    const key = `${selectedId || ''}|${big}|${shown.map((t) => `${t.id}@${t.last.pos}`).join(',')}`
+    // (and when the map's size changes, e.g. the page settling at phone width: the trucks sat at the edge)
+    const size = m.getSize()
+    const key = `${selectedId || ''}|${big}|${Math.round(size.x / 40)}x${Math.round(size.y / 40)}|${shown.map((t) => `${t.id}@${t.last.pos}`).join(',')}`
     if (key !== fitKey.current) { fitKey.current = key; fit(m, bounds) }
     // the page layout can change size after the first draw
     setTimeout(() => { if (alive(m)) m.invalidateSize() }, 0)

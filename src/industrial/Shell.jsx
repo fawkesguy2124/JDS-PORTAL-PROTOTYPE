@@ -6,6 +6,7 @@ import { useSystemHealth, healthTones } from './AutoStatus'
 import { Icon, initials } from './ui'
 import { useInstallApp } from '../services/desktopApp'
 import { applyPrefs, resolveTheme, usePrefs } from './settings'
+import './styles/mobile.css'
 
 // The frame around every page (Control tower, Jose 31 Oct 2026): navy sidebar with
 // the brand cell on top, a slim top bar (search, Create job, bell, you), and a
@@ -25,7 +26,8 @@ export default function Shell({ sections, active, counts = {}, onGo, onOpenJob, 
     document.documentElement.style.colorScheme = 'light'
   }, [])
   const [palette, setPalette] = useState(false)
-  const [mnav, setMnav] = useState(false)
+  const [mnav, setMnav] = useState(false) // false | true | 'closing' (the phone menu slides away first)
+  const closeMnav = () => { setMnav((v) => (v ? 'closing' : false)); setTimeout(() => setMnav(false), 220) }
   const app = useInstallApp() // the portal as a desktop app
   const health = useSystemHealth()
   const tones = healthTones(health)
@@ -47,7 +49,7 @@ export default function Shell({ sections, active, counts = {}, onGo, onOpenJob, 
 
   const pages = sections.flatMap((s) => s.items).filter((it) => !it.hidden)
   const pageLabel = pages.find((p) => p.id === active)?.label
-  const go = (id) => { setMnav(false); onGo(id) }
+  const go = (id) => { if (mnav) closeMnav(); onGo(id) }
   // small status dots on the services' own pages (green / amber / red)
   const dots = tones ? { bot: tones.whatsapp, health: tones.overall } : {}
   const DOT_WORD = { green: 'running normally', amber: 'needs a look', red: 'has a problem' }
@@ -121,11 +123,11 @@ export default function Shell({ sections, active, counts = {}, onGo, onOpenJob, 
 
       {mnav && (
         <>
-          <div className="ix-mnav-bg" onClick={() => setMnav(false)} />
-          <div className="ix-mnav">
+          <div className={`ix-mnav-bg${mnav === 'closing' ? ' closing' : ''}`} onClick={closeMnav} />
+          <div className={`ix-mnav${mnav === 'closing' ? ' closing' : ''}`}>
             <div className="ix-mnav-acts">
-              <button type="button" className="ix-btn primary" onClick={() => { setMnav(false); onCreateJob() }}><Icon name="plus" />Create job</button>
-              <button type="button" className="ix-btn" onClick={() => { setMnav(false); setPalette(true) }}><Icon name="search" />Search</button>
+              <button type="button" className="ix-btn primary" onClick={() => { closeMnav(); onCreateJob() }}><Icon name="plus" />Create job</button>
+              <button type="button" className="ix-btn" onClick={() => { closeMnav(); setPalette(true) }}><Icon name="search" />Search</button>
             </div>
             {navList}
           </div>

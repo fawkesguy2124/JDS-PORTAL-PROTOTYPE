@@ -174,7 +174,9 @@ const fit = (m, bounds, maxZoom = 7, card = false) => {
   if (!alive(m)) return
   const wide = card && m.getSize().x > 760
   if (bounds.length === 1) m.setView(bounds[0], 6)
-  // room for the tags beside the ships (about 180 px) and the colour key below
+  // room for the tags beside the ships (about 180 px) and the colour key below; a phone
+  // has no room for that, so only a small margin (the ships filled a sliver of the map)
+  else if (bounds.length && m.getSize().x < 520) m.fitBounds(L.latLngBounds(bounds), { paddingTopLeft: [24, 40], paddingBottomRight: [110, 60], maxZoom })
   else if (bounds.length) m.fitBounds(L.latLngBounds(bounds), { paddingTopLeft: [90, 50], paddingBottomRight: [wide ? 410 : 190, 80], maxZoom })
   else m.setView(...ARABIAN_SEA)
 }

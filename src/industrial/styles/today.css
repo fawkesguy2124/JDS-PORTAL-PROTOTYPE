@@ -127,7 +127,7 @@
   .ix-td-watch .h { padding: 6px 12px 2px }
   .ix-td-runway .runway { padding: 6px 10px 10px }
   .ix-td-runway .rw-row { grid-template-columns: 64px minmax(0, 1fr) }
-  .ix-td-runway .who span { display: none }
+  .ix-td-runway .who span:not(.ix-jobno) { display: none }
   .ix-td-runway .rw-head .rw-track div { font-size: 9px }
   .ix-td-runway .rw-head .rw-track div b { font-size: 11px }
   .ix-td-runway .rw-bar { font-size: 10px; padding-right: 4px }

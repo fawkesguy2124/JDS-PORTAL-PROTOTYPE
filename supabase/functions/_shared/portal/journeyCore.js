@@ -554,7 +554,7 @@ export function journeyFor(job, data) {
   if (outStep?.current && oocDone && !moveStep?.done) outStep.nextText = moveText
   // all out, JDS delivers: the empty must come back too (detention runs till then)
   const delStep = steps.find((s) => s.id === 'delivered')
-  if (delStep?.current && deliveryBy(job) === 'jds' && c.all.length) delStep.nextText = 'Next: deliver, then return the empty container'
+  if (delStep?.current && deliveryBy(job) === 'jds' && c.all.length) delStep.nextText = 'Next: deliver to the warehouse' // (the empty's return is JDS's own business, not the portal's; Jose, 31 Oct 2026)
   const oocStep = steps.find((s) => s.id === 'ooc')
   if (oocStep?.current && beStage) oocStep.nextText = beStage.next
 

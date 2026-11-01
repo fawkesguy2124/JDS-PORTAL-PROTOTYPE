@@ -253,12 +253,15 @@ export default function JobsPage({ profile, onOpenJob, selectedId }) {
         <Tabs tabs={tabs} value={view} onChange={pickView} />
         <div className="ix-toolbar">
           <SearchBox inputRef={searchRef} value={q} onChange={setQ} placeholder="Job, client, BE, BL or container" />
+          {/* (on a phone the filters are one row that swipes sideways: styles/mobile.css) */}
+          <div className="ix-jb-filters">
           <FilterSelect label="Type" value={type} onChange={setType} options={[{ value: '', label: 'All' }, { value: 'import', label: 'Import' }, { value: 'export', label: 'Export' }]} />
           <FilterSelect label="Mode" value={mode} onChange={setMode} options={[{ value: '', label: 'All' }, 'Sea FCL', 'Sea LCL', 'Air', 'BPT/MBPT']} />
           <FilterSelect label="Client" value={client} onChange={setClient} options={[{ value: '', label: 'Any' }, ...clients]} />
           <FilterSelect label="Line" value={lineF} onChange={setLineF} options={[{ value: '', label: 'All' }, ...lines]} />
           <FilterSelect label="Owner" value={owner} onChange={setOwner} options={[{ value: '', label: 'Anyone' }, ...(me ? [{ value: me, label: 'Me' }] : []), ...owners]} />
           {filtered && <Button size="sm" variant="ghost" icon="x" onClick={clearAll}>Clear</Button>}
+          </div>
           <div className="right hide-m"><span className="muted" style={{ fontSize: 12 }}>Sorted by {SORT_TEXT[sort.key]}{sort.key === 'job' && sort.dir === -1 ? ', newest first' : ''}</span></div>
         </div>
 
