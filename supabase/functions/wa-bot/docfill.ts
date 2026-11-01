@@ -79,7 +79,7 @@ export function jobForDoc(d: DocRead, jobs: any[]): { job: any; how: string } | 
 // What the document fills on the job: only empty fields. A job the bot made from a BE post
 // had its mode and port guessed from the post: there the papers correct them.
 // mismatch = the document's containers are all different from the job's (another shipment)
-// short = the same in a few plain words, for the WhatsApp reply ("BL, IGM, goods")
+// short = the same in a few plain words, for the WhatsApp reply ("BL SG62SM018 · Goods")
 export function docFill(f: Record<string, any>, job: any): { fields: Record<string, unknown>; said: string[]; short: string[]; mismatch: string | null } {
   const fields: Record<string, unknown> = {}
   const said: string[] = []
@@ -112,11 +112,15 @@ export function docFill(f: Record<string, any>, job: any): { fields: Record<stri
   if (f.hs_code && !job.hs_code) { fields.hs_code = String(f.hs_code); said.push(`HS ${f.hs_code}`) }
   if (isoDay(f.eta) && !job.eta) { fields.eta = f.eta; said.push(`arrived ${day(f.eta)}`) }
   const refs2: any = fields.ulip_refs || {}
+  // short values are shown ("Vessel HMM LIME"); the long goods text only by name
   const plain: [boolean, string][] = [
-    [!!fields.mode, 'mode'], [!!fields.port_code, 'port'], [!!fields.containers, boxes.length === 1 ? 'container' : `${boxes.length} containers`],
-    [!!fields.bl_no, isAir ? 'MAWB' : 'BL'], [!!refs2.hawb_no && refs2.hawb_no !== job.ulip_refs?.hawb_no, isAir ? 'HAWB' : 'house BL'],
-    [!!refs2.igm_no && refs2.igm_no !== job.ulip_refs?.igm_no, 'IGM'], [!!fields.shipping_line, 'shipping line'], [!!fields.vessel, 'ship'],
-    [!!fields.goods, 'goods'], [!!fields.hs_code, 'HS code'], [!!fields.eta, 'arrival date'],
+    [!!fields.mode, `${fields.mode}`], [!!fields.port_code, `Port ${fields.port_code}`],
+    [!!fields.containers, boxes.length === 1 ? `Container ${boxes[0]}` : `${boxes.length} containers`],
+    [!!fields.bl_no, `${isAir ? 'MAWB' : 'BL'} ${fields.bl_no}`],
+    [!!refs2.hawb_no && refs2.hawb_no !== job.ulip_refs?.hawb_no, `${isAir ? 'HAWB' : 'House BL'} ${refs2.hawb_no}`],
+    [!!refs2.igm_no && refs2.igm_no !== job.ulip_refs?.igm_no, `IGM ${refs2.igm_no}`],
+    [!!fields.shipping_line, `Line ${fields.shipping_line}`], [!!fields.vessel, `Vessel ${String(fields.vessel).split(' / ')[0]}`],
+    [!!fields.hs_code, `HS ${fields.hs_code}`], [!!fields.eta, `Arrived ${day(String(fields.eta))}`], [!!fields.goods, 'Goods'],
   ]
   short.push(...plain.filter(([on]) => on).map(([, w]) => w))
   return { fields, said, short, mismatch: null }

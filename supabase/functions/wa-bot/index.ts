@@ -510,7 +510,7 @@ async function handleFile(admin: Admin, person: Person, m: any, data: any) {
       const r = prepareChange({ action: 'record_be', job: j.job_no, be_no: be.be_no, be_date: be.be_date }, data, person)
       if (r.ok) {
         items.push({ ...r.pending, args: { ...r.pending.args, igm_no: be.igm_no || null, igm_date: be.igm_date || null, from_file: true } })
-        adds.push(j.be_no && String(j.be_no) !== String(be.be_no) ? `new BE number (replaces ${j.be_no})` : 'BE number')
+        adds.push(j.be_no && String(j.be_no) !== String(be.be_no) ? `New BE ${be.be_no} (replaces ${j.be_no})` : `BE ${be.be_no}`)
       }
     }
     // everything else the papers give (containers, BL, ship, line, port, goods, arrival …):
@@ -522,11 +522,11 @@ async function handleFile(admin: Admin, person: Person, m: any, data: any) {
     }
     if (be?.copy_type === 'OOC' && be.ooc_no && be.ooc_date && Number(j.stage) < 7) {
       const r = prepareChange({ action: 'record_ooc', job: j.job_no, ooc_no: be.ooc_no, ooc_date: be.ooc_date }, data, person)
-      if (r.ok) { items.push(r.pending); adds.push('OOC') }
+      if (r.ok) { items.push(r.pending); adds.push(`OOC ${be.ooc_no}`) }
     }
     const warn = fill.mismatch ? `\n\n⚠ Its containers are not ${j.job_no}'s, so I won't fill anything from it. Wrong job?` : ''
     if (!items.length) { await reply(`${head}\n\n${fill.mismatch ? warn.trim() : `${j.job_no} already has all of this 👍`}`, userText); return }
-    const list = adds.join(', ').replace(/^./, (c) => c.toUpperCase())
+    const list = adds.join(' · ')
     const ask = att.ok && adds.length ? `Save it to the job and add:\n${list}` : att.ok ? 'Save it to the job?' : `Add to the job:\n${list}`
     const pending: Pending = {
       action: 'batch', job_id: j.id, job_no: j.job_no,
