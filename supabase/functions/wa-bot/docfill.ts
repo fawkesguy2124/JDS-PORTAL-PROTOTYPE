@@ -79,14 +79,16 @@ export function jobForDoc(d: DocRead, jobs: any[]): { job: any; how: string } | 
 // What the document fills on the job: only empty fields. A job the bot made from a BE post
 // had its mode and port guessed from the post: there the papers correct them.
 // mismatch = the document's containers are all different from the job's (another shipment)
-export function docFill(f: Record<string, any>, job: any): { fields: Record<string, unknown>; said: string[]; mismatch: string | null } {
+// short = the same in a few plain words, for the WhatsApp reply ("BL, IGM, goods")
+export function docFill(f: Record<string, any>, job: any): { fields: Record<string, unknown>; said: string[]; short: string[]; mismatch: string | null } {
   const fields: Record<string, unknown> = {}
   const said: string[] = []
-  if (!f || !job) return { fields, said, mismatch: null }
+  const short: string[] = []
+  if (!f || !job) return { fields, said, short, mismatch: null }
   const have = parseContainerNos(job.containers)
   const boxes = parseContainerNos((f.containers || []).join(' '))
   if (have.length && boxes.length && !boxes.some((b: string) => have.includes(b))) {
-    return { fields, said, mismatch: `its containers (${boxes.slice(0, 3).join(', ')}) are not ${job.job_no}'s (${have.slice(0, 3).join(', ')})` }
+    return { fields, said, short, mismatch: `its containers (${boxes.slice(0, 3).join(', ')}) are not ${job.job_no}'s (${have.slice(0, 3).join(', ')})` }
   }
   const madeFromPost = job.field_meta?.created_via === 'whatsapp_post'
   // mode: the BE says Sea / Air; the BL says FCL / LCL
@@ -109,7 +111,15 @@ export function docFill(f: Record<string, any>, job: any): { fields: Record<stri
   if (f.goods && !job.goods) { fields.goods = String(f.goods).slice(0, 300); said.push(`goods "${String(f.goods).slice(0, 60)}${String(f.goods).length > 60 ? '…' : ''}"`) }
   if (f.hs_code && !job.hs_code) { fields.hs_code = String(f.hs_code); said.push(`HS ${f.hs_code}`) }
   if (isoDay(f.eta) && !job.eta) { fields.eta = f.eta; said.push(`arrived ${day(f.eta)}`) }
-  return { fields, said, mismatch: null }
+  const refs2: any = fields.ulip_refs || {}
+  const plain: [boolean, string][] = [
+    [!!fields.mode, 'mode'], [!!fields.port_code, 'port'], [!!fields.containers, boxes.length === 1 ? 'container' : `${boxes.length} containers`],
+    [!!fields.bl_no, isAir ? 'MAWB' : 'BL'], [!!refs2.hawb_no && refs2.hawb_no !== job.ulip_refs?.hawb_no, isAir ? 'HAWB' : 'house BL'],
+    [!!refs2.igm_no && refs2.igm_no !== job.ulip_refs?.igm_no, 'IGM'], [!!fields.shipping_line, 'shipping line'], [!!fields.vessel, 'ship'],
+    [!!fields.goods, 'goods'], [!!fields.hs_code, 'HS code'], [!!fields.eta, 'arrival date'],
+  ]
+  short.push(...plain.filter(([on]) => on).map(([, w]) => w))
+  return { fields, said, short, mismatch: null }
 }
 
 // the part of the reading the fill needs, kept on the waiting change until the YES

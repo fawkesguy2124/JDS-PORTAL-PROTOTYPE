@@ -319,6 +319,11 @@ export async function applyChange(admin: Admin, pending: Pending, person: Person
   if (pending.action === 'batch') {
     const out: string[] = []
     for (const item of (pending.args?.items || []) as Pending[]) out.push(await applyChange(admin, item, person, deps))
+    // a paper sent on WhatsApp: one plain line when all went well, else only what didn't
+    if (pending.args?.done) {
+      const bad = out.filter((x) => !x.startsWith('✅'))
+      return bad.length ? `${bad.join('\n')}${bad.length < out.length ? '\nThe rest was saved.' : ''}` : pending.args.done
+    }
     return out.join('\n')
   }
   // who may use the bot (an admin's decision)
@@ -437,7 +442,7 @@ They should send any message (e.g. "hi") to the bot to start. While the bot uses
     if (insErr) return `❌ Could not attach the file: ${insErr.message}.`
     await admin.from('bot_inbox').update({ last_file: null }).eq('phone', person.phone)
     await log('document_upload', `${a.doc_type} uploaded — ${job.job_no}`, `${a.file_name} (sent on WhatsApp by ${person.name})`, { doc_type: a.doc_type, file_name: a.file_name })
-    return `✅ Done: *${a.file_name}* attached to ${job.job_no} as *${a.doc_type}*.`
+    return `✅ Done. Saved to ${job.job_no} as ${a.doc_type}.`
   }
   if (pending.action === 'set_imo') {
     // the same save as the Vessels page's IMO box (typed by staff wins over found)

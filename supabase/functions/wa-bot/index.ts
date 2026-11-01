@@ -488,37 +488,54 @@ async function handleFile(admin: Admin, person: Person, m: any, data: any) {
     lastFile.doc_type = be ? (be.copy_type === 'OOC' ? 'OOC' : 'BE') : docType || doc.types[0] || 'Other'
     await admin.from('bot_inbox').update({ last_file: lastFile }).eq('phone', person.phone)
     const f = doc.fields
-    const what = be ? beLine(be) : [doc.found || lastFile.doc_type, f.bl_no ? `${doc.types.includes('BL') && !f.vessel && /^\d{11}$/.test(String(f.bl_no)) ? 'AWB' : 'BL'} ${f.bl_no}` : null, f.containers.length ? `${f.containers.length === 1 ? 'container' : `${f.containers.length} containers`} ${f.containers.slice(0, 3).join(', ')}${f.containers.length > 3 ? '…' : ''}` : null].filter(Boolean).join(' · ')
+    // the reply is kept short and plain (Jose, 1 Nov 2026: "make it simple, the JDS staff
+    // should understand it"): what the paper is, its job, and what it adds, with Yes / No
+    const isAwb = doc.types.includes('BL') && !f.vessel && /^\d{11}$/.test(String(f.bl_no || ''))
+    const PLAIN: Record<string, string> = { Invoice: 'Invoice', 'Packing List': 'Packing list', Insurance: 'Insurance', COO: 'Certificate of origin' }
+    const what = be ? `${be.copy_type === 'OOC' ? 'OOC' : 'BE'} ${be.be_no}`
+      : [doc.types.includes('BL') ? (f.bl_no ? `${isAwb ? 'AWB' : 'BL'} ${f.bl_no}` : 'BL') : null, ...doc.types.filter((t) => PLAIN[t]).map((t) => PLAIN[t])].filter(Boolean).join(' + ') || lastFile.doc_type
     const named = jobFromText(`${caption} ${name}`, data?.jobs || [])
     const match = named ? { job: named, how: 'the file name' } : (be ? jobForBe(be, data?.jobs || []) : null) || jobForDoc(doc, data?.jobs || [])
     if (!match) {
-      await reply(`📎 Got *${name}*: ${what}.\n\nNo open job has this ${be ? 'BE, ' : ''}BL or container. Which job is it for (e.g. "J-652")?\nOr create a new job from it: ${createLink}`, userText)
+      await reply(`📄 *${what}*\n\nI couldn't find its job. Which job is it? (e.g. J-652)\nOr make a new job from it: ${createLink}`, userText)
       return
     }
     const j = match.job
+    const head = `📄 *${what}* for *${j.job_no}*${j.client ? ` (${j.client})` : ''}`
     const items: Pending[] = []
+    const adds: string[] = [] // what Yes does, in plain words
     const att = prepareChange({ action: 'attach_document', job: j.job_no, doc_type: lastFile.doc_type }, data, person, { lastFile })
     if (att.ok) items.push(att.pending)
     if (be && (String(j.be_no || '') !== String(be.be_no) || !j.be_date)) {
       const r = prepareChange({ action: 'record_be', job: j.job_no, be_no: be.be_no, be_date: be.be_date }, data, person)
-      if (r.ok) items.push({ ...r.pending, args: { ...r.pending.args, igm_no: be.igm_no || null, igm_date: be.igm_date || null, from_file: true } })
+      if (r.ok) {
+        items.push({ ...r.pending, args: { ...r.pending.args, igm_no: be.igm_no || null, igm_date: be.igm_date || null, from_file: true } })
+        adds.push(j.be_no && String(j.be_no) !== String(be.be_no) ? `new BE number (replaces ${j.be_no})` : 'BE number')
+      }
     }
     // everything else the papers give (containers, BL, ship, line, port, goods, arrival …):
     // the job's empty fields, as Create job fills them (Jose, 1 Nov 2026)
     const fill = docFill(f, j)
-    if (fill.said.length) items.push({ action: 'fill_from_doc', job_id: j.id, job_no: j.job_no, args: { fields: fillArgs(f) }, summary: `Fill ${j.job_no} from it: ${fill.said.join(' · ')}`, at: new Date().toISOString() })
+    if (fill.said.length) {
+      items.push({ action: 'fill_from_doc', job_id: j.id, job_no: j.job_no, args: { fields: fillArgs(f) }, summary: `Fill ${j.job_no} from it: ${fill.said.join(' · ')}`, at: new Date().toISOString() })
+      adds.push(...fill.short.filter((x) => !adds.includes(x)))
+    }
     if (be?.copy_type === 'OOC' && be.ooc_no && be.ooc_date && Number(j.stage) < 7) {
       const r = prepareChange({ action: 'record_ooc', job: j.job_no, ooc_no: be.ooc_no, ooc_date: be.ooc_date }, data, person)
-      if (r.ok) items.push(r.pending)
+      if (r.ok) { items.push(r.pending); adds.push('OOC') }
     }
-    const warn = fill.mismatch ? `\n\n⚠ I didn't fill anything from it: ${fill.mismatch}. Is it really ${j.job_no}'s?` : ''
-    if (!items.length) { await reply(`📎 Got *${name}*: ${what}. ${j.job_no} already has this file and everything in it, so nothing needs changing.${warn}`, userText); return }
-    const pending: Pending = items.length === 1 ? items[0] : {
-      action: 'batch', job_id: j.id, job_no: j.job_no, args: { items },
-      summary: `${items.length} changes:\n${items.map((x) => `• ${x.summary}`).join('\n')}`, at: new Date().toISOString(),
+    const warn = fill.mismatch ? `\n\n⚠ Its containers are not ${j.job_no}'s, so I won't fill anything from it. Wrong job?` : ''
+    if (!items.length) { await reply(`${head}\n\n${fill.mismatch ? warn.trim() : `${j.job_no} already has all of this 👍`}`, userText); return }
+    const list = adds.join(', ').replace(/^./, (c) => c.toUpperCase())
+    const ask = att.ok && adds.length ? `Save it to the job and add:\n${list}` : att.ok ? 'Save it to the job?' : `Add to the job:\n${list}`
+    const pending: Pending = {
+      action: 'batch', job_id: j.id, job_no: j.job_no,
+      // one plain "done" line instead of one line per change
+      args: { items, done: `✅ Done. ${j.job_no} is updated.` },
+      summary: `Update ${j.job_no} from ${what}${adds.length ? ` (${adds.join(', ')})` : ''}`, at: new Date().toISOString(),
     }
     await admin.from('bot_inbox').update({ pending }).eq('phone', person.phone)
-    await reply(`📎 Got *${name}*: ${what}.\nIt matches *${j.job_no}* (${j.client || 'no client'}) by ${match.how}.${warn}\n\n${confirmText(pending)}\n\nWrong job? Just say it, e.g. "it is J-652".`, userText, YES_NO)
+    await reply(`${head}\n\n${ask}${warn}`, userText, YES_NO)
     return
   }
   const job = jobFromText(`${caption} ${name}`, data?.jobs || [])
@@ -526,13 +543,13 @@ async function handleFile(admin: Admin, person: Person, m: any, data: any) {
     const res = prepareChange({ action: 'attach_document', job: job.job_no, doc_type: docType }, data, person, { lastFile })
     if (res.ok) {
       await admin.from('bot_inbox').update({ pending: res.pending }).eq('phone', person.phone)
-      await reply(`📎 Got *${name}*.\n\n${confirmText(res.pending)}\n\nWrong job or type? Just say it, e.g. "J-652 as BL".\nA new job instead? Open: ${createLink}`, userText, YES_NO)
+      await reply(`📎 Save *${name}* to *${job.job_no}* as *${docType}*?`, userText, YES_NO)
       return
     }
     await reply(`📎 Got *${name}* and kept it safely. ${res.error}`, userText)
     return
   }
-  await reply(`📎 Got *${name}* and kept it safely.\n\nWhich job is it for, and what is it? For example: "J-652, BE".\nOr create a new job from it: ${createLink}`, userText)
+  await reply(`📎 Got *${name}*. Which job is it for, and what is it? (e.g. "J-652, BE")\nOr make a new job from it: ${createLink}`, userText)
 }
 
 async function handleInbound(admin: Admin, payload: any) {
