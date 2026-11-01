@@ -17,7 +17,7 @@
 import { adminClient, json } from '../_shared/ulip.ts'
 import { buildJourneyData, buildSeaByJob } from '../_shared/portal/journeyCore.js'
 import { morningSummary, instantAlerts, answer, teamFromProfiles, BOT_NUMBERS, missingDetails, allowed, LEVELS, LEVEL_LABEL } from '../_shared/portal/botMessages.js'
-import { askAssistant, groqInfo, isHinglish } from './assistant.ts'
+import { askAssistant, groqInfo, isHinglish, changeParts, mergeProposals } from './assistant.ts'
 import { applyChange, confirmText, isNo, isYes, isNoSaid, isYesSaid, PENDING_MINUTES, prepareChange, type Pending } from './actions.ts'
 import { downloadMedia, transcribe, normalizeSpoken, docTypeFromName, jobFromText, jobNoFromText, safeName, toRoman, MAX_FILE_BYTES } from './media.ts'
 import { makeServerTools, sendDueReminders, checkWatches, checkTasks } from './servertools.ts'
@@ -759,6 +759,14 @@ async function handleInbound(admin: Admin, payload: any) {
       checked = ai.checked
       ask = ai.proposal
       console.log(`[wa-bot] assistant: ${ai.note} | data ${aiStart - started} ms, AI ${Date.now() - aiStart} ms`)
+      // a change asked, and the message holds more than one: each part prepared on its own and
+      // all asked together (never a free-text change: a note or a task keeps its whole text)
+      const parts = ask && !['add_note', 'assign_task', 'create_job'].includes(ask.action) ? changeParts(text) : []
+      for (const part of parts) {
+        const more = await askAssistant(part, [], data, person, { change: { lastFile: null, team } }).catch(() => null)
+        if (more?.proposal && ask) ask = mergeProposals(ask, more.proposal)
+      }
+      if (parts.length) console.log(`[wa-bot] ${parts.length} changes in one message: ${ask?.args?.multi ? ask.args.items.length : 1} prepared`)
       // a proposed change: the bot itself asks for YES, in fixed words
       if (ask) reply = confirmText(ask)
       else if (ai.text && /reply\s*\*?yes/i.test(ai.text)) reply = "I couldn't prepare that change. Please send it again in one message with all the details, for example: record BE 1234567 dated 18 Oct on J-509."

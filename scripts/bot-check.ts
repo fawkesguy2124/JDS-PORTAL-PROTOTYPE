@@ -13,7 +13,7 @@ import { isYes, isNo, isYesSaid, isNoSaid, prepareChange } from '../supabase/fun
 import { toRoman, normalizeSpoken, jobNoFromText } from '../supabase/functions/wa-bot/media.ts'
 import { readDocFile } from '../supabase/functions/wa-bot/docfill.ts'
 import { readPost } from '../supabase/functions/_shared/portal/postReader.js'
-import { isHinglish } from '../supabase/functions/wa-bot/assistant.ts'
+import { isHinglish, changeParts, mergeProposals } from '../supabase/functions/wa-bot/assistant.ts'
 import { isUndo, handlePost } from '../supabase/functions/wa-bot/posts.ts'
 
 const args = Deno.args.filter((a) => !a.startsWith('--'))
@@ -44,6 +44,21 @@ const LANG: [string, boolean][] = [
   ['J-689 ka kya status hai?', true], ['portal ka link bhejo', true], [toRoman('J-736 का BE नंबर क्या है?'), true], ['container kahan hai abhi?', true],
   ['what is the ETA of J-674', false], ['how do I add a truck', false], ['job 689', false], ['can you do it now', false], ['ok thanks', false],
 ]
+// several changes in one message: split into parts, each with the job no (or not split)
+const PARTS: [string, string[]][] = [
+  ['J-9903 urgent hai aur free days 25 kar do', ['J-9903 urgent hai', 'J-9903 free days 25 kar do']],
+  ['J-9903 ka ETA 5 Nov hai aur line MSC', ['J-9903 ka ETA 5 Nov hai', 'J-9903 line MSC']],
+  ['J-9903 rail se jayega aur client deliver karega', ['J-9903 rail se jayega', 'J-9903 client deliver karega']],
+  ['set the ETA of J-674 to 5 Nov, priority high', ['set the ETA of J-674 to 5 Nov', 'J-674 priority high']],
+  ['J-652 aur J-667 delivered kar do', []], ['J-9903 ka vessel MSC LUNA hai, voyage 618E', []], ['J-689 ka kya status hai?', []], ['set shipping line of J-9903 to MSC', []],
+]
+for (const [t, want] of PARTS) { const got = changeParts(t); if (JSON.stringify(got) !== JSON.stringify(want)) fail(`split "${t}" → ${JSON.stringify(got)}`) }
+{
+  const a: any = { action: 'set_priority', job_id: 'x', job_no: 'J-9903', args: {}, summary: 'Set the priority of J-9903 to urgent', at: '' }
+  const b: any = { action: 'set_free_days', job_id: 'x', job_no: 'J-9903', args: {}, summary: 'Set the free days of J-9903 to 25', at: '' }
+  const m: any = mergeProposals(mergeProposals(a, b), a)
+  if (m.action !== 'batch' || m.args.items.length !== 2) fail(`merging two changes gave ${m.args?.items?.length ?? 1}`)
+}
 for (const [t, want] of LANG) if (isHinglish(t) !== want) fail(`"${t}" read as ${isHinglish(t) ? 'Hinglish' : 'English'}`)
 // changes the bot prepares (found in the live test of 2 Nov 2026): the mode, container numbers
 const DATA = { jobs: [{ id: 'x', job_no: 'J-9901', client: 'Test', mode: 'Sea FCL', port_code: 'INNSA1', containers: 'CCLU7885874', field_meta: {} }], documents: [] }

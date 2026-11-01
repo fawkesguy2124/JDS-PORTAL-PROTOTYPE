@@ -253,6 +253,30 @@ function systemText(person: Person, data: unknown, ctx: Ctx) {
     : '\n\nLANGUAGE FOR THIS REPLY: English.'
   return `${SYSTEM_PROMPT(person)}\n\n${TODAY_BRIEF(data, person)}${file}${access}${lang}`
 }
+// Several changes in one message ("J-9903 urgent hai aur free days 25 kar do"): the parts,
+// each with the job number, so each can be prepared on its own. The AI alone proposed only
+// the first, even when told (live tests 2 Nov 2026). [] when it is one change.
+// (the voyage stays with its ship; a piece naming nothing is part of the one before)
+const FIELD_WORDS = /\b(mode|fcl|lcl|air|bpt|mbpt|eta|line|cfs|free\s*days?|priority|urgent|truck|rail|train|vessel|ship|deliver\w*|stage|query|assess\w*|duty|ooc|be|bl|container|owner|imo|collect\w*|leaves|note)\b/i
+export function changeParts(text: string): string[] {
+  const s = String(text || '')
+  const job = s.match(/\bJ[-. ]*0*(\d{1,5})\b/i)
+  const pieces = s.split(/\s*(?:[,;&]|\baur\b|\band\b|\balso\b|\bplus\b)\s*/i).map((x) => x.trim()).filter(Boolean)
+  if (pieces.length < 2 || pieces.filter((p) => FIELD_WORDS.test(p)).length < 2) return []
+  const parts: string[] = []
+  for (const p of pieces) { if (FIELD_WORDS.test(p) || !parts.length) parts.push(p); else parts[parts.length - 1] += ` ${p}` }
+  if (parts.length < 2) return []
+  return parts.map((p) => (job && !/\bJ[-. ]*\d/i.test(p) ? `J-${Number(job[1])} ${p}` : p))
+}
+// two prepared changes asked together (the same change on the same job only once)
+export function mergeProposals(a: Pending, b: Pending): Pending {
+  const items: Pending[] = a.args?.multi ? [...a.args.items] : [a]
+  const key = (x: Pending) => (x.action === 'batch' ? x.summary : `${x.action}:${x.job_no}`)
+  for (const x of b.args?.multi ? b.args.items : [b]) if (!items.some((y) => key(y) === key(x))) items.push(x)
+  if (items.length === 1) return items[0]
+  return { action: 'batch', job_id: items[0].job_id, job_no: items[0].job_no, args: { items, multi: true }, summary: items.map((x) => `• ${x.summary}`).join('\n'), at: new Date().toISOString() }
+}
+
 // Is the question Hindi / Hinglish? (Hindi script is already written in English letters by
 // the time it gets here: toRoman in media.ts.) Two or more everyday Hindi words = Hinglish.
 const HINDI_WORDS = /\b(kya|kyaa|hai|hain|hei|ka|ki|ke|ko|kab|kahan|kaha|kidhar|kaun|kitna|kitne|kitni|kaise|kaisa|bhejo|bhej|batao|bata|bataiye|karo|kar|kardo|nahi|nahin|nhi|abhi|aaj|kal|mein|mai|se|wala|wali|hua|hui|gaya|gayi|chahiye|dikhao|dekho|bhai|ji|haan|han|aur|bhi|tak|pe|par|kuch|sab|apna|mera|mujhe|humko|hamara|raha|rahi|rahe|hoga|hogi|ho|lo|do|diya|dena|lena|wapas|jaldi|dekh)\b/gi
