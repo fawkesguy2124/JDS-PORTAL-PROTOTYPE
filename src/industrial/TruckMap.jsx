@@ -63,8 +63,13 @@ const STALE_HOURS = 6
 const alive = (m) => !!m && !!m._mapPane && !!m.getContainer()?.isConnected
 const fit = (m, bounds) => {
   if (!alive(m)) return
-  if (bounds.length === 1) m.setView(bounds[0], 11)
-  else if (bounds.length) m.fitBounds(L.latLngBounds(bounds).pad(0.25))
+  if (!bounds.length) return
+  const box = L.latLngBounds(bounds)
+  // all at one spot (J-583's MH46H9151 crossed Kharpada twice: two identical points): a
+  // normal view of that spot. Fitting a zero-size box zoomed the map in as far as it goes,
+  // onto a blank green field (Jose, 1 Nov 2026). Never closer than street level either.
+  if (box.getNorthEast().distanceTo(box.getSouthWest()) < 300) m.setView(box.getCenter(), 11)
+  else m.fitBounds(box.pad(0.25), { maxZoom: 13 })
 }
 
 export default function TruckMap({ trucks, selectedId, onSelect, message }) {
