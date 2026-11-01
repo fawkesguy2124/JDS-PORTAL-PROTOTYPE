@@ -228,3 +228,4 @@ html[data-theme="dark"] .ix .ix-shipmap2 .leaflet-container { background: #0f203
 .ix-trk-more .ix-menu.up { top: auto; bottom: calc(100% + 4px) }
 .ix-trk-panel .ix-card-head .ix-trk-refresh { margin-left: auto }
 .ix-trk-pop.up { top: auto; bottom: calc(100% - 2px) }
+.ix-tiles-dark { filter: invert(.9) hue-rotate(180deg) brightness(.95) contrast(.9) }

@@ -5,6 +5,7 @@ import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import '@maplibre/maplibre-gl-leaflet'
+import { steadyBaseMap, streetTiles } from './mapBase'
 import { vesselOf, shipIdOf } from '../../supabase/functions/_shared/portal/ships.js'
 import { Icon } from './ui'
 
@@ -49,39 +50,45 @@ const isDark = () => document.documentElement.dataset.theme === 'dark'
 const chart = () => CHART[isDark() ? 'dark' : 'light']
 const HIDE = /poi|transit|aeroway|building|housenumber|road|highway|bridge|tunnel|railway|ferry|landcover|landuse|park|wood|grass|sand|glacier|ice|aerialway|label_town|label_village|label_other|label_state|place_other|hillshade/
 function addSeaChart(m) {
-  try {
-    const gl = L.maplibreGL({ style: MAP_STYLE, attribution: '© <a href="https://openfreemap.org" target="_blank">OpenFreeMap</a> · <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a>' }).addTo(m)
-    const ml = gl.getMaplibreMap()
-    const paint = (first) => {
-      const c = chart()
-      for (const layer of ml.getStyle()?.layers || []) {
-        try {
-          const id = layer.id
-          if (layer.type === 'raster' || layer.type === 'hillshade' || HIDE.test(id)) { if (first) ml.setLayoutProperty(id, 'visibility', 'none'); continue }
-          if (layer.type === 'background') ml.setPaintProperty(id, 'background-color', c.land)
-          else if (layer.type === 'fill' && /water|ocean/.test(id)) ml.setPaintProperty(id, 'fill-color', c.sea)
-          else if (layer.type === 'line' && /waterway/.test(id)) ml.setPaintProperty(id, 'line-color', c.sea)
-          else if (layer.type === 'line' && /boundary|admin/.test(id)) { ml.setPaintProperty(id, 'line-color', c.border); ml.setPaintProperty(id, 'line-opacity', 0.9) }
-          else if (layer.type === 'symbol') {
-            if (/water|ocean|sea|marine/.test(id)) ml.setPaintProperty(id, 'text-color', c.seaText)
-            else ml.setPaintProperty(id, 'text-color', /country/.test(id) ? c.country : c.place)
-            ml.setPaintProperty(id, 'text-halo-color', c.halo)
-            if (first && /name/.test(JSON.stringify(layer.layout?.['text-field'] || ''))) ml.setLayoutProperty(id, 'text-field', ENGLISH)
-          }
-        } catch { /* a layer without that property */ }
-      }
-    }
-    let ready = false
-    ml.on('style.load', () => { ready = true; paint(true) })
-    // the theme changed (Settings): repaint the chart in the other set
-    const watch = new MutationObserver(() => { if (ready) paint(false) })
-    watch.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
-    m.on('unload', () => watch.disconnect())
-  } catch {
-    L.tileLayer(`https://{s}.basemaps.cartocdn.com/${isDark() ? 'dark_all' : 'light_all'}/{z}/{x}/{y}{r}.png`, { maxZoom: 18, attribution: '© OpenStreetMap contributors © CARTO' }).addTo(m)
-  }
+  // never blank (Jose, 1 Nov 2026): rebuilt if the graphics card drops it, picture tiles
+  // if it keeps failing (mapBase.js)
+  steadyBaseMap(m, { makeGL: seaChartGL, raster: () => seaRaster() })
   // buoys, lights and channels near the ports, only when zoomed right in (free, open data)
   L.tileLayer('https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png', { minZoom: 10, maxZoom: 18, opacity: 0.8, attribution: '© <a href="https://www.openseamap.org" target="_blank">OpenSeaMap</a>' }).addTo(m)
+}
+// the plain chart in picture tiles (light or dark), for when the vector chart can't draw
+const seaRaster = () => streetTiles(isDark())
+function seaChartGL(m) {
+  const gl = L.maplibreGL({ style: MAP_STYLE, attribution: '© <a href="https://openfreemap.org" target="_blank">OpenFreeMap</a> · <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a>' }).addTo(m)
+  const ml = gl.getMaplibreMap()
+  const paint = (first) => {
+    const c = chart()
+    for (const layer of ml.getStyle()?.layers || []) {
+      try {
+        const id = layer.id
+        if (layer.type === 'raster' || layer.type === 'hillshade' || HIDE.test(id)) { if (first) ml.setLayoutProperty(id, 'visibility', 'none'); continue }
+        if (layer.type === 'background') ml.setPaintProperty(id, 'background-color', c.land)
+        else if (layer.type === 'fill' && /water|ocean/.test(id)) ml.setPaintProperty(id, 'fill-color', c.sea)
+        else if (layer.type === 'line' && /waterway/.test(id)) ml.setPaintProperty(id, 'line-color', c.sea)
+        else if (layer.type === 'line' && /boundary|admin/.test(id)) { ml.setPaintProperty(id, 'line-color', c.border); ml.setPaintProperty(id, 'line-opacity', 0.9) }
+        else if (layer.type === 'symbol') {
+          if (/water|ocean|sea|marine/.test(id)) ml.setPaintProperty(id, 'text-color', c.seaText)
+          else ml.setPaintProperty(id, 'text-color', /country/.test(id) ? c.country : c.place)
+          ml.setPaintProperty(id, 'text-halo-color', c.halo)
+          if (first && /name/.test(JSON.stringify(layer.layout?.['text-field'] || ''))) ml.setLayoutProperty(id, 'text-field', ENGLISH)
+        }
+      } catch { /* a layer without that property */ }
+    }
+  }
+  let ready = false
+  ml.on('style.load', () => { ready = true; paint(true) })
+  // the theme changed (Settings): repaint the chart in the other set
+  const watch = new MutationObserver(() => { if (ready) paint(false) })
+  watch.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
+  // (a rebuilt chart has its own watcher: this one goes with its chart)
+  ml.on('remove', () => watch.disconnect())
+  m.on('unload', () => watch.disconnect())
+  return gl
 }
 
 // ── geometry (small numbers, flat-earth is fine for picking points) ──

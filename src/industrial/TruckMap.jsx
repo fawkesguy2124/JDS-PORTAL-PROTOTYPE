@@ -6,6 +6,7 @@ import 'leaflet/dist/leaflet.css'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import '@maplibre/maplibre-gl-leaflet'
 import { Icon, fmtDateTime } from './ui'
+import { steadyBaseMap, streetTiles } from './mapBase'
 
 // The background map: OpenFreeMap (free, no key, allowed for business use), a
 // clean Google-Maps-like style with place names in English. If the browser
@@ -26,18 +27,22 @@ function darkTiles(m) {
 }
 export function addBaseMap(m) {
   darkTiles(m)
-  try {
-    const gl = L.maplibreGL({ style: MAP_STYLE, attribution: '© <a href="https://openfreemap.org" target="_blank">OpenFreeMap</a> · <a href="https://www.openmaptiles.org/" target="_blank">OpenMapTiles</a> · <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a>' }).addTo(m)
-    const ml = gl.getMaplibreMap()
-    ml.on('style.load', () => {
-      for (const layer of ml.getStyle().layers || []) {
-        // only place/road NAMES; road-number signs (ref) stay as they are
-        if (layer.type === 'symbol' && /name/.test(JSON.stringify(layer.layout?.['text-field'] || ''))) ml.setLayoutProperty(layer.id, 'text-field', ENGLISH)
-      }
-    })
-  } catch {
-    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 18, attribution: '© OpenStreetMap contributors' }).addTo(m)
-  }
+  // never blank (Jose, 1 Nov 2026): rebuilt if the graphics card drops it, picture tiles
+  // if it keeps failing (mapBase.js). Dark mode inverts either kind (darkTiles above).
+  steadyBaseMap(m, {
+    makeGL: (map) => {
+      const gl = L.maplibreGL({ style: MAP_STYLE, attribution: '© <a href="https://openfreemap.org" target="_blank">OpenFreeMap</a> · <a href="https://www.openmaptiles.org/" target="_blank">OpenMapTiles</a> · <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a>' }).addTo(map)
+      const ml = gl.getMaplibreMap()
+      ml.on('style.load', () => {
+        for (const layer of ml.getStyle().layers || []) {
+          // only place/road NAMES; road-number signs (ref) stay as they are
+          if (layer.type === 'symbol' && /name/.test(JSON.stringify(layer.layout?.['text-field'] || ''))) ml.setLayoutProperty(layer.id, 'text-field', ENGLISH)
+        }
+      })
+      return gl
+    },
+    raster: () => streetTiles(false),
+  })
 }
 
 // A real street map of the trucks on the road. A truck's
