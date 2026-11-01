@@ -1,7 +1,6 @@
 import { Fragment, Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  journeyFor, isExportJob, isActiveRow, truckNos, onTheRoad, needATruck, jobTruckEntries, truckTripOver, jobCount, daysAgo,
-  containerFinishedOn, TRUCK_WATCH_DAYS,
+  journeyFor, isExportJob, truckNos, onTheRoad, needATruck, jobTruckEntries, jobCount, daysAgo,
 } from '../../services/journey'
 import { assignTruck, editTruck, removeTruck, setStage } from '../../services/jobActions'
 import { useJourney, useFreshOnOpen } from '../JourneyContext'
@@ -40,14 +39,6 @@ const byUrgency = (a, b) => {
   const fa = a.j.freeDaysLeft ?? Infinity, fb = b.j.freeDaysLeft ?? Infinity
   if (fa !== fb) return fa - fb
   return String(a.j.oocDate || '9').localeCompare(String(b.j.oocDate || '9'))
-}
-// Why a truck on an open job is no longer followed (Jose, 1 Nov 2026: "trip over, job still
-// open — what do you mean?"): its box is already back, or its 4 days are up
-function whyNotFollowed(r, t) {
-  const box = (r.j.containers?.all || []).find((b) => t.container && String(b.container_no).toUpperCase() === String(t.container).toUpperCase())
-  const done = box ? containerFinishedOn(box, r.job) : null
-  if (done) return `Box ${t.container} already back${done !== 'yes' ? ` (${fmtDate(done)})` : ''}`
-  return `Followed for ${TRUCK_WATCH_DAYS} days, now over`
 }
 // "MH46AR2016: fitness expired on 1 Jan 2026; road tax expired on 3 Feb 2026." → the problems, one per line
 const papersLines = (p) => {
@@ -158,12 +149,11 @@ export default function TrucksPage({ currentUserName, onOpenJob, showToast, canU
   const road = useMemo(() => onTheRoad(rows), [rows])          // the one "on the road" list
   const ready = useMemo(() => needATruck(rows).sort(byUrgency), [rows])
   const entries = useMemo(() => jobTruckEntries(rows), [rows]) // trucks whose trip still runs
-  const open = useMemo(() => rows.filter(isActiveRow), [rows])
   const roadKeys = new Set(road.map((x) => x.key))
   // trucks put on a job that no toll has seen in the last 4 days yet
   const waiting = entries.filter((x) => !isExportJob(x.job) && !roadKeys.has(x.key))
-  // import trucks whose 4-day watch is over while the job is still open (mark it delivered?)
-  const tripOver = open.filter((r) => !isExportJob(r.job)).flatMap((r) => (r.j.trucks || []).filter((t) => truckTripOver(r, t)).map((t) => ({ key: `${r.job.id}:${t.no}`, jobId: r.job.id, r, t, why: whyNotFollowed(r, t) })))
+  // (a truck whose box is back, or whose 4 days are up, is not shown at all: nothing left to
+  // follow; Jose, 1 Nov 2026)
 
   const q = search.trim().toLowerCase()
   const match = (job) => !q || [...truckNos(job), job.job_no, job.client].some((v) => String(v || '').toLowerCase().includes(q))
@@ -174,7 +164,7 @@ export default function TrucksPage({ currentUserName, onOpenJob, showToast, canU
   const editId = editing === undefined ? (linkedReady?.job.id ?? null) : editing
 
   // one colour per truck (the order of the list, so it stays put while the page is open)
-  const colorOf = new Map([...entries.map((x) => x.key), ...tripOver.map((x) => x.key)].filter((k, i, a) => a.indexOf(k) === i).map((k, i) => [k, TRUCK_COLORS[i % TRUCK_COLORS.length]]))
+  const colorOf = new Map(entries.map((x, i) => [x.key, TRUCK_COLORS[i % TRUCK_COLORS.length]]))
 
   // map pins: every truck still on its trip, plus moves seen only by container tracking (hollow)
   const pins = [
@@ -346,7 +336,7 @@ export default function TrucksPage({ currentUserName, onOpenJob, showToast, canU
   )
 
   // one row per truck: the whole row picks the truck on the map
-  const truckRow = (r, t, { first: firstSet, why } = {}) => {
+  const truckRow = (r, t, { first: firstSet } = {}) => {
     const { job, j } = r
     const key = `${job.id}:${t.no}`
     const first = firstSet ?? firstKey.get(job.id) === key
@@ -386,7 +376,7 @@ export default function TrucksPage({ currentUserName, onOpenJob, showToast, canU
           <td className="cl">{job.client || <Dash />}</td>
           <td className="mono">{t.container || j.containers?.nos?.[0] || <Dash />}</td>
           <td className="two">
-            {why ? <span className="t2">{why}</span> : loc
+            {loc
               ? <><span className="ix-trk-place">{loc.plaza}</span><span className="sub" title={loc.checkedAt ? `Looked up ${timeAgo(loc.checkedAt)}` : undefined}>{loc.at ? fmtDateTime(loc.at) : '—'}</span></>
               : <span className="t2">Not seen yet</span>}
           </td>
@@ -471,12 +461,11 @@ export default function TrucksPage({ currentUserName, onOpenJob, showToast, canU
 
   const roadShown = road.filter((x) => match(x.job))
   const waitingShown = waiting.filter((x) => match(x.job))
-  const overShown = tripOver.filter((x) => match(x.r.job))
   const readyShown = ready.filter((r) => match(r.job))
   // the job's own + (add a truck) and its truck form go on its first truck row in the table
   const firstKey = new Map()
-  for (const x of [...roadShown.filter((e) => e.kind === 'truck'), ...waitingShown, ...overShown]) if (!firstKey.has(x.jobId)) firstKey.set(x.jobId, x.key)
-  const anyTruckRows = roadShown.length + waitingShown.length + overShown.length > 0
+  for (const x of [...roadShown.filter((e) => e.kind === 'truck'), ...waitingShown]) if (!firstKey.has(x.jobId)) firstKey.set(x.jobId, x.key)
+  const anyTruckRows = roadShown.length + waitingShown.length > 0
   const showMap = road.length > 0 || entries.length > 0
   const group = (title, n) => <tr className="grp"><td colSpan={COLS}>{title}<span className="n">{n}</span></td></tr>
 
@@ -531,12 +520,10 @@ export default function TrucksPage({ currentUserName, onOpenJob, showToast, canU
                     })}
                     {waitingShown.length > 0 && group('Not seen by a toll yet', waitingShown.length)}
                     {waitingShown.map((x) => truckRow({ job: x.job, j: x.j }, x.truck))}
-                    {overShown.length > 0 && group('No longer followed', overShown.length)}
-                    {overShown.map((x) => truckRow(x.r, x.t, { why: x.why }))}
                   </tbody>
                 </table>
               </div>
-            ) : q && road.length + waiting.length + tripOver.length > 0 ? <EmptyState line icon="search" title="No truck matches your search." /> : null}
+            ) : q && road.length + waiting.length > 0 ? <EmptyState line icon="search" title="No truck matches your search." /> : null}
           </section>
 
           <section className="ix-card ix-trk-panel" ref={readyRef}>
