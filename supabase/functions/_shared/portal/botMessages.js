@@ -172,7 +172,8 @@ function shipAlerts(data, today, now) {
     const who = `${nos.join(', ')} (ship ${g.name})`
     out.push({
       key, kind, jobId: list[0].job.id, jobNo: nos[0], jobIds: list.map((x) => x.job.id),
-      text: `🔔 *Ship ${g.name}*\n${what}\nReply ${nos[0]} for the job details.`,
+      // (just the update, no "Reply J-598 for the job details"; Jose, 1 Nov 2026)
+      text: `🔔 *Ship ${g.name}*\n${what}`,
       template: { name: 'jds_alert', values: [who, oneLine(what).replace(/[.\s]+$/, ''), nos[0]] },
     })
   }
@@ -266,20 +267,19 @@ export function instantAlerts(data, events = [], now = new Date()) {
     const row = data.containersByNo?.[String(box).toUpperCase()]
     if (row && containerFinishedOn(row, job)) continue
     const k = `${job.id}|${what}`
-    const g = groups.get(k) || { job, what, boxes: [], ids: [], place: null, time: null, more: 0 }
+    const g = groups.get(k) || { job, what, boxes: [], ids: [], place: null, time: null }
     if (!g.boxes.includes(box)) g.boxes.push(box)
     g.ids.push(ev.id)
     const { place, time } = noteParts(ev.note)
     g.place ||= place
     g.time ||= time
-    const extra = String(ev.note || '').match(/^(\d+) new events/)
-    if (extra) g.more += Number(extra[1]) - 1
     groups.set(k, g)
   }
   for (const g of groups.values()) {
     const event = (g.what.charAt(0) + g.what.slice(1).toLowerCase()).replace(/\b(cfs|icd|dpd|dpe)\b/gi, (w) => w.toUpperCase())
     const boxes = g.boxes.length === 1 ? `Container ${g.boxes[0]}` : `${g.boxes.length} containers (${g.boxes.slice(0, 4).join(', ')}${g.boxes.length > 4 ? ', …' : ''})`
-    const aside = [g.time, g.more > 0 ? `and ${g.more} earlier update${g.more === 1 ? '' : 's'}` : null].filter(Boolean).join('; ')
+    // the latest move and its time only (no "and 8 earlier updates"; Jose, 1 Nov 2026)
+    const aside = g.time || ''
     add('container', `box:${g.ids.sort().join(',')}`, g.job,
       `${boxIcon(g.what)} ${boxes}: ${event}${g.place ? ` at ${g.place}` : ''}${aside ? ` (${aside})` : ''}.`)
   }
