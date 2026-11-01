@@ -21,7 +21,7 @@ import { askAssistant, groqInfo } from './assistant.ts'
 import { applyChange, confirmText, isNo, isYes, PENDING_MINUTES, prepareChange, type Pending } from './actions.ts'
 import { downloadMedia, transcribe, normalizeSpoken, docTypeFromName, jobFromText, safeName, MAX_FILE_BYTES } from './media.ts'
 import { makeServerTools, sendDueReminders, checkWatches, checkTasks } from './servertools.ts'
-import { readBeFile, jobForBe, beLine } from './bereader.ts'
+import { readBeFile, jobForBe, beLine, beFill, beForFill } from './bereader.ts'
 import { pushAlerts, pushTest } from './push.ts'
 import { handlePost, undoPost, isUndo, UNDO_MINUTES } from './posts.ts'
 import { runQuestions, answerQuestion, questionsDue } from './questions.ts'
@@ -497,6 +497,10 @@ async function handleFile(admin: Admin, person: Person, m: any, data: any) {
       const r = prepareChange({ action: 'record_be', job: j.job_no, be_no: be.be_no, be_date: be.be_date }, data, person)
       if (r.ok) items.push({ ...r.pending, args: { ...r.pending.args, igm_no: be.igm_no || null, igm_date: be.igm_date || null, from_file: true } })
     }
+    // everything else the BE gives (containers, BL, port, line, goods, arrival …): the
+    // job's empty fields, as Create job fills them (Jose, 1 Nov 2026)
+    const fill = beFill(be, j)
+    if (fill.said.length) items.push({ action: 'fill_from_be', job_id: j.id, job_no: j.job_no, args: { be: beForFill(be) }, summary: `Fill ${j.job_no} from the BE: ${fill.said.join(' · ')}`, at: new Date().toISOString() })
     if (be.copy_type === 'OOC' && be.ooc_no && be.ooc_date && Number(j.stage) < 7) {
       const r = prepareChange({ action: 'record_ooc', job: j.job_no, ooc_no: be.ooc_no, ooc_date: be.ooc_date }, data, person)
       if (r.ok) items.push(r.pending)
