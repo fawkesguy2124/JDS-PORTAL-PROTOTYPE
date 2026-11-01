@@ -136,7 +136,17 @@ export default function TrucksPage({ currentUserName, onOpenJob, showToast, canU
   const [urlQ] = useState(() => { try { return new URLSearchParams(window.location.search).get('q') || '' } catch { return '' } })
   const [search, setSearch] = useState(urlQ)
   const [selectedId, setSelectedId] = useState(null)
-  const [papersOpen, setPapersOpen] = useState(null) // the truck (jobId:no) whose papers are shown
+  const [papersOpen, setPapersOpen] = useState(null) // the truck (jobId:no) whose papers box is open
+  const [papersUp, setPapersUp] = useState(false)
+  // the papers box closes on a click elsewhere or Esc
+  useEffect(() => {
+    if (!papersOpen) return undefined
+    const close = (e) => { if (!e.target.closest?.('.ix-trk-papcell')) setPapersOpen(null) }
+    const esc = (e) => { if (e.key === 'Escape') setPapersOpen(null) }
+    document.addEventListener('mousedown', close)
+    document.addEventListener('keydown', esc)
+    return () => { document.removeEventListener('mousedown', close); document.removeEventListener('keydown', esc) }
+  }, [papersOpen])
   const [forms, setForms] = useState({})            // jobId -> { truckNo, container, dlNo, error }
   const [editing, setEditing] = useState(undefined) // the job whose "add a truck" form is open (one at a time)
   const [fixing, setFixing] = useState(null)        // { key, truckNo, container, error }: a truck being corrected
@@ -277,8 +287,11 @@ export default function TrucksPage({ currentUserName, onOpenJob, showToast, canU
   })
 
   // papers: the saved answer (no new look-up); only a truck never checked is looked up, once
-  const showPapers = (job, t, key) => {
+  const showPapers = (job, t, key, e) => {
     if (papersOpen === key) { setPapersOpen(null); return }
+    // near the bottom of the list the box opens upwards (it would be cut off)
+    const frame = e?.currentTarget?.closest('.ix-tbl-wrap')?.getBoundingClientRect()
+    setPapersUp(!!frame && frame.bottom - e.currentTarget.getBoundingClientRect().bottom < 130)
     setFixing(null)
     if (t.papers) { setPapersOpen(key); return }
     guarded(key, async () => {
@@ -380,8 +393,20 @@ export default function TrucksPage({ currentUserName, onOpenJob, showToast, canU
               ? <><span className="ix-trk-place">{loc.plaza}</span><span className="sub" title={loc.checkedAt ? `Looked up ${timeAgo(loc.checkedAt)}` : undefined}>{loc.at ? fmtDateTime(loc.at) : '—'}</span></>
               : <span className="t2">Not seen yet</span>}
           </td>
-          <td onClick={(e) => e.stopPropagation()}>
-            <PapersChip papers={t.papers} open={papersOpen === key} disabled={busyId === key} onClick={() => showPapers(job, t, key)} />
+          <td className="ix-trk-papcell" onClick={(e) => e.stopPropagation()}>
+            <PapersChip papers={t.papers} open={papersOpen === key} disabled={busyId === key} onClick={(e) => showPapers(job, t, key, e)} />
+            {/* a small box at the chip, not a new row (Jose, 1 Nov 2026) */}
+            {papersOpen === key && t.papers && (
+              <div className={`ix-trk-pop ${t.papers.tone === 'bad' ? 'bad' : t.papers.tone === 'good' ? 'ok' : ''}${papersUp ? ' up' : ''}`} role="dialog" aria-label={`Papers of truck ${t.no}`}>
+                <div className="hd">
+                  <Icon name={t.papers.tone === 'good' ? 'shield-check' : 'alert-triangle'} />
+                  <b>{t.no}</b>
+                  <button type="button" className="ix-icon-btn sm" onClick={() => setPapersOpen(null)} aria-label="Close"><Icon name="x" /></button>
+                </div>
+                <ul>{papersLines(t.papers).map((l) => <li key={l}>{l}</li>)}</ul>
+                {t.papers.checkedAt && <small>From the vehicle register, {fmtDate(t.papers.checkedAt)}</small>}
+              </div>
+            )}
           </td>
           <td className="act" onClick={(e) => e.stopPropagation()}>
             <div>
@@ -392,20 +417,6 @@ export default function TrucksPage({ currentUserName, onOpenJob, showToast, canU
             </div>
           </td>
         </tr>
-        {papersOpen === key && t.papers && (
-          <tr className="ix-trk-sub">
-            <td colSpan={COLS}>
-              {/* one thin line (Jose, 1 Nov 2026): truck · what is wrong · where it is from */}
-              <div className={`ix-trk-papers ${t.papers.tone === 'bad' ? 'bad' : t.papers.tone === 'good' ? 'ok' : ''}`}>
-                <Icon name={t.papers.tone === 'good' ? 'shield-check' : 'alert-triangle'} />
-                <b>{t.no}</b>
-                <span className="what">{papersLines(t.papers).join(' · ')}</span>
-                {t.papers.checkedAt && <small>From the vehicle register, {fmtDate(t.papers.checkedAt)}</small>}
-                <button type="button" className="ix-icon-btn sm" onClick={() => setPapersOpen(null)} aria-label="Close"><Icon name="x" /></button>
-              </div>
-            </td>
-          </tr>
-        )}
         {first && editId === job.id && editorRow(job, j)}
       </Fragment>
     )
