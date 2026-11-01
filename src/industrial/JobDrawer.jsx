@@ -221,7 +221,7 @@ export default function JobDrawer({ jobId, onClose, onOpenFull, onOpenTruck, cur
   const [viewDoc, setViewDoc] = useState(null) // a PDF shown inside the portal
   const [openBox, setOpenBox] = useState(null)
   const [checking, setChecking] = useState(false) // Check OOC running in the panel
-  const [warnOpen, setWarnOpen] = useState(false) // phone: the truck papers problem shown under the steps
+  const [warnOpen, setWarnOpen] = useState(null) // phone: the step whose warnings show under the steps
   const stepRef = useRef(null)
 
   const log = loaded.id === curId ? loaded.log : []
@@ -337,23 +337,24 @@ export default function JobDrawer({ jobId, onClose, onOpenFull, onOpenTruck, cur
   const askTruck = !isExport && j.attention.some((a) => a.action === 'truck' && /add the truck number/.test(a.text))
   if (!cta && askTruck) cta = { key: 'truck', step: 'truck', label: 'Add truck number', icon: 'truck', run: () => onOpenTruck(job.id), onDone: true }
 
-  // truck papers problems (road tax, insurance …): a red ! next to the truck on the step bar,
-  // the problem on hover, instead of a banner (Jose, 1 Nov 2026). A phone has no hover: a tap
-  // shows the problem in a red line under the steps instead of leaving the panel
-  const hasTruckStep = j.steps.some((s) => s.id === 'truck')
-  const paperWarns = hasTruckStep ? j.attention.map((a) => a.text.match(/^Truck (\S+) papers problem: (.*)$/)).filter(Boolean)
-    .map(([, no, what]) => `Truck ${no} papers problem: ${plain(what).replace(new RegExp(`^${no}:\\s*`), '')}`) : []
-
   // where the BE is now, after filing: the Customs stage card (one tap)
   const showBeStage = !isExport && j.beFiled && !j.oocDone && !delivered
-  // ── alerts, each with its own action (never the same as the primary one) ──
+  // ── alerts: a small mark next to the step they are about (red !, amber triangle, blue i),
+  // the words on hover, no banners (Jose, 1 Nov 2026: "no separate row"). A phone has no
+  // hover: a tap shows them in a line under the steps instead of leaving the panel ──
+  const stepIds = j.steps.map((s) => s.id)
+  const stepPick = (...ids) => ids.find((id) => stepIds.includes(id))
+  const curStepId = (j.steps.find((s) => s.current) || j.steps[j.steps.length - 1])?.id
+  const stepOf = (a) => (a.action === 'truck' ? stepPick('truck')
+    : a.action === 'containers' ? stepPick('out', 'egm', 'truck')
+      : a.action === 'customs' ? stepPick(j.beFiled ? 'ooc' : 'be', 'ooc', 'leo', 'sb')
+        : null) || curStepId
   const alerts = j.attention
     // (an alert that only restates the current step — "BE filed 9 days ago, OOC not yet",
     // "OOC done, arrange truck" — is left out: the step bar shows it; Jose, 31 Oct 2026)
     .filter((a) => !(a.action === 'truck' && /^OOC done/.test(a.text)))
     .filter((a) => !(a.action === 'customs' && /^BE filed \d+ days? ago/.test(a.text)))
     .filter((a) => !(a.action === 'truck' && /add the truck number/.test(a.text)))
-    .filter((a) => !(paperWarns.length && /^Truck \S+ papers problem:/.test(a.text)))
     // while the Customs stage card is shown, it already says where the BE is ("BE assessed —
     // pay the duty", "Customs query raised" …): no second copy as an alert (Jose, 31 Oct 2026)
     .filter((a) => !(showBeStage && a.action === 'customs'))
@@ -361,7 +362,10 @@ export default function JobDrawer({ jobId, onClose, onOpenFull, onOpenTruck, cur
       const m = (j.mismatches || []).find((x) => a.text.startsWith(`Check the ${x.field.toLowerCase()}`))
       let title = a.text
       let sub = null
-      if (m) { title = `Check the ${m.field.toLowerCase()}`; sub = `The job says ${m.job}, container tracking says ${m.tracking}. Correct it on the full job page if the job is wrong.` }
+      const papers = a.text.match(/^Truck (\S+) papers problem: (.*)$/)
+      // ("Truck MH06… papers problem: MH06…: road tax expired" said the plate twice)
+      if (papers) title = `Truck ${papers[1]} papers problem: ${papers[2].replace(`${papers[1]}: `, '')}`
+      else if (m) { title = `Check the ${m.field.toLowerCase()}`; sub = `The job says ${m.job}, container tracking says ${m.tracking}. Correct it on the full job page if the job is wrong.` }
       else if (a.text.includes(' — ')) [title, sub] = [a.text.split(' — ')[0], a.text.split(' — ').slice(1).join(' — ')]
       if (a.action === 'containers' && j.freeTill && /free|detention/i.test(a.text)) {
         const box = j.freeBox && boxes.length > 1 ? ` on ${j.freeBox}` : ''
@@ -372,9 +376,12 @@ export default function JobDrawer({ jobId, onClose, onOpenFull, onOpenTruck, cur
       else if (a.action === 'truck') act = { key: 'truck', label: 'Open on Trucks', run: () => onOpenTruck(job.id) }
       else if (a.action === 'customs') act = { key: 'customs', label: 'Open BE & OOC', run: () => onOpenFull(job.id, 'customs') }
       else if (a.action === 'details') act = { label: 'Open full job', run: () => onOpenFull(job.id, 'details') }
-      if (act?.key && act.key === cta?.key) act = null
-      return { level: a.level, title: plain(title), sub: sub && plain(sub), act }
+      title = plain(title)
+      return { level: a.level, step: stepOf(a), text: sub ? `${title}${/[.!?]$/.test(title) ? '' : '.'} ${plain(sub)}` : title, act }
     })
+  const LEVELS = { red: ['alert-circle', 3], amber: ['alert-triangle', 2], info: ['info-circle', 1] }
+  const warnsOn = (id) => alerts.filter((a) => a.step === id)
+  const worstOf = (ws) => ws.reduce((w, a) => ((LEVELS[a.level]?.[1] || 1) > (LEVELS[w]?.[1] || 1) ? a.level : w), 'info')
 
   // ── timeline: saved events, this trip's container moves, upcoming dates ──
   const events = []
@@ -577,9 +584,13 @@ export default function JobDrawer({ jobId, onClose, onOpenFull, onOpenTruck, cur
               {j.steps.map((s) => {
                 const since = s.current && stageSince ? stageSince.replace(/^·\s*/, '') : null
                 const sub = since || (s.sub ? plain(s.sub) : (s.id === 'delivered' && !s.done && !isExport ? (deliveryBy(job) === 'client' ? 'Client collects' : 'JDS delivers') : null))
-                const warn = s.id === 'truck' && paperWarns.length > 0 && (
-                  <button type="button" className="ix-jp-warn" data-tip={paperWarns.join('\n')} aria-label={paperWarns.join('. ')} onClick={() => (isPhone() ? setWarnOpen((v) => !v) : onOpenTruck(job.id))}>
-                    <Icon name="alert-circle" />
+                const ws = warnsOn(s.id)
+                const lv = ws.length ? worstOf(ws) : null
+                const toAct = ws.find((w) => w.act)?.act
+                const warn = lv && (
+                  <button type="button" className={`ix-jp-warn ${lv}${j.steps.indexOf(s) < 2 ? ' l' : ''}${toAct ? '' : ' na'}`} data-tip={ws.map((w) => w.text).join('\n')} aria-label={ws.map((w) => w.text).join(' ')}
+                    onClick={() => (isPhone() ? setWarnOpen((v) => (v === s.id ? null : s.id)) : toAct?.run())}>
+                    <Icon name={LEVELS[lv][0]} />
                   </button>
                 )
                 return (
@@ -600,33 +611,26 @@ export default function JobDrawer({ jobId, onClose, onOpenFull, onOpenTruck, cur
               })}
             </div>
           </div>
-          {warnOpen && paperWarns.length > 0 && (
-            <div className="ix-jp-warnline" role="status">
-              <div>
-                <Icon name="alert-circle" />
-                <p>{paperWarns.map((w) => <span key={w}>{w}</span>)}</p>
-                <button type="button" className="ix-link" onClick={() => onOpenTruck(job.id)}>Open on Trucks</button>
+          {warnOpen && warnsOn(warnOpen).length > 0 && (() => {
+            const ws = warnsOn(warnOpen)
+            const lv = worstOf(ws)
+            const toAct = ws.find((w) => w.act)?.act
+            return (
+              <div className={`ix-jp-warnline ${lv}`} role="status">
+                <div>
+                  <Icon name={LEVELS[lv][0]} />
+                  <p>{ws.map((w) => <span key={w.text}>{w.text}</span>)}</p>
+                  {toAct && <button type="button" className="ix-link" onClick={toAct.run}>{toAct.label}</button>}
+                </div>
               </div>
-            </div>
-          )}
+            )
+          })()}
 
         </div>
 
         <div className="ix-jp-body">
           {/* one page, no tabs: containers, papers and timeline are all here (Jose, 31 Oct 2026) */}
           <>
-              {alerts.length > 0 && (
-                <div className="ix-jp-alerts">
-                  {alerts.map((a, i) => (
-                    <div key={i} className={`ix-jp-al ${a.level}`}>
-                      <Icon name={a.level === 'red' ? 'alert-octagon' : a.level === 'amber' ? 'alert-triangle' : 'info-circle'} />
-                      <p><b>{a.title}</b>{a.sub && <small>{a.sub}</small>}</p>
-                      <div>{a.act && <Button size="sm" variant="ghost" onClick={a.act.run}>{a.act.label}</Button>}</div>
-                    </div>
-                  ))}
-                </div>
-              )}
-
               {/* where the BE is now, after filing: one tap (Jose, 25 Oct 2026) */}
               {showBeStage && (
                 <BeStage job={job} userName={currentUserName} showToast={showToast} />

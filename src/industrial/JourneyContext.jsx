@@ -6,6 +6,7 @@ import { loadJourneyData, journeyFor, activeRows, isOldVoyage, onTheRoad, needAT
 // One shared load of everything the new screens show (saved data only, never
 // ULIP), so moving between pages is instant. refresh() reloads it.
 const Ctx = createContext(null)
+const AUTO_RELOAD_MS = 5 * 60_000
 const emptyFacts = { onRoad: [], needTruck: [], detention: [], containers: [], byClient: {} }
 
 export function JourneyProvider({ children }) {
@@ -36,6 +37,21 @@ export function JourneyProvider({ children }) {
   }, [key])
 
   const refresh = useCallback(() => { setLoading(true); setKey((k) => k + 1) }, [])
+
+  // reloads by itself (Jose, 1 Nov 2026: no Refresh button on All jobs): every 5 minutes
+  // while the portal is on screen — the server's automatic checks run every 5 minutes too —
+  // and when the window comes back after being away for a minute or more. Quiet: the page
+  // keeps showing the rows while the new ones load. Saved data only, never ULIP.
+  const loadedAt = data?.loadedAt
+  useEffect(() => {
+    const age = () => (loadedAt ? Date.now() - new Date(loadedAt).getTime() : Infinity)
+    const quiet = () => { if (!document.hidden) setKey((k) => k + 1) }
+    const t = setInterval(quiet, AUTO_RELOAD_MS)
+    const back = () => { if (!document.hidden && age() > 60_000) quiet() }
+    document.addEventListener('visibilitychange', back)
+    window.addEventListener('focus', back)
+    return () => { clearInterval(t); document.removeEventListener('visibilitychange', back); window.removeEventListener('focus', back) }
+  }, [loadedAt])
 
   // ship tracking just answered for a new job or BL (services/shipTracking): reload, so the
   // Vessels page shows the ship without waiting for a page change

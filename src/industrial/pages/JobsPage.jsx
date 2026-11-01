@@ -39,7 +39,6 @@ const SORTS = {
   free: (r) => r.j.freeDaysLeft ?? null,
   updated: (r) => (r.job.updated_at ? new Date(r.job.updated_at).getTime() : null),
 }
-const SORT_TEXT = { job: 'job number', client: 'client', line: 'line', arrival: 'arrival', be: 'BE number', status: 'stage, longest wait first', free: 'free days', updated: 'last update' }
 
 // Extra problems on a row become small tags next to the next step (one row per job)
 const TAGS = [
@@ -97,7 +96,7 @@ function arrivalOf(job, j, sea) {
 }
 
 export default function JobsPage({ profile, onOpenJob, selectedId }) {
-  const { rows, data, facts, profiles, loading, error, refresh } = useJourney()
+  const { rows, data, facts, profiles, loading, error } = useJourney()
   useFreshOnOpen() // opening the page shows the latest saved data
   const me = profile?.id
   const [view, setView] = useState(() => {
@@ -237,7 +236,6 @@ export default function JobsPage({ profile, onOpenJob, selectedId }) {
   const busy = loading && !rows.length
   const tabs = TABS.filter((t) => !t.optional || counts[t.id] > 0 || view === t.id)
     .map((t) => ({ id: t.id, label: t.label, count: busy ? '–' : counts[t.id], tone: t.tone && counts[t.id] ? t.tone : undefined }))
-  const boxTotal = list.reduce((n, r) => n + r.boxCount, 0)
   const COLS = 12
 
   return (
@@ -245,9 +243,10 @@ export default function JobsPage({ profile, onOpenJob, selectedId }) {
       <PageHead
         title="All jobs"
         sub={busy ? 'Loading…' : null /* no counts here: the tabs right below carry them (Jose, 31 Oct 2026) */}
-        actions={<Button size="sm" variant="ghost" icon="refresh" onClick={refresh} disabled={loading}>{loading ? 'Refreshing…' : 'Refresh'}</Button>}
+        /* (no Refresh button: the list reloads by itself every 5 minutes and whenever the
+           page or the window is opened, JourneyContext; Jose, 1 Nov 2026) */
       />
-      {error && <div className="ix-error">Could not load the latest data: {error}. Press Refresh.</div>}
+      {error && <div className="ix-error">Could not load the latest data: {error}. It tries again by itself in a few minutes.</div>}
 
       <section className="ix-card ix-jb-panel">
         <Tabs tabs={tabs} value={view} onChange={pickView} />
@@ -262,7 +261,7 @@ export default function JobsPage({ profile, onOpenJob, selectedId }) {
           <FilterSelect label="Owner" value={owner} onChange={setOwner} options={[{ value: '', label: 'Anyone' }, ...(me ? [{ value: me, label: 'Me' }] : []), ...owners]} />
           {filtered && <Button size="sm" variant="ghost" icon="x" onClick={clearAll}>Clear</Button>}
           </div>
-          <div className="right hide-m"><span className="muted" style={{ fontSize: 12 }}>Sorted by {SORT_TEXT[sort.key]}{sort.key === 'job' && sort.dir === -1 ? ', newest first' : ''}</span></div>
+          {/* (no "Sorted by …" line: the arrow on the column heading shows it; Jose, 1 Nov 2026) */}
         </div>
 
         <div className="ix-tbl-wrap" ref={tableRef}>
@@ -350,10 +349,7 @@ export default function JobsPage({ profile, onOpenJob, selectedId }) {
           </table>
         </div>
 
-        <div className="ix-tbl-foot ix-jb-foot">
-          <span>{list.length} {list.length === 1 ? 'job' : 'jobs'}{boxTotal ? ` · ${boxTotal} ${boxTotal === 1 ? 'container' : 'containers'}` : ''}{filtered ? ` · of ${counts[view] ?? 0} in this tab` : ''}</span>
-          <span className="hide-m"><kbd>J</kbd><kbd>K</kbd> move &nbsp;<kbd>Enter</kbd> open &nbsp;<kbd>/</kbd> search</span>
-        </div>
+        {/* (no "4 jobs · 7 containers / J K move" footer: the tab counts say it; Jose, 1 Nov 2026) */}
       </section>
     </>
   )
