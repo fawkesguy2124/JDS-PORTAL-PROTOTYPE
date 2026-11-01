@@ -24,6 +24,7 @@ import { makeServerTools, sendDueReminders, checkWatches, checkTasks } from './s
 import { readBeFile, jobForBe, beLine } from './bereader.ts'
 import { readDocFile, jobForDoc, docFill, fillArgs } from './docfill.ts'
 import { pushAlerts, pushTest } from './push.ts'
+import { botHealth, savedToday } from './safety.ts'
 import { handlePost, undoPost, isUndo, UNDO_MINUTES, knownClient } from './posts.ts'
 import { runQuestions, answerQuestion, questionsDue } from './questions.ts'
 
@@ -312,6 +313,13 @@ async function runAlerts(admin: Admin) {
   if (sendingOn()) await admin.from('bot_state').upsert({ id: 1, alerts_checked_at: now })
   // the bot's calm questions (only when the BOT_ASKING switch is on; questions.ts)
   await runQuestions(admin, data, team, questionDeps(admin)).catch((e) => console.warn(`[wa-bot] questions: ${(e as Error).message}`))
+  // the safety net: a problem in the last hour reaches Jose; each evening, what was saved
+  const safetyDeps = {
+    sendOnce: (key: string, person: Person, msg: { kind: string; text: string; template: Template }) => sendOnce(admin, key, person, msg.kind, msg),
+    push: (alerts: any[]) => pushAlerts(admin, alerts),
+  }
+  await botHealth(admin, team, safetyDeps).catch((e) => console.warn(`[wa-bot] health: ${(e as Error).message}`))
+  await savedToday(admin, team, safetyDeps).catch((e) => console.warn(`[wa-bot] saved today: ${(e as Error).message}`))
   return out
 }
 
@@ -610,6 +618,10 @@ async function handleInbound(admin: Admin, payload: any) {
       const { error: dup } = await admin.from('bot_sent').insert({ key: `in:${m.id}`, phone: person.phone, kind: 'inbound' })
       if (dup?.code === '23505') continue
     }
+    // never silent (Jose, 2 Nov 2026: "they'll rely on it"): whatever fails below, the person
+    // hears it, and the failure is kept for the health alert (runAlerts → botHealth)
+    let sentReply = false
+    try {
     const started = Date.now()
     const typing = typingNow.get(m.id) || showTyping(m.id) // already started above
     let text = m.type === 'text' ? m.text?.body : m.type === 'button' ? m.button?.text
@@ -732,6 +744,7 @@ async function handleInbound(admin: Admin, payload: any) {
       if (ask) reply = confirmText(ask)
       else if (ai.text && /reply\s*\*?yes/i.test(ai.text)) reply = "I couldn't prepare that change. Please send it again in one message with all the details, for example: record BE 1234567 dated 18 Oct on J-509."
       else reply = ai.text ? (askedForLink(text) ? toWhatsApp(ai.text) : noLinks(toWhatsApp(ai.text))) : "⏳ The AI is busy right now, so I couldn't answer that question. Please ask again in a minute.\n\nThese always work instantly: a job no (J-193), a container no, a BE no, SUMMARY or URGENT."
+      if (!ai.text && !ask) await recordFailure(admin, person.phone, 'the AI did not answer', String(ai.note || 'no answer').slice(0, 300))
     }
     if (pending && live && !isYes(text) && !isYesSaid(text) && !isNo(text) && !isNoSaid(text) && !ask) reply = `(The earlier change was not made: ${pending.summary.replace(/\*/g, '')}.)\n\n${reply}`
     // (one waiting slot: a Yes / No question wins over the undo of an earlier post)
@@ -740,14 +753,31 @@ async function handleInbound(admin: Admin, payload: any) {
     // (a voice note is answered directly; what was heard is not repeated — Jose, 24 Oct 2026)
     // a reply to the person is plain conversation (no Yes / No buttons: those are only on the
     // bot's own questions; Jose, 2 Nov 2026); a menu from a tool comes after the reply
-    await send(person.phone, { text: reply })
+    const delivered = await send(person.phone, { text: reply })
+    sentReply = true
+    if (!delivered.ok) await recordFailure(admin, person.phone, 'the reply was not delivered', delivered.error || 'WhatsApp refused it')
     for (const extra of after) await send(person.phone, extra)
     const note = checked.length ? `\n[checked: ${checked.join('; ').slice(0, 400)}]` : ''
     const next = [...history, { role: 'user', text: String(text).slice(0, 500) }, { role: 'model', text: `${String(reply).slice(0, 1500)}${note}` }].slice(-10)
     await admin.from('bot_inbox').update({ history: next }).eq('phone', person.phone)
     // the window is open again: what was held for this person goes out now
     await sendHeld(admin, person).catch((e) => console.warn(`[wa-bot] held messages: ${(e as Error).message}`))
+    } catch (e) {
+      const msg = (e as Error)?.message || String(e)
+      console.error(`[wa-bot] message from ${person.name} failed: ${msg}`)
+      if (!sentReply) {
+        try { await send(person.phone, { text: "Sorry, something went wrong on my side and I couldn't finish that. Please send it again in a minute." }) } catch { /* the health alert still sees it */ }
+      }
+      await recordFailure(admin, person.phone, `message (${m.type})`, msg)
+    }
   }
+}
+
+// A failure the team may have noticed: kept in bot_sent (kind 'error') for the health alert
+async function recordFailure(admin: Admin, phone: string, what: string, msg: string) {
+  try {
+    await admin.from('bot_sent').insert({ key: `err:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`, phone, kind: 'error', text: what.slice(0, 200), error: String(msg).slice(0, 500) })
+  } catch { /* nothing more to do */ }
 }
 
 // Meta only passes incoming messages to the bot if the WhatsApp account is
