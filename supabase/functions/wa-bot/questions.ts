@@ -137,10 +137,17 @@ export async function runQuestions(admin: Admin, data: any, team: Person[], deps
 }
 
 // What a typed or spoken answer means. Hindi / Hinglish as the team talks (Jose, 2 Nov 2026)
-const SKIP = /\b(skip|don'?t know|dont know|no idea|pata nahi|pata nhi|malum nahi|maloom nahi|not sure)\b/i
-const LATER = /^\s*(no|nope|nahi|nhi|not yet|abhi nahi|abhi nhi|later|baad me|baad mein|kal|tomorrow|pending|still pending)\b/i
-const YES = /\b(yes|yeah|yep|haan|han|ha|ji|done|paid|pay kar|bhar diya|bhara|filed|file ho|file kar|delivered|deliver ho|ho gaya|hogaya|ho gya|kar diya|kardiya|nikal gaya|chala gaya|pahuch gaya|pohoch gaya|reached)\b/i
-const MOVE_WORDS: [RegExp, string][] = [[/\b(rail|train|rake|icd)\b/i, 'rail'], [/\b(client|party|customer|self|khud)\b.*\b(collect|le jayega|uthayega|pick|lega)|\bclient collects?\b|\bself pick/i, 'client'], [/\b(truck|trailer|gaadi|gadi|lorry)\b/i, 'truck']]
+// (Hindi script is turned into these letters first: toRoman in media.ts, so "पता नहीं" →
+// "pata nahin", "हाँ भर दिया" → "han bhar diya")
+const NAHI = 'na?h?i+n?|nhi|nai'
+const SKIP = new RegExp(`\\b(skip|don'?t know|dont know|no idea|not sure|(pata|malum|maloom|maaloom|patta) (${NAHI})|(${NAHI}) pata|kya pata|kuch pata (${NAHI}))\\b`, 'i')
+const LATER = new RegExp(`^\\s*(no|nope|(${NAHI})|not yet|abhi (${NAHI})|abhi tak (${NAHI})|(${NAHI}) hua|(${NAHI}) kiya|(${NAHI}) gaya|later|baad me|baad mein|kal|kal tak|tomorrow|pending|still pending|baaki hai|baki hai|ruko|wait)\\b`, 'i')
+const YES = /\b(yes|yas|yeah|yep|ok|oke|okay|haan|han|ha|haa|haanji|han ji|ji haan|ji han|ji|bilkul|done|paid|pay kar|pay ho|bhar diya|bhar di|bhara|bhar dia|jama kar|jama ho|de diya|de di|filed|file ho|file kar|delivered|deliver ho|ho gaya|ho gayi|hogaya|ho gya|ho gai|kar diya|kar di|kardiya|nikal gaya|nikal gayi|chala gaya|chali gayi|pahuch gaya|pahunch gaya|pohoch gaya|reached|mil gaya|aa gaya)\b/i
+const MOVE_WORDS: [RegExp, string][] = [
+  [/\b(rail|rel|train|tren|rake|icd|malgadi)\b/i, 'rail'],
+  [/\b(client|klaint|party|parti|customer|self|khud)\b.*\b(collect|le jayega|le jayegi|le jaega|uthayega|uthayegi|pick|lega|legi)|\bclient collects?\b|\bself pick/i, 'client'],
+  [/\b(truck|trak|trek|trailer|treler|gaadi|gadi|gari|gaari|lorry|tempo)\b/i, 'truck'],
+]
 
 // A reply to the bot's questions? (a tapped button, or words about a question asked to this
 // person in the last 2 days). Returns the reply to send, or null when the message is about

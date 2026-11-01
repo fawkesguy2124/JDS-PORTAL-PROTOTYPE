@@ -562,13 +562,14 @@ export const isNo = (t: string) => /^\s*(no|n|nope|cancel|stop|nahi|nahin|na|mat
 // the same said in a few words, as people talk or speak a voice note ("haan add karo",
 // "yes please go ahead", "theek hai", "nahi rehne do"); only used while a change is waiting
 // ("ok thanks" is a thank-you, not a yes)
-const NEGATION = /\b(no|not|nahi|nahin|nhi|mat|don'?t|cancel|wrong|galat|wait|ruko|thanks?|thank you|thx|shukriya|dhanyavad)\b/i
+// (Hindi script is read as these letters first: toRoman in media.ts)
+const NEGATION = /\b(no|not|nahi+n?|nhi|nai|mat|don'?t|cancel|wrong|galat|wait|ruko|ruk jao|thanks?|thank you|thx|shukriya|dhanyavad|dhanyawad)\b/i
 export const isYesSaid = (t: string) => {
   const s = String(t || '').trim()
   if (s.length > 60 || NEGATION.test(s)) return false
-  return /^(yes|yess|yeah|yep|ok|okay|confirm|confirmed|haan|ha|han|haa|ji|sure|do it|go ahead|please do|kar do|kardo|karo|add karo|add kar do|save karo|bana do|theek hai|thik hai|done|correct|sahi hai|right)\b/i.test(s)
+  return /^(yes|yess|yas|yeah|yep|ok|oke|okay|confirm|confirmed|haan|ha|han|haa|haanji|han ji|ji haan|ji han|ji|bilkul|zaroor|jarur|sure|do it|go ahead|please do|kar do|kardo|kar dijiye|kar dena|karo|add karo|add kar do|daal do|dal do|save karo|save kar do|bana do|banao|theek hai|thik hai|thik h|theek|done|correct|sahi hai|sahi|right|chalega)\b/i.test(s)
 }
 export const isNoSaid = (t: string) => {
   const s = String(t || '').trim()
-  return s.length <= 60 && /^(no|nope|nahi|nahin|nhi|na|cancel|stop|mat|don'?t|leave it|rehne do|chhodo|chodo|wrong|galat)\b/i.test(s)
+  return s.length <= 60 && /^(no|nope|nahi+n?|nhi|nai|na|cancel|stop|mat|mat karo|don'?t|leave it|rehne do|rahne do|chhodo|chodo|chhod do|wrong|galat|ruko|ruk jao)\b/i.test(s)
 }

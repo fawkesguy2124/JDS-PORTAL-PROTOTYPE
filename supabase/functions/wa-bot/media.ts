@@ -23,26 +23,83 @@ export async function downloadMedia(id: string): Promise<{ bytes: Uint8Array; mi
 // Voice note → text. The prompt lists the words the team uses (and the real open
 // job numbers and clients), so Whisper spells them right. Hindi and English both
 // work. The more accurate large model goes first; the fast one is the fallback.
-const VOCAB = 'JDS Logistics. OOC, BE, BL, IGM, CFS, ICD, DO, FASTag, LDB, detention, free days, Nhava Sheva, JNPT, container, truck, rail.'
+// (the Hinglish line steers Whisper to write Hindi in English letters, as the team types it;
+// Jose, 2 Nov 2026: many of the JDS staff speak Hindi)
+const VOCAB = 'JDS Logistics. OOC, BE, BL, IGM, CFS, ICD, DO, FASTag, LDB, detention, free days, Nhava Sheva, JNPT, container, truck, rail. Haan ji, J-689 ka duty bhar diya. Truck nikal gaya, gaadi number MH46 AR 2016. Abhi nahi hua, kal ho jayega.'
 export async function transcribe(bytes: Uint8Array, mime: string, words = ''): Promise<string> {
   const key = env('GROQ_API_KEY')
   if (!key) throw new Error('no GROQ_API_KEY')
   const ext = /mpeg|mp3/.test(mime) ? 'mp3' : /mp4|m4a|aac/.test(mime) ? 'm4a' : /wav/.test(mime) ? 'wav' : 'ogg'
   const prompt = `${VOCAB} ${words}`.slice(0, 800)
-  for (const model of ['whisper-large-v3', 'whisper-large-v3-turbo']) {
+  const run = async (model: string, language?: string) => {
     const form = new FormData()
     form.append('file', new Blob([bytes], { type: mime || 'audio/ogg' }), `voice.${ext}`)
     form.append('model', model)
     form.append('prompt', prompt)
     form.append('temperature', '0')
+    if (language) form.append('language', language)
     const res = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
       method: 'POST', headers: { Authorization: `Bearer ${key}` }, body: form, signal: AbortSignal.timeout(30_000),
     })
     const out = await res.json().catch(() => ({}))
-    if (res.ok && typeof out?.text === 'string') return out.text.trim()
+    if (res.ok && typeof out?.text === 'string') return out.text.trim() as string
     console.warn(`[wa-bot] ${model} could not transcribe: ${res.status} ${String(out?.error?.message || '').slice(0, 120)}`)
+    return null
+  }
+  for (const model of ['whisper-large-v3', 'whisper-large-v3-turbo']) {
+    let text = await run(model)
+    if (text === null) continue
+    // Whisper sometimes writes spoken Hindi in Urdu script: heard again as Hindi (Devanagari,
+    // which toRoman then writes in English letters)
+    if (/[؀-ۿ]/.test(text)) text = (await run(model, 'hi')) ?? text
+    return toRoman(text)
   }
   throw new Error('the voice note could not be understood')
+}
+
+// Hindi in Devanagari → the same words in English letters, as the team types Hinglish
+// ("हाँ, ड्यूटी भर दिया" → "han, dyuti bhar diya"), so a typed or spoken Hindi answer is
+// understood like a Hinglish one. Digits ०-९ become 0-9. Other text is left as it is.
+const DV_VOWEL: Record<string, string> = { 'अ': 'a', 'आ': 'a', 'इ': 'i', 'ई': 'i', 'उ': 'u', 'ऊ': 'u', 'ऋ': 'ri', 'ए': 'e', 'ऐ': 'ai', 'ओ': 'o', 'औ': 'au', 'ऑ': 'o' }
+const DV_SIGN: Record<string, string> = { 'ा': 'a', 'ि': 'i', 'ी': 'i', 'ु': 'u', 'ू': 'u', 'ृ': 'ri', 'े': 'e', 'ै': 'ai', 'ो': 'o', 'ौ': 'au', 'ॉ': 'o', 'ॅ': 'e' }
+const DV_CONS: Record<string, string> = {
+  'क': 'k', 'ख': 'kh', 'ग': 'g', 'घ': 'gh', 'ङ': 'n', 'च': 'ch', 'छ': 'chh', 'ज': 'j', 'झ': 'jh', 'ञ': 'n', 'ट': 't', 'ठ': 'th', 'ड': 'd', 'ढ': 'dh', 'ण': 'n',
+  'त': 't', 'थ': 'th', 'द': 'd', 'ध': 'dh', 'न': 'n', 'प': 'p', 'फ': 'ph', 'ब': 'b', 'भ': 'bh', 'म': 'm', 'य': 'y', 'र': 'r', 'ल': 'l', 'व': 'v', 'श': 'sh', 'ष': 'sh',
+  'स': 's', 'ह': 'h', 'क़': 'k', 'ख़': 'kh', 'ग़': 'g', 'ज़': 'z', 'ड़': 'r', 'ढ़': 'rh', 'फ़': 'f', 'य़': 'y',
+}
+const DV_NUKTA: Record<string, string> = { 'क': 'k', 'ख': 'kh', 'ग': 'g', 'ज': 'z', 'ड': 'r', 'ढ': 'rh', 'फ': 'f', 'य': 'y' }
+export function toRoman(text: string): string {
+  const s = String(text || '').normalize('NFC')
+  if (!/[ऀ-ॿ]/.test(s)) return s
+  let out = ''
+  const chars = [...s]
+  for (let i = 0; i < chars.length; i++) {
+    const c = chars[i]
+    if (c >= '०' && c <= '९') { out += String(c.charCodeAt(0) - 0x966); continue }
+    if (DV_CONS[c] !== undefined) {
+      let j = i + 1
+      let base = DV_CONS[c]
+      // a dot under the letter (nukta): ड़ → r, ज़ → z, फ़ → f …
+      if (chars[j] === '़') { base = DV_NUKTA[c] ?? base; j++ }
+      out += base
+      const nx = chars[j]
+      // the vowel after a consonant: a sign, a virama (none), or the inherent "a", which is
+      // dropped at the end of a word ("भर" → "bhar", not "bhara")
+      if (nx && DV_SIGN[nx] !== undefined) { out += DV_SIGN[nx]; i = j; continue }
+      if (nx === '्') { i = j; continue }
+      if (nx && /[ऀ-ॿ]/.test(nx) && !/[।॥]/.test(nx)) out += 'a'
+      i = j - 1
+      continue
+    }
+    if (DV_VOWEL[c] !== undefined) { out += DV_VOWEL[c]; continue }
+    if (DV_SIGN[c] !== undefined) { out += DV_SIGN[c]; continue }
+    if (c === 'ं' || c === 'ँ') { out += 'n'; continue }
+    if (c === 'ः') { out += 'h'; continue }
+    if (c === '।' || c === '॥') { out += '.'; continue }
+    if (c === '़' || c === '्') continue
+    out += c
+  }
+  return out
 }
 
 // What was said → how the team writes it: "job six five two" → J-652,

@@ -19,7 +19,7 @@ import { buildJourneyData, buildSeaByJob } from '../_shared/portal/journeyCore.j
 import { morningSummary, instantAlerts, answer, teamFromProfiles, BOT_NUMBERS, missingDetails, allowed, LEVELS, LEVEL_LABEL } from '../_shared/portal/botMessages.js'
 import { askAssistant, groqInfo } from './assistant.ts'
 import { applyChange, confirmText, isNo, isYes, isNoSaid, isYesSaid, PENDING_MINUTES, prepareChange, type Pending } from './actions.ts'
-import { downloadMedia, transcribe, normalizeSpoken, docTypeFromName, jobFromText, jobNoFromText, safeName, MAX_FILE_BYTES } from './media.ts'
+import { downloadMedia, transcribe, normalizeSpoken, docTypeFromName, jobFromText, jobNoFromText, safeName, toRoman, MAX_FILE_BYTES } from './media.ts'
 import { makeServerTools, sendDueReminders, checkWatches, checkTasks } from './servertools.ts'
 import { readBeFile, jobForBe, beLine } from './bereader.ts'
 import { readDocFile, jobForDoc, docFill, fillArgs } from './docfill.ts'
@@ -630,6 +630,9 @@ async function handleInbound(admin: Admin, payload: any) {
       }
       if (!text) { await send(person.phone, { text: '🎤 The voice note was empty. Please try again.' }); continue }
     }
+    // Hindi typed in Hindi script: read as the same words in English letters (Hinglish), so
+    // the answers, posts and yes / no are understood like any other message (Jose, 2 Nov 2026)
+    if (text) text = toRoman(text)
     // a file (PDF or photo): kept privately, then attached to a job after a YES
     if ((m.type === 'document' || m.type === 'image') && (m.document?.id || m.image?.id)) {
       if (!allowed(person, 'files')) { await send(person.phone, { text: `🔒 Your WhatsApp access is *${LEVEL_LABEL[person.level || 'view']}*, so files can't be added to jobs from your number. Please send it to Jose.` }); continue }
