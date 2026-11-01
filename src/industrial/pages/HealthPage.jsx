@@ -26,8 +26,17 @@ const KIND_NAMES = { ooc: 'OOC check', truck: 'Truck at tolls', papers: 'Truck p
 const KIND_MANY = { ooc: 'OOC checks', truck: 'trucks at tolls', papers: 'truck paper checks' }
 const API_NAMES = {
   'ICEGATE/01': 'Customs (BE status)', 'ICEGATE/02': 'Customs (BE details)', 'ICEGATE/03': 'Customs (OOC)', 'ICEGATE/07': 'Customs (shipping bill)',
-  'LDB/01': 'Container movement', 'FASTAG/01': 'Toll plazas (trucks)', 'VAHAN/04': 'Truck papers',
+  'ICEGATE/09': 'Customs (air IGM)', 'LDB/01': 'Container movement', 'JNPT/02': 'Port (JNPT)', 'CFSICD/01': 'Containers at CFS / ICD',
+  'FASTAG/01': 'Toll plazas (trucks)', 'FASTAG/02': 'Toll tag status', 'VAHAN/04': 'Truck papers', 'VAHAN/05': 'Truck papers (owner)',
+  'DGFT/01': 'Client IEC check', 'SARATHI/01': 'Driver licence', 'EWAYBILL/01': 'E-way bill',
+  'PCS/01': 'Port backup (IGM containers)', 'PCS/02': 'Port backup (shipping bill)', 'PCS/03': 'Port backup (LEO)',
+  'PCS/04': 'Port backup (BE details)', 'PCS/05': 'Port backup (OOC)',
 }
+// a lookup with no plain name keeps its own row, not three alike "Other" rows (Jose, 1 Nov 2026)
+const apiName = (api) => API_NAMES[api] || `Other lookup (${api})`
+// the toll time in a result comes as '2026-11-01T05:24:02' (IST, no zone): show '1 Nov, 05:24'
+const ISO_IN_TEXT = /\d{4}-\d\d-\d\dT\d\d:\d\d(?::\d\d(?:\.\d+)?)?(Z|[+-]\d\d:?\d\d)?/g
+const readable = (text) => String(text).replace(ISO_IN_TEXT, (m, zone) => fmtDateTime(zone ? m : `${m}+05:30`))
 const TONE_WORD = { green: 'Running', amber: 'Needs a look', red: 'Problem' }
 
 // an absolute IST time on screen, the "x min ago" in the tooltip
@@ -117,18 +126,18 @@ export default function HealthPage() {
       {/* no count tiles: they repeated the Services rows below (Jose, 31 Oct 2026) */}
       <Panel title="Services" className="rec-panel">
         <div className="ix-tbl-wrap">
-          <table className="ix-tbl rec-tbl">
+          <table className="ix-tbl rec-tbl rec-cards">
             <thead><tr><th className="lvl" /><th>Service</th><th>State</th><th>Now</th><th>Last</th><th>Next</th><th>Details</th></tr></thead>
             <tbody>
               {services.map((x) => (
                 <tr key={x.id} className={x.tone === 'green' ? '' : x.tone}>
                   <td className="lvl" />
-                  <td><b className="rec-n">{x.name}</b></td>
+                  <td className="c-main"><b className="rec-n">{x.name}</b></td>
                   <td><Status tone={x.tone}>{TONE_WORD[x.tone]}</Status></td>
-                  <td>{x.status}</td>
-                  <td className="dim"><When iso={x.last} /></td>
-                  <td className="dim">{x.next ? (new Date(x.next).getTime() <= now ? 'due now' : fmtTime(x.next)) : <Dash />}</td>
-                  <td className="dim wide" title={x.details.filter(Boolean).join(' · ')}>{x.details.filter(Boolean).join(' · ') || <Dash />}</td>
+                  <td className="c-full">{x.status}</td>
+                  <td className="dim" data-l="Last"><When iso={x.last} /></td>
+                  <td className="dim" data-l="Next">{x.next ? (new Date(x.next).getTime() <= now ? 'due now' : fmtTime(x.next)) : <Dash />}</td>
+                  <td className="dim wide c-full" title={x.details.filter(Boolean).join(' · ')}>{x.details.filter(Boolean).join(' · ') || <Dash />}</td>
                 </tr>
               ))}
             </tbody>
@@ -141,15 +150,15 @@ export default function HealthPage() {
           <Panel title="Recent automatic checks" meta={kinds || null} className="rec-panel">
             {(h.auto_recent || []).length === 0 ? <EmptyState line icon="history" title="No automatic checks have run yet." /> : (
               <div className="ix-tbl-wrap">
-                <table className="ix-tbl rec-tbl narrow">
+                <table className="ix-tbl rec-tbl rec-cards narrow">
                   <thead><tr><th>Check</th><th>Result</th><th>When</th><th>Next</th></tr></thead>
                   <tbody>
                     {h.auto_recent.map((r, i) => (
                       <tr key={i}>
-                        <td><b className="rec-n">{KIND_NAMES[r.kind] || r.kind}</b>{r.label ? <span className="rec-x">{r.label}</span> : null}</td>
-                        <td className="wide" title={r.result || ''}>{r.fails ? <><Chip tone="red">error</Chip> </> : null}{r.result || <Dash />}</td>
-                        <td className="dim"><When iso={r.last_run} empty="—" /></td>
-                        <td className="dim">{r.next_due ? fmtTime(r.next_due) : <Dash />}</td>
+                        <td className="c-full"><b className="rec-n">{KIND_NAMES[r.kind] || r.kind}</b>{r.label ? <span className="rec-x">{r.label}</span> : null}</td>
+                        <td className="wide c-full" title={r.result ? readable(r.result) : ''}>{r.fails ? <><Chip tone="red">error</Chip> </> : null}{r.result ? readable(r.result) : <Dash />}</td>
+                        <td className="dim" data-l="Checked"><When iso={r.last_run} empty="—" /></td>
+                        <td className="dim" data-l="Next">{r.next_due ? fmtTime(r.next_due) : <Dash />}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -163,15 +172,15 @@ export default function HealthPage() {
           <Panel title="Government lookups" meta="last 24 hours" className="rec-panel">
             {gov.length === 0 ? <EmptyState line icon="building-bank" title="No lookups in the last 24 hours." /> : (
               <div className="ix-tbl-wrap">
-                <table className="ix-tbl rec-tbl narrow">
+                <table className="ix-tbl rec-tbl rec-cards narrow">
                   <thead><tr><th>Source</th><th className="r">OK</th><th className="r">Failed</th><th>Last</th></tr></thead>
                   <tbody>
                     {gov.map(([api, u]) => (
                       <tr key={api} className={u.failed && !u.ok ? 'red' : ''}>
-                        <td>{API_NAMES[api] || 'Other government lookup'}</td>
-                        <td className="r">{u.ok || <Dash />}</td>
-                        <td className="r">{u.failed ? <b className="rec-bad">{u.failed}</b> : <Dash />}</td>
-                        <td className="dim"><When iso={u.last} empty="—" /></td>
+                        <td className="c-full">{apiName(api)}</td>
+                        <td className="r" data-l="OK">{u.ok || <Dash />}</td>
+                        <td className="r" data-l="Failed">{u.failed ? <b className="rec-bad">{u.failed}</b> : <Dash />}</td>
+                        <td className="dim" data-l="Last"><When iso={u.last} empty="—" /></td>
                       </tr>
                     ))}
                   </tbody>
@@ -182,7 +191,7 @@ export default function HealthPage() {
 
           <Panel title="Schedules" className="rec-panel">
             <div className="ix-tbl-wrap">
-              <table className="ix-tbl rec-tbl narrow">
+              <table className="ix-tbl rec-tbl rec-cards narrow">
                 <thead><tr><th>Schedule</th><th>How often</th><th>Last run</th></tr></thead>
                 <tbody>
                   {cron.filter((j) => j.active).map((j) => {
@@ -190,9 +199,11 @@ export default function HealthPage() {
                     const ok = !j.last_status || j.last_status === 'succeeded'
                     return (
                       <tr key={j.name} title={j.last_message || ''}>
-                        <td><Status tone={ok ? 'green' : 'red'}>{name}</Status></td>
+                        <td className="c-main"><Status tone={ok ? 'green' : 'red'}>{name}</Status></td>
                         <td className="dim">{every || <Dash />}</td>
-                        <td className="dim">{j.last_start ? <When iso={j.last_start} /> : 'not run yet'}{ok ? '' : ' · failed'}</td>
+                        <td className="dim c-full" data-l="Last run">{j.last_start ? <When iso={j.last_start} /> : 'not run yet'}{ok ? '' : ' · failed'}
+                          {/* phones have no hover: the reason it failed shows as text there */}
+                          {!ok && j.last_message ? <span className="rec-msg">{j.last_message}</span> : null}</td>
                       </tr>
                     )
                   })}

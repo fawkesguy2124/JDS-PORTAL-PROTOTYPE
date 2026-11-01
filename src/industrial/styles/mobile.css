@@ -52,7 +52,9 @@
   /* Today: the three highlights side by side */
   .ix .ix-td-kpis { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)) }
   .ix .ix-td-kpis .ix-kstat { padding: 10px 10px 11px }
-  .ix .ix-td-kpis .ix-kstat .sub, .ix .ix-td-kpis .ix-kstat small { font-size: 11px; line-height: 1.3 }
+  /* the line under each number wraps instead of ending in "…" (its class is .s) */
+  .ix .ix-td-kpis .ix-kstat .s { font-size: 11px; line-height: 1.3; white-space: normal }
+  .ix .ix-td-kpis .ix-kstat .s .ix-jobno { font-size: 11px }
   /* Today: the free time runway readable on a phone (job number column, day numbers only) */
   .ix .ix-td-runway .runway { padding: 6px 10px 10px }
   .ix .ix-td-runway .rw-row { grid-template-columns: 62px minmax(0, 1fr) }

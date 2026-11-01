@@ -42,6 +42,10 @@ const SHORTCUTS = [
 
 const ROLE_NAMES = { admin: 'Admin', employee: 'Employee', field_ops: 'Field ops' }
 
+// on a phone: no computer-only rows (menu collapsed, keyboard shortcuts) and phone words
+// in the help (Jose, 1 Nov 2026)
+const isPhone = () => typeof window !== 'undefined' && !!window.matchMedia?.('(max-width: 760px)').matches
+
 export default function SettingsPage({ profile, user, showToast, onLogout, onRefresh }) {
   const [prefs, setPref] = usePrefs()
   const [sec, setSec] = useState(() => {
@@ -123,6 +127,7 @@ function Preview({ theme }) {
 }
 
 function Appearance({ prefs, save }) {
+  const phone = isPhone()
   return (
     <>
       <Row label="Theme" help="Dark is easier on the eyes at night. “Match my computer” follows the Windows setting." block>
@@ -147,9 +152,11 @@ function Appearance({ prefs, save }) {
       <Row label="Reduce motion" help="Turns off sliding and fading: panels and menus appear at once.">
         <Switch label="Reduce motion" on={prefs.motion === 'reduce'} onChange={(on) => save('motion', on ? 'reduce' : 'full')} />
       </Row>
-      <Row label="Start with the menu collapsed" help="The menu on the left shows only icons. The button at the top left of the bar switches it too.">
-        <Switch label="Start with the menu collapsed" on={prefs.navCollapsed} onChange={(on) => save('navCollapsed', on)} />
-      </Row>
+      {!phone && (
+        <Row label="Start with the menu collapsed" help="The menu on the left shows only icons. The button at the top left of the bar switches it too.">
+          <Switch label="Start with the menu collapsed" on={prefs.navCollapsed} onChange={(on) => save('navCollapsed', on)} />
+        </Row>
+      )}
     </>
   )
 }
@@ -221,38 +228,49 @@ function DesktopAlerts({ profile, showToast }) {
   }
   const kinds = st?.kinds || ALL_KINDS
   const blocked = st?.supported && st.permission === 'denied'
+  const phone = isPhone()
+  const dev = phone ? 'phone' : 'computer'
 
   let status
   if (!st) status = <Status tone="grey">Checking…</Status>
   else if (!st.supported) status = <Status tone="grey">Not available here</Status>
   else if (blocked) status = <Status tone="red">Blocked by the browser</Status>
-  else if (st.on) status = <Status tone="teal">On for this computer</Status>
+  else if (st.on) status = <Status tone="teal">On for this {dev}</Status>
   else status = <Status tone="grey">Off</Status>
 
-  const help = !st ? 'Windows notifications for OOC, free days, containers and trucks, even when the portal is closed.'
+  const kindWord = phone ? 'Phone notifications' : 'Windows notifications'
+  const help = !st ? `${kindWord} for OOC, free days, containers and trucks, even when the portal is closed.`
     : !st.supported ? (st.noWorker
       ? 'This copy of the portal cannot show them. Open the published portal in Chrome or Edge, or the installed app.'
       : 'This browser cannot show desktop alerts. Use Chrome or Edge.')
-    : st.on ? 'They pop up even when the portal is closed. Each computer is switched on separately.'
-    : 'Windows notifications for OOC, free days, containers and trucks, even when the portal is closed.'
+    : st.on ? `They pop up even when the portal is closed. Each ${dev} is switched on separately.`
+    : `${kindWord} for OOC, free days, containers and trucks, even when the portal is closed.`
 
   return (
     <>
-      <Row label="Desktop alerts on this computer" help={help}>
+      <Row label={phone ? 'Alerts on this phone' : 'Desktop alerts on this computer'} help={help}>
         {status}
         {st?.supported && !blocked && (st.on
-          ? <Button size="sm" disabled={busy} onClick={() => run(disablePush, 'Desktop alerts off for this computer')}>Turn off</Button>
-          : <Button size="sm" icon="bell-ringing" disabled={busy} onClick={() => run(() => enablePush(profile), 'Desktop alerts on for this computer')}>{busy ? 'Turning on…' : 'Turn on'}</Button>)}
+          ? <Button size="sm" disabled={busy} onClick={() => run(disablePush, `Alerts off for this ${dev}`)}>Turn off</Button>
+          : <Button size="sm" icon="bell-ringing" disabled={busy} onClick={() => run(() => enablePush(profile), `Alerts on for this ${dev}`)}>{busy ? 'Turning on…' : 'Turn on'}</Button>)}
         {blocked && <Button size="sm" variant="ghost" icon="refresh" disabled={busy} onClick={() => run(async () => {})}>Check again</Button>}
       </Row>
       {blocked && (
         <div className="set-note">
           <Icon name="lock" />
-          <div>
-            <b>To unblock:</b> click the lock icon left of the address bar, open <b>Site settings</b>, set <b>Notifications</b> to <b>Allow</b>,
-            then reload this page and press Turn on. In the installed app the same menu is under the <b>⋯</b> button at the top.
-            If they still do not appear, check <b>Windows Settings → System → Notifications</b>.
-          </div>
+          {phone ? (
+            <div>
+              <b>To unblock:</b> on an iPhone open <b>Settings → Notifications → JDS Portal</b> and switch on <b>Allow Notifications</b>.
+              On Android tap the icon left of the address, open <b>Permissions</b> and allow <b>Notifications</b>.
+              Then reload this page and press Turn on.
+            </div>
+          ) : (
+            <div>
+              <b>To unblock:</b> click the lock icon left of the address bar, open <b>Site settings</b>, set <b>Notifications</b> to <b>Allow</b>,
+              then reload this page and press Turn on. In the installed app the same menu is under the <b>⋯</b> button at the top.
+              If they still do not appear, check <b>Windows Settings → System → Notifications</b>.
+            </div>
+          )}
         </div>
       )}
       {problem && <div className="set-err" role="alert">{problem}</div>}
@@ -340,6 +358,7 @@ function AppData({ showToast, onRefresh }) {
   const app = useInstallApp()
   const [busy, setBusy] = useState(false)
   const info = versionInfo()
+  const phone = isPhone()
 
   const reload = async () => {
     setBusy(true)
@@ -352,12 +371,14 @@ function AppData({ showToast, onRefresh }) {
     window.location.replace('/admin?tab=settings')
   }
   const install = async () => {
-    if (await app.install()) showToast?.('Installed: find JDS Portal in the Start menu', 'success')
+    if (await app.install()) showToast?.(phone ? 'Installed: find JDS Portal on your home screen' : 'Installed: find JDS Portal in the Start menu', 'success')
   }
 
   return (
     <>
-      <Row label="Install as a desktop app" help={app.asApp ? 'You are using the installed app now.'
+      <Row label={phone ? 'Install as an app' : 'Install as a desktop app'} help={app.asApp ? 'You are using the installed app now.'
+        : phone ? (app.canInstall ? 'Opens full screen, with the JDS icon on your home screen.'
+          : 'On an iPhone: in Safari tap Share, then Add to Home Screen. On Android: Chrome menu ⋮, then Install app.')
         : app.canInstall ? 'Opens in its own window, with the JDS icon in the Start menu and taskbar.'
         : 'Open the portal in Chrome or Edge on a computer; the install button appears here when the browser offers it.'}>
         {app.asApp ? <Status tone="teal">Installed</Status>
@@ -370,16 +391,18 @@ function AppData({ showToast, onRefresh }) {
       <Row label="Clear saved data on this computer" help="Empties the portal’s saved lists and settings in this browser. You stay signed in.">
         <Button size="sm" variant="danger" icon="eraser" onClick={clear}>Clear saved data</Button>
       </Row>
-      <Row label="Keyboard shortcuts" block>
-        <dl className="set-keys">
-          {SHORTCUTS.map(([keys, what]) => (
-            <div key={what}>
-              <dt>{keys.map((k) => <kbd key={k}>{k}</kbd>)}</dt>
-              <dd>{what}</dd>
-            </div>
-          ))}
-        </dl>
-      </Row>
+      {!phone && (
+        <Row label="Keyboard shortcuts" block>
+          <dl className="set-keys">
+            {SHORTCUTS.map(([keys, what]) => (
+              <div key={what}>
+                <dt>{keys.map((k) => <kbd key={k}>{k}</kbd>)}</dt>
+                <dd>{what}</dd>
+              </div>
+            ))}
+          </dl>
+        </Row>
+      )}
       <Row label="About" help={`JDS Logistics operations portal · ${runningAsApp() ? 'desktop app' : 'browser'}`}>
         <span className="set-val">{info.version ? <><span className="mono">{info.version}</span> · </> : null}{info.date}</span>
       </Row>

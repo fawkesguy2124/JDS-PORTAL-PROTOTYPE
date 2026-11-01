@@ -174,4 +174,22 @@
   .ix-cnp-title .st { margin-left: 0; padding-left: 0; flex-basis: 100%; margin-top: 6px }
   .ix-cnp-grid { gap: 10px 14px }
   .ix-cnp-tl .at { margin-left: 0; flex-basis: 100% }
+  /* bigger taps (Jose, 1 Nov 2026): the +N and 'N places' chips, the job filter's ×,
+     and room between the panel's small buttons */
+  .ix-cn-more, .ix-cn-places { height: 28px; padding: 0 8px }
+  .ix-cn-jobchip { height: 36px }
+  .ix-cn-jobchip button { width: 32px; height: 32px }
+  .ix-cnp-title { gap: 6px }
+  .ix-cnp-switch { gap: 8px }
+}
+
+/* phone cards (mobile.css): Where now gets its own full-width line, so the place is not
+   cut to a few letters (container + free till / job / where now). These selectors are
+   stronger than mobile.css's so they win whichever file loads last. */
+@media (max-width: 640px) {
+  .ix .ix-tbl.ix-cn-tbl tbody tr { grid-template-areas: 'box free' 'job job' 'where where' }
+  .ix .ix-tbl.ix-cn-tbl td.ix-cn-where { justify-self: start; text-align: left; max-width: 100% }
+  .ix .ix-tbl.ix-cn-tbl .ix-cn-where .ix-st { max-width: 100% }
+  /* the job's most urgent box under Free till: say why it is there (it was only on hover) */
+  .ix .ix-tbl.ix-cn-tbl .ix-cn-also::before { content: 'Most urgent: '; font-family: var(--font) }
 }

@@ -169,7 +169,7 @@ export default function ClientsPage({ onOpenJob }) {
           </EmptyState>
         ) : (
           <div className="ix-tbl-wrap rec-wrap">
-            <table className={`ix-tbl click rec-tbl${COLS <= 5 ? ' narrow' : ''}`}>
+            <table className={`ix-tbl click rec-tbl rec-cards${COLS <= 5 ? ' narrow' : ''}`}>
               <thead>
                 <tr>
                   {sortTh('name', 'Client')}
@@ -191,28 +191,28 @@ export default function ClientsPage({ onOpenJob }) {
                   return (
                     <Fragment key={c.key}>
                       <tr className={open ? 'open' : ''} onClick={toggleOpen} aria-expanded={open}>
-                        <td className="cl wide" title={c.legal && c.legal !== c.name ? `${c.name} · ${c.legal}` : c.name}>
+                        <td className="cl wide c-full" title={c.legal && c.legal !== c.name ? `${c.name} · ${c.legal}` : c.name}>
                           <span className="rec-name">{c.name}</span>
                           {c.legal && c.legal !== c.name ? <span className="rec-x">{c.legal}</span> : null}
                           {!c.inList && tagNotListed ? <> <Chip tone="grey">Not in client list</Chip></> : null}
                         </td>
-                        <td className="r">{c.open ? <b className="rec-n">{c.open}</b> : <Dash />}</td>
-                        <td className="r dim">{c.total || <Dash />}</td>
-                        <td>
+                        <td className="r" data-l="Active">{c.open ? <b className="rec-n">{c.open}</b> : <Dash />}</td>
+                        <td className="r dim" data-l="Total">{c.total || <Dash />}</td>
+                        <td data-l="Last job">
                           {c.last
                             ? <><JobNo no={c.last.job.job_no} onClick={() => onOpenJob?.(c.last.job.id, 'details')} />{c.last.job.created_at ? <span className="rec-x">{fmtDate(c.last.job.created_at)}</span> : null}</>
                             : <Dash />}
                         </td>
-                        {show.gstin && <td className="mono">{c.gstin || <Dash />}</td>}
-                        {show.iec && <td className="mono">{c.iec || <Dash />}</td>}
+                        {show.gstin && <td className="mono" data-l="GSTIN">{c.gstin || <Dash />}</td>}
+                        {show.iec && <td className="mono" data-l="IEC">{c.iec || <Dash />}</td>}
                         {show.iec && (
-                          <td>
+                          <td data-l="IEC status">
                             {!c.iec ? <Dash />
                               : !iecOk ? <span className="muted" title="This IEC has letters, so it can't be checked online">Can't check online</span>
                               : <Chip tone={st.tone} icon={st.icon}>{st.text}</Chip>}
                           </td>
                         )}
-                        {show.city && <td className="dim">{c.place || <Dash />}</td>}
+                        {show.city && <td className="dim" data-l="City">{c.place || <Dash />}</td>}
                         {show.check && (
                           <td className="r">
                             {iecOk && c.inList && (

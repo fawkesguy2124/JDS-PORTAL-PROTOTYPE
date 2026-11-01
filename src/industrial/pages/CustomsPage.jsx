@@ -64,8 +64,12 @@ function FiledForm({ initialNo, numLabel, dateLabel, busy, onSave, onCancel }) {
     <div className="ix-q-form">
       <input value={no} onChange={(e) => setNo(e.target.value.replace(/\D/g, '').slice(0, 7))} inputMode="numeric" maxLength={7}
         placeholder={numLabel} aria-label={numLabel} autoFocus />
-      <input type="date" max={new Date().toISOString().slice(0, 10)} value={date} onChange={(e) => setDate(e.target.value)}
-        aria-label={dateLabel} title={dateLabel} />
+      {/* phones show the date's name above it (no hover there); on a computer the label adds no box */}
+      <label className="cu-date">
+        <span>{dateLabel}</span>
+        <input type="date" max={new Date().toISOString().slice(0, 10)} value={date} onChange={(e) => setDate(e.target.value)}
+          aria-label={dateLabel} title={dateLabel} />
+      </label>
       <Button size="sm" variant="primary" disabled={busy} onClick={() => onSave(no, date)}>{busy ? 'Saving…' : 'Save'}</Button>
       <Button size="sm" variant="ghost" disabled={busy} onClick={onCancel}>Cancel</Button>
     </div>
@@ -240,15 +244,20 @@ export default function CustomsPage({ currentUserName, onOpenJob, showToast, can
 
   const switchKind = (k) => { setKind(k); setFormFor(null); setLeoFor(null) }
   const isImport = kind === 'import'
+  // a shorter search hint on phones: the long one was cut off
+  const phone = typeof window !== 'undefined' && window.matchMedia?.('(max-width: 760px)').matches
   // (no counts in the sub-line: the list's group heads and the export queue heads carry them)
   const lastCheckText = lastCheck ? (fmtDate(lastCheck) === fmtDate(new Date().toISOString()) ? fmtTime(lastCheck) : fmtDateTime(lastCheck)) : null
 
   return (
     <>
-      <PageHead title={isImport ? 'BE & OOC' : 'Shipping bill & LEO'}
+      {/* phones: 'SB & LEO', so the title and the switch stay on one line (Jose, 1 Nov 2026) */}
+      <PageHead title={isImport ? 'BE & OOC' : <><span className="cu-t-long">Shipping bill</span><span className="cu-t-short">SB</span> &amp; LEO</>}
         actions={<>
-          <Segmented label="Imports or exports" value={kind} onChange={switchKind}
-            options={[{ value: 'import', label: 'Imports' }, { value: 'export', label: 'Exports' }]} />
+          <span className="cu-kind">
+            <Segmented label="Imports or exports" value={kind} onChange={switchKind}
+              options={[{ value: 'import', label: 'Imports' }, { value: 'export', label: 'Exports' }]} />
+          </span>
           <Button size="sm" variant="ghost" icon="refresh" onClick={refresh} disabled={loading}>{loading ? 'Loading…' : 'Refresh'}</Button>
         </>} />
 
@@ -275,7 +284,7 @@ export default function CustomsPage({ currentUserName, onOpenJob, showToast, can
             rows={rows.filter((r) => !isExportJob(r.job))}
             selectedId={selId}
             onSelect={select}
-            placeholder="Any import job: job no, client, BE, container…"
+            placeholder={phone ? 'Job, client, BE, container' : 'Any import job: job no, client, BE, container…'}
             lists={listGroups}
           />
           {selId

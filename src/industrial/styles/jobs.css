@@ -174,10 +174,11 @@ button.ix-jp-paper.miss:hover { border-color: var(--navy-200); color: var(--navy
 .ix-jp-ev p small { display: flex; gap: 6px; align-items: center; color: var(--muted); font-size: var(--fs-sm) }
 .ix-jp-ev p small .ti { font-size: 13px }
 .ix-jp-ev .ix-link { margin: 0; text-align: left }
-.ix-jp-up { border: 1px dashed var(--line-2); border-radius: var(--r-lg); padding: 4px 12px 6px; margin-bottom: 6px; background: var(--surface-2) }
-.ix-jp-up .ix-jp-ev::before { display: none }
-.ix-jp-up .ix-jp-ev .d { background: none; box-shadow: inset 0 0 0 2px var(--faint) }
-.ix-jp-up .ix-jp-ev .d.red { box-shadow: inset 0 0 0 2px var(--red) }
+/* (ix-jp-upc, not ix-jp-up: that one is the Upload button, which got this dashed box too) */
+.ix-jp-upc { border: 1px dashed var(--line-2); border-radius: var(--r-lg); padding: 4px 12px 6px; margin-bottom: 6px; background: var(--surface-2) }
+.ix-jp-upc .ix-jp-ev::before { display: none }
+.ix-jp-upc .ix-jp-ev .d { background: none; box-shadow: inset 0 0 0 2px var(--faint) }
+.ix-jp-upc .ix-jp-ev .d.red { box-shadow: inset 0 0 0 2px var(--red) }
 
 /* documents tab */
 .ix-jp-docs .ix-tbl td.ok { color: var(--green) }
@@ -247,16 +248,22 @@ button.ix-jp-paper.miss:hover { border-color: var(--navy-200); color: var(--navy
   .ix-jp-grid { grid-template-columns: minmax(0, 1fr) }
 }
 @media (max-width: 760px) {
-  .ix-jb-panel .ix-tbl-wrap { max-height: none }
+  /* (no min-height: a "no jobs match" line was followed by a blank gap) */
+  .ix-jb-panel .ix-tbl-wrap { max-height: none; min-height: 0 }
   .ix-jb-where .ix-jb-ell { max-width: 120px }
   .ix-jb-tbl td.ix-jb-next::after { width: 140px }
   .ix-jp-top { padding: 12px 12px 0 }
   .ix-jp-body { padding: 12px 12px 20px }
   .ix-jp-row1 .right { margin-left: 0; width: 100% }
   .ix-jp-row1 .right .grow { flex: 1 }
-  .ix-jp-facts { grid-auto-flow: row; grid-template-columns: repeat(3, minmax(0, 1fr)) }
+  /* one or two facts fill the row (no empty outlined cells); the small part (BE date,
+     "5 d left") goes on its own line instead of being cut with "…" */
+  .ix-jp-facts { grid-auto-flow: row; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)) }
   .ix-jp-fact { border-right: 0; box-shadow: 1px 0 0 var(--line), 0 1px 0 var(--line) }
+  .ix-jp-fact .v small { display: block; margin-left: 0; overflow: hidden; text-overflow: ellipsis }
   .ix-jp-stepwrap { overflow-x: auto; margin: 0 -12px; padding: 0 12px }
+  /* the first step keeps its 12px from the edge when the steps snap into place */
+  .ix .ix-jp-stepwrap { scroll-padding-inline: 12px }
   .ix-jp-steps { min-width: 560px }
   .ix-jp-kv, .ix-jp-arr { grid-template-columns: 110px minmax(0, 1fr) }
 }
@@ -284,3 +291,68 @@ button.ix-jp-paper.miss:hover { border-color: var(--navy-200); color: var(--navy
 .ix-jp-warn { position: relative }
 .ix-jp-warn::after { content: attr(data-tip); position: absolute; top: calc(100% + 6px); right: -8px; z-index: 30; width: max-content; max-width: 280px; padding: 7px 10px; border-radius: var(--r-md, 6px); background: var(--text, #1b2230); color: #fff; font-size: var(--fs-sm); font-weight: 500; line-height: 1.4; text-align: left; white-space: pre-line; box-shadow: 0 4px 14px rgb(0 0 0 / .18); opacity: 0; pointer-events: none; transform: translateY(-2px); transition: opacity .12s, transform .12s }
 .ix-jp-warn:hover::after, .ix-jp-warn:focus-visible::after { opacity: 1; transform: none }
+
+/* ── the job panel on a phone (Jose, 1 Nov 2026) ── */
+.ix-jp-warnline { display: none }
+@media (max-width: 760px) {
+  /* the whole panel scrolls; only the job number, pager and close stay pinned at the top
+     (the facts and steps took 35-42% of the screen and never scrolled away) */
+  .ix .ix-drawer.ix-jp { overflow-y: auto }
+  .ix .ix-jp .ix-jp-top { display: contents }
+  .ix .ix-jp .ix-jp-row1 { position: sticky; top: 0; z-index: 4; flex-shrink: 0; padding: 12px 12px 8px; background: var(--surface); box-shadow: 0 1px 0 var(--line) }
+  .ix .ix-jp .ix-jp-facts { flex-shrink: 0; margin: 12px 12px 14px }
+  .ix .ix-jp .ix-jp-stepwrap { flex-shrink: 0; margin: 0; border-bottom: 1px solid var(--line) }
+  .ix .ix-jp .ix-jp-stepwrap:has(+ .ix-jp-warnline) { border-bottom: 0 }
+  .ix .ix-jp .ix-jp-body { flex: none; overflow: visible }
+
+  /* truck papers problem: no hover on a phone, so a tap on the red ! shows it in a red line
+     under the steps (Open on Trucks is in that line); the tap area is 32px */
+  .ix-jp-warn { padding: 8px; margin: -8px -8px -8px -3px }
+  .ix-jp-warn::after { display: none }
+  .ix-jp-warnline { display: block; flex-shrink: 0; padding: 0 12px 12px; background: var(--surface); border-bottom: 1px solid var(--line) }
+  .ix-jp-warnline > div { display: flex; align-items: flex-start; gap: 8px; padding: 8px 10px; border: 1px solid var(--red-line); border-radius: var(--r-md); background: var(--red-bg); color: var(--red-ink); font-size: var(--fs-sm); line-height: 1.4 }
+  .ix-jp-warnline > div > i { font-size: 16px; color: var(--red); margin-top: 1px }
+  .ix-jp-warnline p { flex: 1; min-width: 0; margin: 0 }
+  .ix-jp-warnline p span { display: block }
+  .ix-jp-warnline .ix-link { flex-shrink: 0; min-height: 32px; margin: -6px 0; font-size: var(--fs-sm) }
+
+  /* the Upload menu opens right under its button (not at the top of the screen) */
+  .ix-jp-up .ix-menu { position: absolute; top: calc(100% + 4px); right: 0; left: auto; width: min(260px, calc(100vw - 24px)); max-height: 55dvh }
+  .ix-jp-up .ix-menu button { height: 42px }
+  .ix-jp-body .ix-section-t .ix-jp-up .ix-btn { height: 38px }
+
+  /* buttons that change the job, big enough for a thumb */
+  .ix .ix-jp .ix-seg button { height: 34px }
+  .ix .ix-jp .cu-bestage .chips { gap: 8px }
+  .ix .ix-jp .cu-bestage .st { height: 36px }
+  .ix .ix-jp .ix-icon-btn.sm { width: 36px; height: 36px }
+
+  /* containers: one small card each, so Where now, Left and Free till show without swiping
+     ( box  size        free till )
+     ( where now           left   ) */
+  .ix .ix-jp-boxtbl, .ix .ix-jp-boxtbl tbody { display: block; width: 100% }
+  .ix .ix-jp-boxtbl thead { display: none }
+  .ix .ix-jp-boxtbl tbody tr { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; grid-template-areas: 'box sz free' 'wh wh lf'; gap: 6px 10px; align-items: center; padding: 10px 14px; border-bottom: 1px solid var(--line) }
+  .ix .ix-jp-boxtbl tbody tr:last-child { border-bottom: 0 }
+  .ix .ix-jp-boxtbl td { display: block; height: auto; padding: 0; border: 0; min-width: 0; background: none !important }
+  .ix .ix-jp-boxtbl td.box { grid-area: box }
+  .ix .ix-jp-boxtbl td.sz { grid-area: sz; color: var(--muted); font-size: var(--fs-sm) }
+  .ix .ix-jp-boxtbl td.wh { grid-area: wh; white-space: normal }
+  .ix .ix-jp-boxtbl td.lf { grid-area: lf; justify-self: end; font-size: var(--fs-sm); color: var(--text-2) }
+  .ix .ix-jp-boxtbl td.lf::before { content: 'Left '; color: var(--muted) }
+  .ix .ix-jp-boxtbl td.lf.dim { display: none }
+  .ix .ix-jp-boxtbl td.r { grid-area: free; justify-self: end }
+  .ix .ix-jp-boxtbl tbody tr:active { background: var(--surface-2) }
+  /* a container's moves, under its card */
+  .ix .ix-jp-boxtbl tbody tr.ms { display: block; padding: 8px 14px 10px 22px; background: var(--surface-2) }
+  .ix .ix-jp-boxtbl tr.ms td { padding: 0; white-space: normal }
+}
+
+/* All jobs as cards (styles/mobile.css, up to 640px) */
+@media (max-width: 640px) {
+  /* Where now and the client use the card's width, not 120 / 150px */
+  .ix .ix-jb-tbl .ix-jb-ell, .ix .ix-jb-tbl .ix-jb-sub { max-width: none }
+  /* no lone dash: Where now hides when there is nothing to say; "Finished" still shows */
+  .ix .ix-jb-tbl td.ix-jb-where.none { display: none }
+  .ix .ix-jb-tbl td.ix-jb-next.dim.fin { display: block }
+}

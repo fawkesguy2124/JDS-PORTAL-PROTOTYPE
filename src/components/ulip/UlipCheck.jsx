@@ -48,6 +48,16 @@ export default function UlipCheck({ check, job, saved, onResult, onJobChange, co
   const isDate = (input) => input.kind === 'date8' || input.kind === 'isoDate'
   const labelOf = (input) => check.labels?.[input.key] || input.label
   const hintOf = (input) => check.hints?.[input.key] || input.hint
+  // phones: the box hint is cut off, so only the example is shown ('Like M7264');
+  // the full hint still shows in the 'looks wrong' message (Jose, 1 Nov 2026)
+  const phone = typeof window !== 'undefined' && window.matchMedia?.('(max-width: 760px)').matches
+  const placeholderOf = (input) => {
+    const h = hintOf(input) || ''
+    if (!phone) return h
+    const plain = h.replace(/\s*\([^)]*\)\s*$/, '')
+    const ex = /\blike\s+(.+)$/i.exec(plain)
+    return ex ? `Like ${ex[1]}` : plain
+  }
   const visibleInputs = api.inputs.filter((input) => !check.fixed?.[input.key])
 
   // Shown value: what was typed > the job's current number > last checked > default
@@ -137,7 +147,7 @@ export default function UlipCheck({ check, job, saved, onResult, onJobChange, co
               value={valueOf(input)}
               onChange={(e) => { const v = input.upper ? e.target.value.toUpperCase() : e.target.value; setEdited((prev) => ({ ...prev, [input.key]: v })) }}
               onKeyDown={(e) => { if (e.key === 'Enter') run() }}
-              placeholder={isDate(input) ? '' : hintOf(input)}
+              placeholder={isDate(input) ? '' : placeholderOf(input)}
             />
           </label>
         ))}

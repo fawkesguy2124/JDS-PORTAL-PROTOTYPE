@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '../supabase'
 import { getStageName, parseContainerNos, getContainerSize } from '../utils/jobHelpers'
 import { useJourney } from '../industrial/JourneyContext'
@@ -438,6 +438,19 @@ function JobDetailView({ job, profiles = {}, currentUserName, isAdmin, canUpdate
   facts.push({ k: 'Owner', v: ownerName })
 
   const steps = j?.steps || []
+  // on a phone the steps swipe sideways: start at the step before the current one, so the
+  // current step is on screen (same as the job panel, JobDrawer.jsx; Jose, 1 Nov 2026)
+  const stepRef = useRef(null)
+  const nowStep = steps.findIndex((s) => s.current)
+  useEffect(() => {
+    const wrap = stepRef.current
+    if (!wrap || wrap.scrollWidth <= wrap.clientWidth) return
+    const els = [...wrap.querySelectorAll('.ix-jp-step')]
+    const i = els.findIndex((el) => el.classList.contains('now'))
+    if (i < 0) { if (els.at(-1)?.classList.contains('done')) wrap.scrollLeft = wrap.scrollWidth; return }
+    const el = els[Math.max(0, i - 1)]
+    wrap.scrollLeft = Math.max(0, el.getBoundingClientRect().left - wrap.getBoundingClientRect().left + wrap.scrollLeft - 12)
+  }, [job.id, nowStep])
 
   // ── tabs, only when there is more than Job details to choose from ──
   const extraTabs = JOB_TABS.filter(t => t.showIf(job) && !hideTabs.includes(t.id))
@@ -673,7 +686,7 @@ function JobDetailView({ job, profiles = {}, currentUserName, isAdmin, canUpdate
         </div>
 
         {steps.length > 0 && (
-          <div className="ix-jp-stepwrap">
+          <div className="ix-jp-stepwrap" ref={stepRef}>
             <div className="ix-jp-steps" style={{ gridTemplateColumns: `repeat(${steps.length}, minmax(0, 1fr))` }}>
               {steps.map((s) => {
                 const sub = s.sub ? plainWords(s.sub) : (s.id === 'delivered' && !s.done && !isExport ? (deliveryBy(job) === 'client' ? 'Client collects' : 'JDS delivers') : null)

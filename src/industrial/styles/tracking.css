@@ -229,3 +229,41 @@ html[data-theme="dark"] .ix .ix-shipmap2 .leaflet-container { background: #0f203
 .ix-trk-panel .ix-card-head .ix-trk-refresh { margin-left: auto }
 .ix-trk-pop.up { top: auto; bottom: calc(100% - 2px) }
 .ix-tiles-dark { filter: invert(.9) hue-rotate(180deg) brightness(.95) contrast(.9) }
+
+/* ── phones (Jose, 1 Nov 2026): bigger taps, nothing that only shows on mouse hover ── */
+@media (max-width: 760px) {
+  .ix-trk-add { width: 32px; height: 32px; font-size: 15px }
+  /* ✎ always visible (a phone has no hover) and big enough for a finger */
+  .ix-trk-pen { display: inline-grid; place-items: center; min-width: 32px; min-height: 32px; padding: 0; vertical-align: middle; opacity: 1 }
+  .ix-trk-fix input.plate, .ix-trk-fix select { height: 40px }
+  .ix-trk-form .ix-trk-box { height: 42px }
+  /* the ⋯ menu: a line between Mark delivered and Take truck off */
+  .ix-trk-more .ix-menu button + button { margin-top: 4px; border-top: 1px solid var(--line); border-radius: 0 }
+  /* the papers box's close × */
+  .ix .ix-trk-pop .hd .ix-icon-btn.sm { width: 36px; height: 36px; margin: -6px -6px -6px 0 }
+  /* Vessels: a job number in a ship row is its own button (opens the job) */
+  .ix-vl-row .jobs .ix-jobno { display: inline-flex; align-items: center; min-height: 32px; padding: 0 4px; margin: -6px -4px }
+}
+
+/* Trucks, Ready for a truck: one card per job on a phone, like the trucks table above
+   (job + free days / client + containers / OOC + Assign truck); the truck form under it
+   takes the card's full width (it hung off the screen) */
+@media (max-width: 640px) {
+  .ix .ix-tbl.ix-trk-ready { display: block; width: 100% }
+  .ix .ix-tbl.ix-trk-ready thead { display: none }
+  .ix .ix-tbl.ix-trk-ready tbody { display: block }
+  .ix .ix-tbl.ix-trk-ready tbody tr { display: grid; position: relative; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: 'job free' 'cl box' 'ooc act'; gap: 4px 12px; padding: 12px 14px 12px 16px; border-bottom: 1px solid var(--line); align-items: center }
+  .ix .ix-tbl.ix-trk-ready tbody tr:last-child { border-bottom: 0 }
+  .ix .ix-tbl.ix-trk-ready tbody tr.hl { background: var(--navy-50) }
+  .ix .ix-tbl.ix-trk-ready td { display: block; height: auto; padding: 0; border: 0; min-width: 0; max-width: none; background: none }
+  .ix .ix-tbl.ix-trk-ready td.lvl { position: absolute; left: 0; top: 0; bottom: 0; width: 3px }
+  .ix .ix-tbl.ix-trk-ready td:nth-child(2) { grid-area: job }
+  .ix .ix-tbl.ix-trk-ready td.cl { grid-area: cl; overflow: hidden; text-overflow: ellipsis; font-size: 13px }
+  .ix .ix-tbl.ix-trk-ready td:nth-child(4) { grid-area: ooc; font-size: 13px }
+  .ix .ix-tbl.ix-trk-ready td.mono { grid-area: box; justify-self: end; color: var(--text-2) }
+  .ix .ix-tbl.ix-trk-ready td.r { grid-area: free; justify-self: end; align-self: start }
+  .ix .ix-tbl.ix-trk-ready td.act { grid-area: act; justify-self: end }
+  /* the truck form row: full width */
+  .ix .ix-tbl.ix-trk-ready tbody tr.ix-trk-sub { display: block; padding: 0; background: var(--surface-2) }
+  .ix .ix-tbl.ix-trk-ready tr > td[colspan] { display: block; grid-column: 1 / -1; white-space: normal }
+}

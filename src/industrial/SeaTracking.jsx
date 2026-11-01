@@ -14,6 +14,19 @@ import { askConfirm } from './confirm'
 // starting one asks first. (No vendor name on screen; Jose's rule.)
 const SHIP_STATUS = { PLANNED: 'Not sailed yet', IN_TRANSIT: 'At sea', DELIVERED: 'Arrived', UNKNOWN: 'Status not given' }
 
+// Why tracking failed, in plain words: the service answers with codes such as
+// SEALINE_HASNT_PROVIDE_INFO or 'HTTP 500' (Jose, 1 Nov 2026: no raw codes on screen).
+// Messages the portal wrote itself ("the line still shows this container's previous trip …")
+// are already plain and stay as they are.
+const seaWhy = (err) => {
+  const e = String(err || '')
+  if (!/^(?:[A-Z][A-Z0-9_]{3,}|HTTP \d+|save:)/.test(e)) return e
+  if (/SEALINE_HASNT_PROVIDE_INFO|NO_EVENTS|NO_DATA/.test(e)) return 'the shipping line has not shared data for it yet'
+  if (/NO_RESPONSE|TEMPORARY|MAINTENANCE|TIMEOUT|HTTP 5\d\d/.test(e)) return 'the tracking service did not answer; it tries again later'
+  if (/WRONG|INVALID|NOT_FOUND|NOT_SUPPORTED|CANT_DETECT/.test(e)) return 'the tracking service could not find this number at the shipping line'
+  return 'the tracking service had an error'
+}
+
 // The line's dates are the port's local time: shown as given, not converted.
 // '19 Nov, 18:30' (24 h, 'Sep' never 'Sept'); the year only when it isn't this year
 // (J-674: ETA 23 Jan 2027); a date with no time of day (midnight) shows as the date alone.
@@ -72,7 +85,7 @@ export default function SeaTracking({ job, showToast, shipName, imo, onVessels }
       const { data: res, error } = await supabase.functions.invoke('sea-track', { body: { jobId: job.id, start } })
       if (error) throw new Error(error.message)
       if (res?.skipped) showToast?.(res.skipped === 'checked a few minutes ago' ? 'Checked a few minutes ago: no change yet' : `Not tracked: ${res.skipped}`, 'info')
-      else if (res?.error) showToast?.(`Ship tracking: ${res.error}`, 'error')
+      else if (res?.error) showToast?.(`Ship tracking: ${seaWhy(res.error)}`, 'error')
       else showToast?.(`Ship tracking updated${res?.used ? ` · ${res.used} of ${res.cap} used this month` : ''}`, 'success')
       const { data: row } = await supabase.from('sea_tracking').select('*').eq('job_id', job.id).maybeSingle()
       if (row) patchSea(row)
@@ -118,7 +131,7 @@ export default function SeaTracking({ job, showToast, shipName, imo, onVessels }
       <div className="ix-seacard">
         {head}
         <div className="hd"><span className="ic grey"><Icon name="ship" /></span><div className="t" style={{ flex: 1 }}>Ship tracking</div>{refresh}</div>
-        <div className="note">Could not track {sea.number_type === 'BL' ? 'BL' : 'container'} <span className="mono">{sea.number}</span>: {sea.error}</div>
+        <div className="note">Could not track {sea.number_type === 'BL' ? 'BL' : 'container'} <span className="mono">{sea.number}</span>: <span title={sea.error}>{seaWhy(sea.error)}</span></div>
       </div>
     )
   }

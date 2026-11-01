@@ -173,7 +173,15 @@ const ARABIAN_SEA = [[15, 70], 4]
 const fit = (m, bounds, maxZoom = 7, card = false) => {
   if (!alive(m)) return
   const wide = card && m.getSize().x > 760
-  if (bounds.length === 1) m.setView(bounds[0], 6)
+  // a phone: the voyage card sits over the bottom of the map (industrial.css), so the ship,
+  // its route and the port go in the part above it (they were hidden under the card; Jose,
+  // 1 Nov 2026). The card is read from the page, so the full-screen map gets it right too.
+  const phoneCard = window.matchMedia?.('(max-width: 760px)').matches
+    ? m.getContainer().parentElement?.querySelector('.ix-voyage') : null
+  const below = phoneCard ? Math.max(0, Math.min(phoneCard.offsetHeight + 70, m.getSize().y - 120)) : 0
+  if (below && bounds.length === 1) { m.setView(bounds[0], 6); m.panBy([0, below / 2], { animate: false }) }
+  else if (below && bounds.length) m.fitBounds(L.latLngBounds(bounds), { paddingTopLeft: [24, 40], paddingBottomRight: [24, below], maxZoom })
+  else if (bounds.length === 1) m.setView(bounds[0], 6)
   // room for the tags beside the ships (about 180 px) and the colour key below; a phone
   // has no room for that, so only a small margin (the ships filled a sliver of the map)
   else if (bounds.length && m.getSize().x < 520) m.fitBounds(L.latLngBounds(bounds), { paddingTopLeft: [24, 40], paddingBottomRight: [110, 60], maxZoom })

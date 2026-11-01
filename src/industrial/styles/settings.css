@@ -90,4 +90,8 @@
   .set-pw .set-input { width: 100% }
   .set-pw .ix-btn { width: 100% }
   .set-keys > div { grid-template-columns: minmax(0, 1fr); gap: 2px; padding: 4px 0 }
+  /* finger-sized controls, the same height as the other phone fields (Jose, 1 Nov 2026) */
+  .set-select, .set-input { height: 42px }
+  .set-switch { padding: 10px; margin: -6px 0 }
+  .set-checks input { width: 18px; height: 18px }
 }

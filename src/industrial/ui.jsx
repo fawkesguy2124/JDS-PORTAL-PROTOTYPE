@@ -3,7 +3,7 @@
 // The format helpers (fmtDate, worst, phaseChip …) stay here next to the
 // components because every page already imports them from this file.
 /* eslint-disable react-refresh/only-export-components */
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { getPrefs } from './settings'
 
 export const Icon = ({ name, style, className = '' }) => <i className={`ti ti-${name}${className ? ` ${className}` : ''}`} style={style} aria-hidden="true" />
@@ -164,7 +164,8 @@ export const jobOwnerName = (job, profiles) => profiles?.[job?.assigned_to] || n
 // and the page's actions on the right. The top bar already has Create job.
 export function PageHead({ title, sub, actions, children }) {
   const subLine = Array.isArray(sub)
-    ? sub.filter(Boolean).map((s, i) => <span key={i}>{i > 0 && <span className="sep">· </span>}{s}</span>)
+    // the dot ends each part, so a line that wraps on a phone never starts with '·'
+    ? sub.filter(Boolean).map((s, i, arr) => <span key={i}>{s}{i < arr.length - 1 && <span className="sep"> ·</span>}</span>)
     : sub
   const right = actions || children
   return (
@@ -205,8 +206,19 @@ export function Kpi({ label, value, unit, sub, tone, dot, onClick, selected, tit
 
 // Filter tabs with counts: tabs = [{ id, label, count, tone: 'red'|'amber', icon }]
 export function Tabs({ tabs, value, onChange, className = '' }) {
+  // the chosen tab is always in view, also after a reload on a phone where the tabs swipe
+  // sideways (only sideways: the page itself does not move)
+  const ref = useRef(null)
+  useEffect(() => {
+    const el = ref.current
+    const on = el?.querySelector('[aria-selected="true"]')
+    if (!el || !on || el.scrollWidth <= el.clientWidth) return
+    const a = el.getBoundingClientRect(), b = on.getBoundingClientRect()
+    if (b.left < a.left) el.scrollLeft += b.left - a.left - 12
+    else if (b.right > a.right) el.scrollLeft += b.right - a.right + 12
+  }, [value])
   return (
-    <div className={`ix-tabs${className ? ` ${className}` : ''}`} role="tablist">
+    <div ref={ref} className={`ix-tabs${className ? ` ${className}` : ''}`} role="tablist">
       {tabs.map((t) => (
         <button key={t.id} type="button" role="tab" aria-selected={value === t.id} className={`ix-tab${value === t.id ? ' on' : ''}`} onClick={() => onChange(t.id)}>
           {t.icon && <Icon name={t.icon} />}{t.label}

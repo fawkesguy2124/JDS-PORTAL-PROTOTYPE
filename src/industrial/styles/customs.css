@@ -58,6 +58,12 @@
 .cu-q .cu-note { padding: 6px var(--s4) 10px; font-size: var(--fs-sm); color: var(--muted) }
 .cu-q .ix-q-form input { font-family: var(--font) }
 .cu-q .ix-error { margin: 0 var(--s4) 10px }
+/* the date box's name is shown as text on phones only (FiledForm) */
+.cu-date { display: contents }
+.cu-date > span { display: none }
+/* page title: the short export title is for phones only */
+.cu-t-short { display: none }
+.cu-kind { display: contents }
 
 @media (max-width: 1100px) {
   .cu-desk { grid-template-columns: 1fr }
@@ -70,6 +76,20 @@
   .cu-desk.has-sel > .cu-list { display: none }
   .cu-facts { grid-template-columns: repeat(2, minmax(0, 1fr)) }
   .cu-detail-body { padding: var(--s3) }
+  /* the page scrolls, not a 360px box inside it (Jose, 1 Nov 2026) */
+  .cu-list-body { max-height: none; overflow: visible }
+  /* Imports / Exports: finger-sized; 'SB & LEO' keeps the switch next to the title */
+  .cu-kind .ix-seg button { height: 34px; padding: 0 12px }
+  .cu-t-long { display: none }
+  .cu-t-short { display: inline }
+  /* the search box's clear X */
+  .cu-list-top .ix-tsearch .x, .dc-panel .ix-tsearch .x { width: 36px; height: 36px }
+  /* Shipping bill filed: the date has its name above it and the same height as the number */
+  .cu-q .ix-q-form { align-items: flex-end }
+  .cu-q .ix-q-form input { height: 42px }
+  .cu-date { display: flex; flex-direction: column; gap: 4px; flex: 1 1 140px; min-width: 0 }
+  .cu-date > span { display: block; font-size: var(--fs-xs); font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--muted) }
+  .cu-date > input { width: 100%; flex: 0 0 auto }
 }
 
 /* ── customs stage after the BE (BeStage: Customs page and the job panel) ── */
@@ -90,6 +110,14 @@
 .cu-bestage .st.on.amber { background: var(--amber-bg); border-color: var(--amber-line); color: var(--amber) } .cu-bestage .st.on.amber::before { background: var(--amber-dot) }
 .cu-bestage .st.on.green { background: var(--green-bg); border-color: var(--green-line); color: var(--green) } .cu-bestage .st.on.green::before { background: var(--green) }
 .cu-bestage.compact { border: 0; padding: 0; margin: 6px 0 0; background: none }
+.cu-bestage .st .lg { display: none }
+/* phone: finger-sized chips with the full name (there is no hover to show it) */
+@media (max-width: 760px) {
+  .cu-bestage .chips { gap: 6px }
+  .cu-bestage .st { height: auto; min-height: 36px; padding: 4px 12px; white-space: normal; text-align: left }
+  .cu-bestage .st .sh { display: none }
+  .cu-bestage .st .lg { display: inline }
+}
 
 /* ── Documents: one row per job with its papers checklist ── */
 .dc-panel .ix-tbl-wrap { max-height: calc(100vh - 250px) }
@@ -121,10 +149,15 @@
 .dc-menu-pop button.danger { color: var(--red) }
 .dc-menu-pop button i { font-size: 15px; color: var(--muted) }
 .dc-menu-pop button.danger i { color: var(--red) }
+/* near the bottom of the list the menu opens upwards (it was cut off on the last file) */
+.dc-menu-pop.up { top: auto; bottom: calc(100% + 4px) }
+/* the job picker as a list of rows: phones only (iPhone shows a size=6 select as one line) */
+.dc-pick { display: none }
+.dc-ppr.more .names { display: none }
 
 /* upload and preview windows */
-.dc-modal-bg { position: fixed; inset: 0; z-index: 60; display: flex; align-items: center; justify-content: center; padding: 16px; background: rgba(16, 24, 40, .4) }
-.dc-modal { width: 100%; max-width: 520px; max-height: calc(100vh - 32px); display: flex; flex-direction: column; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--shadow-pop); overflow: hidden }
+.dc-modal-bg { position: fixed; inset: 0; z-index: 60; display: flex; align-items: center; justify-content: center; padding: 16px; padding-bottom: max(16px, env(safe-area-inset-bottom, 0px)); background: rgba(16, 24, 40, .4) }
+.dc-modal { width: 100%; max-width: 520px; max-height: calc(100vh - 32px); max-height: calc(100dvh - 32px - env(safe-area-inset-bottom, 0px)); display: flex; flex-direction: column; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--shadow-pop); overflow: hidden }
 .dc-modal.wide { max-width: 960px }
 .dc-modal-h { display: flex; align-items: center; gap: 8px; min-height: 48px; padding: 0 var(--s2) 0 var(--s4); border-bottom: 1px solid var(--line) }
 .dc-modal-h h2 { margin: 0; font-size: var(--fs-md); font-weight: 600; white-space: nowrap }
@@ -153,4 +186,53 @@
   .dc-files .ix-tbl td:first-child, .dc-files .ix-tbl th:first-child { padding-left: 12px }
   .dc-files .none { padding: 10px 12px }
   .dc-fname { max-width: 180px }
+  /* finger-sized papers, menu rows and fields (Jose, 1 Nov 2026) */
+  .dc-ppr { height: 32px; padding: 0 10px }
+  .dc-menu-pop button { height: 42px }
+  .dc-field select { height: 42px }
+  .dc-modal-h .ix-icon-btn.sm { width: 40px; height: 40px }
+  .dc-field select.dc-pick-sel { display: none }
+  .dc-pick { display: flex; flex-direction: column; margin-top: 6px; max-height: 264px; overflow-y: auto; overscroll-behavior: contain; border: 1px solid var(--line-2); border-radius: var(--r-md) }
+  .dc-pick button { display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 6px 12px; border: 0; border-bottom: 1px solid var(--line); background: var(--surface); color: var(--text); font: 400 var(--fs-md) var(--font); text-align: left; cursor: pointer }
+  .dc-pick button:last-child { border-bottom: 0 }
+  .dc-pick button:active { background: var(--surface-2) }
+  .dc-pick button .cl { color: var(--text-2); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+  .dc-pick .none { padding: 10px 12px; color: var(--muted); font-size: var(--fs-sm) }
+}
+
+/* phone: one card per job (the 8-column table was wider than the screen) */
+@media (max-width: 640px) {
+  .dc-panel .ix-tbl-wrap { max-height: none }   /* the page scrolls, not a box inside it */
+  .ix .dc-tbl { display: block; min-width: 0; width: 100% }
+  .ix .dc-tbl > thead { display: none }
+  .ix .dc-tbl > tbody { display: block }
+  .ix .dc-tbl > tbody > tr:not(.dc-files) { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto auto; grid-template-areas: 'exp job files act' '. cl cl cl' '. papers papers papers'; gap: 4px 8px; align-items: center; padding: 10px 8px 10px 12px; border-bottom: 1px solid var(--line) }
+  .ix .dc-tbl > tbody > tr.open:not(.dc-files) { background: var(--surface-2) }
+  .ix .dc-tbl > tbody > tr > td { display: block; height: auto; padding: 0; border: 0; min-width: 0; max-width: none; background: none }
+  .ix .dc-tbl > tbody > tr > td.dc-hide-sm { display: none }
+  .ix .dc-tbl > tbody > tr > td.exp { grid-area: exp; width: auto }
+  .ix .dc-tbl > tbody > tr > td:nth-child(2) { grid-area: job }
+  .ix .dc-tbl > tbody > tr > td.cl { grid-area: cl; white-space: normal }
+  .ix .dc-tbl > tbody > tr > td:nth-child(5) { grid-area: papers }
+  .ix .dc-tbl > tbody > tr > td:nth-child(6) { grid-area: files; color: var(--muted); font-size: var(--fs-sm) }
+  .ix .dc-tbl > tbody > tr > td:nth-child(8) { grid-area: act }
+  .dc-papers { flex-wrap: wrap }
+  .dc-ppr.more { white-space: normal; height: auto; min-height: 32px }
+  .dc-ppr.more .n { display: none }
+  .dc-ppr.more .names { display: inline }
+  /* a job's files: one small card each (name and ⋯ / type and date) */
+  .ix .dc-tbl > tbody > tr.dc-files { display: block; border-bottom: 1px solid var(--line) }
+  .ix .dc-tbl > tbody > tr.dc-files > td { display: block }
+  .ix .dc-files .ix-tbl, .ix .dc-files .ix-tbl > tbody { display: block }
+  .ix .dc-files .ix-tbl > thead { display: none }
+  .ix .dc-files .ix-tbl > tbody > tr { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; grid-template-areas: 'name name act' 'type when act'; gap: 4px 8px; align-items: center; padding: 8px 8px 8px 38px; border-bottom: 1px solid var(--line) }
+  .ix .dc-files .ix-tbl > tbody > tr:last-child { border-bottom: 0 }
+  .ix .dc-files .ix-tbl > tbody > tr > td { display: block; height: auto; padding: 0 !important; border: 0; min-width: 0 }
+  .ix .dc-files .ix-tbl > tbody > tr > td.dc-hide-sm { display: none }
+  .ix .dc-files .ix-tbl > tbody > tr > td:nth-child(1) { grid-area: name }
+  .ix .dc-files .ix-tbl > tbody > tr > td:nth-child(2) { grid-area: type }
+  .ix .dc-files .ix-tbl > tbody > tr > td:nth-child(4) { grid-area: when; font-size: var(--fs-sm) }
+  .ix .dc-files .ix-tbl > tbody > tr > td:nth-child(6) { grid-area: act }
+  .ix .dc-files .dc-fname { max-width: 100% }
+  .ix .dc-files .none { padding: 10px 12px 10px 38px }
 }

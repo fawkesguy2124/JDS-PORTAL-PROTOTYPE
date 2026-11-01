@@ -72,6 +72,8 @@ function Palette({ onClose, pages, commands = [], onGo, onOpenJob, onLookup }) {
           <Icon name="search" />
           <input ref={inputRef} value={q} onChange={(e) => { setQ(e.target.value); setHl(0) }} onKeyDown={onKey}
             placeholder="Type a job no, client, BE, BL, container or truck…" autoComplete="off" aria-label="Search" />
+          {/* phones have no Esc key: a Close button (hidden on a computer) */}
+          <button type="button" className="ix-pal-x" onClick={onClose}>Close</button>
         </div>
         <div className="ix-pal-res">
           {jobItems.length > 0 && <div className="ix-pal-group">{jobItems[0].recent ? 'Recent' : 'Jobs'}</div>}
@@ -89,9 +91,10 @@ function Palette({ onClose, pages, commands = [], onGo, onOpenJob, onLookup }) {
           {items.filter((i) => i.type === 'lookup').map((it) => {
             const idx = items.indexOf(it)
             return (
-              <div key={it.id} className={`ix-pal-item ${idx === hl ? 'hl' : ''}`} onMouseEnter={() => setHl(idx)} onClick={() => pick(it)}>
-                {/* plain words on screen, no system names (Jose, 31 Oct 2026) */}
-                <Icon name="world-search" />Look up <b className="mono">{it.q}</b> on government systems<span className="k">BE, container, truck…</span>
+              <div key={it.id} className={`ix-pal-item look ${idx === hl ? 'hl' : ''}`} onMouseEnter={() => setHl(idx)} onClick={() => pick(it)}>
+                {/* plain words on screen, no system names (Jose, 31 Oct 2026); one span, so a
+                    long number ends in '…' instead of wrapping word by word */}
+                <Icon name="world-search" /><span className="lk">Look up <b className="mono">{it.q}</b> on government systems</span><span className="k">BE, container, truck…</span>
               </div>
             )
           })}

@@ -19,6 +19,8 @@ export default function ResultTable({ table, highlight = [], labelStyle }) {
   const total = table.rows.length
   const mineCount = rows.filter((x) => x.mine).length
   const long = total > 8
+  // a shorter search hint on phones: the long one was cut off
+  const phone = typeof window !== 'undefined' && window.matchMedia?.('(max-width: 760px)').matches
 
   return (
     <div style={{ marginTop: '14px' }}>
@@ -34,7 +36,7 @@ export default function ResultTable({ table, highlight = [], labelStyle }) {
         <input
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          placeholder="Search this list (container, item no, name…)"
+          placeholder={phone ? 'Search container, item, name' : 'Search this list (container, item no, name…)'}
           style={{ width: '100%', marginTop: '6px', height: '34px', border: `1px solid ${C.line2}`, borderRadius: '8px', padding: '0 10px', fontSize: '13px', boxSizing: 'border-box', background: C.surface, color: C.text }}
         />
       )}

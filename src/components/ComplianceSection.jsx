@@ -18,7 +18,7 @@ export default function ComplianceSection({ showToast }) {
       <Panel title="Certificate register" meta="BIS, LMPC and licences, with their expiry dates"
         className="rec-panel" actions={<Button size="sm" icon="plus" onClick={add}>Add certificate</Button>}>
         <div className="ix-tbl-wrap">
-          <table className="ix-tbl rec-tbl">
+          <table className="ix-tbl rec-tbl rec-cards">
             <thead><tr>{COLS.map((c) => <th key={c}>{c}</th>)}</tr></thead>
             <tbody>
               <tr className="rec-more">

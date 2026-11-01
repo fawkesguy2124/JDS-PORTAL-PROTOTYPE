@@ -268,8 +268,10 @@ function AdminDashboardInner() {
   // 'truck' goes to the Trucks page, where trucks are assigned. Each open is a
   // new history entry, so the browser's Back button returns to the page you came from.
   const DRAWER_TABS = ['overview', 'containers', 'timeline', 'docs', 'notes']
+  const listScroll = useRef(0) // where the list was, so Back returns to the same place
   const openFullJob = async (jobId, tab = 'details') => {
     setDrawer(null)
+    if (!selectedJob) listScroll.current = document.getElementById('ix-main')?.scrollTop || 0
     rememberJob(jobId)
     // customs and truck checks now live on their own pages
     if (tab === 'customs') { navigate(`/admin?tab=customs&job=${jobId}`); return }
@@ -354,6 +356,30 @@ function AdminDashboardInner() {
     </>
   )
   const fullJob = selectedJob && activeNav === 'jobs'
+  // the full job page opens at its top (it shares the scroll area with the list); closing
+  // it puts the list back where it was (Jose, 1 Nov 2026)
+  const shownJobId = useRef(null)
+  useEffect(() => {
+    const id = selectedJob?.id || null
+    if (id === shownJobId.current) return
+    const main = document.getElementById('ix-main')
+    // (closed by going to another page: that page starts at its top)
+    if (main) main.scrollTo({ top: id || activeNav !== 'jobs' ? 0 : listScroll.current, behavior: 'instant' })
+    if (!id) listScroll.current = 0
+    shownJobId.current = id
+  }, [selectedJob?.id, activeNav])
+  // the browser's or iPhone's swipe Back leaves the full job page: the job follows the
+  // address (?jobId=), forward opens it again
+  /* eslint-disable react-hooks/set-state-in-effect -- follows the address bar */
+  useEffect(() => {
+    const id = new URLSearchParams(location.search).get('jobId')
+    if (!id && selectedJob) setSelectedJob(null)
+    else if (id && !selectedJob) {
+      const found = jobs.find((j) => j.id === id)
+      if (found) setSelectedJob(found)
+    }
+  }, [location.search]) // eslint-disable-line react-hooks/exhaustive-deps
+  /* eslint-enable react-hooks/set-state-in-effect */
   const closeFullJob = () => {
     setSelectedJob(null)
     const params = new URLSearchParams(window.location.search)

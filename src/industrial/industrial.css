@@ -121,7 +121,7 @@
 .ix kbd { font: 500 calc(11px * var(--ts, 1))/17px var(--mono); color: var(--text-2); background: var(--surface); border: 1px solid var(--line-2); border-bottom-width: 2px; border-radius: var(--r-sm); padding: 0 5px }
 
 /* ── shell ─────────────────────────────────────────────────────────── */
-.ix-app { display: grid; grid-template-columns: var(--nav) minmax(0, 1fr); grid-template-rows: var(--top) minmax(0, 1fr); height: 100vh; background: var(--bg) }
+.ix-app { display: grid; grid-template-columns: var(--nav) minmax(0, 1fr); grid-template-rows: var(--top) minmax(0, 1fr); height: 100vh; height: 100dvh; background: var(--bg) }
 .ix.nav-collapsed .ix-app { grid-template-columns: var(--nav-collapsed) minmax(0, 1fr) }
 
 /* brand cell: the top of the navy sidebar */
@@ -217,6 +217,12 @@
 .ix.nav-collapsed .ix-nav .ix-nav-foot { justify-content: center; padding: 8px 0 10px }
 
 .ix-main { grid-row: 2; grid-column: 2; min-width: 0; overflow: auto; position: relative }
+/* an iPhone on its side (wider than 760 px, so the computer layout): keep clear of the
+   notch. env() is 0 on screens without one, so a computer looks the same (Jose, 1 Nov 2026) */
+.ix-brandcell { padding-left: max(14px, env(safe-area-inset-left, 0px)) }
+.ix-nav { padding-left: env(safe-area-inset-left, 0px) }
+.ix-top { padding-right: max(var(--s4), env(safe-area-inset-right, 0px)) }
+.ix-main { padding-right: env(safe-area-inset-right, 0px) }
 
 /* ── page frame: AdminDashboard mounts every page in one .ix-page ───── */
 .ix-page { padding: var(--s4) var(--s5) var(--s8) }  /* full width: wide office screens use all of it (Jose, 31 Oct 2026) */
@@ -570,6 +576,9 @@ button.ix-jobno:focus-visible { outline: none; box-shadow: var(--focus); border-
 .ix-pal-item.hl { background: var(--navy-50) }
 .ix-pal-item .k { font-size: var(--fs-sm); color: var(--muted); margin-left: auto; white-space: nowrap }
 .ix-pal-item .c { color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.ix-pal-item .lk { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+/* Close button: phones only (a computer has Esc) */
+.ix-pal-x { display: none }
 .ix-pal-group { font-size: var(--fs-xs); font-weight: 600; color: var(--muted); letter-spacing: .05em; padding: 8px 10px 4px; text-transform: uppercase }
 .ix-pal-foot { border-top: 1px solid var(--line); padding: 7px 14px; font-size: var(--fs-sm); color: var(--muted); display: flex; gap: 14px; background: var(--surface-2) }
 .ix-pal-foot kbd { margin-right: 4px }
@@ -625,7 +634,23 @@ button.ix-jobno:focus-visible { outline: none; box-shadow: var(--focus); border-
   .ix-funnel-row { grid-template-columns: 130px minmax(0, 1fr) 30px }
   .ix-toolbar input[type=search], .ix-tsearch { width: 100% }
   .ix-drawer { top: 0; z-index: 65 } .ix-backdrop { inset: 0; z-index: 64 }
-  .ix-menu { position: fixed; top: 56px; right: 8px }
+  /* only the avatar menu is pinned under the top bar; other menus (Upload in the job
+     panel) open under their own button */
+  .ix-me .ix-menu { position: fixed; top: 56px; right: 8px }
+  .ix-menu button { height: 42px }
+  .ix-seg button { height: 34px; padding: 0 12px }
+  .ix-tsearch .x { width: 36px; height: 36px }
+  /* a panel's grey sub line wraps instead of ending in '…' */
+  .ix-card-head { flex-wrap: wrap; row-gap: 2px; padding-top: 6px; padding-bottom: 6px }
+  .ix-card-head .sub { white-space: normal; line-height: 1.3 }
+  /* Ctrl K search on a phone: at the top (clear of the keyboard), no key hints, a Close button */
+  .ix-pal-bg { padding: max(8px, env(safe-area-inset-top, 0px)) 8px 0 }
+  .ix-pal { width: 100% }
+  .ix-pal-res { max-height: 40dvh }
+  .ix-pal-item { height: 42px }
+  .ix-pal-item.look .k { display: none }
+  .ix-pal-foot { display: none }
+  .ix-pal-x { display: inline-flex; align-items: center; height: 36px; margin-right: -6px; padding: 0 10px; border: 0; border-radius: var(--r-md); background: none; color: var(--navy); font-size: var(--fs-md); font-weight: 600; flex-shrink: 0 }
   .ix-tsearch { height: 42px }
   .ix .ix-tsearch input[type=search] { min-height: 0 }
   .ix-fsel { height: 38px }
@@ -665,7 +690,12 @@ button.ix-jobno:focus-visible { outline: none; box-shadow: var(--focus); border-
 .ix-tmark.stale .ic { background: var(--red-fill) }
 .ix-tmark.stale::after { border-top-color: var(--red-fill) }
 .ix-tmark.sel { outline: 3px solid var(--accent); outline-offset: 1px }
-@media (max-width: 760px) { .ix-realmap { height: 260px } }
+@media (max-width: 760px) {
+  .ix-realmap { height: 260px }
+  /* the legend stays left of the ⓘ credits and the expand button (and the scale, on Vessels) */
+  .ix-realmap-legend { max-width: calc(100% - 100px) }
+  .ix-realmap:has(.leaflet-control-scale) .ix-realmap-legend { max-width: calc(100% - 180px) }
+}
 /* expand button (bottom right) and the expanded map */
 /* map credits (required by the free map data): a small ⓘ that opens on hover (Jose, 25 Oct 2026) */
 .ix-realmap .leaflet-control-attribution { max-width: 22px; height: 22px; padding: 0 !important; margin: 0 52px 18px 0 !important; overflow: hidden; white-space: nowrap; border-radius: var(--r-lg); font-size: 0 !important; line-height: 22px; background: var(--map-ctl-bg) !important; box-shadow: var(--shadow-attr); transition: max-width .2s ease }
@@ -676,7 +706,8 @@ button.ix-jobno:focus-visible { outline: none; box-shadow: var(--focus); border-
 .ix-realmap-expand:hover { background: var(--bg); color: var(--navy) }
 .ix-realmap-backdrop { position: fixed; inset: 0; z-index: 1999; background: var(--scrim-xl) }
 .ix-realmap.big { position: fixed; inset: 24px; height: auto; z-index: 2000; border-radius: var(--r-lg); border: 1px solid var(--line); box-shadow: var(--shadow-big); background: var(--surface) }
-@media (max-width: 760px) { .ix-realmap.big { inset: 8px; height: auto } }
+/* full screen on a phone: clear of the notch and the iPhone home bar */
+@media (max-width: 760px) { .ix-realmap.big { inset: max(8px, env(safe-area-inset-top, 0px)) max(8px, env(safe-area-inset-right, 0px)) calc(8px + env(safe-area-inset-bottom, 0px)) max(8px, env(safe-area-inset-left, 0px)); height: auto } }
 
 /* "updating by itself" line under a page title (AutoStatus.jsx) */
 .ix-autostatus { display: flex; align-items: center; gap: 8px; width: fit-content; max-width: 100%; min-height: 28px; font-size: var(--fs-sm); margin: -4px 0 12px; padding: 4px 10px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); line-height: 1.35 }
@@ -730,7 +761,11 @@ button.ix-jobno:focus-visible { outline: none; box-shadow: var(--focus); border-
 .ix-voyage .bar span { display: block; height: 100%; background: linear-gradient(90deg, var(--grad-from), var(--grad-to)); border-radius: 99px }
 .ix-voyage .prog { display: flex; justify-content: space-between; margin-top: 4px; font-size: calc(11.5px * var(--ts, 1)); color: var(--text-2) }
 .ix-voyage .foot { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line); color: var(--text-2); font-size: calc(11.5px * var(--ts, 1)) }
-@media (max-width: 760px) { .ix-voyage { top: auto; bottom: 60px; left: 8px; right: 8px; width: auto; max-width: none } }
+@media (max-width: 760px) {
+  .ix-voyage { top: auto; bottom: 60px; left: 8px; right: 8px; width: auto; max-width: none }
+  /* the card's close (x): a finger-sized target */
+  .ix-voyage .hd .x { width: 36px; height: 36px; padding: 0; margin: -8px -10px 0 0; display: grid; place-items: center }
+}
 /* the ship row's icon (the job number is the row's name) */
 .ix-ship-ic { width: 36px; height: 36px; border-radius: var(--r-lg); display: grid; place-items: center; font-size: calc(19px * var(--ts, 1)); background: var(--grey-bg); color: var(--muted); flex-shrink: 0 }
 .ix-ship-ic.sea { background: var(--sea-bg); color: var(--sea) }
@@ -750,6 +785,8 @@ button.ix-jobno:focus-visible { outline: none; box-shadow: var(--focus); border-
   .ix-btn.sm { height: 38px; padding: 0 12px; font-size: calc(13px * var(--ts, 1)) }
   .ix-toolbar input[type=search], .ix-toolbar select, .ix-ship-row .act input { height: 42px }
   .ix-icon-btn { width: 40px; height: 40px }
+  /* small icon buttons (close x, row tools) too: 26 px was too small for a finger */
+  .ix-icon-btn.sm { width: 36px; height: 36px }
   .ix-link { display: inline-flex; align-items: center; min-height: 34px; padding: 0 2px }
   /* bottom tabs: bigger targets, clear of the iPhone home bar */
   .ix-app { grid-template-rows: 52px minmax(0, 1fr) calc(62px + env(safe-area-inset-bottom, 0px)) }

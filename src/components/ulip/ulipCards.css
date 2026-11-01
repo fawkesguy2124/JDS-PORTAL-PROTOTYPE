@@ -118,6 +118,8 @@
   .uc-input { height: 42px }
   .uc-kv { grid-template-columns: repeat(2, minmax(0, 1fr)) }
   .uc-answer { flex-wrap: wrap }
+  /* the text stays next to its dot; only the button wraps to its own line */
+  .uc-answer > div:not(.act) { flex: 1 1 0; min-width: 0 }
   .uc-answer .act { margin-left: 15px; width: 100% }
   .uc-answer .act .ix-btn { width: 100% }
 }

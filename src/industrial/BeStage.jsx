@@ -54,7 +54,8 @@ export default function BeStage({ job, userName, showToast, compact = false }) {
         {BE_STAGES.map((s) => (
           <button key={s.id} type="button" className={`st ${s.tone} ${now?.id === s.id ? 'on' : ''}`} disabled={!!busy} onClick={() => set(s.id)} aria-pressed={now?.id === s.id}
             title={s.label}>
-            {busy === s.id ? '…' : s.short}
+            {/* phones show the full name (no hover there; see customs.css) */}
+            {busy === s.id ? '…' : <><span className="sh">{s.short}</span><span className="lg">{s.label}</span></>}
           </button>
         ))}
       </div>

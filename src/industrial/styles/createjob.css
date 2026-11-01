@@ -121,6 +121,8 @@ input[type=date].ix-cj-in { padding-right: 6px }
      look bigger than the rest (Jose, 1 Nov 2026) */
   select.ix-cj-in { appearance: none; -webkit-appearance: none; padding-right: 32px; font-family: inherit; font-weight: 400;
     background: var(--surface) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238792a5' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E") no-repeat right 12px center }
+  /* the small Type drop-down (staged papers): its arrow sat over the text */
+  select.ix-cj-in.sm { padding-right: 28px; background-position: right 8px center }
   select.ix-cj-in.filled { background-color: var(--navy-50) }
   select.ix-cj-in:disabled { background-color: var(--surface-3) }
   .ix-cj-in.mono, .ix-cj-affix input { font-family: inherit }

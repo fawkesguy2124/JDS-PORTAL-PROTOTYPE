@@ -61,6 +61,8 @@ export default function BotPreviewPage() {
   const [question, setQuestion] = useState('')
   const [chat, setChat] = useState([])
   const wa = useWa()
+  // phones: a finger-sized tick box and a shorter hint in the ask box (Jose, 1 Nov 2026)
+  const phone = typeof window !== 'undefined' && window.matchMedia?.('(max-width: 760px)').matches
   const chatCard = { ...card, background: wa.wall, color: wa.text }
 
   useEffect(() => {
@@ -125,8 +127,8 @@ export default function BotPreviewPage() {
             <div style={chatCard}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', marginBottom: '8px', flexWrap: 'wrap' }}>
                 <div style={{ fontWeight: 600 }}>Morning summary · 8:00</div>
-                <label style={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
-                  <input type="checkbox" checked={asShort} onChange={(e) => setAsShort(e.target.checked)} /> Short version
+                <label style={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', ...(phone ? { fontSize: '13px', minHeight: '36px', paddingLeft: '4px' } : null) }}>
+                  <input type="checkbox" checked={asShort} onChange={(e) => setAsShort(e.target.checked)} style={phone ? { width: '18px', height: '18px', margin: 0 } : undefined} /> Short version
                 </label>
               </div>
               {summary && (asShort
@@ -145,7 +147,7 @@ export default function BotPreviewPage() {
               {chat.length === 0 && <Bubble wa={wa} text={answer(data, 'help', person)} />}
               {chat.map((m, i) => <Bubble wa={wa} key={i} mine={m.mine} text={m.text} />)}
               <form onSubmit={ask} style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
-                <input value={question} onChange={(e) => setQuestion(e.target.value)} placeholder="J-193, a container no, a BE no, SUMMARY…"
+                <input value={question} onChange={(e) => setQuestion(e.target.value)} placeholder={phone ? 'Job, container, BE or SUMMARY' : 'J-193, a container no, a BE no, SUMMARY…'}
                   style={{ flex: 1, minWidth: 0, height: '44px', padding: '0 12px', border: `1.5px solid ${wa.edge}`, borderRadius: '22px', fontSize: '14px', background: wa.field, color: wa.text }} />
                 <button type="submit" style={{ height: '44px', padding: '0 16px', borderRadius: '22px', border: 'none', background: '#1f8f4e', color: 'white', fontWeight: 600, cursor: 'pointer' }}>Send</button>
               </form>

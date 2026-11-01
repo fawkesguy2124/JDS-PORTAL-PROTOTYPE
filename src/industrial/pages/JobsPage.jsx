@@ -318,14 +318,15 @@ export default function JobsPage({ profile, onOpenJob, selectedId }) {
                     </td>
                     <td className="c-box">{r.boxes || <Dash />}</td>
                     {/* the boxes go in the tooltip too, for screens without the Boxes column */}
-                    <td className="ix-jb-where" title={[r.boxes, r.where?.title || r.where?.text].filter(Boolean).join('\n') || undefined}>
+                    {/* (.none: nothing to say, so a phone card shows no lone dash) */}
+                    <td className={`ix-jb-where${r.where?.text ? '' : ' none'}`} title={[r.boxes, r.where?.title || r.where?.text].filter(Boolean).join('\n') || undefined}>
                       <span className="ix-jb-ell">{r.where?.text || <Dash />}</span>
                     </td>
                     <td className="r" title={j.freeTill ? `Free till ${fmtDate(j.freeTill)}${j.freeBox ? ` · ${j.freeBox}` : ''}` : undefined}>
                       <FreeDays value={j.freeDaysLeft} />
                     </td>
                     {/* takes the room left over and cuts long text with '…' (full text in the tooltip) */}
-                    <td className={`ix-jb-next${r.next ? '' : ' dim'}`} title={[r.next, ...r.tags.map((t) => t.title)].filter(Boolean).join('\n') || undefined}>
+                    <td className={`ix-jb-next${r.next ? '' : ' dim'}${!r.next && j.phase === 'delivered' ? ' fin' : ''}`} title={[r.next, ...r.tags.map((t) => t.title)].filter(Boolean).join('\n') || undefined}>
                       <span className="ix-jb-nx">
                         <span className="t">{r.next || (j.phase === 'delivered' ? 'Finished' : <Dash />)}</span>
                         {r.tags.map((t) => <Chip key={t.label} tone={t.tone} title={t.title}>{t.label}</Chip>)}

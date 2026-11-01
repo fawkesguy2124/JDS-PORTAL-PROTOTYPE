@@ -67,6 +67,7 @@ function DocumentsSection({ jobs, currentUserName, showToast, initialExpandJobId
   const [scope, setScope] = useState('open')               // 'open' jobs (default) or 'all'
   const [showAll, setShowAll] = useState(false)
   const [menuFor, setMenuFor] = useState(null)             // file with its ⋯ menu open
+  const [menuUp, setMenuUp] = useState(false)              // that menu opens upwards
   const fileInputRef = useRef(null)
   const uploadIntervalRef = useRef(null)
 
@@ -292,7 +293,8 @@ function DocumentsSection({ jobs, currentUserName, showToast, initialExpandJobId
                 <Icon name="upload" />{p.label}
               </button>
         })}
-        {extra.length > 0 && <span className="dc-ppr more" title={extra.map(docTypeLabel).join(', ')}>+{extra.length}</span>}
+        {/* phones show the names (no hover there); the computer keeps '+N' with a tooltip */}
+        {extra.length > 0 && <span className="dc-ppr more" title={extra.map(docTypeLabel).join(', ')}><span className="n">+{extra.length}</span><span className="names">{extra.map(docTypeLabel).join(', ')}</span></span>}
       </div>
     )
   }
@@ -320,9 +322,19 @@ function DocumentsSection({ jobs, currentUserName, showToast, initialExpandJobId
                     <td className="r">
                       <span className="dc-menu">
                         <button type="button" className="ix-icon-btn sm" aria-label={`More for ${doc.file_name}`} aria-expanded={menuFor === doc.id}
-                          onClick={() => setMenuFor((v) => (v === doc.id ? null : doc.id))}><Icon name="dots" /></button>
+                          onClick={(e) => {
+                            // near the bottom of the list (or the screen) the menu opens upwards:
+                            // it was cut off on the last file (Jose, 1 Nov 2026)
+                            const btn = e.currentTarget.getBoundingClientRect()
+                            const wrap = e.currentTarget.closest('.ix-tbl-wrap')?.getBoundingClientRect()
+                            const main = e.currentTarget.closest('.ix-main')?.getBoundingClientRect()
+                            const limit = Math.min(wrap ? wrap.bottom : window.innerHeight, main ? main.bottom : window.innerHeight)
+                            const top = Math.max(wrap ? wrap.top : 0, main ? main.top : 0)
+                            setMenuUp(limit - btn.bottom < 150 && btn.top - top > limit - btn.bottom)
+                            setMenuFor((v) => (v === doc.id ? null : doc.id))
+                          }}><Icon name="dots" /></button>
                         {menuFor === doc.id && (
-                          <span className="dc-menu-pop" role="menu">
+                          <span className={`dc-menu-pop${menuUp ? ' up' : ''}`} role="menu">
                             <button type="button" role="menuitem" onClick={() => preview(doc)}><Icon name="eye" />Open</button>
                             <button type="button" role="menuitem" onClick={() => download(doc)}><Icon name="download" />Download</button>
                             {canDelete && <button type="button" role="menuitem" className="danger" onClick={() => handleDelete(doc)}><Icon name="trash" />Delete</button>}
@@ -421,11 +433,22 @@ function DocumentsSection({ jobs, currentUserName, showToast, initialExpandJobId
                 <label className="dc-field">
                   <span>Job</span>
                   <input type="search" value={pickQ} onChange={(e) => setPickQ(e.target.value)} placeholder="Type a job no or client" autoFocus />
-                  <select size={6} style={{ height: 'auto', marginTop: 6, padding: 4 }} value="" aria-label="Pick the job"
+                  <select className="dc-pick-sel" size={6} style={{ height: 'auto', marginTop: 6, padding: 4 }} value="" aria-label="Pick the job"
                     onChange={(e) => { const r = allRows.find((x) => String(x.job.id) === e.target.value); if (r) setUploadModal({ open: true, job: r.job, fromRow: false }) }}>
                     {pickList.map(({ job }) => <option key={job.id} value={String(job.id)}>{job.job_no} · {job.client || 'No client'}</option>)}
                   </select>
                 </label>
+              )}
+              {/* phones: the same jobs as rows to tap (iPhone showed the list above as one blank line) */}
+              {!uploadModal.job && (
+                <div className="dc-pick" role="group" aria-label="Pick the job">
+                  {pickList.map(({ job }) => (
+                    <button key={job.id} type="button" onClick={() => setUploadModal({ open: true, job, fromRow: false })}>
+                      <JobNo no={job.job_no} /><span className="cl">{job.client || 'No client'}</span>
+                    </button>
+                  ))}
+                  {pickList.length === 0 && <div className="none">No job matches.</div>}
+                </div>
               )}
               {uploadModal.job && (
                 <>

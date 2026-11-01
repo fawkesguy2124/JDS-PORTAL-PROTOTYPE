@@ -197,7 +197,8 @@ export default function NotificationBell({ onNavigate, profile }) {
     : shown.filter(n => {
         const t = n.type || n.action || ''
 if (filter === 'container') return t.includes('container') || t === 'detention_alert'
-      if (filter === 'alert') return t === 'detention_alert'
+      // Alert = every warning: free days ending, truck papers, a stopped truck
+      if (filter === 'alert') return t === 'detention_alert' || t === 'truck_papers' || t === 'truck_stuck'
       if (filter === 'ship') return t === 'ship_arrived' || t === 'eta_changed'
       if (filter === 'truck') return t.startsWith('truck')
       if (filter === 'ulip') return t === 'ooc_granted' || t === 'air_igm'
@@ -205,6 +206,8 @@ if (filter === 'container') return t.includes('container') || t === 'detention_a
       })
 
   const groups = groupByDay(filteredNotifications)
+  // phones: finger-sized filter chips that wrap, readable day headings (Jose, 1 Nov 2026)
+  const phone = window.innerWidth <= 760
 
   // colours are the portal's tokens, so the bell follows the light / dark theme
   const tagStyles = {
@@ -264,7 +267,7 @@ if (filter === 'container') return t.includes('container') || t === 'detention_a
             border: '1px solid var(--line)', borderRadius: 'var(--r-lg)',
             boxShadow: 'var(--shadow-pop)', zIndex: 9999,
             overflow: 'hidden',
-            maxHeight: 'calc(100vh - 88px)',
+            maxHeight: 'calc(100dvh - 88px)', // dvh: the visible screen, also under iPhone Safari's bars
             animation: 'bellDropdown 0.18s cubic-bezier(0.16,1,0.3,1)',
           }}
         >
@@ -289,13 +292,13 @@ if (filter === 'container') return t.includes('container') || t === 'detention_a
             )}
           </div>
 
-          <div style={{ display: 'flex', gap: '5px', padding: '8px 16px', borderBottom: '1px solid var(--line)', overflowX: 'auto' }}>
+          <div style={{ display: 'flex', gap: phone ? '6px' : '5px', padding: '8px 16px', borderBottom: '1px solid var(--line)', overflowX: 'auto', flexWrap: phone ? 'wrap' : 'nowrap' }}>
             {['all', 'container', 'ship', 'truck', 'ulip', 'alert'].map(f => (
               <button
                 key={f}
                 onClick={() => setFilter(f)}
                 style={{
-                  padding: '3px 10px', borderRadius: '9999px', fontSize: '11px', fontWeight: 500,
+                  padding: phone ? '0 12px' : '3px 10px', minHeight: phone ? '34px' : undefined, borderRadius: '9999px', fontSize: phone ? '13px' : '11px', fontWeight: 500,
                   border: `1px solid ${filter === f ? 'var(--primary)' : 'var(--line)'}`,
                   background: filter === f ? 'var(--primary)' : 'var(--surface)',
                   color: filter === f ? 'var(--on-fill)' : 'var(--text-2)',
@@ -311,14 +314,14 @@ if (filter === 'container') return t.includes('container') || t === 'detention_a
             {filteredNotifications.length === 0 ? (
               <div style={{ padding: '32px 16px', textAlign: 'center' }}>
                 <i className="ti ti-circle-check" aria-hidden="true" style={{ display: 'block', fontSize: '28px', marginBottom: '8px', color: 'var(--green)' }} />
-                <p style={{ fontSize: '12px', color: 'var(--muted)' }}>All caught up! No notifications.</p>
+                <p style={{ fontSize: '12px', color: 'var(--muted)' }}>{filter === 'all' ? 'All caught up! No notifications.' : 'Nothing under this filter.'}</p>
               </div>
             ) : (
               Object.entries(groups).map(([day, items]) => {
                 if (items.length === 0) return null
                 return (
                   <div key={day}>
-                    <div style={{ padding: '6px 16px 4px', fontSize: '9px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--muted)', background: 'var(--surface-2)', borderBottom: '1px solid var(--line)', position: 'sticky', top: 0 }}>
+                    <div style={{ padding: '6px 16px 4px', fontSize: phone ? '11px' : '9px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--muted)', background: 'var(--surface-2)', borderBottom: '1px solid var(--line)', position: 'sticky', top: 0 }}>
                       {day}
                     </div>
                     {items.map((n, i) => {

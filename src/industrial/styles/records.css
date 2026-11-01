@@ -61,3 +61,38 @@
 .rec-h:first-child { margin-top: 0 }
 /* phones: 16px stops the browser zooming into the field */
 @media (max-width: 760px) { .rec-search input { font-size: 16px } }
+
+/* a schedule's failure reason: hover (row title) on a computer, shown as text on a phone */
+.rec-msg { display: none }
+
+/* ── phones: System health, Clients and BIS tables as one card per row, so no column is
+   cut or off-screen (Jose, 1 Nov 2026). Each cell says what it is (data-l="Last" →
+   "Last 1 Nov, 10:30"). .c-main takes the first line, .c-full a line of its own. ── */
+@media (max-width: 760px) {
+  .ix .rec-tbl.rec-cards.narrow { min-width: 0 }
+  .ix .rec-wrap:has(> .rec-cards) { max-height: none }
+  .ix .rec-job { height: 34px }
+}
+@media (max-width: 640px) {
+  .ix .rec-tbl.rec-cards { display: block; min-width: 0 !important; width: 100% }
+  .ix .rec-cards thead { display: none }
+  .ix .rec-cards tbody { display: block }
+  .ix .rec-cards tbody tr { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 14px; position: relative; padding: 10px 14px 10px 16px; border-bottom: 1px solid var(--line); height: auto }
+  .ix .rec-cards tbody tr:last-child { border-bottom: 0 }
+  .ix .rec-cards td { display: block; height: auto !important; padding: 0 !important; border: 0 !important; background: none !important; white-space: normal; min-width: 0; text-align: left; line-height: 1.4 }
+  .ix .rec-cards td.wide, .ix .rec-cards td.cl { max-width: none; overflow: visible; text-overflow: clip; overflow-wrap: anywhere }
+  .ix .rec-cards td.c-main { flex: 1 1 auto }
+  .ix .rec-cards td.c-full, .ix .rec-cards tr > td[colspan] { flex: 1 1 100% }
+  /* a cell with nothing in it ("—") is left off the card */
+  .ix .rec-cards td:has(> .ix-dash:only-child) { display: none }
+  .ix .rec-cards td[data-l]::before { content: attr(data-l); margin-right: 5px; color: var(--muted); font-size: var(--fs-xs); font-family: var(--font); font-weight: 500 }
+  /* the red / amber stripe stays on the left edge */
+  .ix .rec-cards td.lvl { position: absolute; left: 0; top: 0; bottom: 0; width: 3px }
+  /* opened client and its jobs: the colour on the whole card */
+  .ix .rec-cards tbody tr.open { background: var(--navy-50); border-bottom: 0 }
+  .ix .rec-cards tbody tr.rec-more { display: block; background: var(--surface-2) }
+  /* tap targets: the job number and Check IEC */
+  .ix .rec-cards button.ix-jobno { display: inline-flex; align-items: center; min-height: 32px; vertical-align: middle }
+  .ix .rec-cards .ix-btn.sm { height: 36px; padding: 0 12px }
+  .ix .rec-cards .rec-msg { display: block; margin-top: 2px; color: var(--red); font-size: var(--fs-sm); overflow-wrap: anywhere }
+}

@@ -8,6 +8,10 @@ import { useInstallApp } from '../services/desktopApp'
 import { applyPrefs, resolveTheme, usePrefs } from './settings'
 import './styles/mobile.css'
 
+// the phone's bottom tabs; every other page is under More
+const TABS = [['today', 'home', 'Today'], ['jobs', 'list-details', 'Jobs'], ['trucks', 'truck', 'Trucks'], ['customs', 'file-certificate', 'BE & OOC']]
+const TAB_IDS = TABS.map(([id]) => id)
+
 // The frame around every page (Control tower, Jose 31 Oct 2026): navy sidebar with
 // the brand cell on top, a slim top bar (search, Create job, bell, you), and a
 // bottom tab bar on phones.
@@ -28,9 +32,19 @@ export default function Shell({ sections, active, counts = {}, onGo, onOpenJob, 
   const [palette, setPalette] = useState(false)
   const [mnav, setMnav] = useState(false) // false | true | 'closing' (the phone menu slides away first)
   const closeMnav = () => { setMnav((v) => (v ? 'closing' : false)); setTimeout(() => setMnav(false), 220) }
+  // the More sheet's grab handle works: a swipe down of 60 px closes it (when it is not scrolled)
+  const swipeY = useRef(null)
+  const onSheetStart = (e) => { swipeY.current = e.currentTarget.scrollTop > 0 ? null : e.touches[0].clientY }
+  const onSheetEnd = (e) => {
+    const y0 = swipeY.current
+    swipeY.current = null
+    if (y0 !== null && e.changedTouches[0].clientY - y0 > 60) closeMnav()
+  }
   const app = useInstallApp() // the portal as a desktop app
   const health = useSystemHealth()
   const tones = healthTones(health)
+  // a new page starts at the top, not at the old page's scroll position
+  useEffect(() => { document.getElementById('ix-main')?.scrollTo({ top: 0, behavior: 'instant' }) }, [active])
 
   useEffect(() => {
     const onKey = (e) => {
@@ -114,17 +128,18 @@ export default function Shell({ sections, active, counts = {}, onGo, onOpenJob, 
         <main className="ix-main" id="ix-main">{children}</main>
 
         <nav className="ix-tabbar" aria-label="Main menu">
-          {[['today', 'home', 'Today'], ['jobs', 'list-details', 'Jobs'], ['trucks', 'truck', 'Trucks'], ['customs', 'file-certificate', 'BE & OOC']].map(([id, ic, l]) => (
+          {TABS.map(([id, ic, l]) => (
             <button key={id} type="button" className={active === id ? 'active' : ''} onClick={() => go(id)}><Icon name={ic} />{l}</button>
           ))}
-          <button type="button" onClick={() => setMnav(true)}><Icon name="menu-2" />More</button>
+          {/* a page opened from More lights up More, so one tab always shows where you are */}
+          <button type="button" className={TAB_IDS.includes(active) ? '' : 'active'} onClick={() => setMnav(true)}><Icon name="menu-2" />More</button>
         </nav>
       </div>
 
       {mnav && (
         <>
           <div className={`ix-mnav-bg${mnav === 'closing' ? ' closing' : ''}`} onClick={closeMnav} />
-          <div className={`ix-mnav${mnav === 'closing' ? ' closing' : ''}`}>
+          <div className={`ix-mnav${mnav === 'closing' ? ' closing' : ''}`} onTouchStart={onSheetStart} onTouchEnd={onSheetEnd}>
             <div className="ix-mnav-acts">
               <button type="button" className="ix-btn primary" onClick={() => { closeMnav(); onCreateJob() }}><Icon name="plus" />Create job</button>
               <button type="button" className="ix-btn" onClick={() => { closeMnav(); setPalette(true) }}><Icon name="search" />Search</button>

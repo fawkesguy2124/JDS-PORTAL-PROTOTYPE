@@ -20,22 +20,26 @@ export default function DesktopAlerts({ profile }) {
   const kinds = state.kinds || ALL_KINDS
   const toggleKind = (id) => run(() => setPushKinds({ ...kinds, [id]: !kinds[id] }))
 
-  const row = { display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', color: C.text, padding: '3px 0', cursor: 'pointer' }
+  // on a phone the words say phone, not Windows or computer (Jose, 1 Nov 2026)
+  const phone = typeof window !== 'undefined' && window.matchMedia?.('(max-width: 760px)').matches
+  const device = phone ? 'phone' : 'computer'
+  const row = { display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', color: C.text, padding: phone ? '8px 0' : '3px 0', cursor: 'pointer' }
+  const tap = phone ? { minHeight: '34px', padding: '0 12px' } : {}
   return (
     <div style={{ borderTop: `0.5px solid ${C.line}`, padding: '10px 16px', background: C.surface2 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-        <i className="ti ti-device-desktop" style={{ fontSize: '16px', color: C.navy }} aria-hidden="true" />
+        <i className={`ti ti-device-${phone ? 'mobile' : 'desktop'}`} style={{ fontSize: '16px', color: C.navy }} aria-hidden="true" />
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: '12px', fontWeight: 600, color: C.text }}>Desktop alerts</div>
+          <div style={{ fontSize: '12px', fontWeight: 600, color: C.text }}>{phone ? 'Phone alerts' : 'Desktop alerts'}</div>
           <div style={{ fontSize: '11px', color: C.muted }}>
             {!state.supported ? 'This browser cannot show them.'
-              : state.on ? 'On for this computer: they pop up even when the portal is closed.'
-              : 'Get OOC, free-day and container alerts as Windows notifications.'}
+              : state.on ? `On for this ${device}: they pop up even when the portal is closed.`
+              : `Get OOC, free-day and container alerts as ${phone ? 'phone' : 'Windows'} notifications.`}
           </div>
         </div>
         {state.supported && (state.on
-          ? <button type="button" onClick={() => setOpen((v) => !v)} style={linkBtn}>{open ? 'Done' : 'Choose'}</button>
-          : <button type="button" disabled={busy} onClick={() => run(() => enablePush(profile))} style={mainBtn}>{busy ? 'Turning on…' : 'Turn on'}</button>)}
+          ? <button type="button" onClick={() => setOpen((v) => !v)} style={{ ...linkBtn, ...tap }}>{open ? 'Done' : 'Choose'}</button>
+          : <button type="button" disabled={busy} onClick={() => run(() => enablePush(profile))} style={{ ...mainBtn, ...tap }}>{busy ? 'Turning on…' : 'Turn on'}</button>)}
       </div>
       {state.on && open && (
         <div style={{ marginTop: '8px', paddingLeft: '24px' }}>
@@ -45,8 +49,8 @@ export default function DesktopAlerts({ profile }) {
               {k.label}
             </label>
           ))}
-          <button type="button" disabled={busy} onClick={() => run(disablePush)} style={{ ...linkBtn, color: C.red, marginTop: '6px', padding: 0 }}>
-            Turn off on this computer
+          <button type="button" disabled={busy} onClick={() => run(disablePush)} style={{ ...linkBtn, color: C.red, marginTop: '6px', padding: 0, minHeight: phone ? '34px' : undefined }}>
+            Turn off on this {device}
           </button>
         </div>
       )}

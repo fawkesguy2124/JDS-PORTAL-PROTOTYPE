@@ -61,19 +61,20 @@ const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<
 const STALE_HOURS = 6
 // the map may have been closed in the meantime (page changed)
 const alive = (m) => !!m && !!m._mapPane && !!m.getContainer()?.isConnected
-const fit = (m, bounds) => {
+// lift: how far the highest stacked pin sits above its point (trucks at one plaza)
+const fit = (m, bounds, lift = 0) => {
   if (!alive(m)) return
   if (!bounds.length) return
   const box = L.latLngBounds(bounds)
   // all at one spot (J-583's MH46H9151 crossed Kharpada twice: two identical points): a
   // normal view of that spot. Fitting a zero-size box zoomed the map in as far as it goes,
   // onto a blank green field (Jose, 1 Nov 2026). Never closer than street level either.
-  if (box.getNorthEast().distanceTo(box.getSouthWest()) < 300) m.setView(box.getCenter(), 11)
+  if (box.getNorthEast().distanceTo(box.getSouthWest()) < 300) { m.setView(box.getCenter(), 11); if (lift) m.panBy([0, -lift / 2], { animate: false }) }
   else {
     // room for half a pin label on each side (the labels are centred on the truck and about
     // 180 px wide: on a phone they hung over the edge) and for the pin above its point
     const side = Math.min(110, Math.round(m.getSize().x / 4))
-    m.fitBounds(box, { paddingTopLeft: [side, 50], paddingBottomRight: [side, 30], maxZoom: 13 })
+    m.fitBounds(box, { paddingTopLeft: [side, 50 + lift], paddingBottomRight: [side, 30], maxZoom: 13 })
   }
 }
 
@@ -83,6 +84,7 @@ export default function TruckMap({ trucks, selectedId, onSelect, message }) {
   const layer = useRef(null)
   const [big, setBig] = useState(false) // expanded to fill the screen
   const lastBounds = useRef([])
+  const lastLift = useRef(0)
   const fitKey = useRef('') // the view is refitted only when the picked truck or the trucks change
   const [, setSizeTick] = useState(0)
 
@@ -111,8 +113,19 @@ export default function TruckMap({ trucks, selectedId, onSelect, message }) {
     if (!m) return
     layer.current.clearLayers()
     const bounds = []
+    // trucks at the same toll plaza: the pins are stacked one above the other (they sat
+    // exactly on top of each other, so only one could be seen or tapped; Jose, 1 Nov 2026)
+    const atSpot = new Map()
+    // a phone has no mouse hover: the picked truck's note (plaza, time) stays open
+    const noHover = window.matchMedia?.('(hover: none), (max-width: 760px)').matches
+    let selMarker = null
     for (const t of placed) {
       if (!t.last) continue
+      const ll = L.latLng(t.last.pos)
+      const spot = `${ll.lat.toFixed(4)},${ll.lng.toFixed(4)}`
+      const k = atSpot.get(spot) || 0
+      atSpot.set(spot, k + 1)
+      const lift = k * 38 // one pin's height and a small gap
       const isSel = t.id === selectedId
       const lastAt = new Date(t.last.at)
       const stale = !t.hollow && !isNaN(lastAt) && Date.now() - lastAt.getTime() > STALE_HOURS * 3600e3
@@ -131,13 +144,18 @@ export default function TruckMap({ trucks, selectedId, onSelect, message }) {
       }
       // job number first on the pin; a hollow pin says no truck number is known yet
       const icon = t.mode === 'rail' ? 'train' : 'truck'
-      const html = `<div class="ix-tmark ${stale ? 'stale' : ''} ${t.hollow ? 'hollow' : ''} ${isSel ? 'sel' : ''}" style="--tc:${t.hollow ? '#8792a5' : esc(color)}"><span class="ic"><i class="ti ti-${icon}"></i></span><span class="job">${esc(t.job.job_no)}</span>${esc(t.hollow ? (t.mode === 'rail' ? 'On rail' : 'No truck no.') : t.no)}</div>`
+      const liftCss = lift ? `transform:translate(-50%,-100%) translateY(-${9 + lift}px)` : ''
+      const html = `<div class="ix-tmark ${stale ? 'stale' : ''} ${t.hollow ? 'hollow' : ''} ${isSel ? 'sel' : ''}" style="--tc:${t.hollow ? '#8792a5' : esc(color)};${liftCss}"><span class="ic"><i class="ti ti-${icon}"></i></span><span class="job">${esc(t.job.job_no)}</span>${esc(t.hollow ? (t.mode === 'rail' ? 'On rail' : 'No truck no.') : t.no)}</div>`
       const what = t.hollow ? `${t.mode === 'rail' ? 'On rail' : 'On the road'} by container tracking, no truck number yet` : esc(t.no)
-      L.marker(t.last.pos, { icon: L.divIcon({ className: 'ix-tpin', iconSize: [0, 0], html }), zIndexOffset: isSel ? 1000 : 0 })
-        .bindTooltip(`<b>${esc(t.job.job_no)}</b> · ${what}<br>${esc(t.last.plaza)}<br>${esc(fmt(t.last.at))}${stale ? ' · <b>no newer crossing</b>' : ''}${t.last.approx ? '<br><i>approximate position</i>' : ''}`, { direction: 'top', offset: [0, -28] })
+      const marker = L.marker(t.last.pos, { icon: L.divIcon({ className: 'ix-tpin', iconSize: [0, 0], html }), zIndexOffset: isSel ? 1000 : -k })
+        .bindTooltip(`<b>${esc(t.job.job_no)}</b> · ${what}<br>${esc(t.last.plaza)}<br>${esc(fmt(t.last.at))}${stale ? ' · <b>no newer crossing</b>' : ''}${t.last.approx ? '<br><i>approximate position</i>' : ''}`, { direction: 'top', offset: [0, -28 - lift] })
         .on('click', () => onSelect?.(t.id))
         .addTo(layer.current)
+      if (isSel) selMarker = marker
     }
+    // (the redraw above removed the note that a tap had just opened)
+    if (noHover && selMarker) selMarker.openTooltip()
+    lastLift.current = (Math.max(1, ...atSpot.values()) - 1) * 38
     // nothing picked (or expanded): every truck in view; a picked truck: its own route
     if (!bounds.length || big || !selectedId) shown.forEach((t) => bounds.push(t.last.pos))
     lastBounds.current = bounds
@@ -145,7 +163,7 @@ export default function TruckMap({ trucks, selectedId, onSelect, message }) {
     // (and when the map's size changes, e.g. the page settling at phone width: the trucks sat at the edge)
     const size = m.getSize()
     const key = `${selectedId || ''}|${big}|${Math.round(size.x / 40)}x${Math.round(size.y / 40)}|${shown.map((t) => `${t.id}@${t.last.pos}`).join(',')}`
-    if (key !== fitKey.current) { fitKey.current = key; fit(m, bounds) }
+    if (key !== fitKey.current) { fitKey.current = key; fit(m, bounds, lastLift.current) }
     // the page layout can change size after the first draw
     setTimeout(() => { if (alive(m)) m.invalidateSize() }, 0)
   }) // redraw on every render: the lists are small
@@ -154,7 +172,7 @@ export default function TruckMap({ trucks, selectedId, onSelect, message }) {
   useEffect(() => {
     const m = map.current
     if (!m) return
-    setTimeout(() => { if (!alive(m)) return; m.invalidateSize(); fit(m, lastBounds.current) }, 60)
+    setTimeout(() => { if (!alive(m)) return; m.invalidateSize(); fit(m, lastBounds.current, lastLift.current) }, 60)
     if (!big) return
     const onKey = (e) => { if (e.key === 'Escape') setBig(false) }
     window.addEventListener('keydown', onKey)

@@ -103,6 +103,8 @@
   .ix-fj-kv { grid-template-columns: minmax(0, 1fr) }
 }
 @media (max-width: 760px) {
+  /* a label next to a table (Containers) sits at the top, not at the table's last row */
+  .ix-fj-f.wide { align-items: start }
   /* the job panel's phone rules pad the header 12px; this page matches */
   .ix-fj-head { padding: 6px 12px 0 }
   .ix-fj-acts { width: 100% }

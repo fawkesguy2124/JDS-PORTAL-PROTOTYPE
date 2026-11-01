@@ -46,6 +46,15 @@ const papersLines = (p) => {
   if (p.tone !== 'bad') return [p.summary]
   return p.summary.replace(/^[^:]*:\s*/, '').replace(/\.\s*$/, '').split(/;\s*/).map((s) => s.charAt(0).toUpperCase() + s.slice(1))
 }
+// room under a button that a menu or box can open into: inside the table box and inside the
+// part of the screen you can see (on a phone the scroll area ends at the tab bar; the box
+// opened under it; Jose, 1 Nov 2026)
+const roomBelow = (btn) => {
+  const bottom = btn.getBoundingClientRect().bottom
+  const frame = btn.closest('.ix-tbl-wrap')?.getBoundingClientRect()
+  const main = btn.closest('.ix-main')?.getBoundingClientRect()
+  return Math.min(frame ? frame.bottom : window.innerHeight, main ? main.bottom : window.innerHeight) - bottom
+}
 
 // Answers from checks made on this page, laid over the loaded data until the next full load
 function useOverlay(data, rows) {
@@ -110,8 +119,7 @@ function RowMenu({ items, label }) {
         onClick={(e) => {
           e.stopPropagation()
           // near the bottom of the list the menu opens upwards (it was cut off on the last row)
-          const frame = box.current?.closest('.ix-tbl-wrap')?.getBoundingClientRect()
-          setUp(!!frame && frame.bottom - e.currentTarget.getBoundingClientRect().bottom < 110)
+          setUp(roomBelow(e.currentTarget) < 110)
           setOpen((v) => !v)
         }}>
         <Icon name="dots" />
@@ -290,8 +298,7 @@ export default function TrucksPage({ currentUserName, onOpenJob, showToast, canU
   const showPapers = (job, t, key, e) => {
     if (papersOpen === key) { setPapersOpen(null); return }
     // near the bottom of the list the box opens upwards (it would be cut off)
-    const frame = e?.currentTarget?.closest('.ix-tbl-wrap')?.getBoundingClientRect()
-    setPapersUp(!!frame && frame.bottom - e.currentTarget.getBoundingClientRect().bottom < 130)
+    setPapersUp(!!e?.currentTarget && roomBelow(e.currentTarget) < 130)
     setFixing(null)
     if (t.papers) { setPapersOpen(key); return }
     guarded(key, async () => {
@@ -544,7 +551,7 @@ export default function TrucksPage({ currentUserName, onOpenJob, showToast, canU
             </div>
             {readyShown.length ? (
               <div className="ix-tbl-wrap">
-                <table className="ix-tbl">
+                <table className="ix-tbl ix-trk-ready">
                   <thead><tr>
                     <th className="lvl" /><th>Job</th><th>Client</th><th>OOC</th><th>Containers</th><th className="r">Free days</th><th className="r" aria-label="Actions" />
                   </tr></thead>

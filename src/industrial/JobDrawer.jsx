@@ -142,6 +142,19 @@ const rmsText = (v) => (!v || String(v).toLowerCase() === 'pending' ? null : RMS
 const freeWord = (left) => (left === null || left === undefined ? null : left < 0 ? `${-left} d over` : left === 0 ? 'last day today' : `${left} d left`)
 const nextDay = (ymd) => { const d = new Date(`${ymd}T00:00:00Z`); return isNaN(d) ? null : new Date(d.getTime() + 864e5).toISOString().slice(0, 10) }
 const typing = (e) => { const t = e.target; return !!t && (['INPUT', 'TEXTAREA', 'SELECT'].includes(t.tagName) || t.isContentEditable) }
+const isPhone = () => !!window.matchMedia?.('(max-width: 760px)').matches
+
+// On a phone the step bar swipes sideways: start it at the step before the current one, so
+// the current step and its button are on screen (Jose, 1 Nov 2026). The full job page
+// (components/JobDetailView.jsx) has the same few lines.
+function showCurrentStep(wrap) {
+  if (!wrap || wrap.scrollWidth <= wrap.clientWidth) return
+  const steps = [...wrap.querySelectorAll('.ix-jp-step')]
+  const i = steps.findIndex((el) => el.classList.contains('now'))
+  if (i < 0) { if (steps.at(-1)?.classList.contains('done')) wrap.scrollLeft = wrap.scrollWidth; return }
+  const el = steps[Math.max(0, i - 1)]
+  wrap.scrollLeft = Math.max(0, el.getBoundingClientRect().left - wrap.getBoundingClientRect().left + wrap.scrollLeft - 12)
+}
 
 // The side panel that opens when a job is clicked, as an object page: who and
 // what, one next step, the facts once, where every container is, papers, ship,
@@ -208,6 +221,8 @@ export default function JobDrawer({ jobId, onClose, onOpenFull, onOpenTruck, cur
   const [viewDoc, setViewDoc] = useState(null) // a PDF shown inside the portal
   const [openBox, setOpenBox] = useState(null)
   const [checking, setChecking] = useState(false) // Check OOC running in the panel
+  const [warnOpen, setWarnOpen] = useState(false) // phone: the truck papers problem shown under the steps
+  const stepRef = useRef(null)
 
   const log = loaded.id === curId ? loaded.log : []
   const docs = loaded.id === curId ? loaded.docs : []
@@ -240,7 +255,7 @@ export default function JobDrawer({ jobId, onClose, onOpenFull, onOpenTruck, cur
     if (at < 0 || !id) return
     rememberJob(id)
     setCurId(id)
-    setViewDoc(null); setOpenBox(null)
+    setViewDoc(null); setOpenBox(null); setWarnOpen(false)
   }
 
   useEffect(() => {
@@ -255,6 +270,8 @@ export default function JobDrawer({ jobId, onClose, onOpenFull, onOpenTruck, cur
   })
 
   const boxes = useMemo(() => (job ? jobBoxes(job, data) : []), [job, data])
+  const nowStep = j?.steps?.findIndex((s) => s.current)
+  useEffect(() => { showCurrentStep(stepRef.current) }, [curId, nowStep])
 
   if (!job) return null
 
@@ -321,7 +338,8 @@ export default function JobDrawer({ jobId, onClose, onOpenFull, onOpenTruck, cur
   if (!cta && askTruck) cta = { key: 'truck', step: 'truck', label: 'Add truck number', icon: 'truck', run: () => onOpenTruck(job.id), onDone: true }
 
   // truck papers problems (road tax, insurance …): a red ! next to the truck on the step bar,
-  // the problem on hover, instead of a banner (Jose, 1 Nov 2026)
+  // the problem on hover, instead of a banner (Jose, 1 Nov 2026). A phone has no hover: a tap
+  // shows the problem in a red line under the steps instead of leaving the panel
   const hasTruckStep = j.steps.some((s) => s.id === 'truck')
   const paperWarns = hasTruckStep ? j.attention.map((a) => a.text.match(/^Truck (\S+) papers problem: (.*)$/)).filter(Boolean)
     .map(([, no, what]) => `Truck ${no} papers problem: ${plain(what).replace(new RegExp(`^${no}:\\s*`), '')}`) : []
@@ -417,7 +435,7 @@ export default function JobDrawer({ jobId, onClose, onOpenFull, onOpenTruck, cur
     return (
       <div className="ix-jp-tl">
         {upcoming.length > 0 && (
-          <div className="ix-jp-up">
+          <div className="ix-jp-upc">
             <div className="day">Upcoming</div>
             {upcoming.map((u) => (
               <div key={u.t} className="ix-jp-ev"><span className={`d${u.red ? ' red' : ''}`} /><p>{u.t}<small>{u.s}</small></p></div>
@@ -489,9 +507,9 @@ export default function JobDrawer({ jobId, onClose, onOpenFull, onOpenTruck, cur
     const out = [
       <tr key={b.no} onClick={() => setOpenBox(open ? null : b.no)} title="Show this trip’s moves">
         <td className="box">{b.no}{b.stale && <span title="No movement for 30+ days" className="muted"> <Icon name="clock-question" /></span>}</td>
-        <td>{b.size || <Dash />}</td>
-        <td><WhereStatus b={b} /></td>
-        <td className={b.leftAt ? '' : 'dim'}>{b.leftAt ? fmtDateTime(b.leftAt) : <Dash />}</td>
+        <td className="sz">{b.size || <Dash />}</td>
+        <td className="wh"><WhereStatus b={b} /></td>
+        <td className={b.leftAt ? 'lf' : 'lf dim'}>{b.leftAt ? fmtDateTime(b.leftAt) : <Dash />}</td>
         <td className="r"><FreeDays value={b.freeLeft} till={b.freeTill && fmtDate(b.freeTill)} /></td>
       </tr>,
     ]
@@ -510,14 +528,15 @@ export default function JobDrawer({ jobId, onClose, onOpenFull, onOpenTruck, cur
   }
   const boxTable = (rows) => (
     <div className="ix-jp-inner">
-      <table className="ix-tbl click">
+      {/* (on a phone each container is a small card: jobs.css) */}
+      <table className="ix-tbl click ix-jp-boxtbl">
         <thead><tr>
           <th>Container</th><th>Size</th><th>Where now</th>
           <th>Left</th><th className="r">Free till</th>
         </tr></thead>
         <tbody>
           {rows.flatMap((b) => boxRows(b))}
-                  </tbody>
+        </tbody>
       </table>
     </div>
   )
@@ -553,13 +572,13 @@ export default function JobDrawer({ jobId, onClose, onOpenFull, onOpenTruck, cur
             ))}
           </div>}
 
-          <div className="ix-jp-stepwrap">
+          <div className="ix-jp-stepwrap" ref={stepRef}>
             <div className="ix-jp-steps" style={{ gridTemplateColumns: `repeat(${j.steps.length}, minmax(0, 1fr))` }}>
               {j.steps.map((s) => {
                 const since = s.current && stageSince ? stageSince.replace(/^·\s*/, '') : null
                 const sub = since || (s.sub ? plain(s.sub) : (s.id === 'delivered' && !s.done && !isExport ? (deliveryBy(job) === 'client' ? 'Client collects' : 'JDS delivers') : null))
                 const warn = s.id === 'truck' && paperWarns.length > 0 && (
-                  <button type="button" className="ix-jp-warn" data-tip={paperWarns.join('\n')} aria-label={paperWarns.join('. ')} onClick={() => onOpenTruck(job.id)}>
+                  <button type="button" className="ix-jp-warn" data-tip={paperWarns.join('\n')} aria-label={paperWarns.join('. ')} onClick={() => (isPhone() ? setWarnOpen((v) => !v) : onOpenTruck(job.id))}>
                     <Icon name="alert-circle" />
                   </button>
                 )
@@ -581,6 +600,15 @@ export default function JobDrawer({ jobId, onClose, onOpenFull, onOpenTruck, cur
               })}
             </div>
           </div>
+          {warnOpen && paperWarns.length > 0 && (
+            <div className="ix-jp-warnline" role="status">
+              <div>
+                <Icon name="alert-circle" />
+                <p>{paperWarns.map((w) => <span key={w}>{w}</span>)}</p>
+                <button type="button" className="ix-link" onClick={() => onOpenTruck(job.id)}>Open on Trucks</button>
+              </div>
+            </div>
+          )}
 
         </div>
 

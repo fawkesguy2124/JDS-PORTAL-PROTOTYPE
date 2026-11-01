@@ -40,7 +40,8 @@ const plain = (s) => String(s || '')
   .replace(/\s*\((ICEGATE|LDB|ULIP|FASTag|Safecube)\)/gi, '')
   .replace(/\bICEGATE\b/gi, 'Customs').replace(/\bLDB\b/g, 'container tracking')
   .replace(/\bFASTag\b/gi, 'toll').replace(/\bULIP\b/g, 'government systems').replace(/\bSafecube\b/gi, 'ship tracking')
-  .replace(/\s+—\s+/g, ', ')
+  // 'assigned — (truck 2)' reads 'assigned (truck 2)', not 'assigned, (truck 2)'
+  .replace(/\s+—\s+(?=\()/g, ' ').replace(/\s+—\s+/g, ', ')
 const reEscape = (s) => s.replace(/[.*+?^${}()|[\]\\-]/g, '\\$&')
 
 // ETA of a job not yet arrived: the ship tracking's date when it has one, else the job's
@@ -191,7 +192,9 @@ export default function TodayPage({ onOpenJob, onGo }) {
 
 // What to do, in a few words: "Arrange a truck", "Pay the duty", "Add the truck number"
 function todoText(x) {
-  if (x.act.tab === 'truck') return x.act.label === 'Add truck no.' ? 'Add the truck number' : 'Arrange a truck'
+  // 'Check truck' is a papers problem or a stopped truck: say that, not 'Arrange a truck'
+  // (the truck number once: 'Truck MH46AR2016 papers problem: road tax expired …')
+  if (x.act.tab === 'truck') return x.act.label === 'Add truck no.' ? 'Add the truck number' : x.act.label === 'Check truck' && x.main ? issueWords(x.main.text).replace(/\b([A-Z0-9]{6,})\b(.*?): \1: /, '$1$2: ') : 'Arrange a truck'
   if (!x.main) return 'Have a look'
   return issueWords(x.main.text)
 }
@@ -246,7 +249,11 @@ function Runway({ v, dash, now, onOpenJob }) {
                   <div className="who"><JobNo no={x.job.job_no} size="sm" /><span>{x.job.client || ''}{n > 1 ? ` · ${n} boxes` : ''}</span></div>
                   <div className="rw-track">
                     {x.type === 'eta'
-                      ? <span className="rw-eta" style={{ gridColumn: x.pos + 1 }} />
+                      ? <>
+                        <span className="rw-eta" style={{ gridColumn: x.pos + 1 }} />
+                        {/* the ETA date as text beside the diamond (phones only: there is no hover there) */}
+                        <em className={`rw-eta-t${x.pos > 9 ? ' before' : ''}`} style={{ gridColumn: x.pos > 9 ? `${x.pos - 3} / span 4` : `${x.pos + 2} / span 4` }}>{fmtDate(x.eta)}</em>
+                      </>
                       : <div className={`rw-bar ${tone}`} style={{ gridColumn: `1 / span ${x.pos + 1}` }}><span>{label}</span></div>}
                   </div>
                 </div>
@@ -281,11 +288,13 @@ function Updates({ log, v, dash, now, onOpenJob }) {
       const type = r.type || r.action
       const no = r.job_no ? String(r.job_no) : null
       let text = plain(r.title || String(type || '').replace(/_/g, ' '))
-      if (no) text = text.replace(new RegExp(`\\s*${reEscape(no)}\\s*`), ' ').replace(/^[\s,—-]+|[\s,—-]+$/g, '').trim()
+      // 'assigned, J-620 (truck 2)' → 'assigned (truck 2)': the comma before the job number goes too
+      if (no) text = text.replace(new RegExp(`,?\\s*${reEscape(no)}\\s*`), ' ').replace(/^[\s,—-]+|[\s,—-]+$/g, '').trim()
       const [icon, cls] = FEED_ICON[type] || ['point', '']
       out.push({
         key: `l${r.id}`, at: r.created_at, jobId: r.job_id || null, jobNo: no, text: text || 'Update',
-        small: [NO_NOTE.includes(type) ? null : plain(r.note), r.done_by_name].filter(Boolean).join(' · '), icon, cls,
+        // the note may already say '(by Jose)': then the name is not added again
+        small: [NO_NOTE.includes(type) ? null : plain(r.note), r.done_by_name && !String(r.note || '').includes(r.done_by_name) ? r.done_by_name : null].filter(Boolean).join(' · '), icon, cls,
       })
     }
     for (const c of v.boxes) {
