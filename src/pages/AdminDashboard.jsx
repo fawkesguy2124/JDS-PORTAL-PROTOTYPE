@@ -386,7 +386,7 @@ function AdminDashboardInner() {
     params.delete('jobId')
     window.history.replaceState({}, '', `${window.location.pathname}?${params.toString()}`)
   }
-  const ixProps = { ...pageProps, onGo: handleNavClick, onCreateJob: () => setShowCreateJob(true) }
+  const ixProps = { ...pageProps, onGo: handleNavClick, onCreateJob: () => setShowCreateJob(true), onEditJob: (id) => openFullJob(id, 'edit') }
 
   return (
     <Shell

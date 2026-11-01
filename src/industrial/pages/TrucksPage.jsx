@@ -10,6 +10,7 @@ import {
 } from '../ui'
 import { truckPoints } from '../truckPoints'
 import { askConfirm } from '../confirm'
+import { RowMenu, roomBelow } from '../ui'
 import '../styles/tracking.css'
 
 // the map (and its map library) loads only when this page opens
@@ -46,16 +47,6 @@ const papersLines = (p) => {
   if (p.tone !== 'bad') return [p.summary]
   return p.summary.replace(/^[^:]*:\s*/, '').replace(/\.\s*$/, '').split(/;\s*/).map((s) => s.charAt(0).toUpperCase() + s.slice(1))
 }
-// room under a button that a menu or box can open into: inside the table box and inside the
-// part of the screen you can see (on a phone the scroll area ends at the tab bar; the box
-// opened under it; Jose, 1 Nov 2026)
-const roomBelow = (btn) => {
-  const bottom = btn.getBoundingClientRect().bottom
-  const frame = btn.closest('.ix-tbl-wrap')?.getBoundingClientRect()
-  const main = btn.closest('.ix-main')?.getBoundingClientRect()
-  return Math.min(frame ? frame.bottom : window.innerHeight, main ? main.bottom : window.innerHeight) - bottom
-}
-
 // Answers from checks made on this page, laid over the loaded data until the next full load
 function useOverlay(data, rows) {
   const [extra, setExtra] = useState({ loadedAt: null, results: {} })
@@ -95,46 +86,6 @@ function PapersChip({ papers, onClick, disabled, open }) {
       title={papers ? 'Show what the papers say' : 'Check this truck’s papers'}>
       <Chip tone={tone} icon={icon}>{text}</Chip>
     </button>
-  )
-}
-
-// the row's ⋯ menu: Mark delivered, Take truck off
-function RowMenu({ items, label }) {
-  const [open, setOpen] = useState(false)
-  const [up, setUp] = useState(false)
-  const box = useRef(null)
-  useEffect(() => {
-    if (!open) return undefined
-    const close = (e) => { if (!box.current?.contains(e.target)) setOpen(false) }
-    const esc = (e) => { if (e.key === 'Escape') setOpen(false) }
-    document.addEventListener('mousedown', close)
-    document.addEventListener('keydown', esc)
-    return () => { document.removeEventListener('mousedown', close); document.removeEventListener('keydown', esc) }
-  }, [open])
-  const shown = items.filter(Boolean)
-  if (!shown.length) return null
-  return (
-    <span className="ix-trk-more" ref={box}>
-      <button type="button" className="ix-icon-btn sm" aria-haspopup="menu" aria-expanded={open} aria-label={label} title="More"
-        onClick={(e) => {
-          e.stopPropagation()
-          // near the bottom of the list the menu opens upwards (it was cut off on the last row)
-          setUp(roomBelow(e.currentTarget) < 110)
-          setOpen((v) => !v)
-        }}>
-        <Icon name="dots" />
-      </button>
-      {open && (
-        <div className={`ix-menu${up ? ' up' : ''}`} role="menu">
-          {shown.map((it) => (
-            <button key={it.label} type="button" role="menuitem" className={it.danger ? 'danger' : ''} disabled={it.disabled}
-              onClick={(e) => { e.stopPropagation(); setOpen(false); it.run() }}>
-              <Icon name={it.icon} />{it.label}
-            </button>
-          ))}
-        </div>
-      )}
-    </span>
   )
 }
 
@@ -417,7 +368,7 @@ export default function TrucksPage({ currentUserName, onOpenJob, showToast, canU
           </td>
           <td className="act" onClick={(e) => e.stopPropagation()}>
             <div>
-              <RowMenu label={`More for truck ${t.no}`} items={[
+              <RowMenu className="ix-trk-more" label={`More for truck ${t.no}`} items={[
                 first && canUpdateStage && { label: `Mark ${job.job_no} delivered`, icon: 'flag', disabled: anyBusy, run: () => deliver(job) },
                 { label: 'Take truck off this job', icon: 'trash', danger: true, disabled: anyBusy, run: () => unassign(job, t.no) },
               ]} />

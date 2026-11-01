@@ -5,7 +5,7 @@ import { seaOf } from '../../../supabase/functions/_shared/portal/ships.js'
 import { useJourney, useFreshOnOpen } from '../JourneyContext'
 import { StageBar, boxesText, jobNum, nextStepText, plain, setPagerList, stageDays, subscribePager, usePagerCurrent } from '../JobDrawer'
 import { portTime, seaWhere } from '../SeaTracking'
-import { Button, Chip, Dash, EmptyState, FilterSelect, FreeDays, Icon, JobNo, PageHead, PhaseStatus, SearchBox, Skeleton, Tabs, fmtDate, fmtDateTime, timeAgo, worst } from '../ui'
+import { Button, Chip, Dash, EmptyState, FilterSelect, FreeDays, Icon, JobNo, PageHead, PhaseStatus, RowMenu, SearchBox, Skeleton, Tabs, fmtDate, fmtDateTime, timeAgo, worst } from '../ui'
 import '../styles/jobs.css'
 
 // Filter tabs. Every count comes from the shared journey (useJourney), so the
@@ -95,7 +95,7 @@ function arrivalOf(job, j, sea) {
   return { text: `ETA ${sea?.pod_date ? portTime(sea.pod_date, false) : fmtDate(job.eta)}`, ms, dim: true, late, title: sea?.pod_date ? 'From ship tracking' : 'ETA saved on the job' }
 }
 
-export default function JobsPage({ profile, onOpenJob, selectedId }) {
+export default function JobsPage({ profile, onOpenJob, onEditJob, selectedId }) {
   const { rows, data, facts, profiles, loading, error } = useJourney()
   useFreshOnOpen() // opening the page shows the latest saved data
   const me = profile?.id
@@ -236,7 +236,7 @@ export default function JobsPage({ profile, onOpenJob, selectedId }) {
   const busy = loading && !rows.length
   const tabs = TABS.filter((t) => !t.optional || counts[t.id] > 0 || view === t.id)
     .map((t) => ({ id: t.id, label: t.label, count: busy ? '–' : counts[t.id], tone: t.tone && counts[t.id] ? t.tone : undefined }))
-  const COLS = 12
+  const COLS = 13
 
   return (
     <>
@@ -283,6 +283,7 @@ export default function JobsPage({ profile, onOpenJob, selectedId }) {
                 {th('free', 'Free days', 'r')}
                 <th className="ix-jb-next">Next step</th>
                 {th('updated', 'Updated', 'c-upd')}
+                <th className="act" aria-label="More" />
               </tr>
             </thead>
             <tbody>
@@ -332,6 +333,11 @@ export default function JobsPage({ profile, onOpenJob, selectedId }) {
                       </span>
                     </td>
                     <td className="dim c-upd" title={timeAgo(job.updated_at)}>{job.updated_at ? fmtDateTime(job.updated_at) : <Dash />}</td>
+                    {/* ⋯ > Edit opens the full job page ready to edit (Jose, 1 Nov 2026: instead of
+                        "Open full job" in the job panel) */}
+                    <td className="act" onClick={(e) => e.stopPropagation()}>
+                      <RowMenu label={`More for ${job.job_no}`} items={[onEditJob && { label: 'Edit', icon: 'pencil', run: () => onEditJob(job.id) }]} />
+                    </td>
                   </tr>
                 )
               })}

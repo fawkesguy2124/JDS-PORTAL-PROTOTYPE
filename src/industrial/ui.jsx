@@ -345,3 +345,69 @@ export function Skeleton({ rows = 5 }) {
     </div>
   )
 }
+
+// room under a button that a menu or box can open into: inside the table box and inside the
+// part of the screen you can see (on a phone the scroll area ends at the tab bar; the box
+// opened under it; Jose, 1 Nov 2026)
+export const roomBelow = (btn) => {
+  const bottom = btn.getBoundingClientRect().bottom
+  const frame = btn.closest('.ix-tbl-wrap')?.getBoundingClientRect()
+  const main = btn.closest('.ix-main')?.getBoundingClientRect()
+  return Math.min(frame ? frame.bottom : window.innerHeight, main ? main.bottom : window.innerHeight) - bottom
+}
+
+// a row's ⋯ menu (Trucks: Mark delivered, Take truck off; All jobs: Edit). items:
+// [{ label, icon, run, danger, disabled }]
+export function RowMenu({ items, label, className = '' }) {
+  const [open, setOpen] = useState(false)
+  // where the menu floats: fixed to the screen next to its button, so no table edge can cut
+  // it off (Jose, 1 Nov 2026: the first row's menu was cut off at the top of the table)
+  const [at, setAt] = useState(null)
+  const box = useRef(null)
+  useEffect(() => {
+    if (!open) return undefined
+    const close = (e) => { if (!box.current?.contains(e.target)) setOpen(false) }
+    const esc = (e) => { if (e.key === 'Escape') setOpen(false) }
+    const gone = () => setOpen(false) // the page scrolled: the button moved away from the menu
+    document.addEventListener('mousedown', close)
+    document.addEventListener('keydown', esc)
+    window.addEventListener('scroll', gone, true)
+    window.addEventListener('resize', gone)
+    return () => {
+      document.removeEventListener('mousedown', close); document.removeEventListener('keydown', esc)
+      window.removeEventListener('scroll', gone, true); window.removeEventListener('resize', gone)
+    }
+  }, [open])
+  const shown = items.filter(Boolean)
+  if (!shown.length) return null
+  return (
+    <span className={`ix-rowmenu${className ? ` ${className}` : ''}`} ref={box}>
+      <button type="button" className="ix-icon-btn sm" aria-haspopup="menu" aria-expanded={open} aria-label={label} title="More"
+        onClick={(e) => {
+          e.stopPropagation()
+          // opens downwards, or upwards when the screen (above the phone's tab bar) has no room
+          const r = e.currentTarget.getBoundingClientRect()
+          const main = e.currentTarget.closest('.ix-main')?.getBoundingClientRect()
+          const floor = main ? main.bottom : window.innerHeight
+          const need = 12 + shown.length * 44
+          const right = Math.max(8, window.innerWidth - r.right)
+          setAt(floor - r.bottom < need && r.top > need
+            ? { position: 'fixed', right, bottom: window.innerHeight - r.top + 4, top: 'auto', zIndex: 90 }
+            : { position: 'fixed', right, top: r.bottom + 4, bottom: 'auto', zIndex: 90 })
+          setOpen((v) => !v)
+        }}>
+        <Icon name="dots" />
+      </button>
+      {open && (
+        <div className="ix-menu" role="menu" style={at || undefined}>
+          {shown.map((it) => (
+            <button key={it.label} type="button" role="menuitem" className={it.danger ? 'danger' : ''} disabled={it.disabled}
+              onClick={(e) => { e.stopPropagation(); setOpen(false); it.run() }}>
+              <Icon name={it.icon} />{it.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </span>
+  )
+}

@@ -567,9 +567,7 @@ export default function JobDrawer({ jobId, onClose, onOpenFull, onOpenTruck, cur
             {job.client && <><span className="sep">·</span><span className="cl" title={job.client}>{job.client}</span></>}
             {String(job.priority).toLowerCase() === 'urgent' && <Chip tone="red" icon="flame">Urgent</Chip>}
             <div className="right">
-              <span className="vr hide-m" />
-              <button type="button" className="ix-icon-btn" onClick={() => onOpenFull(job.id, 'details')} title="Open full job" aria-label="Open full job"><Icon name="external-link" /></button>
-              <span className="vr" />
+              {/* (no "Open full job" button: All jobs has ⋯ > Edit on every row; Jose, 1 Nov 2026) */}
               {at >= 0 && <span className="pg">{at + 1} of {pagerIds.length}</span>}
               <button type="button" className="ix-icon-btn" disabled={at <= 0} onClick={() => go(-1)} title="Previous job (K)" aria-label="Previous job"><Icon name="chevron-up" /></button>
               <button type="button" className="ix-icon-btn" disabled={at < 0 || at >= pagerIds.length - 1} onClick={() => go(1)} title="Next job (J)" aria-label="Next job"><Icon name="chevron-down" /></button>

@@ -197,7 +197,9 @@ function JobDetailView({ job, profiles = {}, currentUserName, isAdmin, canUpdate
     return tabIds.includes(hash) ? hash : 'details'
   }
 
-  const [editMode, setEditMode] = useState(false)
+  // opened with #edit (All jobs, the row's ⋯ menu > Edit): straight into editing (Jose, 1 Nov 2026)
+  const openedForEdit = () => window.location.hash === '#edit'
+  const [editMode, setEditMode] = useState(openedForEdit)
   const [saving, setSaving] = useState(false)
   const [stageUpdating, setStageUpdating] = useState(false)
   const [showFullAccountability, setShowFullAccountability] = useState(false)
@@ -210,7 +212,7 @@ function JobDetailView({ job, profiles = {}, currentUserName, isAdmin, canUpdate
   // Another job opened in place: start fresh (reset while rendering, not in an effect)
   if (job.id !== shownId) {
     setShownId(job.id)
-    setEditMode(false)
+    setEditMode(openedForEdit())
     setSaving(false)
     setStageUpdating(false)
     setHasUnsavedNotes(false)

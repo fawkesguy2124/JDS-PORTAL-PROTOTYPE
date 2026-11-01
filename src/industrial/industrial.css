@@ -1144,3 +1144,15 @@ html[data-theme="dark"] .ix .maplibregl-popup-anchor-top .maplibregl-popup-tip {
 .ix-confirm b { display: block; font-size: var(--fs-lg); font-weight: 600; margin-top: 6px }
 .ix-confirm p { margin: 6px 0 0; color: var(--text-2); white-space: pre-line }
 .ix-confirm .ft { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 18px; border-top: 1px solid var(--line); background: var(--surface-2) }
+
+/* a row's ⋯ menu (ui.jsx RowMenu): opens under its button, or upwards near the bottom */
+.ix-rowmenu { position: relative; display: inline-flex }
+.ix-rowmenu .ix-menu { position: absolute; right: 0; top: calc(100% + 4px); z-index: 30; width: auto; min-width: 180px }
+.ix-rowmenu .ix-menu.up { top: auto; bottom: calc(100% + 4px) }
+.ix-rowmenu .ix-menu button.danger { color: var(--red) }
+.ix-jb-tbl th.act, .ix-jb-tbl td.act { width: 40px; padding: 0 8px 0 0; text-align: right; cursor: default }
+@media (max-width: 640px) {
+  /* phone card: ⋯ sits top right, beside the free days */
+  .ix .ix-tbl.ix-jb-tbl tbody tr { grid-template-columns: minmax(0, 1fr) auto auto; grid-template-areas: 'job free act' 'status status status' 'where where where' 'next next next' }
+  .ix .ix-tbl.ix-jb-tbl td.act { display: block; grid-area: act; align-self: start; margin: -6px -8px 0 0; width: auto }
+}
