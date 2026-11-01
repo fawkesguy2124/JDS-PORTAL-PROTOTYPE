@@ -256,8 +256,9 @@ export function CustomsPanel({ jobId, onOpenJob, canEditBE, canUpdateStage, curr
 
           <Facts job={job} j={j} />
 
-          {/* the one check that matters here: is the OOC out (and the BE number / date form) */}
-          <div className="cb-ask">
+          {/* the one check that matters here: is the OOC out (and the BE number / date form).
+              Once the OOC is granted there is nothing left to ask Customs (Jose, 2 Nov 2026) */}
+          {!j.oocDone && <div className="cb-ask">
             <CustomsStatusCard
               key={job.id}
               job={job}
@@ -271,7 +272,7 @@ export function CustomsPanel({ jobId, onOpenJob, canEditBE, canUpdateStage, curr
               onSaved={async () => { await reloadJob(job.id, patchJob); refresh() }}
               toast={showToast}
             />
-          </div>
+          </div>}
 
           {/* everything else from the government systems, folded away until asked for */}
           <div className={`cb-more${more ? ' open' : ''}`}>
