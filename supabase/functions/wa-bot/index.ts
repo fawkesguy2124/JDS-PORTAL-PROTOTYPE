@@ -21,7 +21,8 @@ import { askAssistant, groqInfo } from './assistant.ts'
 import { applyChange, confirmText, isNo, isYes, PENDING_MINUTES, prepareChange, type Pending } from './actions.ts'
 import { downloadMedia, transcribe, normalizeSpoken, docTypeFromName, jobFromText, safeName, MAX_FILE_BYTES } from './media.ts'
 import { makeServerTools, sendDueReminders, checkWatches, checkTasks } from './servertools.ts'
-import { readBeFile, jobForBe, beLine, beFill, beForFill } from './bereader.ts'
+import { readBeFile, jobForBe, beLine } from './bereader.ts'
+import { readDocFile, jobForDoc, docFill, fillArgs } from './docfill.ts'
 import { pushAlerts, pushTest } from './push.ts'
 import { handlePost, undoPost, isUndo, UNDO_MINUTES } from './posts.ts'
 import { runQuestions, answerQuestion, questionsDue } from './questions.ts'
@@ -477,41 +478,47 @@ async function handleFile(admin: Admin, person: Person, m: any, data: any) {
   const lastFile = { path, file_name: name, mime: file.mime, size: file.bytes.length, doc_type: docType, at: new Date().toISOString() }
   await admin.from('bot_inbox').upsert({ phone: person.phone, last_file: lastFile, pending: null, last_inbound_at: new Date().toISOString() })
   const createLink = `${PORTAL}/admin?tab=jobs&createFrom=${encodeURIComponent(path)}`
-  // a BE / OOC PDF: read by the portal's own BE reader (no AI), then one Yes / No
-  // for everything it shows (attach, record the BE and IGM, the OOC)
-  const be = /pdf/i.test(file.mime) || /\.pdf$/i.test(name) ? await readBeFile(file.bytes).catch((e) => { console.warn(`[wa-bot] BE reader: ${(e as Error).message}`); return null }) : null
-  if (be) {
-    lastFile.doc_type = be.copy_type === 'OOC' ? 'OOC' : 'BE'
+  // a PDF: read by the portal's own reader (no AI, the same as Create job): a BE / OOC, BL,
+  // air waybill, invoice, packing list or a bundle. One Yes / No for everything it shows:
+  // attach it, record the BE and IGM, the OOC, and fill the job's empty fields
+  const isPdf = /pdf/i.test(file.mime) || /\.pdf$/i.test(name)
+  const doc = isPdf ? await readDocFile(file.bytes).catch((e) => { console.warn(`[wa-bot] doc reader: ${(e as Error).message}`); return null }) : null
+  const be = doc?.be || null
+  if (doc && (be || doc.types.length || doc.fields.bl_no || doc.fields.containers.length)) {
+    lastFile.doc_type = be ? (be.copy_type === 'OOC' ? 'OOC' : 'BE') : docType || doc.types[0] || 'Other'
     await admin.from('bot_inbox').update({ last_file: lastFile }).eq('phone', person.phone)
+    const f = doc.fields
+    const what = be ? beLine(be) : [doc.found || lastFile.doc_type, f.bl_no ? `${doc.types.includes('BL') && !f.vessel && /^\d{11}$/.test(String(f.bl_no)) ? 'AWB' : 'BL'} ${f.bl_no}` : null, f.containers.length ? `${f.containers.length === 1 ? 'container' : `${f.containers.length} containers`} ${f.containers.slice(0, 3).join(', ')}${f.containers.length > 3 ? '…' : ''}` : null].filter(Boolean).join(' · ')
     const named = jobFromText(`${caption} ${name}`, data?.jobs || [])
-    const match = named ? { job: named, how: 'the file name' } : jobForBe(be, data?.jobs || [])
+    const match = named ? { job: named, how: 'the file name' } : (be ? jobForBe(be, data?.jobs || []) : null) || jobForDoc(doc, data?.jobs || [])
     if (!match) {
-      await reply(`📎 Got *${name}*: ${beLine(be)}.\n\nNo open job has this BE, BL or container. Which job is it for (e.g. "J-652")?\nOr create a new job from it: ${createLink}`, userText)
+      await reply(`📎 Got *${name}*: ${what}.\n\nNo open job has this ${be ? 'BE, ' : ''}BL or container. Which job is it for (e.g. "J-652")?\nOr create a new job from it: ${createLink}`, userText)
       return
     }
     const j = match.job
     const items: Pending[] = []
     const att = prepareChange({ action: 'attach_document', job: j.job_no, doc_type: lastFile.doc_type }, data, person, { lastFile })
     if (att.ok) items.push(att.pending)
-    if (String(j.be_no || '') !== String(be.be_no) || !j.be_date) {
+    if (be && (String(j.be_no || '') !== String(be.be_no) || !j.be_date)) {
       const r = prepareChange({ action: 'record_be', job: j.job_no, be_no: be.be_no, be_date: be.be_date }, data, person)
       if (r.ok) items.push({ ...r.pending, args: { ...r.pending.args, igm_no: be.igm_no || null, igm_date: be.igm_date || null, from_file: true } })
     }
-    // everything else the BE gives (containers, BL, port, line, goods, arrival …): the
-    // job's empty fields, as Create job fills them (Jose, 1 Nov 2026)
-    const fill = beFill(be, j)
-    if (fill.said.length) items.push({ action: 'fill_from_be', job_id: j.id, job_no: j.job_no, args: { be: beForFill(be) }, summary: `Fill ${j.job_no} from the BE: ${fill.said.join(' · ')}`, at: new Date().toISOString() })
-    if (be.copy_type === 'OOC' && be.ooc_no && be.ooc_date && Number(j.stage) < 7) {
+    // everything else the papers give (containers, BL, ship, line, port, goods, arrival …):
+    // the job's empty fields, as Create job fills them (Jose, 1 Nov 2026)
+    const fill = docFill(f, j)
+    if (fill.said.length) items.push({ action: 'fill_from_doc', job_id: j.id, job_no: j.job_no, args: { fields: fillArgs(f) }, summary: `Fill ${j.job_no} from it: ${fill.said.join(' · ')}`, at: new Date().toISOString() })
+    if (be?.copy_type === 'OOC' && be.ooc_no && be.ooc_date && Number(j.stage) < 7) {
       const r = prepareChange({ action: 'record_ooc', job: j.job_no, ooc_no: be.ooc_no, ooc_date: be.ooc_date }, data, person)
       if (r.ok) items.push(r.pending)
     }
-    if (!items.length) { await reply(`📎 Got *${name}*: ${beLine(be)}. ${j.job_no} already has this BE and this file, so nothing needs changing.`, userText); return }
+    const warn = fill.mismatch ? `\n\n⚠ I didn't fill anything from it: ${fill.mismatch}. Is it really ${j.job_no}'s?` : ''
+    if (!items.length) { await reply(`📎 Got *${name}*: ${what}. ${j.job_no} already has this file and everything in it, so nothing needs changing.${warn}`, userText); return }
     const pending: Pending = items.length === 1 ? items[0] : {
       action: 'batch', job_id: j.id, job_no: j.job_no, args: { items },
       summary: `${items.length} changes:\n${items.map((x) => `• ${x.summary}`).join('\n')}`, at: new Date().toISOString(),
     }
     await admin.from('bot_inbox').update({ pending }).eq('phone', person.phone)
-    await reply(`📎 Got *${name}*: ${beLine(be)}.\nIt matches *${j.job_no}* (${j.client || 'no client'}) by ${match.how}.\n\n${confirmText(pending)}\n\nWrong job? Just say it, e.g. "it is J-652".`, userText, YES_NO)
+    await reply(`📎 Got *${name}*: ${what}.\nIt matches *${j.job_no}* (${j.client || 'no client'}) by ${match.how}.${warn}\n\n${confirmText(pending)}\n\nWrong job? Just say it, e.g. "it is J-652".`, userText, YES_NO)
     return
   }
   const job = jobFromText(`${caption} ${name}`, data?.jobs || [])

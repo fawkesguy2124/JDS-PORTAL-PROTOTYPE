@@ -1,5 +1,7 @@
-import { readPdf } from '../utils/docReader'
-import { isLineNotShip, isNotShipName } from '../../supabase/functions/_shared/portal/shippingLines.js'
+import { readPdf, shipText } from '../utils/docReader'
+
+// (shipText now lives with the shared PDF reader; still exported here for older callers)
+export { shipText }
 
 // What a BL PDF says, with the portal's own PDF reader (no AI, nothing leaves the
 // browser): { vessel: "MSC AURORA / 543W" | null, bl_no, containers: [..], shipping_line }.
@@ -18,13 +20,6 @@ export async function readBlFile(file) {
     containers: f.container_numbers || [],
     shipping_line: f.shipping_line || null,
   }
-}
-
-// "MSC AURORA / 543W", or null when what was read is not a ship: an address line (J-644:
-// "ANDHERI EAST.MUMBAI. PINCODE / 400099") or a shipping line's name ("EVERGREEN")
-export function shipText(name, voyage) {
-  if (!name || isNotShipName(name) || isNotShipName(voyage) || isLineNotShip(name)) return null
-  return `${name}${voyage ? ` / ${voyage}` : ''}`
 }
 
 // (kept for older callers) the ship name alone

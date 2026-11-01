@@ -7,6 +7,7 @@ import { jobTrucks, plateNo, parseContainerNos, BE_STAGES } from '../_shared/por
 import { jobsFor, BOT_NUMBERS, LEVEL_LABEL } from '../_shared/portal/botMessages.js'
 import { isLineNotShip, lineName } from '../_shared/portal/shippingLines.js'
 import { beFill } from './bereader.ts'
+import { docFill } from './docfill.ts'
 
 type Person = { id: string; name: string; role: string; phone: string; level?: string }
 type Admin = any
@@ -496,12 +497,13 @@ They should send any message (e.g. "hi") to the bot to start. While the bot uses
   }
   // the rest of the job from a BE PDF sent on WhatsApp: only what is still empty (worked
   // out again on the job as it is now, so nothing typed since is overwritten)
-  if (pending.action === 'fill_from_be') {
-    const { fields, said } = beFill(a.be, job)
-    if (!Object.keys(fields).length) return `${job.job_no} already had everything this BE gives, so nothing more was filled.`
+  if (pending.action === 'fill_from_doc' || pending.action === 'fill_from_be') {
+    const { fields, said, mismatch } = pending.action === 'fill_from_be' ? { ...beFill(a.be, job), mismatch: null } : docFill(a.fields || {}, job)
+    if (mismatch) return `Nothing was filled on ${job.job_no}: ${mismatch}.`
+    if (!Object.keys(fields).length) return `${job.job_no} already had everything this paper gives, so nothing more was filled.`
     const err = await save(fields); if (err) return err
-    await log('note', `${job.job_no} — filled from the BE`, `${said.join(' · ')} (from the BE sent on WhatsApp by ${by})`, { filled: Object.keys(fields) })
-    return `✅ Done: filled ${job.job_no} from the BE: ${said.join(' · ')}.`
+    await log('note', `${job.job_no} — filled from a paper`, `${said.join(' · ')} (from the paper sent on WhatsApp by ${by})`, { filled: Object.keys(fields) })
+    return `✅ Done: filled ${job.job_no}: ${said.join(' · ')}.`
   }
   if (pending.action === 'record_ooc') {
     const update: Record<string, unknown> = {}
