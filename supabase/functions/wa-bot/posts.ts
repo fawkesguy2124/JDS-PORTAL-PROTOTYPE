@@ -157,6 +157,15 @@ export async function handlePost(admin: Admin, person: Person, text: string, dat
   for (const ref of refs) {
     if (ref.series === 'ALS') { notes.push(`${ref.jobNo}: ALS (Adorn) jobs aren't in the portal, so nothing was saved for it.`); continue }
     const cached = findJob(data, ref.jobNo)
+    if (!cached && post.kind === 'be') {
+      // a BE post for a job the portal doesn't have yet: the job is made from it (Jose,
+      // 1 Nov 2026: "it should add the new job if they forward like this")
+      const made = await createFromBePost(admin, post, ref.jobNo, data, person, today, now, !!opts.test)
+      if (made.line) lines.push(made.line)
+      notes.push(...made.notes)
+      if (made.undo) undoItems.push(made.undo)
+      continue
+    }
     if (!cached) { notes.push(`${ref.jobNo} isn't in the portal yet, so nothing was saved for it. Add it with Create job: ${PORTAL}/admin?tab=jobs`); continue }
     // the job as it is right now (the bot's copy can be a few minutes old)
     const { data: job } = await admin.from('jobs').select('*').eq('id', cached.id).maybeSingle()
@@ -201,12 +210,80 @@ export async function handlePost(admin: Admin, person: Person, text: string, dat
   return { reply, undo, confirm, saved }
 }
 
+// The client as already spelled on earlier jobs: "Vendkin" → "Vendekin Technologies",
+// "NNC" → "Divine / NNC", "Limitless" → "Limitless Components EXIM"; else as written
+const squash = (s: string) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '')
+function knownClient(written: string, data: any): { name: string; known: boolean } {
+  const want = squash(written)
+  const names = [...new Set((data?.jobs || []).map((j: any) => String(j.client || '').trim()).filter(Boolean))] as string[]
+  if (!want) return { name: '', known: false }
+  const hit = names.find((n) => squash(n) === want)
+    || names.find((n) => squash(n).startsWith(want) || want.startsWith(squash(n)))
+    || names.find((n) => n.split(/[\s/]+/).some((w) => squash(w) === want))
+    || (want.length >= 4 ? names.find((n) => squash(n).slice(0, 4) === want.slice(0, 4)) : undefined)
+  return hit ? { name: hit, known: true } : { name: written.trim(), known: false }
+}
+
+// A new job from a "BE filed" post: job no, client, BE no / date and the BE details from the
+// post; "Air" in the job line = an air job, "Mumbai" / "MBPT" = old Mumbai port, else sea FCL.
+// Only a BE from the last 10 days (an old forwarded post never makes an old job), never an
+// ALS job, never a BE that is already on another job. UNDO deletes it again.
+async function createFromBePost(admin: Admin, post: any, jobNo: string, data: any, person: Person, today: string, now: string, test: boolean) {
+  const notes: string[] = []
+  const { date } = fixYear(post.be_date, today)
+  const age = date ? (new Date(today).getTime() - new Date(date).getTime()) / 864e5 : null
+  if (!date || age === null || age < 0 || age > 10) {
+    notes.push(`${jobNo} isn't in the portal, and this BE is ${date ? `from ${nice(date)}` : 'undated'}, so I didn't make a new job from it. Add it with Create job: ${PORTAL}/admin?tab=jobs`)
+    return { line: null, notes, undo: null }
+  }
+  const clash = (data?.jobs || []).find((j: any) => String(j.be_no || '') === post.be_no)
+  if (clash) { notes.push(`⚠ BE ${post.be_no} is already on *${clash.job_no}*, so I didn't make ${jobNo}. Please check which job it belongs to.`); return { line: null, notes, undo: null } }
+  // the client: the job line without the job no, "Air" and the place
+  const written = String(post.client || '').replace(/\b(air|mumbai|pune|goa|mbpt|bpt|lcl|fcl)\b/gi, ' ').replace(/[()]/g, ' ').replace(/\s+/g, ' ').trim()
+  if (!written) { notes.push(`${jobNo} isn't in the portal and the post has no client name, so I didn't make it. Send it with the client after the job no (e.g. "J-00721 TRW Air").`); return { line: null, notes, undo: null } }
+  const client = knownClient(written, data)
+  const header = String(post.client || '')
+  const mode = post.air ? 'Air' : /\b(mumbai|mbpt|bpt)\b/i.test(header) ? 'BPT/MBPT' : /\blcl\b/i.test(header) ? 'Sea LCL' : 'Sea FCL'
+  const port = mode === 'Air' ? 'INBOM4' : mode === 'BPT/MBPT' ? 'INBOM1' : 'INNSA1'
+  const by = `${person.name} via WhatsApp`
+  const field_meta: Record<string, unknown> = {
+    created_via: 'whatsapp_post',
+    be_card: { group: post.group, bg: post.bg, lane: post.lane, filing: post.filing, flags: post.flags.map((f: any) => f.id), be_no: post.be_no, at: now, by },
+    ...(post.lane === 'rms' ? { be_stage: { stage: 'rms', be_no: post.be_no, at: now, by, note: null } } : {}),
+  }
+  const line = `*${jobNo}* · ${client.name}${client.known ? '' : ' (new client name)'}: *new job made* · ${mode} · ${beCardLine(post, date)}`
+  notes.push(`${jobNo} wasn't in the portal, so I made it from the BE post. Send its BE or BL PDF here and I'll fill in the rest (${mode === 'Air' ? 'AWB and flight' : 'containers, BL and ship'}).${mode === 'Sea FCL' ? ' I set it as Sea FCL; tell me if it\'s LCL.' : ''}`)
+  if (test) return { line, notes, undo: null }
+  const uuid = /^[0-9a-f-]{36}$/i.test(String((person as any).id || '')) ? (person as any).id : null
+  const { data: madeJob, error } = await admin.from('jobs').insert({
+    job_no: jobNo, client: client.name, mode, port_code: port, job_type: 'import', stage: 4, priority: 'normal', free_days: 14,
+    be_no: post.be_no, be_date: date, created_by: uuid, field_meta, updated_at: now,
+  }).select('id, job_no, updated_at').single()
+  if (error || !madeJob) return { line: null, notes: [`❌ Could not make ${jobNo}: ${error?.message || 'unknown error'}.`], undo: null }
+  const logIds: string[] = []
+  for (const l of [
+    { type: 'job_created', title: `${jobNo} — Job created`, note: `${client.name} · ${mode} (from ${person.name}'s BE post via WhatsApp)` },
+    { type: 'be_filed', title: `${jobNo} — BE ${post.be_no} filed`, note: `BE ${post.be_no} dated ${date} filed in LiveImpex (from ${person.name}'s post via WhatsApp)` },
+  ]) {
+    const { data: row } = await admin.from('activity_log').insert({ ...l, action: l.type, job_id: madeJob.id, job_no: jobNo, done_by_name: by, meta: { job_id: madeJob.id, job_no: jobNo, via: 'whatsapp_post' } }).select('id').single()
+    if (row?.id) logIds.push(row.id)
+  }
+  return { line, notes, undo: { job_id: madeJob.id, job_no: jobNo, created: true, saved_at: madeJob.updated_at || now, log_ids: logIds } }
+}
+
 // UNDO: puts back what the last post changed, unless the job was changed again since
+// (a job the post made is deleted again)
 export async function undoPost(admin: Admin, pending: Pending, person: Person): Promise<string> {
   const out: string[] = []
   for (const it of (pending.args?.items || []) as any[]) {
     const { data: job } = await admin.from('jobs').select('id, job_no, updated_at').eq('id', it.job_id).maybeSingle()
     if (!job) { out.push(`${it.job_no}: not found any more.`); continue }
+    if (it.created && String(job.updated_at || '') === String(it.saved_at || '')) {
+      if (it.log_ids?.length) await admin.from('activity_log').delete().in('id', it.log_ids)
+      const { error } = await admin.from('jobs').delete().eq('id', it.job_id)
+      out.push(error ? `${it.job_no}: could not remove it (${error.message})` : `${it.job_no} is removed again`)
+      continue
+    }
     if (String(job.updated_at) !== String(it.saved_at)) { out.push(`${it.job_no}: changed again since, so I left it. Please correct it in the portal.`); continue }
     const { error } = await admin.from('jobs').update({ ...it.before, updated_at: new Date().toISOString() }).eq('id', it.job_id)
     if (error) { out.push(`${it.job_no}: could not undo (${error.message}).`); continue }
