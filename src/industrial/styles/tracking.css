@@ -225,3 +225,4 @@ html[data-theme="dark"] .ix .ix-shipmap2 .leaflet-container { background: #0f203
 .ix-trk-tbl tr.ix-trk-sub > td { padding-top: 2px; padding-bottom: 2px; height: auto }
 .ix-trk-papers .ix-icon-btn.sm { width: 22px; height: 22px }
 .ix-trk-more .ix-menu.up { top: auto; bottom: calc(100% + 4px) }
+.ix-trk-panel .ix-card-head .ix-trk-refresh { margin-left: auto }

@@ -266,13 +266,24 @@ export default function TrucksPage({ currentUserName, onOpenJob, showToast, canU
     })
   }
 
-  // ↻: where the truck is now (one toll look-up for this truck, on the map at once)
-  const reload = (job, t, key) => guarded(key, async () => {
-    const res = await checkTruck('FASTAG/01', t.no, job.id)
-    if (res.row) addResults(job.id, 'FASTAG/01', res.row)
-    setSelectedId(key)
-    if (!res.ok) showToast?.(`Could not find truck ${t.no} right now. Try again in a few minutes.`, 'error')
-    else if (!res.row?.parsed?.found) showToast?.(`No toll crossing for ${t.no} in the last 72 hours`, 'info')
+  // Refresh (one button on the On the road card; Jose, 1 Nov 2026: no ↻ on every row): where
+  // every truck still on its trip is now, one toll look-up per truck, one after the other,
+  // then the page's data again. The map moves as each answer comes in.
+  const [refreshing, setRefreshing] = useState(null) // { done, total } while running
+  const refreshAll = () => guarded('all', async () => {
+    const list = entries.filter((x) => !isExportJob(x.job))
+    let failed = 0
+    for (let i = 0; i < list.length; i++) {
+      const { job, truck: t } = list[i]
+      setRefreshing({ done: i, total: list.length })
+      const res = await checkTruck('FASTAG/01', t.no, job.id)
+      if (res.row) addResults(job.id, 'FASTAG/01', res.row)
+      if (!res.ok) failed++
+    }
+    setRefreshing(null)
+    refresh()
+    if (failed) showToast?.(`${plural(failed, 'truck')} could not be looked up right now. Try again in a few minutes.`, 'error')
+    else showToast?.(list.length ? `${plural(list.length, 'truck')} refreshed` : 'Refreshed', 'success')
   })
 
   // papers: the saved answer (no new look-up); only a truck never checked is looked up, once
@@ -384,10 +395,6 @@ export default function TrucksPage({ currentUserName, onOpenJob, showToast, canU
           </td>
           <td className="act" onClick={(e) => e.stopPropagation()}>
             <div>
-              <button type="button" className="ix-icon-btn sm" disabled={anyBusy} onClick={() => reload(job, t, key)}
-                title="Where is it now? (asks the toll system again)" aria-label={`Find truck ${t.no} again`}>
-                <Icon name={busyId === key ? 'loader-2' : 'refresh'} />
-              </button>
               <RowMenu label={`More for truck ${t.no}`} items={[
                 first && canUpdateStage && { label: `Mark ${job.job_no} delivered`, icon: 'flag', disabled: anyBusy, run: () => deliver(job) },
                 { label: 'Take truck off this job', icon: 'trash', danger: true, disabled: anyBusy, run: () => unassign(job, t.no) },
@@ -478,7 +485,6 @@ export default function TrucksPage({ currentUserName, onOpenJob, showToast, canU
       <PageHead title="Trucks"
         actions={<>
           <SearchBox value={search} onChange={setSearch} placeholder="Truck, job or client" width={240} />
-          <Button size="sm" variant="ghost" icon="refresh" onClick={refresh} disabled={loading}>{loading ? 'Loading…' : 'Refresh'}</Button>
         </>} />
 
       {error && (
@@ -496,6 +502,10 @@ export default function TrucksPage({ currentUserName, onOpenJob, showToast, canU
             <div className="ix-card-head">
               <Icon name="road" />
               <h2>On the road</h2><span className="n">{jobCount(road)}</span>
+              <Button size="sm" variant="ghost" className="ix-trk-refresh" icon={refreshing || loading ? 'loader-2' : 'refresh'} disabled={anyBusy || loading} onClick={refreshAll}
+                title="Where every truck is now (asks the toll system for each truck)">
+                {refreshing ? `Refreshing ${refreshing.done + 1} of ${refreshing.total}…` : 'Refresh'}
+              </Button>
             </div>
             {showMap ? (
               <Suspense fallback={<div className="ix-realmap"><div className="ix-realmap-msg">Loading map…</div></div>}>
