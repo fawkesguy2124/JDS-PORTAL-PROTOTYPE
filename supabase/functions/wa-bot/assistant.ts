@@ -328,7 +328,12 @@ async function runOneTool(ctx: Ctx, name: string, args: any, data: any, person: 
     items.push(res.pending)
     ctx.proposal = { action: 'batch', job_id: res.pending.job_id, job_no: res.pending.job_no, args: { items, multi: true }, summary: items.map((x) => `• ${x.summary}`).join('\n'), at: new Date().toISOString() }
   } else ctx.proposal = res.pending
-  return { waiting_for_yes: res.pending.summary, tell_the_person: 'The bot is now asking them to reply YES. Do not say it is done.' }
+  return {
+    waiting_for_yes: res.pending.summary,
+    tell_the_person: 'The bot is now asking them to reply YES. Do not say it is done.',
+    // (the model tends to stop after one: told again here, right when it matters)
+    next: 'Did the message ask for ANY other change as well (another field, another job)? Then call propose_change again now, once for each; the bot asks about all of them together.',
+  }
 }
 
 // ── Groq (OpenAI-style API) ──
