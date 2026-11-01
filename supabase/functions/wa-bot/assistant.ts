@@ -144,7 +144,7 @@ async function callGemini(model: string, body: unknown, key: string, signal: Abo
 // exactly what was looked at last time
 export async function askAssistant(question: string, history: Turn[], data: unknown, person: Person, opts: { checkCustoms?: Ctx['checkCustoms']; server?: ServerTools; change?: ChangeContext } = {}): Promise<{ text: string | null; note: string; checked: string[]; proposal: Pending | null }> {
   const used: string[] = []
-  const ctx: Ctx = { used, proposal: null, checkCustoms: opts.checkCustoms, server: opts.server, change: opts.change }
+  const ctx: Ctx = { used, proposal: null, checkCustoms: opts.checkCustoms, server: opts.server, change: opts.change, lang: isHinglish(question) ? 'hinglish' : 'english' }
   const notes: string[] = []
   // BOT_AI_FIRST=nvidia puts NVIDIA before Groq (to compare the two)
   const first = (Deno.env.get('BOT_AI_FIRST') || 'groq').trim()
@@ -230,7 +230,7 @@ export const needsData = (q: string) => {
 }
 // say: the bot's own fixed sentences for what an action did (never the AI's wording);
 // facts: every tool answer, for checking the reply before it goes out
-type Ctx = { used: string[]; proposal: Pending | null; checkCustoms?: (job: string) => Promise<unknown>; server?: ServerTools; change?: ChangeContext; done?: Map<string, unknown>; say?: string[]; facts?: string[]; readTools?: boolean; cards?: string[] }
+type Ctx = { used: string[]; proposal: Pending | null; checkCustoms?: (job: string) => Promise<unknown>; server?: ServerTools; change?: ChangeContext; done?: Map<string, unknown>; say?: string[]; facts?: string[]; readTools?: boolean; cards?: string[]; lang?: 'english' | 'hinglish' }
 // the last reply came from a change request (it may have asked for a missing detail)
 // (not after the bot already asked YES/NO: then the next message is a new question)
 const afterChangeTry = (history: Turn[]) => {
@@ -246,8 +246,17 @@ function systemText(person: Person, data: unknown, ctx: Ctx) {
   const access = person.level && person.level !== 'admin'
     ? `\n\nThis person's WhatsApp access is ${LEVEL_LABEL[person.level]}${person.level === 'view' ? ': they may only ask and read; do not offer changes, checks, files, reminders or watches' : ': no new jobs, payments, tasks, reports or access changes'}.`
     : ''
-  return `${SYSTEM_PROMPT(person)}\n\n${TODAY_BRIEF(data, person)}${file}${access}`
+  // the language of THIS reply, said last so it is not lost (Jose, 2 Nov 2026: a Hinglish
+  // question got an English answer; "English in, English out; Hinglish in, Hinglish out")
+  const lang = ctx.lang === 'hinglish'
+    ? '\n\nLANGUAGE FOR THIS REPLY: Hinglish, i.e. Hindi written in English letters, the way the person wrote (for example "J-689 ka duty abhi baaki hai, 1 Nov ko assess hua tha."). Never Hindi script. Keep job numbers, BE numbers, dates and names exactly as they are.'
+    : '\n\nLANGUAGE FOR THIS REPLY: English.'
+  return `${SYSTEM_PROMPT(person)}\n\n${TODAY_BRIEF(data, person)}${file}${access}${lang}`
 }
+// Is the question Hindi / Hinglish? (Hindi script is already written in English letters by
+// the time it gets here: toRoman in media.ts.) Two or more everyday Hindi words = Hinglish.
+const HINDI_WORDS = /\b(kya|kyaa|hai|hain|hei|ka|ki|ke|ko|kab|kahan|kaha|kidhar|kaun|kitna|kitne|kitni|kaise|kaisa|bhejo|bhej|batao|bata|bataiye|karo|kar|kardo|nahi|nahin|nhi|abhi|aaj|kal|mein|mai|se|wala|wali|hua|hui|gaya|gayi|chahiye|dikhao|dekho|bhai|ji|haan|han|aur|bhi|tak|pe|par|kuch|sab|apna|mera|mujhe|humko|hamara|raha|rahi|rahe|hoga|hogi|ho|lo|do|diya|dena|lena|wapas|jaldi|dekh)\b/gi
+export const isHinglish = (text: string) => (String(text || '').match(HINDI_WORDS) || []).length >= 2
 // runs one tool call: notes it for the chat history; a change is only PREPARED
 // (checked and kept for the person's YES), never saved here
 async function useTool(ctx: Ctx, name: string, args: any, data: any, person: Person): Promise<unknown> {
@@ -375,7 +384,8 @@ const NVIDIA: Provider = {
   // a short reply); DeepSeek V4.1 Flash, GLM 5.3, Gemma 4, gpt-oss-20b gave no answer
   // in 40 s; Kimi K2.6, Nemotron Super/Ultra-253B/70B, Mistral Large are not open
   models: async () => (Deno.env.get('NVIDIA_MODEL') ? [Deno.env.get('NVIDIA_MODEL')!.trim()] : ['z-ai/glm-5.3-flash', 'nvidia/nemotron-3-ultra-550b-a55b']),
-  timeoutMs: 15_000,
+  // (they answer in 0.5-2 s when they work: no point waiting 15 s for one that doesn't)
+  timeoutMs: 8_000,
 }
 const OPENCODE: Provider = {
   label: 'opencode',
@@ -431,7 +441,9 @@ async function askCompat(p: Provider, question: string, history: Turn[], data: u
           noExtras.add(model)
           continue
         }
-        if (res.status === 401 || res.status === 402 || res.status === 403 || res.status === 404 || res.status === 429 || res.status >= 500 || (res.status === 400 && /model/i.test(out?.error?.message || ''))) {
+        // (413 "request too large for this model" = that model's own limit: the next model
+        // carries on, instead of leaving Groq for a slow service; seen 2 Nov 2026, 29 s replies)
+        if (res.status === 401 || res.status === 402 || res.status === 403 || res.status === 404 || res.status === 413 || res.status === 429 || res.status >= 500 || (res.status === 400 && /model/i.test(out?.error?.message || ''))) {
           const m = String(out?.error?.message || (typeof out?.error === 'string' ? out.error : '') || out?.message || JSON.stringify(out).slice(0, 200))
           // a refusal that is about the account (not this one model) stops the whole service for an hour
           if ([401, 402, 403].includes(res.status) && (p.label !== 'opencode' || tried.length >= 4)) { refusedUntil[p.label] = Date.now() + (/free tier can only be used/i.test(m) ? 24 * 60 : 60) * 60_000; refusedWhy[p.label] = `${res.status}: ${m.slice(0, 120)}` }

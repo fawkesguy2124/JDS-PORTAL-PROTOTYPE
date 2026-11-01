@@ -13,6 +13,7 @@ import { isYes, isNo, isYesSaid, isNoSaid } from '../supabase/functions/wa-bot/a
 import { toRoman, normalizeSpoken, jobNoFromText } from '../supabase/functions/wa-bot/media.ts'
 import { readDocFile } from '../supabase/functions/wa-bot/docfill.ts'
 import { readPost } from '../supabase/functions/_shared/portal/postReader.js'
+import { isHinglish } from '../supabase/functions/wa-bot/assistant.ts'
 
 const args = Deno.args.filter((a) => !a.startsWith('--'))
 const UPDATE = Deno.args.includes('--update')
@@ -37,6 +38,12 @@ const SCRIPT: [string, string][] = [
 for (const [t, want] of SCRIPT) { const got = normalizeSpoken(toRoman(t)); if (got !== want) fail(`"${t}" → "${got}", should be "${want}"`) }
 const SPOKEN: [string, string][] = [['job six five two', 'J-652'], ['M H four six C S six zero zero one', 'MH46CS6001'], ['C C L U 7 8 8 5 8 7 4', 'CCLU7885874']]
 for (const [t, want] of SPOKEN) { const got = normalizeSpoken(t); if (!got.includes(want)) fail(`spoken "${t}" → "${got}", should contain ${want}`) }
+// the reply's language: English in, English out; Hindi / Hinglish in, Hinglish out
+const LANG: [string, boolean][] = [
+  ['J-689 ka kya status hai?', true], ['portal ka link bhejo', true], [toRoman('J-736 का BE नंबर क्या है?'), true], ['container kahan hai abhi?', true],
+  ['what is the ETA of J-674', false], ['how do I add a truck', false], ['job 689', false], ['can you do it now', false], ['ok thanks', false],
+]
+for (const [t, want] of LANG) if (isHinglish(t) !== want) fail(`"${t}" read as ${isHinglish(t) ? 'Hinglish' : 'English'}`)
 const NAMES: [string, string | null][] = [['Processed_BE_736_20261030_2022.pdf', 'J-736'], ['Out of Charge_1004_20260411_0746.pdf', 'J-1004'], ['J-00117 Green Soul Docs.pdf', 'J-117'], ['AWSSE260900057.pdf', null]]
 for (const [n, want] of NAMES) if (jobNoFromText(n) !== want) fail(`file "${n}" → ${jobNoFromText(n)}, should be ${want}`)
 

@@ -17,7 +17,7 @@
 import { adminClient, json } from '../_shared/ulip.ts'
 import { buildJourneyData, buildSeaByJob } from '../_shared/portal/journeyCore.js'
 import { morningSummary, instantAlerts, answer, teamFromProfiles, BOT_NUMBERS, missingDetails, allowed, LEVELS, LEVEL_LABEL } from '../_shared/portal/botMessages.js'
-import { askAssistant, groqInfo } from './assistant.ts'
+import { askAssistant, groqInfo, isHinglish } from './assistant.ts'
 import { applyChange, confirmText, isNo, isYes, isNoSaid, isYesSaid, PENDING_MINUTES, prepareChange, type Pending } from './actions.ts'
 import { downloadMedia, transcribe, normalizeSpoken, docTypeFromName, jobFromText, jobNoFromText, safeName, toRoman, MAX_FILE_BYTES } from './media.ts'
 import { makeServerTools, sendDueReminders, checkWatches, checkTasks } from './servertools.ts'
@@ -134,6 +134,9 @@ function toWhatsApp(s: string) {
 // No website links in WhatsApp unless the person asked for one (Jose, 2 Nov 2026: "the
 // bot on its own should never give a website link")
 const askedForLink = (t: string) => /\b(link|url|website|web\s*site)\b/i.test(t)
+// asked for the portal's link: the bot gives it (the AI doesn't know it)
+const PORTAL_URL = 'https://jds-portal-prototype.vercel.app'
+const askedForPortalLink = (t: string) => askedForLink(t) && /\b(portal|website|web\s*site|site|jds)\b/i.test(t)
 const noLinks = (s: string) => s.replace(/\s*[(<]?https?:\/\/\S+?[)>]?(?=\s|$)/g, '').replace(/[ \t]+$/gm, '').replace(/\n{3,}/g, '\n\n').trim()
 
 // the team list rarely changes: keep it for 5 minutes
@@ -726,6 +729,7 @@ async function handleInbound(admin: Admin, payload: any) {
       }
     }
     // fixed commands are instant and free; anything else goes to the assistant
+    if (!reply && askedForPortalLink(text)) reply = isHinglish(text) ? `Ye raha portal: ${PORTAL_URL}` : `Here's the portal: ${PORTAL_URL}`
     if (!reply) reply = answer(data, text, person, new Date(), { fallback: false })
     if (!reply) reply = honestCheckReply(text, history)
     // a teammate saying a task is done
