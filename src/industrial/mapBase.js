@@ -1,4 +1,27 @@
 import L from 'leaflet'
+import '@maplibre/maplibre-gl-leaflet'
+
+// The vector-map add-on finishes a zoom or resize one frame later; if the page closed the
+// map in that frame it read the removed map ("getZoom of null" in the console, 1 Nov 2026).
+// Same steps, skipped once the map is gone.
+if (L.MaplibreGL && !L.MaplibreGL.prototype._steady) {
+  const P = L.MaplibreGL.prototype
+  P._steady = true
+  P._transitionEnd = function () {
+    L.Util.requestAnimFrame(function () {
+      if (!this._map || !this._glMap) return
+      const zoom = this._map.getZoom()
+      const center = this._map.getCenter()
+      const offset = this._map.latLngToContainerPoint(this._map.getBounds().getNorthWest())
+      this._resizeContainer()
+      L.DomUtil.setTransform(this._glMap._actualCanvas, offset, 1)
+      this._glMap.once('moveend', L.Util.bind(function () { this._zoomEnd() }, this))
+      this._glMap.jumpTo({ center, zoom: zoom - 1 })
+    }, this)
+  }
+  const zoomEnd = P._zoomEnd
+  P._zoomEnd = function () { if (this._map && this._glMap) zoomEnd.call(this) }
+}
 
 // Keeps a map's background drawn (Jose, 1 Nov 2026: "a lot of times the map becomes blank;
 // it should never happen"). The cause, reproduced: the graphics card takes back the map's
