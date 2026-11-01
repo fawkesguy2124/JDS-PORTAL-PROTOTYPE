@@ -140,16 +140,18 @@ export function makeServerTools(d: Deps) {
       const saved = await recent(admin, `FASTAG/01?vehiclenumber=${truck}`)
       if (saved) return { say: `🚚 *${truck}* was checked at ${when(saved.checked_at)} (under 30 minutes ago), so FASTag was not asked again:\n${saved.summary}`, checked_recently: true, last_checked: when(saved.checked_at), answer: saved.summary, note: `FASTag NOT asked again (checked ${Math.round(minutesAgo(saved.checked_at))} min earlier)` }
       if (d.test) return { say: `(test) Would ask FASTag for *${truck}* now.`, started: true, test_mode: 'FASTag was NOT asked', note: 'test mode' }
-      later((async () => {
-        const out = await botUlip(admin, person, 'FASTAG/01', { vehiclenumber: truck }, job?.id || null).catch((e) => ({ success: false, error: (e as Error).message }))
-        const x = out?.data?.parsed?.extra || {}
-        const text = out?.success
-          ? `🚚 *${truck}*${job ? ` (${job.job_no})` : ''}: ${out.data?.summary || 'checked'}${x.lastPlaza ? `\nLast toll: *${x.lastPlaza}*${x.lastSeenAt ? `, ${when(x.lastSeenAt)}` : ''}` : ''}`
-          : `🚚 *${truck}*: the FASTag check did not work (${String(out?.error || '').slice(0, 140)}). Try again in a few minutes, or use the Trucks page.`
-        d.dataChanged()
-        await d.send(text)
-      })())
-      return { say: `🚚 Checking *${truck}* with FASTag now. The result follows in a separate message.`, started: true, note: 'FASTag asked now, result to follow in a separate message', tell_the_person: 'Say only that you are checking the truck now and the result follows in a separate message.' }
+      // asked now and answered in this same reply: no "checking now…" message first (Jose,
+      // 1 Nov 2026: "straight up give the final output"); WhatsApp shows typing meanwhile
+      const out = await botUlip(admin, person, 'FASTAG/01', { vehiclenumber: truck }, job?.id || null).catch((e) => ({ success: false, error: (e as Error).message }))
+      const x = out?.data?.parsed?.extra || {}
+      d.dataChanged()
+      // (one time only: the toll's own crossing time, not the time of the check)
+      const text = out?.success
+        ? x.lastPlaza
+          ? `🚚 *${truck}*${job ? ` (${job.job_no})` : ''} last crossed *${x.lastPlaza}*${x.lastSeenAt ? ` on ${when(x.lastSeenAt)}` : ''}.`
+          : `🚚 *${truck}*${job ? ` (${job.job_no})` : ''}: ${out.data?.summary || 'no toll crossing found'}`
+        : `🚚 I couldn't get *${truck}* from FASTag just now (${String(out?.error || '').slice(0, 140)}). Try again in a few minutes, or see the Trucks page.`
+      return { say: text, checked_now: true, note: `FASTag asked now; answered: ${text.replace(/\*/g, '').slice(0, 160)}`, tell_the_person: 'FASTag was asked just now and the bot\'s own message already gives the answer; add nothing unless asked.' }
     },
 
     // ── container: live status + the whole movement timeline from ULIP (LDB) ──
@@ -174,7 +176,7 @@ export function makeServerTools(d: Deps) {
       const more = boxes.length > take.length ? `\n\n(${boxes.length - take.length} more containers on this job; ask me for them by number.)` : ''
       if (!ask.length) return { say: `${saved.join('\n\n')}\n\n_I checked ${take.length === 1 ? 'this' : 'these'} a few minutes ago, so it's still fresh._${more}`, checked_recently: true, note: 'LDB NOT asked again (checked within 30 min)' }
       if (d.test) return { say: `(test) Would check ${ask.join(', ')} live with the port systems now.`, started: true, test_mode: 'LDB was NOT asked' }
-      later((async () => {
+      const work = (async () => {
         const parts = [...saved]
         for (let i = 0; i < ask.length; i++) {
           if (i) await new Promise((r) => setTimeout(r, MANY_GAP_MS))
@@ -184,8 +186,15 @@ export function makeServerTools(d: Deps) {
             : `*${ask[i]}*: I couldn't get it from the port systems just now${out?.data?.summary ? ` (${out.data.summary})` : out?.error ? ` (${String(out.error).slice(0, 120)})` : ''}. I can try again in a few minutes.`)
         }
         d.dataChanged()
-        await d.send(parts.join('\n\n') + more)
-      })())
+        return parts.join('\n\n') + more
+      })()
+      // one or two containers: answered in this reply (no "checking now…" first; Jose, 1 Nov
+      // 2026). More than that can take minutes, so those still come as a second message
+      if (ask.length <= 2) {
+        const text = await work
+        return { say: text, checked_now: true, note: `LDB asked now for ${ask.join(', ')}; answer given`, tell_the_person: 'The port systems were asked just now and the bot\'s own message already gives the movement; add nothing unless asked.' }
+      }
+      later(work.then((text) => d.send(text)))
       const what = ask.length === 1 ? `*${ask[0]}*` : `the ${ask.length} containers${owner ? ` of *${owner.job_no}*` : ''}`
       return { say: `Sure, checking ${what} live with the port systems now. I'll send you the full movement in a moment.`, started: true, note: `LDB asked now for ${ask.join(', ')}, result to follow`, tell_the_person: 'Say in one friendly line that you are checking live now and will send the movement in a moment.' }
     },
@@ -204,15 +213,12 @@ export function makeServerTools(d: Deps) {
       const saved = await recent(admin, `VAHAN/04?vehiclenumber=${truck}`)
       if (saved) return { say: `${paperStory(truck, saved.parsed, saved.summary)}\n\n_I checked this a few minutes ago, so it's still fresh._`, checked_recently: true, note: 'VAHAN NOT asked again (checked within 30 min)' }
       if (d.test) return { say: `(test) Would check the papers of ${truck} now.`, started: true, test_mode: 'VAHAN was NOT asked' }
-      later((async () => {
-        const out = await botUlip(admin, person, 'VAHAN/04', { vehiclenumber: truck }, job?.id || null).catch((e) => ({ success: false, error: (e as Error).message }))
-        const text = out?.success
-          ? paperStory(truck, out.data?.parsed, out.data?.summary)
-          : `I couldn't get the papers of *${truck}* just now (${String(out?.error || 'no answer').slice(0, 120)}). VAHAN only covers goods vehicles; I can try again in a few minutes.`
-        d.dataChanged()
-        await d.send(text)
-      })())
-      return { say: `Sure, checking the papers of *${truck}* now (road tax, permit, fitness, insurance). One moment.`, started: true, note: 'VAHAN asked now, result to follow', tell_the_person: 'Say in one friendly line that you are checking the truck papers now.' }
+      const out = await botUlip(admin, person, 'VAHAN/04', { vehiclenumber: truck }, job?.id || null).catch((e) => ({ success: false, error: (e as Error).message }))
+      const text = out?.success
+        ? paperStory(truck, out.data?.parsed, out.data?.summary)
+        : `I couldn't get the papers of *${truck}* just now (${String(out?.error || 'no answer').slice(0, 120)}). VAHAN only covers goods vehicles; I can try again in a few minutes.`
+      d.dataChanged()
+      return { say: text, checked_now: true, note: 'VAHAN asked now; answer given', tell_the_person: 'VAHAN was asked just now and the bot\'s own message already gives the papers; add nothing unless asked.' }
     },
 
     // ── ship: IMO and arrival from the IGM ──
@@ -227,7 +233,7 @@ export function makeServerTools(d: Deps) {
       const saved = await recent(admin, `ICEGATE/01?igmDt=${params.igmDt}&igmNo=${igm}`)
       if (saved) return { say: `🚢 *${job.job_no}*: the IGM was checked at ${when(saved.checked_at)} (under 30 minutes ago), so ICEGATE was not asked again:\n${saved.summary}`, checked_recently: true, last_checked: when(saved.checked_at), answer: saved.summary, imo: saved.parsed?.extra?.imoCode || null, note: 'ICEGATE NOT asked again (checked within 30 min)' }
       if (d.test) return { say: `(test) Would ask ICEGATE for the ship of *${job.job_no}* now.`, started: true, test_mode: 'ICEGATE was NOT asked', note: 'test mode' }
-      later((async () => {
+      {
         let text = ''
         try {
           let out = await botUlip(admin, person, 'ICEGATE/01', params, job.id)
@@ -248,9 +254,8 @@ export function makeServerTools(d: Deps) {
           }
         } catch (e) { text = `🚢 *${job.job_no}*: the IGM check did not finish (${(e as Error).message}).` }
         d.dataChanged()
-        await d.send(text)
-      })())
-      return { say: `🚢 Looking up the ship of *${job.job_no}* with ICEGATE now. The result follows in a separate message.`, started: true, note: 'ICEGATE asked now, result to follow in a separate message', tell_the_person: 'Say only that you are looking up the ship now and the result follows in a separate message.' }
+        return { say: text, checked_now: true, note: 'ICEGATE asked now; answer given', tell_the_person: 'ICEGATE was asked just now and the bot\'s own message already gives the answer; add nothing unless asked.' }
+      }
     },
 
     // ── reminders ──

@@ -365,10 +365,10 @@ function customsChecker(admin: Admin, person: Person, data: any, opts: { test?: 
       }
     }
     if (opts.test) return { started: true, test_mode: 'test mode: Customs was NOT asked', tell_the_person: 'Say you are checking with Customs now and the result will follow in a separate message.' }
-    const work = runCustomsCheck(admin, person, job, true)
-    // keep working after this reply has been sent
-    try { (globalThis as any).EdgeRuntime?.waitUntil?.(work) } catch { /* it still runs */ }
-    return { started: true, tell_the_person: 'Say only that you are checking with Customs now and the result will follow in a separate message in about a minute. Do not guess the result.' }
+    // asked now and answered in this same reply (about a minute; WhatsApp shows typing):
+    // no "checking with Customs now…" message first (Jose, 1 Nov 2026)
+    const text = await runCustomsCheck(admin, person, job, false)
+    return { checked_now: true, say_text: text, tell_the_person: 'Customs was asked just now and the bot\'s own message already gives the result; add nothing unless asked.' }
   }
 }
 
@@ -382,7 +382,7 @@ function honestCheckReply(text: string, history: { role: string; text: string }[
   const note = (last.match(/\[checked:([^\]]*)\]/) || [])[1] || ''
   const m = note.match(/check_customs_now\s*(\{[^}]*\})\s*→\s*([^;]*)/)
   const job = m ? (String(m[1]).match(/"job"\s*:\s*"([^"]+)"/) || [])[1] || 'that job' : null
-  if (m && /Customs asked now/.test(m[2])) return `Yes. I asked Customs for ${job} just then; the answer comes (or came) as a separate message.`
+  if (m && /Customs asked now/.test(m[2])) return `Yes. I asked Customs for ${job} just then; my reply gave what Customs said.`
   if (m && /NOT asked again/.test(m[2])) {
     const at = (m[2].match(/at ([^)]+)\)/) || [])[1]
     return `No, Customs was not asked again just then: ${job} had already been checked${at ? ` at ${at}` : ''}, and Customs is asked at most once every 30 minutes per job. My answer was from that check.`

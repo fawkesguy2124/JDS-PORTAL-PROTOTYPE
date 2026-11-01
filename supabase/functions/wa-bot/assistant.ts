@@ -27,12 +27,12 @@ export const SERVER_TOOLS = [
   },
   {
     name: 'check_truck_now',
-    description: 'Where a truck is now: asks FASTag for its last toll crossing (truck_no, or a job whose truck it is). ONLY when the person asks where a truck is now / to check it. At most once every 30 minutes per truck; a newer check is answered from the saved one. The result follows in a separate message.',
+    description: 'Where a truck is now: asks FASTag for its last toll crossing (truck_no, or a job whose truck it is). ONLY when the person asks where a truck is now / to check it. At most once every 30 minutes per truck; a newer check is answered from the saved one. The answer comes back in the tool result (the bot sends it).',
     parameters: { type: 'OBJECT', properties: { truck_no: S, job: S } },
   },
   {
     name: 'container_now',
-    description: 'LIVE container status and its whole movement timeline (port in/out, CFS/ICD in/out, rail, road) straight from the port systems (ULIP LDB), for a container number or all containers of a job (up to 8). Use when the person wants the latest / live / right now / full movement / where it went after the port (port → CFS). For a quick answer from saved data use the read tools instead. At most once every 30 minutes per container; the result follows in a separate message.',
+    description: 'LIVE container status and its whole movement timeline (port in/out, CFS/ICD in/out, rail, road) straight from the port systems (ULIP LDB), for a container number or all containers of a job (up to 8). Use when the person wants the latest / live / right now / full movement / where it went after the port (port → CFS). For a quick answer from saved data use the read tools instead. At most once every 30 minutes per container; the answer comes back in the tool result for one or two containers, as a separate message for more.',
     parameters: { type: 'OBJECT', properties: { container: S, job: S } },
   },
   {
@@ -42,7 +42,7 @@ export const SERVER_TOOLS = [
   },
   {
     name: 'find_ship_now',
-    description: 'Find a job\'s ship (IMO, arrival) from its IGM, by asking ICEGATE. ONLY when the person asks to find / check the ship. At most once every 30 minutes per IGM. The result follows in a separate message.',
+    description: 'Find a job\'s ship (IMO, arrival) from its IGM, by asking ICEGATE. ONLY when the person asks to find / check the ship. At most once every 30 minutes per IGM. The answer comes back in the tool result (the bot sends it).',
     parameters: { type: 'OBJECT', properties: { job: S }, required: ['job'] },
   },
   {
@@ -278,12 +278,14 @@ async function runOneTool(ctx: Ctx, name: string, args: any, data: any, person: 
     const r: any = await ctx.checkCustoms(String(args?.job || ''))
     ctx.done.set(once, r)
     // what really happened goes into the chat history, so "did you really check?" is answered truthfully
-    ctx.used[ctx.used.length - 1] += r?.started ? ' → Customs asked now, result to follow in a separate message'
+    ctx.used[ctx.used.length - 1] += r?.checked_now ? ` → Customs asked now; answered: ${String(r.say_text || '').replace(/\*/g, '').slice(0, 160)}`
+      : r?.started ? ' → Customs asked now, result to follow in a separate message'
       : r?.checked_recently ? ` → Customs NOT asked again (checked ${r.minutes_ago} min earlier, at ${r.last_checked}); answer from that check`
       : ` → not done (${r?.not_found ? 'job not found' : r?.not_possible || 'unknown'})`
     // the bot's own words for what happened
     const jobNo = `J-${String(args?.job || '').replace(/\D/g, '')}`
-    if (r?.test_mode) (ctx.say ||= []).push(`(test) Would ask Customs now for *${jobNo}*.`)
+    if (r?.checked_now && r.say_text) (ctx.say ||= []).push(r.say_text)
+    else if (r?.test_mode) (ctx.say ||= []).push(`(test) Would ask Customs now for *${jobNo}*.`)
     else if (r?.started) (ctx.say ||= []).push(`🛃 Checking *${jobNo}* with Customs now. The result follows in a separate message, in about a minute.`)
     else if (r?.checked_recently) (ctx.say ||= []).push(`🛃 *${jobNo}* was checked with Customs at ${r.last_checked} (under 30 minutes ago), so Customs was not asked again: *${r.answer}*.`)
     return r
