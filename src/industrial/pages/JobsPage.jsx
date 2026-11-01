@@ -104,10 +104,8 @@ export default function JobsPage({ profile, onOpenJob, onEditJob, selectedId }) 
   })
   const [sort, setSort] = useState({ key: 'job', dir: -1 }) // newest job number first (Jose, 22 Oct 2026)
   const [q, setQ] = useState('')
-  const [mode, setMode] = useState('')
-  const [type, setType] = useState('')
+  // (no Type, Mode or Line filters: Jose, 1 Nov 2026; the search box finds those too)
   const [client, setClient] = useState('')
-  const [lineF, setLineF] = useState('')
   const [owner, setOwner] = useState(() => { try { return localStorage.getItem('ix_jobs_view') === 'mine' && me ? me : '' } catch { return '' } })
   const [cursor, setCursor] = useState(null)
   const searchRef = useRef(null)
@@ -155,7 +153,6 @@ export default function JobsPage({ profile, onOpenJob, onEditJob, selectedId }) 
   const counts = useMemo(() => Object.fromEntries(TABS.map((t) => [t.id, all.filter((r) => t.test(r, sets)).length])), [all, sets])
 
   const clients = useMemo(() => [...new Set(rows.map((r) => String(r.job.client || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b)), [rows])
-  const lines = useMemo(() => [...new Set(all.map((r) => r.line).filter(Boolean))].sort((a, b) => a.localeCompare(b)), [all])
   const owners = useMemo(() => [...new Set(rows.map((r) => r.job.assigned_to).filter((id) => id && id !== me))]
     .map((id) => ({ value: id, label: profiles[id] || 'Unknown' })).sort((a, b) => a.label.localeCompare(b.label)), [rows, profiles, me])
 
@@ -165,10 +162,7 @@ export default function JobsPage({ profile, onOpenJob, onEditJob, selectedId }) 
     const get = SORTS[sort.key] || SORTS.job
     return all
       .filter((r) => t.test(r, sets))
-      .filter(({ job }) => !mode || job.mode === mode)
-      .filter(({ job }) => !type || (job.job_type || 'import') === type)
       .filter(({ job }) => !client || String(job.client || '').trim() === client)
-      .filter((r) => !lineF || r.line === lineF)
       .filter(({ job }) => !owner || job.assigned_to === owner)
       .filter(({ job, line }) => !needle || [job.job_no, job.client, job.be_no, job.bl_no, line, ...truckNos(job), job.vessel, job.ulip_refs?.igm_no, job.ulip_refs?.sb_no, ...parseContainerNos(job.containers)]
         .filter(Boolean).some((x) => String(x).toLowerCase().replace(/\s+/g, '').includes(needle)))
@@ -181,7 +175,7 @@ export default function JobsPage({ profile, onOpenJob, onEditJob, selectedId }) 
         const c = typeof x === 'string' ? x.localeCompare(y) : x - y
         return c * sort.dir || jobNum(b.job) - jobNum(a.job)
       })
-  }, [all, sets, view, q, mode, type, client, lineF, owner, sort])
+  }, [all, sets, view, q, client, owner, sort])
 
   // the panel's pager walks this list, in this order
   useEffect(() => { setPagerList(list.map((r) => r.job.id)) }, [list])
@@ -231,8 +225,8 @@ export default function JobsPage({ profile, onOpenJob, onEditJob, selectedId }) 
     )
   }
 
-  const filtered = !!(mode || type || client || lineF || owner || q)
-  const clearAll = () => { setQ(''); setMode(''); setType(''); setClient(''); setLineF(''); setOwner('') }
+  const filtered = !!(client || owner || q)
+  const clearAll = () => { setQ(''); setClient(''); setOwner('') }
   const busy = loading && !rows.length
   const tabs = TABS.filter((t) => !t.optional || counts[t.id] > 0 || view === t.id)
     .map((t) => ({ id: t.id, label: t.label, count: busy ? '–' : counts[t.id], tone: t.tone && counts[t.id] ? t.tone : undefined }))
@@ -245,24 +239,23 @@ export default function JobsPage({ profile, onOpenJob, onEditJob, selectedId }) 
         sub={busy ? 'Loading…' : null /* no counts here: the tabs right below carry them (Jose, 31 Oct 2026) */}
         /* (no Refresh button: the list reloads by itself every 5 minutes and whenever the
            page or the window is opened, JourneyContext; Jose, 1 Nov 2026) */
+        actions={(
+          // search and the two filters sit beside the title, so the tabs and the rows move up
+          // (Jose, 1 Nov 2026). On a phone the filters are one row that swipes sideways
+          <div className="ix-jb-tools">
+            <SearchBox inputRef={searchRef} value={q} onChange={setQ} placeholder="Search job, client, BE, BL or container" />
+            <div className="ix-jb-filters">
+              <FilterSelect label="Client" value={client} onChange={setClient} options={[{ value: '', label: 'Any' }, ...clients]} />
+              <FilterSelect label="Owner" value={owner} onChange={setOwner} options={[{ value: '', label: 'Anyone' }, ...(me ? [{ value: me, label: 'Me' }] : []), ...owners]} />
+              {filtered && <Button size="sm" variant="ghost" icon="x" onClick={clearAll}>Clear</Button>}
+            </div>
+          </div>
+        )}
       />
       {error && <div className="ix-error">Could not load the latest data: {error}. It tries again by itself in a few minutes.</div>}
 
       <section className="ix-card ix-jb-panel">
         <Tabs tabs={tabs} value={view} onChange={pickView} />
-        <div className="ix-toolbar">
-          <SearchBox inputRef={searchRef} value={q} onChange={setQ} placeholder="Job, client, BE, BL or container" />
-          {/* (on a phone the filters are one row that swipes sideways: styles/mobile.css) */}
-          <div className="ix-jb-filters">
-          <FilterSelect label="Type" value={type} onChange={setType} options={[{ value: '', label: 'All' }, { value: 'import', label: 'Import' }, { value: 'export', label: 'Export' }]} />
-          <FilterSelect label="Mode" value={mode} onChange={setMode} options={[{ value: '', label: 'All' }, 'Sea FCL', 'Sea LCL', 'Air', 'BPT/MBPT']} />
-          <FilterSelect label="Client" value={client} onChange={setClient} options={[{ value: '', label: 'Any' }, ...clients]} />
-          <FilterSelect label="Line" value={lineF} onChange={setLineF} options={[{ value: '', label: 'All' }, ...lines]} />
-          <FilterSelect label="Owner" value={owner} onChange={setOwner} options={[{ value: '', label: 'Anyone' }, ...(me ? [{ value: me, label: 'Me' }] : []), ...owners]} />
-          {filtered && <Button size="sm" variant="ghost" icon="x" onClick={clearAll}>Clear</Button>}
-          </div>
-          {/* (no "Sorted by …" line: the arrow on the column heading shows it; Jose, 1 Nov 2026) */}
-        </div>
 
         <div className="ix-tbl-wrap" ref={tableRef}>
           <table className="ix-tbl click ix-jb-tbl">
