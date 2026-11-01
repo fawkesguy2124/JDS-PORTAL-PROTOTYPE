@@ -14,6 +14,7 @@ import { usePrefs, LANDING_PAGES } from '../industrial/settings'
 import IxTodayPage from '../industrial/pages/TodayPage'
 import IxJobsPage from '../industrial/pages/JobsPage'
 import IxCustomsPage from '../industrial/pages/CustomsPage'
+import { shipsAtSea } from '../industrial/SeaTracking'
 import { forceRefreshAllContainers } from '../services/tracking/ldbProvider'
 import { askConfirm } from '../industrial/confirm'
 
@@ -341,9 +342,11 @@ function AdminDashboardInner() {
   // read the shared lists (JOURNEY_FACTS.md), the same ones Today, Trucks and Detention use
   const truckCount = journey?.facts?.needTruck?.length || 0
   const detentionCount = journey?.facts?.detention?.length || 0
+  const atSea = journey?.data ? shipsAtSea(journey.active, journey.data) : 0
   const navCounts = {
     jobs: journey?.active?.length || null,
     customs: journey?.active?.filter((r) => r.j.phase === 'ooc').length || null,
+    vessels: atSea ? { n: atSea, title: `${atSea} ${atSea === 1 ? 'ship' : 'ships'} at sea with JDS cargo` } : null,
     trucks: truckCount ? { n: truckCount, tone: 'amber', title: `${truckCount} ${truckCount === 1 ? 'job needs' : 'jobs need'} a truck` } : null,
     containers: detentionCount ? { n: detentionCount, tone: 'red', title: `${detentionCount} ${detentionCount === 1 ? 'job' : 'jobs'} at detention risk (2 free days or less)` } : null,
   }

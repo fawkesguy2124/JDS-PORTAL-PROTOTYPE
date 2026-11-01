@@ -53,6 +53,20 @@ export function notSailed(sea) {
   return ['GTIN', 'GTOT'].includes(sea.last_event?.code) && !!sea.pol && portName(sea.last_event?.where) === portName(sea.pol)
 }
 
+// How many ships with JDS cargo are at sea now, for the number beside Vessels in the menu
+// (Jose, 1 Nov 2026): sea imports still open, sailed, not arrived, with a position; a ship
+// carrying several jobs counts once. rows: the shared active rows ({ job, j })
+export function shipsAtSea(rows, data) {
+  const ships = new Set()
+  for (const { job, j } of rows || []) {
+    if (job.job_type === 'export' || /air/i.test(job.mode || '') || j?.arrivedAt || j?.phase === 'delivered') continue
+    const sea = seaOf(job, data)
+    if (!sea || sea.error || sea.pod_actual || sea.lat == null || notSailed(sea)) continue
+    ships.add(sea.vessel_imo || sea.vessel_name || job.id)
+  }
+  return ships.size
+}
+
 // The cargo is at a port right now: not sailed yet, sitting at a port on the way
 // (e.g. waiting to change ship), or arrived. Only then are "last move" and "next
 // stop" worth showing; at sea the route and progress say it (Jose, 24 Oct 2026)
