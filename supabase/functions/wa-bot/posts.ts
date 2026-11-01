@@ -16,7 +16,17 @@ export const UNDO_MINUTES = 30
 const todayIst = () => new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' })
 const nice = (d: string) => new Date(`${d}T00:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' })
 const num = (jobNo: string) => String(jobNo || '').toUpperCase().replace(/[^A-Z0-9]/g, '').replace(/^J0*/, 'J')
-export const isUndo = (t: string) => /^\s*(undo|galat|wrong|cancel that|undo it)\s*[.!]*\s*$/i.test(t)
+// "undo" said any way the team says it, typed or in a voice note (Jose, 1 Nov 2026: "they
+// will say 'can you undo this?'"): "undo", "please undo that", "revert it", "that's wrong,
+// take it back", "galat hai, wapas karo", "hata do". Only used while a post's save can be
+// undone, and never for a message that names something else (a truck, a BE, a container)
+const UNDO_WORDS = /\b(undo|un-do|revert|reverse|roll\s*back|take\s+(it|that|this)\s+back|cancel\s+(it|that|this|the\s+last|last|what)|remove\s+(it|that|this|what\s+you)|delete\s+(it|that|this|what\s+you)|put\s+(it|that)\s+back|galat|wapas|vapas|hata\s*(do|de|dijiye)|mat\s+(save|daalo|dalo)|wrong\s+(entry|post|one|job)|that'?s\s+wrong|it'?s\s+wrong|not\s+correct)\b/i
+export const isUndo = (t: string) => {
+  const s = String(t || '').trim()
+  if (!s || s.length > 120 || !UNDO_WORDS.test(s)) return false
+  // a truck, a BE no or a container in the message: it's a new instruction, not an undo
+  return !/\b[A-Z]{2}\s*\d{1,2}\s*[A-Z]{1,3}\s*\d{4}\b|\b\d{7}\b|\b[A-Z]{3}U\d{7}\b/i.test(s)
+}
 
 export { readPost }
 
@@ -94,18 +104,18 @@ function changeFor(post: any, job: any, person: Person, today: string, now: stri
     const onJob = parseContainerNos(job.containers)
     const mine = post.trucks.filter((t: any) => !t.jobs.length || t.jobs.some((j: string) => num(j) === num(job.job_no)))
     const added: string[] = []
+    const filled = new Set<string>() // trucks already on the job that got details
+    const what = new Set<string>() // which details ("driver mobile", "container", "packages")
     for (const t of mine) {
       const pk = t.jobPkgs?.[`J-${num(job.job_no).slice(1)}`] ?? t.pkgs ?? null
       const have = list.find((x: any) => x.no === t.plate)
       const box = t.boxes[0] || null
       if (have) {
         // already there: only fill what it lacks
-        let more = false
-        if (box && !have.container) { have.container = box; more = true }
-        if (t.boxes.length > 1 && !have.containers) { have.containers = t.boxes; more = true }
-        if (t.mobile && !have.mobile) { have.mobile = t.mobile; more = true }
-        if (pk != null && have.pkgs == null) { have.pkgs = pk; more = true }
-        if (more) added.push(`${t.plate} (details added)`)
+        if (box && !have.container) { have.container = box; filled.add(t.plate); what.add('container') }
+        if (t.boxes.length > 1 && !have.containers) { have.containers = t.boxes; filled.add(t.plate); what.add('container') }
+        if (t.mobile && !have.mobile) { have.mobile = t.mobile; filled.add(t.plate); what.add('driver mobile') }
+        if (pk != null && have.pkgs == null) { have.pkgs = pk; filled.add(t.plate); what.add('packages') }
         continue
       }
       list.push({ no: t.plate, container: box, ...(t.boxes.length > 1 ? { containers: t.boxes } : {}), mobile: t.mobile || null, pkgs: pk, dl: null, at: now, by, via: 'post' })
@@ -113,7 +123,9 @@ function changeFor(post: any, job: any, person: Person, today: string, now: stri
       logs.push({ type: 'truck_dispatched', title: `Truck ${t.plate} assigned — ${job.job_no}${list.length > 1 ? ` (truck ${list.length})` : ''}`, note: `Truck ${t.plate}${box ? ` with ${box}` : ''}${pk != null ? `, ${pk} pkgs` : ''} (from ${person.name}'s post via WhatsApp)`, meta: { truckNo: t.plate, container: box, mobile: t.mobile || null, pkgs: pk } })
       for (const b of t.boxes) if (onJob.length && !onJob.includes(b)) warn.push(`${b} is not one of ${job.job_no}'s containers (kept on the truck only)`)
     }
-    if (added.length) { update.trucks = list; update.truck_no = list[0].no; said.push(`${added.length === 1 ? 'truck' : `${added.length} trucks`}: ${added.join(', ')}`) }
+    if (added.length || filled.size) { update.trucks = list; update.truck_no = list[0].no }
+    if (added.length) said.push(`${added.length === 1 ? 'new truck' : `${added.length} new trucks`}: ${added.join(', ')}`)
+    if (filled.size) said.push(`${filled.size === 1 ? `${[...filled][0]} was` : `the ${filled.size} trucks were`} already there, so I added the ${[...what].join(' and ')}`)
     if (post.pending) {
       const meta2 = (update.field_meta as any) || meta
       if (meta2.dispatch_pending?.text !== post.pending) {
@@ -161,7 +173,7 @@ export async function handlePost(admin: Admin, person: Person, text: string, dat
       }
     }
     const c = changeFor(post, job, person, today, now)
-    if (!Object.keys(c.update).length) { lines.push(`${who}: already has all of this, nothing new.`); for (const w of c.warn) notes.push(`⚠ ${job.job_no}: ${w}`); continue }
+    if (!Object.keys(c.update).length) { lines.push(`${who}: I already had all of this, so nothing changed.`); for (const w of c.warn) notes.push(`⚠ ${job.job_no}: ${w}`); continue }
     if (!opts.test) {
       const before: Record<string, unknown> = {}
       for (const k of Object.keys(c.update)) before[k] = job[k] ?? null
@@ -181,8 +193,8 @@ export async function handlePost(admin: Admin, person: Person, text: string, dat
     for (const w of c.warn) notes.push(`⚠ ${job.job_no}: ${w}`)
   }
   const saved = undoItems.length > 0 || (!!opts.test && lines.some((l) => !/nothing new/.test(l)))
-  const head = saved ? `✅ Saved from your ${kind}${opts.test ? ' (test: nothing really saved)' : ''}:` : lines.length ? `Read your ${kind}:` : `Read your ${kind}, but nothing was saved.`
-  const reply = [head, ...lines.map((l) => `• ${l}`), ...(notes.length ? ['', ...notes] : []), ...(saved && !opts.test ? ['', `Wrong? Reply *UNDO* (within ${UNDO_MINUTES} min).`] : []),
+  const head = saved ? `✅ Got it, saved from your ${kind}${opts.test ? ' (test: nothing really saved)' : ''}:` : lines.length ? `Thanks, I read your ${kind}:` : `I read your ${kind}, but didn't save anything.`
+  const reply = [head, ...lines.map((l) => `• ${l}`), ...(notes.length ? ['', ...notes] : []), ...(saved && !opts.test ? ['', `If something's wrong, just tell me to undo it (any time in the next ${UNDO_MINUTES} min).`] : []),
     ...(confirm ? ['', 'Should the BE be replaced?'] : [])].join('\n')
   const undo: Pending | null = undoItems.length ? { action: 'undo_post', job_id: undoItems[0].job_id, job_no: undoItems.map((x) => x.job_no).join(', '), args: { items: undoItems }, summary: `undo the ${kind}`, at: now } : null
   return { reply, undo, confirm, saved }
@@ -199,7 +211,7 @@ export async function undoPost(admin: Admin, pending: Pending, person: Person): 
     if (error) { out.push(`${it.job_no}: could not undo (${error.message}).`); continue }
     if (it.log_ids?.length) await admin.from('activity_log').delete().in('id', it.log_ids)
     await admin.from('activity_log').insert({ type: 'note', action: 'note', title: `${it.job_no} — post undone`, note: `${person.name} undid what their WhatsApp post saved`, job_id: it.job_id, job_no: it.job_no, done_by_name: `${person.name} via WhatsApp`, meta: { job_id: it.job_id, via: 'whatsapp_post' } })
-    out.push(`${it.job_no}: put back as it was.`)
+    out.push(`${it.job_no} is back the way it was`)
   }
-  return `↩️ Undone.\n${out.map((l) => `• ${l}`).join('\n')}`
+  return out.length === 1 ? `↩️ Done, I've undone that: ${out[0]}.` : `↩️ Done, I've undone that:\n${out.map((l) => `• ${l}`).join('\n')}`
 }

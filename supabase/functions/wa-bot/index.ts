@@ -600,9 +600,14 @@ async function handleInbound(admin: Admin, payload: any) {
       if (answered.undo) undoNext = answered.undo
       dataCache = null
       checked = ['answer to the bot\'s question']
-    } else if (isUndo(text)) {
-      if (undoable) { reply = await undoPost(admin, undoable, person); undoNext = null; dataCache = null }
-      else reply = held?.action === 'undo_post' ? `That post was saved more than ${UNDO_MINUTES} minutes ago, so it can't be undone here. Please correct it in the portal.` : 'Nothing to undo right now.'
+    } else if (undoable && isUndo(text)) {
+      reply = await undoPost(admin, undoable, person); undoNext = null; dataCache = null
+      // "wrong job, it is J-584": say how to put it on the right one
+      const other = String(text).match(/\bJ[-. ]*0*(\d{2,5})\b/i)
+      if (other && !String(undoable.job_no).replace(/\D/g, ' ').split(' ').includes(String(Number(other[1])))) reply += `\nSend the post again with J-${Number(other[1])} at the top and I'll save it there.`
+    } else if (held?.action === 'undo_post' && /^\s*undo\b/i.test(text)) {
+      // (any other way of saying it goes to the assistant, which talks it through)
+      reply = `That was saved more than ${UNDO_MINUTES} minutes ago, so I can't undo it from here any more. Tell me what's wrong and I'll fix it, or correct it in the portal.`
     } else if (live && isYes(text)) {
       reply = await applyChange(admin, pending, person, { tell: (phone, t, jobNo) => tellTeammate(admin, team, phone, t, jobNo) })
       if (pending.action === 'set_access') teamCache = null // the new access counts from the next message
