@@ -185,6 +185,8 @@ function prepareOne(args: any, data: any, person: Person, extra: ChangeContext =
   }
   if (action === 'add_truck' || action === 'remove_truck') {
     const truck = plateNo(args?.truck_no)
+    // an Indian plate ends in 4 digits (MH04AB1234), or is a BH plate (22BH1234AB)
+    if (truck && !/^[A-Z]{2}\d{1,2}[A-Z]{0,3}\d{4}$|^\d{2}BH\d{4}[A-Z]{1,2}$/.test(truck)) return { ok: false, error: `The truck number ${truck} looks incomplete. Example: MH04AB1234.` }
     if (!TRUCK_RE.test(truck)) return { ok: false, error: 'The truck number looks wrong. Example: MH04AB1234.' }
     const has = jobTrucks(job).some((t: any) => t.no === truck)
     if (action === 'remove_truck') {
@@ -226,6 +228,12 @@ function prepareOne(args: any, data: any, person: Person, extra: ChangeContext =
   if (action === 'set_eta' || action === 'record_ooc') {
     const date = String(action === 'set_eta' ? args?.date : args?.ooc_date || '').slice(0, 10)
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return { ok: false, error: 'Please give the date.' }
+    if (!realDate(date)) return { ok: false, error: `${date} is not a real date. Please check it (dates are day first: 2/11 = 2 Nov).` }
+    // an ETA far from today is almost always a misread date ("2/11" read as 11 Feb)
+    if (action === 'set_eta') {
+      const days = (new Date(`${date}T12:00:00+05:30`).getTime() - Date.now()) / 864e5
+      if (days < -30 || days > 150) return { ok: false, error: `${nice(date)} is ${days < 0 ? 'more than a month ago' : 'more than five months away'}, which doesn't look like this job's ETA. Please say the date again (day first: 2/11 = 2 Nov).` }
+    }
     if (action === 'set_eta') return p(`Set the ETA of ${who} to *${nice(date)}*${job.eta ? ` (was ${nice(String(job.eta).slice(0, 10))})` : ''}`, { date })
     if (date > todayIst()) return { ok: false, error: 'The OOC date cannot be in the future.' }
     const no = String(args?.ooc_no || '').replace(/\D/g, '')
@@ -284,7 +292,7 @@ function prepareOne(args: any, data: any, person: Person, extra: ChangeContext =
     return p(`Set the customs stage of ${who} (BE ${job.be_no}) to *${def.label}*${args?.note ? `: ${String(args.note).slice(0, 120)}` : ''}`, { stage: def.id, note: args?.note ? String(args.note).slice(0, 300) : null })
   }
   if (action === 'set_priority') {
-    const pr = ['normal', 'high', 'urgent'].includes(String(args?.priority)) ? String(args.priority) : null
+    const pr = ['normal', 'high', 'urgent'].includes(String(args?.priority).toLowerCase()) ? String(args.priority).toLowerCase() : null
     if (!pr) return { ok: false, error: 'Say normal, high or urgent.' }
     return p(`Set the priority of ${who} to *${pr}*`, { priority: pr })
   }
@@ -601,6 +609,9 @@ They should send any message to the bot to start. While the bot uses Meta's test
   }
   return 'This change cannot be made by WhatsApp. Nothing was changed.'
 }
+
+// a date that exists (2026-11-31 does not: it would roll over to 1 Dec)
+const realDate = (d: string) => { const t = new Date(`${d}T12:00:00Z`); return !isNaN(t.getTime()) && t.toISOString().slice(0, 10) === d }
 
 // Someone changed the job (in the portal, or another person on WhatsApp) between "Shall I go
 // ahead?" and the YES: nothing is overwritten, the person is asked to send it again so the

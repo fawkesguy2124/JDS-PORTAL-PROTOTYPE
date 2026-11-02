@@ -76,6 +76,14 @@ const CHANGES: [Record<string, unknown>, RegExp | null][] = [
   [{ action: 'create_job', job: 'J-9902', client: 'Test', job_mode: 'Sea FCL', containers: 'OOCU9074031' }, /Create \*J-9902\*/],
 ]
 CHANGES.push([{ action: 'set_vessel', job: 'J-9901', vessel: 'MSC ANNA', voyage: '512W' }, /MSC ANNA \/ 512W/])
+// odd values (edge-case hunt 3 Nov 2026): a date that doesn't exist, an ETA far from today (2/11 read
+// as 11 Feb), a plate missing a digit; capitals are fine
+{
+  const day = (d: number) => new Date(Date.now() + d * 864e5).toISOString().slice(0, 10)
+  CHANGES.push([{ action: 'set_eta', job: 'J-9901', date: '2026-11-31' }, null], [{ action: 'set_eta', job: 'J-9901', date: day(-60) }, null], [{ action: 'set_eta', job: 'J-9901', date: day(200) }, null],
+    [{ action: 'set_eta', job: 'J-9901', date: day(5) }, /Set the ETA/], [{ action: 'add_truck', job: 'J-9901', truck_no: 'MH04AB123' }, null], [{ action: 'add_truck', job: 'J-9901', truck_no: 'mh 04 ab 1234' }, /MH04AB1234/],
+    [{ action: 'add_truck', job: 'J-9901', truck_no: '22BH1234AB' }, /22BH1234AB/], [{ action: 'set_priority', job: 'J-9901', priority: 'URGENT' }, /urgent/])
+}
 // undo, or a change? (live test 2 Nov 2026: "mode wapas FCL kar do" was taken as undo)
 const UNDO: [string, boolean][] = [
   ['undo', true], ['undo kar do', true], ['J-9902 wala post undo kar do', true], ['galat hai, wapas karo', true], ['hata do', true], ['that is wrong', true],
