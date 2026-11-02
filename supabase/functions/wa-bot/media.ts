@@ -202,8 +202,11 @@ export const docTypeFromName = (name: string) => TYPES.find(([re]) => re.test(na
 // the job numbers in a caption / file name ("J-652", LiveImpex's "Processed_BE_652_…")
 const jobNosIn = (text: string) => {
   const t = String(text || '')
-  return [...t.matchAll(/\bJ-?\s?0*(\d{1,5})\b/gi), ...t.matchAll(/(?:^|[\s_-])(?:BE|OOC|Charge)[\s_-]*0*(\d{2,5})(?=[\s_.-])/gi)].map((m) => m[1])
+  return [...t.matchAll(/\bJ\s?[-.]?\s?0*(\d{1,5})\b/gi), ...t.matchAll(/(?:^|[\s_-])(?:BE|OOC|Charge)[\s_-]*0*(\d{2,5})(?=[\s_.-])/gi)].map((m) => m[1])
 }
+// "J. 00711", "J-0711", "J.00569/VENDEKIN" → "J-711", "J-569/VENDEKIN" (the group chat's way of
+// writing a job). Only with a dot / dash or leading zeros, so a plate "MH 04 J 1234" is left alone.
+export const tidyJobNos = (text: string) => String(text || '').replace(/\bJ(?:\s*[.-]\s*|\s+(?=0))0*(\d{1,5})\b/gi, (_m, n) => `J-${Number(n)}`)
 // the job number a file names, for a job the portal doesn't have yet ("J-736")
 export const jobNoFromText = (text: string) => { const n = jobNosIn(text)[0]; return n ? `J-${n.replace(/^0+/, '')}` : null }
 

@@ -18,8 +18,8 @@ import { adminClient, json } from '../_shared/ulip.ts'
 import { buildJourneyData, buildSeaByJob } from '../_shared/portal/journeyCore.js'
 import { morningSummary, instantAlerts, happenedToday, answer, teamFromProfiles, BOT_NUMBERS, missingDetails, allowed, LEVELS, LEVEL_LABEL } from '../_shared/portal/botMessages.js'
 import { askAssistant, groqInfo, isHinglish, changeParts, mergeProposals } from './assistant.ts'
-import { applyChange, confirmText, isNo, isYes, isNoSaid, isYesSaid, saysNotDelivered, PENDING_MINUTES, prepareChange, type Pending } from './actions.ts'
-import { downloadMedia, transcribe, normalizeSpoken, docTypeFromName, jobFromText, jobNoFromText, safeName, toRoman, MAX_FILE_BYTES } from './media.ts'
+import { applyChange, confirmText, isNo, isYes, isNoSaid, isYesSaid, isHoldSaid, saysNotDelivered, PENDING_MINUTES, prepareChange, type Pending } from './actions.ts'
+import { downloadMedia, transcribe, normalizeSpoken, docTypeFromName, jobFromText, jobNoFromText, safeName, toRoman, tidyJobNos, MAX_FILE_BYTES } from './media.ts'
 import { makeServerTools, sendDueReminders, checkWatches, checkTasks } from './servertools.ts'
 import { readBeFile, jobForBe, beLine } from './bereader.ts'
 import { readDocFile, jobForDoc, docFill, fillArgs } from './docfill.ts'
@@ -296,7 +296,14 @@ async function runMorning(admin: Admin) {
   return out
 }
 
+const QUIET_FROM = 22
+const QUIET_TO = 7
 async function runAlerts(admin: Admin) {
+  // quiet hours, 10 pm to 7 am India time: nothing goes out at night (3 Nov 2026: a "ship
+  // arrives tomorrow" went to the team at 00:00). The check time is not moved on, so the first
+  // run after 7 am reads the whole night; what happened before midnight then stays in the portal.
+  const hour = Number(new Date().toLocaleString('en-GB', { timeZone: 'Asia/Kolkata', hour: '2-digit', hour12: false }))
+  if (hour >= QUIET_FROM || hour < QUIET_TO) return [{ skipped: `quiet hours (${QUIET_FROM}:00 to ${QUIET_TO}:00)` }]
   const { data: state } = await admin.from('bot_state').select('alerts_checked_at').eq('id', 1).maybeSingle()
   const since = state?.alerts_checked_at || new Date(Date.now() - 60 * 60 * 1000).toISOString()
   // read only up to 2 minutes ago: the container refresh runs at the same moment and
@@ -506,7 +513,11 @@ async function handleFile(admin: Admin, person: Person, m: any, data: any) {
   if (upErr) { await reply(`📎 Sorry, I could not keep that file (${upErr.message}).`, userText); return }
   const docType = docTypeFromName(`${caption} ${name}`)
   const lastFile = { path, file_name: name, mime: file.mime, size: file.bytes.length, doc_type: docType, at: new Date().toISOString() }
-  await admin.from('bot_inbox').upsert({ phone: person.phone, last_file: lastFile, pending: null, last_inbound_at: new Date().toISOString() })
+  // a file never takes away the undo of a post saved just before (code check 3 Nov 2026)
+  const { data: before } = await admin.from('bot_inbox').select('pending').eq('phone', person.phone).maybeSingle()
+  const keepUndo = before?.pending?.action === 'undo_post' ? before.pending : before?.pending?.undo || null
+  const withUndo = (p: Pending) => (keepUndo ? { ...p, undo: keepUndo } : p)
+  await admin.from('bot_inbox').upsert({ phone: person.phone, last_file: lastFile, pending: keepUndo, last_inbound_at: new Date().toISOString() })
   // a PDF: read by the portal's own reader (no AI, the same as Create job): a BE / OOC, BL,
   // air waybill, invoice, packing list or a bundle. One Yes / No for everything it shows:
   // attach it, record the BE and IGM, the OOC, and fill the job's empty fields
@@ -546,7 +557,7 @@ async function handleFile(admin: Admin, person: Person, m: any, data: any) {
           summary: `Create ${jobNo} for ${client} from BE ${be.be_no}`, at: new Date().toISOString(),
         }
         const line = [client, mode, f.bl_no ? `${mode === 'Air' ? 'MAWB' : 'BL'} ${f.bl_no}` : null, mode !== 'Air' && boxes.length ? (boxes.length === 1 ? `Container ${boxes[0]}` : `${boxes.length} containers`) : null].filter(Boolean).join(' · ')
-        await admin.from('bot_inbox').update({ pending }).eq('phone', person.phone)
+        await admin.from('bot_inbox').update({ pending: withUndo(pending) }).eq('phone', person.phone)
         await reply(`📄 *${what}*\n\n*${jobNo}* isn't in the portal yet. Shall I create it?\n${line}`, userText, YES_NO)
         return
       }
@@ -592,7 +603,7 @@ async function handleFile(admin: Admin, person: Person, m: any, data: any) {
       args: { items, done: `✅ Done. ${j.job_no} is updated.` },
       summary: `Update ${j.job_no} from ${what}${adds.length ? ` (${adds.join(', ')})` : ''}`, at: new Date().toISOString(),
     }
-    await admin.from('bot_inbox').update({ pending }).eq('phone', person.phone)
+    await admin.from('bot_inbox').update({ pending: withUndo(pending) }).eq('phone', person.phone)
     await reply(`${head}\n\n${ask}${warn}`, userText, YES_NO)
     return
   }
@@ -600,7 +611,7 @@ async function handleFile(admin: Admin, person: Person, m: any, data: any) {
   if (job && docType) {
     const res = prepareChange({ action: 'attach_document', job: job.job_no, doc_type: docType }, data, person, { lastFile })
     if (res.ok) {
-      await admin.from('bot_inbox').update({ pending: res.pending }).eq('phone', person.phone)
+      await admin.from('bot_inbox').update({ pending: withUndo(res.pending) }).eq('phone', person.phone)
       await reply(`📎 Shall I save *${name}* to *${job.job_no}* as *${docType}*?`, userText, YES_NO)
       return
     }
@@ -635,7 +646,10 @@ async function handleInbound(admin: Admin, payload: any) {
     const typing = typingNow.get(m.id) || showTyping(m.id) // already started above
     let text = m.type === 'text' ? m.text?.body : m.type === 'button' ? m.button?.text
       // a tapped button or a picked menu row comes back as its id ("YES", "check customs J-652" …)
-      : m.type === 'interactive' ? (m.interactive?.button_reply?.id || m.interactive?.list_reply?.id || '') : ''
+      : m.type === 'interactive' ? (m.interactive?.button_reply?.id || m.interactive?.list_reply?.id || '')
+      // a 👍 / ✅ reaction: a yes while a change waits; any other reaction is left alone (a
+      // reaction to an alert used to get "Please send text…", code check 3 Nov 2026)
+      : m.type === 'reaction' ? (m.reaction?.emoji || '') : ''
     // a voice note: Groq's Whisper writes it out, then it is answered like a typed message
     let heard: string | null = null
     if (m.type === 'audio' && m.audio?.id) {
@@ -654,6 +668,9 @@ async function handleInbound(admin: Admin, payload: any) {
     // Hindi typed in Hindi script: read as the same words in English letters (Hinglish), so
     // the answers, posts and yes / no are understood like any other message (Jose, 2 Nov 2026)
     if (text) text = toRoman(text)
+    // "J. 00711", "J-0711", "J.00569/VENDEKIN" → "J-711": the team's group-chat way of writing
+    // a job (live test 3 Nov 2026: the AI looked up "J-00711" and wrote "J-10711")
+    if (text) text = tidyJobNos(text)
     // a file (PDF or photo): kept privately, then attached to a job after a YES
     if ((m.type === 'document' || m.type === 'image') && (m.document?.id || m.image?.id)) {
       if (!allowed(person, 'files')) { await send(person.phone, { text: `🔒 Your WhatsApp access is *${LEVEL_LABEL[person.level || 'view']}*, so files can't be added to jobs from your number. Please send it to Jose.` }); continue }
@@ -680,22 +697,34 @@ async function handleInbound(admin: Admin, payload: any) {
     const undoable = freshUndo(held) ? held : freshUndo((held as any)?.undo) ? (held as any).undo : null
     const pending: Pending | null = held?.action === 'undo_post' ? null : held
     const live = pending && Date.now() - new Date(pending.at).getTime() < PENDING_MINUTES * 60_000
+    if (m.type === 'reaction') {
+      if (!live || !isYes(text)) continue // a reaction is never answered on its own
+      text = 'yes'
+    }
     let reply: string | null = null
     const after: Message[] = [] // menus a tool asks to send after the reply
     let checked: string[] = []
     let ask: Pending | null = null
     let undoNext: Pending | null = undoable // kept unless undone or replaced by a newer post
-    if (pending) await admin.from('bot_inbox').update({ pending: undoable }).eq('phone', person.phone) // a proposal is answered once
+    // a proposal is answered once: claimed only if it is still the one read above, so a double
+    // tap on Yes (or Yes tapped while "haan" is typed) never applies it twice (code check 3 Nov 2026)
+    let claimed = true
+    if (pending) {
+      const claim = admin.from('bot_inbox').update({ pending: undoable }).eq('phone', person.phone)
+      const { data: got } = await (pending.at ? claim.eq('pending->>at', pending.at) : claim).select('phone')
+      claimed = !!got?.length
+    }
+    if (pending && !claimed && (isYes(text) || isYesSaid(text) || isNo(text) || isNoSaid(text))) continue // the other message already answered it
     // a reply to one of the bot's own questions ("1 MH43U3271", "4588199 22.10", "YES", "skip"),
     // unless a Yes / No change is waiting (that comes first)
     let answered: { reply: string; undo?: any } | null = null
     // (a tapped question button always counts, even with a Yes / No change waiting)
-    if ((!live || /^Q\|/.test(text)) && !isUndo(text)) {
+    if ((!live || /^Q\|/.test(text)) && !isUndo(text, undoable?.job_no)) {
       answered = await answerQuestion(admin, person, text, data, {
         markDelivered: (_id, jobNo) => markDeliveredFor(admin, person, data, jobNo),
         // a one-tap answer is the change itself (the tap was the yes)
         change: async (action) => { const r = prepareChange(action, data, person); return r.ok ? await applyChange(admin, r.pending, person) : `❌ ${r.error}` },
-      })
+      }, String([...history].reverse().find((t: any) => t.role === 'model')?.text || ''))
         .catch((e) => { console.warn(`[wa-bot] answer: ${(e as Error).message}`); return null })
     }
     if (answered) {
@@ -703,7 +732,7 @@ async function handleInbound(admin: Admin, payload: any) {
       if (answered.undo) undoNext = answered.undo
       dataCache = null
       checked = ['answer to the bot\'s question']
-    } else if (undoable && isUndo(text)) {
+    } else if (undoable && isUndo(text, undoable.job_no)) {
       reply = await undoPost(admin, undoable, person); undoNext = null; dataCache = null
       // "wrong job, it is J-584": say how to put it on the right one
       const other = String(text).match(/\bJ[-. ]*0*(\d{2,5})\b/i)
@@ -716,9 +745,11 @@ async function handleInbound(admin: Admin, payload: any) {
       if (pending.action === 'set_access') teamCache = null // the new access counts from the next message
       dataCache = null // the next answer shows the change
       checked = [`made the change: ${pending.summary}`]
+    } else if (pending && isHoldSaid(text)) {
+      reply = isHinglish(text) ? 'Theek hai, abhi kuch nahi badla. Jab ready ho, dobara bhejo.' : "OK, I haven't changed anything. Send it again when you're ready."
     } else if (pending && (isNo(text) || isNoSaid(text))) {
       reply = `Cancelled. Nothing was changed.`
-    } else if (pending && isYes(text)) {
+    } else if (pending && (isYes(text) || isYesSaid(text))) {
       reply = `That request is more than ${PENDING_MINUTES} minutes old, so nothing was changed. Please ask again.`
     }
     // a bare yes / no with nothing waiting: if the bot's last message asked something, the

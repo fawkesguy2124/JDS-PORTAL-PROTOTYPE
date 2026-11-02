@@ -50,7 +50,8 @@ async function wanted(admin: any) {
   const since = new Date(Date.now() - 60 * 24 * 60 * MIN).toISOString()
   const { data: jobs } = await admin.from('jobs').select('id, job_no, client, be_no, be_date, bl_no, port_code, stage, mode, job_type, trucks, truck_no, ulip_refs, containers, eta, field_meta, created_at, updated_at')
     .or('stage.is.null,stage.lt.10').gte('created_at', since)
-  const open = (jobs || []).filter((j: any) => j.job_type !== 'export')
+  // (a test job, client "Test Client", never spends a real ULIP / FASTag call: 3 Nov 2026)
+  const open = (jobs || []).filter((j: any) => j.job_type !== 'export' && !/^\s*test\s+client\s*$/i.test(String(j.client || '')))
   const { data: cs } = await admin.from('customs_status').select('job_id, be_no, ooc_date').in('job_id', open.map((j: any) => j.id))
   const ooc = new Map((cs || []).map((r: any) => [r.job_id, r]))
   // air imports already found in Customs' air manifest (ICEGATE/09): no need to ask again

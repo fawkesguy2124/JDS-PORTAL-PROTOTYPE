@@ -67,7 +67,9 @@ function boxStory(no: string, parsed: any, at: string) {
   const cfs = outIdx >= 0 ? up.slice(outIdx + 1).find((r: any) => /CFS|ICD/i.test(`${r[1]} ${r[2]}`) && /IN|ARRIV|ENTRY/i.test(r[1] || '')) : null
   if (outIdx >= 0 && cfs) lines.push(`It left the port on ${up[outIdx][0]} and reached *${cfs[2] || cap(cfs[1])}* on ${cfs[0]}.`)
   // a Port Out as the last move is the way to the CFS, not a CFS gate out (Jose, 2 Nov 2026)
-  else if (/PORT\s*OUT/i.test(now[1] || '')) lines.push('It has left the port and is on its way to the CFS; the CFS gate-in is not recorded yet.')
+  // (said without "on its way": two days after a Port Out it has usually reached the CFS, the
+  // port systems just haven't recorded the gate-in; live test 3 Nov 2026)
+  else if (/PORT\s*OUT/i.test(now[1] || '')) lines.push('It left the port for the CFS; the CFS gate-in is not recorded yet.')
   // the port's own "DPD" line means nothing for JDS (their jobs go to a CFS): not shown
   const shown = up.filter((r: any) => !/^\s*DPD\b/i.test(r[1] || ''))
   if (shown.length > 1) lines.push(`Full movement:\n${shown.map((r: any) => `• ${r[0]} · ${cap(r[1])}${r[2] ? ` · ${r[2]}` : ''}${r[3] ? ` (${String(r[3]).toLowerCase()})` : ''}`).join('\n')}`)

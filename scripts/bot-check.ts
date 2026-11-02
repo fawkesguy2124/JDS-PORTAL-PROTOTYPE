@@ -9,14 +9,14 @@
 //   npx deno@2 run --allow-read --allow-write --allow-net --allow-env scripts/bot-check.ts [--update] [folder]
 // --update: take the current readings as the new snapshot (after checking the changes by eye)
 import { answerQuestion, followUpFor } from '../supabase/functions/wa-bot/questions.ts'
-import { isYes, isNo, isYesSaid, isNoSaid, prepareChange, saysNotDelivered } from '../supabase/functions/wa-bot/actions.ts'
+import { isYes, isNo, isYesSaid, isNoSaid, isHoldSaid, prepareChange, applyChange, saysNotDelivered } from '../supabase/functions/wa-bot/actions.ts'
 import { containerTrip } from '../supabase/functions/_shared/portal/journeyCore.js'
 import { happenedToday } from '../supabase/functions/_shared/portal/botMessages.js'
-import { toRoman, normalizeSpoken, jobNoFromText } from '../supabase/functions/wa-bot/media.ts'
+import { toRoman, normalizeSpoken, jobNoFromText, tidyJobNos } from '../supabase/functions/wa-bot/media.ts'
 import { readDocFile } from '../supabase/functions/wa-bot/docfill.ts'
 import { readPost } from '../supabase/functions/_shared/portal/postReader.js'
 import { isHinglish, changeParts, mergeProposals } from '../supabase/functions/wa-bot/assistant.ts'
-import { isUndo, handlePost } from '../supabase/functions/wa-bot/posts.ts'
+import { isUndo, isCorrection, handlePost } from '../supabase/functions/wa-bot/posts.ts'
 
 const args = Deno.args.filter((a) => !a.startsWith('--'))
 const UPDATE = Deno.args.includes('--update')
@@ -45,6 +45,8 @@ for (const [t, want] of SPOKEN) { const got = normalizeSpoken(t); if (!got.inclu
 const LANG: [string, boolean][] = [
   ['J-689 ka kya status hai?', true], ['portal ka link bhejo', true], [toRoman('J-736 का BE नंबर क्या है?'), true], ['container kahan hai abhi?', true],
   ['what is the ETA of J-674', false], ['how do I add a truck', false], ['job 689', false], ['can you do it now', false], ['ok thanks', false],
+  // one Hindi word and nothing English (3 Nov 2026)
+  ['J-711 ka status', true], ['J-711 kab aayega', true], ['status of J-711', false], ['711 status pls', false],
 ]
 // several changes in one message: split into parts, each with the job no (or not split)
 const PARTS: [string, string[]][] = [
@@ -52,6 +54,7 @@ const PARTS: [string, string[]][] = [
   ['J-9903 ka ETA 5 Nov hai aur line MSC', ['J-9903 ka ETA 5 Nov hai', 'J-9903 line MSC']],
   ['J-9903 rail se jayega aur client deliver karega', ['J-9903 rail se jayega', 'J-9903 client deliver karega']],
   ['set the ETA of J-674 to 5 Nov, priority high', ['set the ETA of J-674 to 5 Nov', 'J-674 priority high']],
+  ['J-711 note: client called and BL pending', []], ['J-711 urgent, note: BL pending and client called', ['J-711 urgent', 'J-711 note: BL pending and client called']],
   ['J-652 aur J-667 delivered kar do', []], ['J-9903 ka vessel MSC LUNA hai, voyage 618E', []], ['J-689 ka kya status hai?', []], ['set shipping line of J-9903 to MSC', []],
 ]
 for (const [t, want] of PARTS) { const got = changeParts(t); if (JSON.stringify(got) !== JSON.stringify(want)) fail(`split "${t}" → ${JSON.stringify(got)}`) }
@@ -79,6 +82,9 @@ const UNDO: [string, boolean][] = [
   ['J-9903 ka mode wapas FCL kar do', false], ['truck galat hai hata do', false], ['ETA wapas 5 Nov kar do', false], ['MH46AR2016 galat hai', false],
 ]
 for (const [t, want] of UNDO) if (isUndo(t) !== want) fail(`"${t}" read as ${isUndo(t) ? 'undo' : 'not undo'}`)
+// (code check 3 Nov 2026) loose words about another job, or a sentence, are not an undo of J-711's post
+const UNDO711: [string, boolean][] = [['J-712 ka invoice galat hai', false], ['J-711 gaadi wapas aa gayi', false], ['wrong job, it is J-584', true], ['galat hai', true], ['J-711 galat hai', true]]
+for (const [t, want] of UNDO711) if (isUndo(t, 'J-711') !== want) fail(`"${t}" after a J-711 post read as ${isUndo(t, 'J-711') ? 'undo' : 'not undo'}`)
 // a BE typed in a sentence is not saved as a post; a future BE date is never saved
 {
   const one = await handlePost({} as any, ME as any, 'J-598 ka BE 1234567 dated 15.10.2026', DATA)
@@ -86,11 +92,32 @@ for (const [t, want] of UNDO) if (isUndo(t) !== want) fail(`"${t}" read as ${isU
   const future = await handlePost({} as any, ME as any, 'J-598 PCM\nBE 1234567/15.12.2026\nGr.5\nRMS\n\nPrior', DATA)
   if (!future || future.saved || !/future/.test(future.reply)) fail(`a future BE date: ${future?.reply}`)
 }
+// a removal or correction is never saved as a truck post (code check 3 Nov 2026: saved as a NEW truck)
+for (const t of ['J-711 se truck MH04AB1234 hata do', 'remove MH04AB1234 from J-711', 'J-712 ka truck MH04AB1234 nahi, MH04AB1235 hai', 'J-711 truck MH04AB1234 galat hai', 'J-711 MH04AB1234 cancel']) {
+  const r = await handlePost({} as any, ME as any, t, DATA)
+  if (r !== null) fail(`"${t}" was handled as a post: ${r.reply}`)
+}
+for (const t of ['J-711 MH04AB1234', 'J-711 PCM\nMH04AB1234\n1x40']) if (isCorrection(t)) fail(`a plain truck post "${t}" read as a correction`)
+// how a waiting change is answered (code check / probe 3 Nov 2026)
+const REPLIES: [string, string][] = [
+  ['👍', 'yes'], ['👍🏽', 'yes'], ['✅', 'yes'], ['okk', 'yes'], ['kk', 'yes'], ['yup', 'yes'], ['fine', 'yes'], ['chalo', 'yes'], ['no problem', 'yes'], ['no issues go ahead', 'yes'],
+  ['haan ji kar do', 'yes'], ['theek hai', 'yes'], [toRoman('हां कर दो'), 'yes'], ['confirm karo', 'yes'],
+  ['ok but date 5 nov', 'neither'], ['yes but truck is MH04AB1234', 'neither'], ['go ahead and also add truck MH46AB1234', 'neither'], ['yes and mark urgent', 'neither'],
+  ['theek hai par 2 container hai', 'neither'], ['haan, J-712 pe karo', 'neither'], ['ok thanks', 'neither'], ['yes for 711 no for 689', 'neither'],
+  ['nahi', 'no'], ['mat karo', 'no'], ['cancel it', 'no'], ['wait', 'hold'], ['abhi nahi', 'hold'], ['baad me', 'hold'], ['not now', 'hold'], ['let me check', 'hold'], ['confirm karke batata hu', 'hold'],
+]
+for (const [t, want] of REPLIES) {
+  const got = isYesSaid(t) || isYes(t) ? 'yes' : isHoldSaid(t) ? 'hold' : isNoSaid(t) || isNo(t) ? 'no' : 'neither'
+  if (got !== want) fail(`reply "${t}" to "Shall I go ahead?" read as ${got}, should be ${want}`)
+}
+// the group chat's job numbers
+for (const [t, want] of [['J. 00711 ka status', 'J-711 ka status'], ['J.00569/VENDEKIN', 'J-569/VENDEKIN'], ['J-0235 IAC', 'J-235 IAC'], ['J-711', 'J-711'], ['MH 04 J 1234', 'MH 04 J 1234']] as [string, string][])
+  if (tidyJobNos(t) !== want) fail(`"${t}" tidied to "${tidyJobNos(t)}"`)
 for (const [a, want] of CHANGES) {
   const r: any = prepareChange(a, DATA, ME as any)
   if (want ? !(r.ok && want.test(r.pending.summary)) : r.ok) fail(`change ${JSON.stringify(a)} → ${r.ok ? r.pending.summary : r.error}`)
 }
-const NAMES: [string, string | null][] = [['Processed_BE_736_20261030_2022.pdf', 'J-736'], ['Out of Charge_1004_20260411_0746.pdf', 'J-1004'], ['J-00117 Green Soul Docs.pdf', 'J-117'], ['AWSSE260900057.pdf', null]]
+const NAMES: [string, string | null][] = [['J. 00583 PCM cfs invoice.pdf', 'J-583'], ['J.00569/VENDEKIN RS.5192.pdf', 'J-569'], ['Processed_BE_736_20261030_2022.pdf', 'J-736'], ['Out of Charge_1004_20260411_0746.pdf', 'J-1004'], ['J-00117 Green Soul Docs.pdf', 'J-117'], ['AWSSE260900057.pdf', null]]
 for (const [n, want] of NAMES) if (jobNoFromText(n) !== want) fail(`file "${n}" → ${jobNoFromText(n)}, should be ${want}`)
 
 // answers to the bot's own questions (a fake table: nothing is saved)
@@ -122,7 +149,8 @@ const ANSWERS: [string, any[], RegExp | null][] = [
   ['डिलीवर हो गया', [Q.delivered], /delivered J-583/], ['what is the ETA of J-674?', ALL, null], ['ok thanks', ALL, null],
 ]
 for (const [t, rows, want] of ANSWERS) {
-  const r = await answerQuestion(fakeAdmin(rows), { phone: '91', name: 'Test' }, toRoman(t), {}, deps)
+  // (the bot has just asked about these jobs)
+  const r = await answerQuestion(fakeAdmin(rows), { phone: '91', name: 'Test' }, toRoman(t), {}, deps, rows.map((x) => `*${x.job_no}* ?`).join('\n'))
   const got = r?.reply || null
   if (want ? !(got && want.test(got)) : got !== null) fail(`answer "${t}" → ${got ?? '(to the assistant)'}`)
 }
@@ -130,11 +158,38 @@ for (const [t, rows, want] of ANSWERS) {
 const NOTDEL: [string, boolean][] = [
   ['J-711 not delivered. Please change it in portal', true], ['J-711 deliver nahi hua', true], ['abhi tak deliver nahi hua', true], ['still not delivered', true],
   ['not yet delivered', true], ['J-711 delivered', false], ['deliver ho gaya', false], ['is J-711 delivered?', false],
+  ['client ko maal nahi mila 711', true], ["didn't get delivered", true], ['delivery pending', true], ['deliver hona baki hai', true], [toRoman('माल डिलीवर नहीं हुआ'), true], ['cargo not reached client', true],
 ]
 for (const [t, want] of NOTDEL) if (saysNotDelivered(t) !== want) fail(`"${t}" read as ${saysNotDelivered(t) ? 'NOT delivered' : 'delivered'}`)
 {
-  const r: any = await answerQuestion(fakeAdmin([Q.delivered]), { phone: '91', name: 'Test' }, 'not delivered yet', {}, deps)
+  const r: any = await answerQuestion(fakeAdmin([Q.delivered]), { phone: '91', name: 'Test' }, 'not delivered yet', {}, deps, '📦 *J-583*: Is it delivered?')
   if (!r || /delivered J-583/.test(r.reply)) fail(`"not delivered yet" to "Is it delivered?" → ${r?.reply}`)
+}
+// an open "J-583 delivered?" question is NEVER answered by talk about something else (code check
+// 3 Nov 2026: "J-711 ka OOC ho gaya?" marked J-583 delivered, with no Yes / No)
+for (const [t, last] of [['J-711 ka OOC ho gaya?', '📦 *J-583*: Is it delivered?'], ['is J-711 delivered', '📦 *J-583*: Is it delivered?'], ['J-583 delivered?', '📦 *J-583*: Is it delivered?'],
+  ['ok', '📦 *J-583*: Is it delivered?'], ['ji', '📦 *J-583*: Is it delivered?'], ['ho gaya', 'Hi Iwin 👋'], ['delivered', '*J-711* (IAC): left the port'], ['kya ho gaya', '📦 *J-583*: Is it delivered?']] as [string, string][]) {
+  const r: any = await answerQuestion(fakeAdmin([Q.delivered]), { phone: '91', name: 'Test' }, t, {}, deps, last)
+  if (r && /delivered J-583/.test(r.reply)) fail(`"${t}" (after "${last}") marked J-583 delivered`)
+}
+for (const t of ['haan delivered', 'ho gaya', 'J-583 delivered']) {
+  const r: any = await answerQuestion(fakeAdmin([Q.delivered]), { phone: '91', name: 'Test' }, t, {}, deps, '📦 *J-583*: Is it delivered?')
+  if (!r || !/delivered J-583/.test(r.reply)) fail(`"${t}" right after "J-583: Is it delivered?" → ${r?.reply ?? '(to the assistant)'}`)
+}
+{
+  const tq = { key: 'd:truck', job_id: 'd', job_no: 'J-583', kind: 'truck', phone: '91', status: 'open', last_asked_at: now }
+  const r: any = await answerQuestion(fakeAdmin([tq]), { phone: '91', name: 'Test' }, 'J-711 MH04AB1234', {}, deps, '🚚 *J-583*: truck number?')
+  if (r) fail(`a truck for J-711 was taken as the answer to J-583's truck question: ${r.reply}`)
+}
+// a YES never overwrites a change someone made after the question (code check 3 Nov 2026)
+{
+  const later = new Date().toISOString(), earlier = new Date(Date.now() - 60_000).toISOString()
+  const job = { id: 'x', job_no: 'J-9901', client: 'Test', updated_at: later, field_meta: {} }
+  const p: any = { action: 'set_priority', job_id: 'x', job_no: 'J-9901', args: { priority: 'urgent' }, summary: 'x', at: earlier, seen: earlier }
+  const r1 = await applyChange(fakeAdmin([job]) as any, p, ME as any)
+  if (!/changed by someone else/.test(r1)) fail(`a YES after someone else's change → ${r1}`)
+  const r2 = await applyChange(fakeAdmin([job]) as any, { action: 'batch', job_id: 'x', job_no: 'J-9901', args: { items: [p, p] }, summary: 'x', at: earlier } as any, ME as any)
+  if (!/changed by someone else/.test(r2)) fail(`a YES to two changes after someone else's change → ${r2}`)
 }
 // Port Out is the way to the CFS: never "left with cargo" (so never OOC done or delivered) from
 // a port "DPD" event; only a job JDS mark DPD, or a Port Out weeks old with nothing after it
@@ -162,7 +217,7 @@ for (const [t, want] of NOTDEL) if (saysNotDelivered(t) !== want) fail(`"${t}" r
   if (c) fail(`a delivered job got a follow-up: ${c.key}`)
   const dq = { key: 'j711:deliver', job_id: 'j711', job_no: 'J-711', kind: 'deliver', phone: '91', status: 'open', last_asked_at: new Date().toISOString() }
   for (const [t, want] of [['Q|j711:deliver|jds', /JDS delivers/], ['hum le jayenge', /JDS delivers/], ['party khud le jayegi', /client collects/]] as [string, RegExp][]) {
-    const r: any = await answerQuestion(fakeAdmin([dq]), { phone: '91', name: 'Test' }, t, {}, deps)
+    const r: any = await answerQuestion(fakeAdmin([dq]), { phone: '91', name: 'Test' }, t, {}, deps, '*J-711* (IAC): Who takes the cargo out?')
     if (!r || !want.test(r.reply)) fail(`"${t}" to "who takes it out?" → ${r?.reply}`)
   }
 }

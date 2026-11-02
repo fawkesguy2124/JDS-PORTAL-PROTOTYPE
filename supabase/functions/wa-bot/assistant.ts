@@ -261,7 +261,10 @@ const FIELD_WORDS = /\b(mode|fcl|lcl|air|bpt|mbpt|eta|line|cfs|free\s*days?|prio
 export function changeParts(text: string): string[] {
   const s = String(text || '')
   const job = s.match(/\bJ[-. ]*0*(\d{1,5})\b/i)
-  const pieces = s.split(/\s*(?:[,;&]|\baur\b|\band\b|\balso\b|\bplus\b)\s*/i).map((x) => x.trim()).filter(Boolean)
+  // a note keeps its whole text ("note: client called and BL pending" is one note)
+  const at = s.search(/\b(note|remark|comment|likh\w*)\b/i)
+  const head = at > 0 ? s.slice(0, at) : at === 0 ? '' : s
+  const pieces = [...head.split(/\s*(?:[,;&]|\baur\b|\band\b|\balso\b|\bplus\b)\s*/i), ...(at >= 0 ? [s.slice(at)] : [])].map((x) => x.trim()).filter(Boolean)
   if (pieces.length < 2 || pieces.filter((p) => FIELD_WORDS.test(p)).length < 2) return []
   const parts: string[] = []
   for (const p of pieces) { if (FIELD_WORDS.test(p) || !parts.length) parts.push(p); else parts[parts.length - 1] += ` ${p}` }
@@ -280,7 +283,14 @@ export function mergeProposals(a: Pending, b: Pending): Pending {
 // Is the question Hindi / Hinglish? (Hindi script is already written in English letters by
 // the time it gets here: toRoman in media.ts.) Two or more everyday Hindi words = Hinglish.
 const HINDI_WORDS = /\b(kya|kyaa|hai|hain|hei|ka|ki|ke|ko|kab|kahan|kaha|kidhar|kaun|kitna|kitne|kitni|kaise|kaisa|bhejo|bhej|batao|bata|bataiye|karo|kar|kardo|nahi|nahin|nhi|abhi|aaj|kal|mein|mai|se|wala|wali|hua|hui|gaya|gayi|chahiye|dikhao|dekho|bhai|ji|haan|han|aur|bhi|tak|pe|par|kuch|sab|apna|mera|mujhe|humko|hamara|raha|rahi|rahe|hoga|hogi|ho|lo|do|diya|dena|lena|wapas|jaldi|dekh)\b/gi
-export const isHinglish = (text: string) => (String(text || '').match(HINDI_WORDS) || []).length >= 2
+// (one Hindi word is enough when nothing in it is English: "J-711 kab aayega", "J-711 ka status")
+const ENGLISH_WORDS = /\b(the|is|are|was|of|when|what|where|which|who|how|will|please|pls|plz|can|could|has|have|did|does|for|to|my|our|your|show|tell|give|send|i|a|an|it|you|me|we|this|that|in|on|at|with|from|all|any|and|add|now)\b/gi
+const MORE_HINDI = /\b(aayega|aaega|ayega|aaya|aya|aayi|aai|hoga|milega|pahuncha|pahucha|pohcha|nikla|nikli|bacha|bache|baaki|baki|kyu|kyun|kaisa|batana|bolo|samjha)\b/gi
+export const isHinglish = (text: string) => {
+  const t = String(text || '')
+  const hindi = (t.match(HINDI_WORDS) || []).length + (t.match(MORE_HINDI) || []).length
+  return hindi >= 2 || (hindi === 1 && !(t.match(ENGLISH_WORDS) || []).length)
+}
 // runs one tool call: notes it for the chat history; a change is only PREPARED
 // (checked and kept for the person's YES), never saved here
 async function useTool(ctx: Ctx, name: string, args: any, data: any, person: Person): Promise<unknown> {

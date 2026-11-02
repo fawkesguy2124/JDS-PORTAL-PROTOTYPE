@@ -12,7 +12,7 @@ import { docFill } from './docfill.ts'
 
 type Person = { id: string; name: string; role: string; phone: string; level?: string }
 type Admin = any
-export type Pending = { action: string; job_id: string; job_no: string; args: Record<string, any>; summary: string; at: string }
+export type Pending = { action: string; job_id: string; job_no: string; args: Record<string, any>; summary: string; at: string; seen?: string | null }
 
 export const PENDING_MINUTES = 15
 const TRUCK_RE = /^([A-Z]{2}\d{1,2}[A-Z]{0,3}\d{3,4}|\d{2}BH\d{4}[A-Z]{1,2})$/
@@ -169,7 +169,8 @@ function prepareOne(args: any, data: any, person: Person, extra: ChangeContext =
   const job = jobsFor(person, data.jobs).find((j: any) => norm(j.job_no) === ref || norm(j.job_no).replace(/^J/, '') === num)
   if (!job) return { ok: false, error: `Job ${args?.job || ''} was not found.` }
   const who = `${job.job_no}${job.client ? ` (${job.client})` : ''}`
-  const p = (summary: string, a: Record<string, any> = {}) => ({ ok: true as const, pending: { action, job_id: job.id, job_no: job.job_no, args: a, summary, at: new Date().toISOString() } })
+  // seen: the job as it was when asked; a YES never overwrites a change made since (below)
+  const p = (summary: string, a: Record<string, any> = {}) => ({ ok: true as const, pending: { action, job_id: job.id, job_no: job.job_no, args: a, summary, at: new Date().toISOString(), seen: job.updated_at || null } })
 
   if (action === 'mark_delivered') {
     if (Number(job.stage) >= 10) return { ok: false, error: `${job.job_no} is already marked delivered.` }
@@ -345,8 +346,12 @@ export type ApplyDeps = { tell?: (phone: string, text: string, jobNo: string | n
 export async function applyChange(admin: Admin, pending: Pending, person: Person, deps: ApplyDeps = {}): Promise<string> {
   // several jobs: each change made on its own, one line per job
   if (pending.action === 'batch') {
+    const items = (pending.args?.items || []) as Pending[]
+    // all checked first (each change below moves the job's time on, so not one by one)
+    const moved = await changedSince(admin, items)
+    if (moved.length) return movedText(moved)
     const out: string[] = []
-    for (const item of (pending.args?.items || []) as Pending[]) out.push(await applyChange(admin, item, person, deps))
+    for (const item of items) out.push(await applyChange(admin, { ...item, seen: null }, person, deps))
     // a paper sent on WhatsApp: one plain line when all went well, else only what didn't
     if (pending.args?.done) {
       const bad = out.filter((x) => !x.startsWith('✅'))
@@ -421,6 +426,7 @@ They should send any message to the bot to start. While the bot uses Meta's test
   }
   const { data: job, error: readErr } = await admin.from('jobs').select('*').eq('id', pending.job_id).maybeSingle()
   if (readErr || !job) return `❌ Could not find ${pending.job_no} any more. Nothing was changed.`
+  if (isMoved(pending, job)) return movedText([job.job_no])
   const by = `${person.name} via WhatsApp`
   const now = new Date().toISOString()
   const log = (type: string, title: string, note: string, meta: Record<string, unknown> = {}) => admin.from('activity_log').insert({
@@ -592,24 +598,64 @@ They should send any message to the bot to start. While the bot uses Meta's test
   return 'This change cannot be made by WhatsApp. Nothing was changed.'
 }
 
+// Someone changed the job (in the portal, or another person on WhatsApp) between "Shall I go
+// ahead?" and the YES: nothing is overwritten, the person is asked to send it again so the
+// bot works from the job as it is now (code check 3 Nov 2026: a YES put back an ETA a teammate
+// had just corrected). A second's slack for the clocks.
+const isMoved = (pending: Pending, job: any) => !!(pending.seen && job?.updated_at && new Date(job.updated_at).getTime() - new Date(pending.seen).getTime() > 1000)
+async function changedSince(admin: Admin, items: Pending[]): Promise<string[]> {
+  const ids = [...new Set(items.filter((x) => x.seen && x.job_id).map((x) => x.job_id))]
+  if (!ids.length) return []
+  const { data } = await admin.from('jobs').select('id, job_no, updated_at').in('id', ids)
+  const byId = new Map((data || []).map((j: any) => [j.id, j]))
+  return [...new Set(items.filter((x) => isMoved(x, byId.get(x.job_id))).map((x) => x.job_no))]
+}
+const movedText = (nos: string[]) => `⚠️ ${nos.join(', ')} was changed by someone else after I asked, so I didn't change anything (I won't overwrite their update). Please send your change again and I'll work from the latest.`
+
 // "yes" / "no" in the ways the team writes them
-export const isYes = (t: string) => /^\s*(yes|y|yess|yeah|yep|ok|okay|confirm|confirmed|haan|ha|han|haa|ji|sure|do it)\s*[.!👍]*\s*$/i.test(t)
+// a thumbs up / tick on its own (any skin tone) is a yes on WhatsApp
+const YES_EMOJI = /^\s*(?:👍(?:🏻|🏼|🏽|🏾|🏿)?|✅|👌(?:🏻|🏼|🏽|🏾|🏿)?|✔️?|☑️|🆗)+\s*$/u
+export const isYes = (t: string) => YES_EMOJI.test(t) || /^\s*(yes|y|yess|yeah|yep|ok|okay|confirm|confirmed|haan|ha|han|haa|ji|sure|do it)\s*[.!👍]*\s*$/i.test(t)
 export const isNo = (t: string) => /^\s*(no|n|nope|cancel|stop|nahi|nahin|na|mat karo|don'?t)\s*[.!]*\s*$/i.test(t)
 // the same said in a few words, as people talk or speak a voice note ("haan add karo",
 // "yes please go ahead", "theek hai", "nahi rehne do"); only used while a change is waiting
 // ("ok thanks" is a thank-you, not a yes)
 // (Hindi script is read as these letters first: toRoman in media.ts)
 const NEGATION = /\b(no|not|nahi+n?|nhi|nai|mat|don'?t|cancel|wrong|galat|wait|ruko|ruk jao|thanks?|thank you|thx|shukriya|dhanyavad|dhanyawad)\b/i
+// "no problem", "no issues, go ahead", "koi baat nahi": a yes, not a no
+const NO_PROBLEM = /^(no\s+(problem|prob|issues?|worries|tension)|koi\s+(baat|problem|dikkat)\s+(nahi+n?|nhi))\b/i
+// more than a yes: a correction or something added ("ok but date 5 Nov", "yes, also add truck
+// MH04…", "haan, J-712 pe karo") is never a plain yes; the assistant reads it with the chat
+// (code check 3 Nov 2026: these applied the OLD change and dropped the correction)
+const MORE_THAN_YES = /\d|\b(but|lekin|magar|par|pe|except|instead|only|sirf|bas|also|aur|and|plus|change\w*|badl\w*|correct\s+it|wala|wali|date|eta|truck|container|line|cfs)\b/i
 export const isYesSaid = (t: string) => {
   const s = String(t || '').trim()
-  if (s.length > 60 || NEGATION.test(s)) return false
-  return /^(yes|yess|yas|yeah|yep|ok|oke|okay|confirm|confirmed|haan|ha|han|haa|haanji|han ji|ji haan|ji han|ji|bilkul|zaroor|jarur|sure|do it|go ahead|please do|kar do|kardo|kar dijiye|kar dena|karo|add karo|add kar do|daal do|dal do|save karo|save kar do|bana do|banao|theek hai|thik hai|thik h|theek|done|correct|sahi hai|sahi|right|chalega)\b/i.test(s)
+  if (YES_EMOJI.test(s)) return true
+  if (s.length > 60 || MORE_THAN_YES.test(s) || isHoldSaid(s)) return false
+  if (NO_PROBLEM.test(s)) return true
+  if (NEGATION.test(s)) return false
+  return /^(yes+|yas|yeah|ya+|yup|yep|ok+|ok+y|oke|okay|k+|confirm|confirmed|haan|ha|han|haa|haanji|han ji|ji haan|ji han|ji+|jee|bilkul|zaroor|jarur|sure|of\s*course|do it|go|go ahead|proceed|please do|kar do|kardo|kar de|karde|kar dijiye|kar dena|karo|add karo|add kar do|daal do|dal do|save karo|save kar do|bana do|banao|theek hai|thik hai|thik h|theek|done|correct|sahi hai|sahi|right|fine|perfect|chalega|chalo)\b/i.test(s)
+}
+// "wait", "abhi nahi", "baad me", "not now", "let me check": not now, nothing is changed
+export const isHoldSaid = (t: string) => {
+  const s = String(t || '').trim()
+  return s.length <= 60 && /^(wait|hold|hold on|later|baad\s+m(e|ein|ai)|abhi\s+(nahi+n?|nhi|mat)|not\s+(now|yet)|ruk(o|\s+jao)?|thoda\s+ruko|ek\s+min\w*|one\s+min\w*|1\s+min\w*|let\s+me\s+(check|confirm)|(check|confirm|pata)\s+kar(ke|k|unga|ungi|ta|ti|enge|na|ke\s+batata)\b)/i.test(s)
 }
 export const isNoSaid = (t: string) => {
   const s = String(t || '').trim()
-  return s.length <= 60 && /^(no|nope|nahi+n?|nhi|nai|na|cancel|stop|mat|mat karo|don'?t|leave it|rehne do|rahne do|chhodo|chodo|chhod do|wrong|galat|ruko|ruk jao)\b/i.test(s)
+  if (NO_PROBLEM.test(s)) return false
+  return s.length <= 60 && (/^(no|nope|nahi+n?|nhi|nai|na|cancel|stop|mat|mat karo|don'?t|leave it|rehne do|rahne do|chhodo|chodo|chhod do|wrong|galat|ruko|ruk jao)\b/i.test(s) || isHoldSaid(s))
 }
 
-// "not delivered", "deliver nahi hua", "abhi deliver nahi", "still not delivered", "undelivered":
-// such a message is never turned into "mark delivered" (Jose, 2 Nov 2026)
-export const saysNotDelivered = (t: string) => /\b(not|nahi+n?|nhi|na)\s+(yet\s+|been\s+|abhi\s+)?deliver|\bdeliver\w*\s+(nahi+n?|nhi|not|na)\b|\bundeliver|\bnot\s+(yet\s+)?(been\s+)?received\b/i.test(String(t || ''))
+// "not delivered", "deliver nahi hua", "abhi deliver nahi", "still not delivered", "undelivered",
+// "client ko maal nahi mila", "didn't deliver", "delivery pending", "डिलीवर नहीं हुआ" (read as
+// "dilivar nahin hua"): such a message is never turned into "mark delivered" (Jose, 2 Nov 2026)
+const DELIV = '(?:deliv|dilev|diliv|delev|dlv)\\w*'
+const NOT_DELIVERED = new RegExp([
+  `\\b(not|nahi+n?|nhi|na|never|didn'?t|did\\s+not|hasn'?t|has\\s+not|isn'?t|is\\s+not)\\s+(yet\\s+|been\\s+|abhi\\s+|get\\s+|got\\s+|be\\s+)?${DELIV}`,
+  `\\b${DELIV}\\s+(abhi\\s+|tak\\s+)?(nahi+n?|nhi|not|na|pending|baki|baaki|hona\\s+baa?ki)\\b`,
+  '\\bundeliver',
+  '\\bnot\\s+(yet\\s+)?(been\\s+)?(received|reached)\\b',
+  '\\b(maal|cargo|goods|material|saman|samaan)\\b.*\\b(nahi+n?|nhi)\\s+(mila|pahu?n?ch\\w*|pohch\\w*|gaya|gayi)\\b',
+].join('|'), 'i')
+export const saysNotDelivered = (t: string) => NOT_DELIVERED.test(String(t || ''))

@@ -22,15 +22,33 @@ const num = (jobNo: string) => String(jobNo || '').toUpperCase().replace(/[^A-Z0
 const UNDO_WORDS = /\b(undo|un-do|revert|reverse|roll\s*back|take\s+(it|that|this)\s+back|cancel\s+(it|that|this|the\s+last|last|what)|remove\s+(it|that|this|what\s+you)|delete\s+(it|that|this|what\s+you)|put\s+(it|that)\s+back|galat|wapas|vapas|hata\s*(do|de|dijiye)|mat\s+(save|daalo|dalo)|wrong\s+(entry|post|one|job)|that'?s\s+wrong|it'?s\s+wrong|(that|it|this)\s+is\s+wrong|not\s+correct)\b/i
 // a message that names a field and a new value is a change, not an undo ("mode wapas FCL
 // kar do" = set the mode; live test 2 Nov 2026 took it as UNDO)
-const CHANGE_WORDS = /\b(mode|fcl|lcl|air|bpt|mbpt|eta|line|cfs|free\s*days?|priority|urgent|truck|trucks|rail|train|vessel|ship|client|deliver\w*|note|stage|query|assess\w*|duty|ooc|be\s*no|bl)\b/i
-export const isUndo = (t: string) => {
+const CHANGE_WORDS = /\b(mode|fcl|lcl|air|bpt|mbpt|eta|line|cfs|free\s*days?|priority|urgent|truck|trucks|rail|train|vessel|ship|client|deliver\w*|note|stage|query|assess\w*|duty|ooc|be\s*no|bl|gaadi|gadi|gaari|container|box|invoice|bill|payment|charges?|amount|cheque|maal|cargo)\b/i
+export const isUndo = (t: string, undoJobNo: string | null = null) => {
   const s = String(t || '').trim()
   if (!s || s.length > 120 || !UNDO_WORDS.test(s)) return false
   // a truck, a BE no or a container in the message: it's a new instruction, not an undo
   if (/\b[A-Z]{2}\s*\d{1,2}\s*[A-Z]{1,3}\s*\d{4}\b|\b\d{7}\b|\b[A-Z]{3}U\d{7}\b/i.test(s)) return false
-  // "undo" / "revert" said outright is an undo; "wapas", "galat", "hata do" only when
-  // nothing else is being changed
-  return /\b(undo|un-do|revert|roll\s*back)\b/i.test(s) || !CHANGE_WORDS.test(s)
+  // "undo" / "revert" said outright is an undo
+  if (/\b(undo|un-do|revert|roll\s*back)\b/i.test(s)) return true
+  // "wrong job, it's J-584" / "galat job": the post went on the wrong job
+  if (/\b(wrong|galat)\s+job\b|\bjob\s+(galat|wrong)\b/i.test(s)) return true
+  // "wapas", "galat", "hata do" only in a short message about the saved post itself: never one
+  // naming another job ("J-712 ka invoice galat hai"), never a sentence ("J-711 gaadi wapas aa
+  // gayi"), never one that names what to change (code check 3 Nov 2026)
+  const nos = [...s.matchAll(/\bJ[-. ]*0*(\d{1,5})\b/gi)].map((m) => Number(m[1]))
+  const mine = String(undoJobNo || '').match(/\d+/g)?.map(Number) || []
+  if (nos.some((n) => !mine.includes(n))) return false
+  if (s.split(/\s+/).length > 6) return false
+  return !CHANGE_WORDS.test(s)
+}
+// a message correcting or removing something ("hata do", "remove", "nahi … hai", "galat",
+// "cancel", "instead"): never saved as a post, never a plain yes
+export const isCorrection = (t: string) => {
+  const s = String(t || '')
+  // a "not" / "nahi" in a real multi-line post is a remark ("Pending 2x40 not reach in cfs"):
+  // only a short message with one is a correction
+  return /\b(hata\w*|hatao|nikaal\s*do|nikal\s*do|remove\w*|delete\w*|cancel\w*|galat|wrong|instead|replace\w*|badl\w*|change\w*|correct(ion)?|sahi\s+(wala|number|no))\b/i.test(s)
+    || (s.trim().split('\n').length <= 2 && /\b(nahi+n?|nhi|nai|not|mat)\b/i.test(s))
 }
 
 export { readPost }
@@ -150,6 +168,10 @@ export async function handlePost(admin: Admin, person: Person, text: string, dat
   const today = todayIst()
   const post: any = readPost(text, { postDate: today })
   if (!post) return null
+  // a correction or a removal is never a post ("J-711 se truck MH04AB1234 hata do", "truck
+  // MH04… nahi, MH04… hai", "remove MH04… from J-711"): it goes to the assistant, which asks
+  // Yes / No (code check 3 Nov 2026: these were saved straight on as a NEW truck)
+  if (isCorrection(text)) return null
   // a BE written in a sentence, with neither the group (Gr.) nor the RMS / APR / ACL line of a
   // real BE card, goes through "Shall I go ahead?" like any typed change (live test 2 Nov
   // 2026: "J-598 ka BE 1234567 dated 15.11.2026" was saved straight onto a real job)

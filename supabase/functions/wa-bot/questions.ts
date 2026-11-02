@@ -132,7 +132,9 @@ export async function runQuestions(admin: Admin, data: any, team: Person[], deps
   if (!opts.test) {
     const dueKeys = new Set(due.map((q) => q.key))
     const { data: open } = await admin.from('bot_questions').select('key').eq('status', 'open')
-    const gone = (open || []).map((r: any) => r.key).filter((k: string) => !dueKeys.has(k))
+    // (a question asked after a reply about a job, "who takes the cargo out?", is not in the due
+    // list: it stays open for its tap; code check 3 Nov 2026 found it closed within 5 minutes)
+    const gone = (open || []).map((r: any) => r.key).filter((k: string) => !dueKeys.has(k) && !/:deliver(_cfs)?$/.test(k))
     if (gone.length) await admin.from('bot_questions').update({ status: 'resolved' }).in('key', gone)
   }
   const askable = due.filter((q) => {
@@ -185,7 +187,7 @@ const MOVE_WORDS: [RegExp, string][] = [
 // person in the last 2 days). Returns the reply to send, or null when the message is about
 // something else (it then goes on to the posts reader and the assistant as usual).
 export async function answerQuestion(admin: Admin, person: Person, text: string, data: any,
-  deps: { markDelivered: (jobId: string, jobNo: string) => Promise<string>; change: (action: Record<string, unknown>) => Promise<string> }): Promise<{ reply: string; undo?: any } | null> {
+  deps: { markDelivered: (jobId: string, jobNo: string) => Promise<string>; change: (action: Record<string, unknown>) => Promise<string> }, lastBot = ''): Promise<{ reply: string; undo?: any } | null> {
   const s = String(text || '').trim()
   let q: any = null
   let ans: string | null = null
@@ -207,6 +209,17 @@ export async function answerQuestion(admin: Admin, person: Person, text: string,
       : YES.test(s) || LATER.test(s))
     q = byJob || (open.filter(fits).length === 1 ? open.filter(fits)[0] : open.length === 1 && fits(open[0]) ? open[0] : null)
     if (!q) return null
+    // a typed answer is only an answer when it is clearly one (code check 3 Nov 2026: "J-711 ka
+    // OOC ho gaya?" marked an open "J-583 delivered?" question's job delivered):
+    //  • it names no other job,
+    //  • it is not itself a question,
+    //  • it names this job, or comes straight after the bot asked about it,
+    //  • it is a short reply, not a sentence about something else
+    const qNo = Number(String(q.job_no).replace(/\D/g, ''))
+    if ([...s.matchAll(/\bJ[-. ]*0*(\d{1,5})\b/gi)].some((m) => Number(m[1]) !== qNo)) return null
+    if (/\?|^\s*(kya|what|is|are|was|did|has|when|where|which|who|how|kab|kaha|kahan|kidhar|kaun|kitna|kitne|status)\b|\bkya\s*$/i.test(s)) return null
+    if (!byJob && !new RegExp(`\\bJ-?${qNo}\\b`, 'i').test(lastBot)) return null
+    if (s.split(/\s+/).length > 10) return null
     // "1 MH43U3271" / "J-583 MH43U3271": the number or job no in front is not part of the answer
     rest = s.replace(/^\d\s*[.):-]?\s+/, '').replace(new RegExp(`\\bJ[-. ]*0*${String(q.job_no).replace(/\D/g, '')}\\b`, 'i'), ' ').trim()
     if (SKIP.test(rest)) ans = 'skip'
@@ -261,7 +274,7 @@ export async function answerQuestion(admin: Admin, person: Person, text: string,
     return null
   }
   if (q.kind === 'duty') {
-    if (ans !== 'yes') return null
+    if (ans !== 'yes' || (!tapped && /^(ok+|oke|okay|k+|ji+|hmm+)\s*[.!]*$/i.test(rest))) return null
     const r = await deps.change({ action: 'set_be_stage', job, stage: 'duty_paid' })
     if (failed(r)) return { reply: r }
     await close('answered', 'duty paid')
@@ -292,7 +305,8 @@ export async function answerQuestion(admin: Admin, person: Person, text: string,
     if (r.saved) await close('answered', rest)
     return { reply: r.reply, undo: r.undo }
   }
-  // delivered?
+  // delivered? ("ok" / "ji" alone is a nod, not "yes, it's delivered")
+  if (ans === 'yes' && !tapped && /^(ok+|oke|okay|k+|ji+|hmm+)\s*[.!]*$/i.test(rest)) return null
   if (ans === 'yes') { await close('answered', s); return { reply: await deps.markDelivered(q.job_id, job) } }
   return null
 }
