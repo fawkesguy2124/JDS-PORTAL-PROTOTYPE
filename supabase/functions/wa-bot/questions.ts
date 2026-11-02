@@ -217,9 +217,18 @@ export async function answerQuestion(admin: Admin, person: Person, text: string,
     //  • it is a short reply, not a sentence about something else
     const qNo = Number(String(q.job_no).replace(/\D/g, ''))
     if ([...s.matchAll(/\bJ[-. ]*0*(\d{1,5})\b/gi)].some((m) => Number(m[1]) !== qNo)) return null
-    if (/\?|^\s*(kya|what|is|are|was|did|has|when|where|which|who|how|kab|kaha|kahan|kidhar|kaun|kitna|kitne|status)\b|\bkya\s*$/i.test(s)) return null
-    if (!byJob && !new RegExp(`\\bJ-?${qNo}\\b`, 'i').test(lastBot)) return null
-    if (s.split(/\s+/).length > 10) return null
+    // (question words anywhere: live test 3 Nov 2026, "kal kaunsa ship aa raha hai" was taken as
+    // "ask me tomorrow" for J-598's BE question; "J-711 delivered hai kya" as its "filed")
+    if (/\?|^\s*(is|are|was|did|has)\b|\b(kya|kaun\w*|kab|kaha|kahan|kidhar|kitn\w+|what|which|where|when|who|how|why|status)\b/i.test(s)) return null
+    // right after the bot asked (its last message, at most 6 hours ago), or naming the job
+    const fresh = Date.now() - new Date(q.last_asked_at || 0).getTime() < 6 * 36e5
+    if (!byJob && !(fresh && new RegExp(`\\bJ-?${qNo}\\b`, 'i').test(lastBot))) return null
+    // a short reply, one thing ("container abhi nahi pata, baad me dunga. job bana do" closed
+    // J-674's question)
+    if (s.split(/\s+/).length > 7 || /[.!]\s+\S/.test(s)) return null
+    // a BE number that is another job's BE is about that job ("BE 4569416" is J-689's)
+    const be7 = s.match(/\b\d{7}\b/)?.[0]
+    if (be7 && (data?.jobs || []).some((j: any) => String(j.be_no || '').trim() === be7 && j.job_no !== q.job_no)) return null
     // "1 MH43U3271" / "J-583 MH43U3271": the number or job no in front is not part of the answer
     rest = s.replace(/^\d\s*[.):-]?\s+/, '').replace(new RegExp(`\\bJ[-. ]*0*${String(q.job_no).replace(/\D/g, '')}\\b`, 'i'), ' ').trim()
     if (SKIP.test(rest)) ans = 'skip'
@@ -291,7 +300,8 @@ export async function answerQuestion(admin: Admin, person: Person, text: string,
     const be = rest.match(/\b(\d{7})\b/)
     if (!be) {
       // "Filed": the number and date are the next thing to ask (the question stays open)
-      if (ans === 'yes') {
+      // ("ok" alone is a nod, not "it's filed")
+      if (ans === 'yes' && (tapped || !/^(ok+|oke|okay|k+|ji+|hmm+)\s*[.!]*$/i.test(rest))) {
         await admin.from('bot_questions').update({ answer: 'filed', answered_at: new Date().toISOString() }).eq('key', q.key)
         return { reply: `Great! What's the BE number and date for ${job}? Type it or just say it.` }
       }

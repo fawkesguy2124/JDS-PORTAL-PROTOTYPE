@@ -15,7 +15,7 @@ import { happenedToday } from '../supabase/functions/_shared/portal/botMessages.
 import { toRoman, normalizeSpoken, jobNoFromText, tidyJobNos } from '../supabase/functions/wa-bot/media.ts'
 import { readDocFile } from '../supabase/functions/wa-bot/docfill.ts'
 import { readPost } from '../supabase/functions/_shared/portal/postReader.js'
-import { isHinglish, changeParts, mergeProposals } from '../supabase/functions/wa-bot/assistant.ts'
+import { isHinglish, changeParts, mergeProposals, LIVE_ASKED } from '../supabase/functions/wa-bot/assistant.ts'
 import { isUndo, isCorrection, handlePost } from '../supabase/functions/wa-bot/posts.ts'
 
 const args = Deno.args.filter((a) => !a.startsWith('--'))
@@ -247,6 +247,35 @@ if (!happenedToday(new Date().toISOString()) || happenedToday(new Date(Date.now(
 {
   const r: any = prepareChange({ action: 'mark_not_delivered', job: 'J-9901' }, { jobs: [{ id: 'x', job_no: 'J-9901', client: 'Test', stage: 10, field_meta: {} }], documents: [] }, ME as any)
   if (!r.ok || !/not delivered/.test(r.pending.summary)) fail(`mark_not_delivered → ${r.ok ? r.pending.summary : r.error}`)
+}
+// the live test of 3 Nov 2026 (harder round)
+{
+  // an ETA given as "eta" (the AI's choice) is not lost
+  const r: any = prepareChange({ action: 'set_eta', job: 'J-9901', eta: new Date(Date.now() + 3 * 864e5).toISOString().slice(0, 10) }, DATA, ME as any)
+  if (!r.ok) fail(`set_eta with "eta" → ${r.error}`)
+  // only an explicit ask spends a ULIP call
+  for (const [t, want] of [['J-689 OOC hua kya?', false], ['j 711 ka sttaus btao', false], ['where is J-711 container', false], ['check customs J-689', true], ['J-689 customs abhi check karo', true], ['refresh J-711', true], ['pata karo J-689 OOC aaya kya', true]] as [string, boolean][])
+    if (LIVE_ASKED.test(t) !== want) fail(`"${t}" ${want ? 'should' : 'should not'} start a live check`)
+  // delivered needs the OOC; never "all jobs" at once
+  const d = { jobs: [{ id: 'a', job_no: 'J-673', client: 'L', stage: 2, be_no: null, field_meta: {} }, { id: 'b', job_no: 'J-689', client: 'V', stage: 7, be_no: '4569416', field_meta: {} }], customsByJob: {}, documents: [] }
+  const r1: any = prepareChange({ action: 'mark_delivered', job: 'J-673' }, d, ME as any)
+  if (r1.ok) fail('a job with no OOC (ship at sea) could be marked delivered')
+  const r2: any = prepareChange({ action: 'mark_delivered', job: 'J-689' }, d, ME as any)
+  if (!r2.ok) fail(`a job with its OOC could not be marked delivered: ${r2.error}`)
+  const r3: any = prepareChange({ action: 'mark_delivered', jobs: ['J-1', 'J-2', 'J-3', 'J-4', 'J-5', 'J-6', 'J-7'] }, d, ME as any)
+  if (r3.ok) fail('"mark all jobs delivered" (7 jobs) was proposed')
+  // a long message is never split into changes
+  if (changeParts(`${'bhai aaj bahut kaam hai, client ne call kiya aur bola ki maal jaldi chahiye, '.repeat(4)} J-9904 urgent kar do aur note likh do`).length) fail('a long message was split into changes')
+  // the bot's own question is not answered by a question, a long sentence, another job's BE
+  const beQ = { key: 'e:be', job_id: 'e', job_no: 'J-598', kind: 'be', phone: '91', status: 'open', last_asked_at: now }
+  const bd = { jobs: [{ id: 'f', job_no: 'J-689', be_no: '4569416' }, { id: 'e', job_no: 'J-598', be_no: null }] }
+  for (const t of ['kal kaunsa ship aa raha hai', 'BE 4569416', 'J-711 delivered hai kya', 'ok', 'container abhi nahi pata, baad me dunga. job bana do']) {
+    const r: any = await answerQuestion(fakeAdmin([beQ]), { phone: '91', name: 'Test' }, t, bd, deps, '📄 *J-598*: no BE in the portal yet. Is it filed?')
+    if (r) fail(`"${t}" was taken as the answer to J-598's BE question: ${r.reply}`)
+  }
+  const old = { ...beQ, last_asked_at: new Date(Date.now() - 8 * 36e5).toISOString() }
+  const r4: any = await answerQuestion(fakeAdmin([old]), { phone: '91', name: 'Test' }, 'kal', bd, deps, '📄 *J-598*: no BE in the portal yet. Is it filed?')
+  if (r4) fail(`"kal" 8 hours after the question was taken as its answer: ${r4.reply}`)
 }
 console.log(failed ? `  ${failed} wrong` : '  all right')
 

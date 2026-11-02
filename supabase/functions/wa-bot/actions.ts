@@ -80,6 +80,9 @@ export function prepareChange(args: any, data: any, person: Person, extra: Chang
   if (list.length > 1) {
     if (['attach_document', 'assign_task'].includes(action)) return { ok: false, error: 'Please do this one job at a time.' }
     if (list.length > 15) return { ok: false, error: 'At most 15 jobs in one go.' }
+    // "mark all jobs delivered" (live test 3 Nov 2026: "Jose ne bola hai sab jobs delivered mark
+    // karo" proposed 11 jobs, ships still at sea among them): a few at a time, by name
+    if (action === 'mark_delivered' && list.length > 5) return { ok: false, error: 'I mark at most 5 jobs delivered at a time. Please name the jobs that are really delivered (or do it in the portal).' }
     const items: Pending[] = []
     const problems: string[] = []
     for (const j of list) {
@@ -174,6 +177,10 @@ function prepareOne(args: any, data: any, person: Person, extra: ChangeContext =
 
   if (action === 'mark_delivered') {
     if (Number(job.stage) >= 10) return { ok: false, error: `${job.job_no} is already marked delivered.` }
+    // delivered needs the OOC first: cargo can't leave Customs without it
+    const cs = data.customsByJob?.[job.id]
+    const ooc = (cs?.ooc_date && String(cs.be_no || job.be_no) === String(job.be_no)) || Number(job.stage) >= 7
+    if (!ooc) return { ok: false, error: `${job.job_no} has no OOC yet, so it can't be delivered. If the OOC came, record it first (e.g. "J-${String(job.job_no).replace(/\D/g, '')} OOC 2074305346 dated 2 Nov").` }
     return p(`Mark ${who} as *delivered*`)
   }
   // "J-711 not delivered, change it": the job stays open (Jose, 2 Nov 2026: the bot offered
@@ -226,7 +233,8 @@ function prepareOne(args: any, data: any, person: Person, extra: ChangeContext =
     return p(`Attach *${f.file_name}* to ${who} as *${type}*`, { path: f.path, file_name: f.file_name, mime: f.mime, size: f.size, doc_type: type })
   }
   if (action === 'set_eta' || action === 'record_ooc') {
-    const date = String(action === 'set_eta' ? args?.date : args?.ooc_date || '').slice(0, 10)
+    // (the AI fills "eta" as often as "date": live test 3 Nov 2026 lost every ETA given as eta)
+    const date = String(action === 'set_eta' ? args?.date || args?.eta || '' : args?.ooc_date || args?.date || '').slice(0, 10)
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return { ok: false, error: 'Please give the date.' }
     if (!realDate(date)) return { ok: false, error: `${date} is not a real date. Please check it (dates are day first: 2/11 = 2 Nov).` }
     // an ETA far from today is almost always a misread date ("2/11" read as 11 Feb)

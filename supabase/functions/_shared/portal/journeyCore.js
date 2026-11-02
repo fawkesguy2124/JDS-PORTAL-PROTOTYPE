@@ -794,7 +794,10 @@ export function containerWhere(row, job) {
     if (mv && mv.at >= trip.exitAt) return { code: mv.mode === 'rail' ? 'rail' : 'road', label: `${mv.mode === 'rail' ? 'On rail' : 'On the road'}${mv.place ? ` · ${mv.place}` : ''}`, since: mv.at, place: mv.place }
     return { code: 'out', label: `Left ${trip.exitFrom || 'CFS'} with cargo`, since: trip.exitAt, place: null }
   }
-  if (trip.toCfsSince) return { code: 'to_cfs', label: 'On the way to the CFS', since: trip.toCfsSince, place: null }
+  // (after 12 hours a Port Out has usually reached the CFS and only the gate-in is missing from
+  // the port systems: said so, not "on the way" for days; live test 3 Nov 2026, J-584 "on the way
+  // to the CFS since 26 Oct")
+  if (trip.toCfsSince) return { code: 'to_cfs', label: Date.now() - new Date(trip.toCfsSince).getTime() > 12 * 3600e3 ? 'Left the port for the CFS (gate-in not recorded)' : 'On the way to the CFS', since: trip.toCfsSince, place: null }
   const ms = tripEvents(row, job, trip)
   const last = ms.at(-1)
   if (last && ON_RAIL.test(NAME(last))) {

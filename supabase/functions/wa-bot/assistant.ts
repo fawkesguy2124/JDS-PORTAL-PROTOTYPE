@@ -144,7 +144,7 @@ async function callGemini(model: string, body: unknown, key: string, signal: Abo
 // exactly what was looked at last time
 export async function askAssistant(question: string, history: Turn[], data: unknown, person: Person, opts: { checkCustoms?: Ctx['checkCustoms']; server?: ServerTools; change?: ChangeContext } = {}): Promise<{ text: string | null; note: string; checked: string[]; proposal: Pending | null }> {
   const used: string[] = []
-  const ctx: Ctx = { used, proposal: null, checkCustoms: opts.checkCustoms, server: opts.server, change: opts.change, lang: isHinglish(question) ? 'hinglish' : 'english' }
+  const ctx: Ctx = { liveAsked: LIVE_ASKED.test(question), used, proposal: null, checkCustoms: opts.checkCustoms, server: opts.server, change: opts.change, lang: isHinglish(question) ? 'hinglish' : 'english' }
   const notes: string[] = []
   // BOT_AI_FIRST=nvidia puts NVIDIA before Groq (to compare the two)
   const first = (Deno.env.get('BOT_AI_FIRST') || 'groq').trim()
@@ -230,7 +230,9 @@ export const needsData = (q: string) => {
 }
 // say: the bot's own fixed sentences for what an action did (never the AI's wording);
 // facts: every tool answer, for checking the reply before it goes out
-type Ctx = { used: string[]; proposal: Pending | null; checkCustoms?: (job: string) => Promise<unknown>; server?: ServerTools; change?: ChangeContext; done?: Map<string, unknown>; say?: string[]; facts?: string[]; readTools?: boolean; cards?: string[]; lang?: 'english' | 'hinglish' }
+const LIVE_TOOLS = ['check_customs_now', 'check_customs_many', 'container_now', 'check_truck_now', 'find_ship_now', 'vehicle_check_now']
+export const LIVE_ASKED = /\b(check\w*|chek\w*|chk|recheck|re-check|live|refresh\w*|abhi\s+(dekh\w*|pata\s+kar\w*)|dekh\s*(ke|kar)\s+bata\w*|pata\s+kar\w*|right\s+now|icegate|fastag|vahan|ldb|ulip|track\s+(karo|kar\s+do|it|now))\b/i
+type Ctx = { liveAsked?: boolean; used: string[]; proposal: Pending | null; checkCustoms?: (job: string) => Promise<unknown>; server?: ServerTools; change?: ChangeContext; done?: Map<string, unknown>; say?: string[]; facts?: string[]; readTools?: boolean; cards?: string[]; lang?: 'english' | 'hinglish' }
 // the last reply came from a change request (it may have asked for a missing detail)
 // (not after the bot already asked YES/NO: then the next message is a new question)
 const afterChangeTry = (history: Turn[]) => {
@@ -260,6 +262,9 @@ function systemText(person: Person, data: unknown, ctx: Ctx) {
 const FIELD_WORDS = /\b(mode|fcl|lcl|air|bpt|mbpt|eta|line|cfs|free\s*days?|priority|urgent|truck|rail|train|vessel|ship|deliver\w*|stage|query|assess\w*|duty|ooc|be|bl|container|owner|imo|collect\w*|leaves|note)\b/i
 export function changeParts(text: string): string[] {
   const s = String(text || '')
+  // a long message is a story, not a list of changes: never split (live test 3 Nov 2026: an
+  // 800-character message came back with two changes nobody asked for)
+  if (s.length > 220) return []
   const job = s.match(/\bJ[-. ]*0*(\d{1,5})\b/i)
   // a note keeps its whole text ("note: client called and BL pending" is one note)
   const at = s.search(/\b(note|remark|comment|likh\w*)\b/i)
@@ -311,6 +316,14 @@ async function runOneTool(ctx: Ctx, name: string, args: any, data: any, person: 
     const said = `🔒 Your WhatsApp access is *${LEVEL_LABEL[person.level || 'view']}*, so I can't do that (it needs ${LEVEL_LABEL[need]} access). Ask Jose if you need it.`
     if (!(ctx.say ||= []).includes(said)) ctx.say.push(said)
     return { not_allowed: true, tell_the_person: 'This person may not do this. Say nothing about it; the bot adds its own line.' }
+  }
+  // a live check (Customs, a container, a truck, a ship, truck papers) spends a real ULIP / FASTag
+  // call: only when the person asks for one ("check customs J-689", "abhi check karo", "right
+  // now"); a plain question is answered from the portal, which refreshes itself (live test
+  // 3 Nov 2026: "J-689 OOC hua kya?" asked Customs although the OOC was already in the portal)
+  if (LIVE_TOOLS.includes(name) && !ctx.liveAsked) {
+    ctx.used[ctx.used.length - 1] += ' → not run (no live check asked)'
+    return { not_run: 'Not checked live: a live check runs only when the person asks for one (e.g. "check customs J-689"). Answer from the portal data and its time; you may say they can ask for a live check.' }
   }
   if (name === CUSTOMS_TOOL.name) {
     if (!ctx.checkCustoms) return { not_available: 'Checking Customs is not possible here.' }

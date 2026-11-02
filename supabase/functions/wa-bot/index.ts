@@ -299,6 +299,8 @@ async function runMorning(admin: Admin) {
   return out
 }
 
+// the AI writing a confirmation or a "done" itself (never allowed: see the assistant reply below)
+const AI_CLAIMS_CHANGE = /reply\s*\*?yes|shall\s+i\s+(go\s+ahead|proceed|do|make|set|save|update|mark|add)|should\s+i\s+(go\s+ahead|proceed|set|save|update|mark|add)|do\s+you\s+want\s+me\s+to|kar\s+(du|doon|dun)\s*\?|✅\s*done|^\s*\**done\b|\b(i'?ve|i\s+have)\s+(set|saved|updated|marked|added|changed|recorded|removed)|\bmaine\s+(set|save|update|mark|add)\s*kar\s+diya/im
 const QUIET_FROM = 22
 const QUIET_TO = 7
 async function runAlerts(admin: Admin) {
@@ -396,6 +398,8 @@ function customsChecker(admin: Admin, person: Person, data: any, opts: { test?: 
     if (!/^\d{7}$/.test(String(job.be_no || '').trim()) || !job.be_date) return { not_possible: `${job.job_no} has no BE number and date yet, so Customs cannot be asked.` }
     const { data: cs } = await admin.from('customs_status').select('be_no, checked_at, ooc_no, ooc_date').eq('job_id', job.id).maybeSingle()
     const sameBe = !!cs && String(cs.be_no) === String(job.be_no)
+    // the OOC is already in: Customs has nothing new to say, so no ULIP call is spent
+    if (sameBe && cs.ooc_date) return { not_possible: `${job.job_no} already has its OOC${cs.ooc_no ? ` (OOC ${cs.ooc_no})` : ''} dated ${istDay(cs.ooc_date)}, so Customs was not asked again.` }
     const mins = sameBe && cs.checked_at ? (Date.now() - new Date(cs.checked_at).getTime()) / 60000 : Infinity
     if (mins < BOT_CHECK_GAP_MIN) {
       return {
@@ -819,7 +823,10 @@ async function handleInbound(admin: Admin, payload: any) {
       }
       // a proposed change: the bot itself asks for YES, in fixed words
       if (ask) reply = confirmText(ask)
-      else if (ai.text && /reply\s*\*?yes/i.test(ai.text)) reply = "I couldn't prepare that change. Please send it again in one message with all the details, for example: record BE 1234567 dated 18 Oct on J-509."
+      // the AI's own words never ask "Shall I go ahead?" or say a change is done: only a real
+      // proposal (with buttons) or a real save does (live test 3 Nov 2026: "haan" after the AI's
+      // own question got "✅ Done: ETA set" while nothing was saved)
+      else if (ai.text && AI_CLAIMS_CHANGE.test(ai.text)) reply = isHinglish(text) ? 'Kuch nahi badla: ye change main taiyaar nahi kar paaya. Ek hi message me poori detail ke saath dobara bhejo, jaise: J-509 ka ETA 5 Nov.' : "Nothing was changed: I couldn't prepare that change. Please send it again in one message with all the details, for example: set the ETA of J-509 to 5 Nov."
       else reply = ai.text ? (askedForLink(text) ? toWhatsApp(ai.text) : noLinks(toWhatsApp(ai.text))) : "⏳ The AI is busy right now, so I couldn't answer that question. Please ask again in a minute.\n\nThese always work instantly: a job no (J-193), a container no, a BE no, SUMMARY or URGENT."
       if (!ai.text && !ask) await recordFailure(admin, person.phone, 'the AI did not answer', String(ai.note || 'no answer').slice(0, 300))
     }
@@ -828,6 +835,17 @@ async function handleInbound(admin: Admin, payload: any) {
     if (pending && live && !isYes(text) && !isYesSaid(text) && !isNo(text) && !isNoSaid(text) && pending.summary !== ask?.summary) {
       const was = pending.summary.replace(/\*/g, '').replace(/^•\s*/gm, '').split('\n').join('; ')
       reply = `${isHinglish(text) ? `(Pichla change nahi kiya: ${was}. Chahiye to dobara bolo.)` : `(I didn't make the earlier change: ${was}. Say it again if you still want it.)`}\n\n${reply}`
+    }
+    // two change messages sent one after the other ("J-9904 line MSC", "J-9904 CFS Gateway"): the
+    // one prepared meanwhile is asked together with this one, never dropped without a word (live
+    // test 3 Nov 2026: "haan" made only the line change, the CFS one vanished)
+    if (ask) {
+      const { data: nowRow } = await admin.from('bot_inbox').select('pending').eq('phone', person.phone).maybeSingle()
+      const other: any = nowRow?.pending
+      if (other && other.action !== 'undo_post' && other.at && new Date(other.at).getTime() > started && other.summary !== ask.summary) {
+        ask = mergeProposals(other, ask)
+        reply = confirmText(ask)
+      }
     }
     // (one waiting slot: a Yes / No question goes in it, carrying the undo of an earlier post)
     if (ask) await admin.from('bot_inbox').update({ pending: undoNext ? { ...ask, undo: undoNext } : ask }).eq('phone', person.phone)
@@ -840,7 +858,9 @@ async function handleInbound(admin: Admin, payload: any) {
     if (!delivered.ok) await recordFailure(admin, person.phone, 'the reply was not delivered', delivered.error || 'WhatsApp refused it')
     for (const extra of after) await send(person.phone, extra)
     const note = checked.length ? `\n[checked: ${checked.join('; ').slice(0, 400)}]` : ''
-    const followUp = await askFollowUp(admin, person, text, data, { asked: !!ask, answered: !!answered }).catch((e) => { console.warn(`[wa-bot] follow-up: ${(e as Error).message}`); return null })
+    // (never a second question when the reply already asks one: live test 3 Nov 2026, a "yes" to
+    // the first was taken for the second)
+    const followUp = await askFollowUp(admin, person, text, data, { asked: !!ask || /\?\s*$/.test(String(reply)), answered: !!answered }).catch((e) => { console.warn(`[wa-bot] follow-up: ${(e as Error).message}`); return null })
     const next = [...history, { role: 'user', text: String(text).slice(0, 500) }, { role: 'model', text: `${String(reply).slice(0, 1500)}${note}` }, ...(followUp ? [{ role: 'model', text: followUp }] : [])].slice(-10)
     await admin.from('bot_inbox').update({ history: next }).eq('phone', person.phone)
     // the window is open again: what was held for this person goes out now
