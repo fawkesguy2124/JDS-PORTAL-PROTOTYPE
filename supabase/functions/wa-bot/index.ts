@@ -171,6 +171,9 @@ type ListRow = { id: string; title: string; description?: string }
 type Message = { text?: string; template?: Template; buttons?: Button[]; list?: { button: string; rows: ListRow[] } }
 // under every "Shall I…?": one tap, or say it in any words (Jose, 2 Nov 2026)
 const YES_NO: Button[] = [{ id: 'YES', title: '✅ Yes' }, { id: 'NO', title: '❌ No' }]
+// the buttons of ONE question: an old Yes tapped further up the chat can only answer its own
+// question, never a newer change waiting now (edge-case hunt 3 Nov 2026)
+const yesNo = (at?: string | null): Button[] => (at ? [{ id: `YES|${at}`, title: '✅ Yes' }, { id: `NO|${at}`, title: '❌ No' }] : YES_NO)
 async function send(to: string, message: Message) {
   const cut = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1)}…` : s)
   const interactive = message.text && message.buttons?.length
@@ -471,7 +474,9 @@ async function tellTeammate(admin: Admin, team: Person[], phone: string, text: s
 // "Done" from the person a task was given to: closes it and tells whoever asked
 const SAYS_DONE = /^\s*(done|completed|finished|filed|ho\s*gaya|hogaya|kar\s*diya|kardiya|ho\s*gya)\b/i
 async function taskDoneReply(admin: Admin, team: Person[], person: Person, text: string): Promise<string | null> {
-  if (!SAYS_DONE.test(text)) return null
+  // a short plain "done", never a question or a "not done" ("ho gaya kya?", "done nahi hua", "done?"
+  // used to close the newest task and tell whoever gave it: edge-case hunt 3 Nov 2026)
+  if (!SAYS_DONE.test(text) || /\?|\b(kya|nahi+n?|nhi|not|na|abhi|baaki|baki|pending)\b/i.test(text) || text.trim().split(/\s+/).length > 8) return null
   const { data: open } = await admin.from('bot_tasks').select('*').eq('to_phone', person.phone).eq('status', 'open').order('created_at', { ascending: false })
   if (!open?.length) return null
   const no = (text.match(/\bJ-?\s?(\d{1,5})\b/i) || [])[1]
@@ -558,7 +563,7 @@ async function handleFile(admin: Admin, person: Person, m: any, data: any) {
         }
         const line = [client, mode, f.bl_no ? `${mode === 'Air' ? 'MAWB' : 'BL'} ${f.bl_no}` : null, mode !== 'Air' && boxes.length ? (boxes.length === 1 ? `Container ${boxes[0]}` : `${boxes.length} containers`) : null].filter(Boolean).join(' · ')
         await admin.from('bot_inbox').update({ pending: withUndo(pending) }).eq('phone', person.phone)
-        await reply(`📄 *${what}*\n\n*${jobNo}* isn't in the portal yet. Shall I create it?\n${line}`, userText, YES_NO)
+        await reply(`📄 *${what}*\n\n*${jobNo}* isn't in the portal yet. Shall I create it?\n${line}`, userText, yesNo(pending.at))
         return
       }
       const why = onJob ? `It is already on *${onJob.job_no}*, which is closed. `
@@ -604,7 +609,7 @@ async function handleFile(admin: Admin, person: Person, m: any, data: any) {
       summary: `Update ${j.job_no} from ${what}${adds.length ? ` (${adds.join(', ')})` : ''}`, at: new Date().toISOString(),
     }
     await admin.from('bot_inbox').update({ pending: withUndo(pending) }).eq('phone', person.phone)
-    await reply(`${head}\n\n${ask}${warn}`, userText, YES_NO)
+    await reply(`${head}\n\n${ask}${warn}`, userText, yesNo(pending.at))
     return
   }
   const job = jobFromText(`${caption} ${name}`, data?.jobs || [])
@@ -612,7 +617,7 @@ async function handleFile(admin: Admin, person: Person, m: any, data: any) {
     const res = prepareChange({ action: 'attach_document', job: job.job_no, doc_type: docType }, data, person, { lastFile })
     if (res.ok) {
       await admin.from('bot_inbox').update({ pending: withUndo(res.pending) }).eq('phone', person.phone)
-      await reply(`📎 Shall I save *${name}* to *${job.job_no}* as *${docType}*?`, userText, YES_NO)
+      await reply(`📎 Shall I save *${name}* to *${job.job_no}* as *${docType}*?`, userText, yesNo(res.pending.at))
       return
     }
     await reply(`📎 Got *${name}* and kept it safely. ${res.error}`, userText)
@@ -700,6 +705,15 @@ async function handleInbound(admin: Admin, payload: any) {
     if (m.type === 'reaction') {
       if (!live || !isYes(text)) continue // a reaction is never answered on its own
       text = 'yes'
+    }
+    // a Yes / No button of one question: only for that question
+    const tap = String(text).match(/^(YES|NO)\|(.+)$/)
+    if (tap) {
+      if (!pending || pending.at !== tap[2]) {
+        await send(person.phone, { text: tap[1] === 'YES' ? 'That Yes was for an earlier question, which is no longer waiting, so nothing was changed. Send the change again if you still want it.' : 'OK, nothing was changed.' })
+        continue
+      }
+      text = tap[1]
     }
     let reply: string | null = null
     const after: Message[] = [] // menus a tool asks to send after the reply
@@ -821,7 +835,7 @@ async function handleInbound(admin: Admin, payload: any) {
     // (a voice note is answered directly; what was heard is not repeated — Jose, 24 Oct 2026)
     // "Shall I go ahead?" gets Yes / No buttons for one tap; "haan", "theek hai" or a voice
     // note work just the same (Jose, 2 Nov 2026); a menu from a tool comes after the reply
-    const delivered = await send(person.phone, ask ? { text: reply, buttons: YES_NO } : { text: reply })
+    const delivered = await send(person.phone, ask ? { text: reply, buttons: yesNo(ask.at) } : { text: reply })
     sentReply = true
     if (!delivered.ok) await recordFailure(admin, person.phone, 'the reply was not delivered', delivered.error || 'WhatsApp refused it')
     for (const extra of after) await send(person.phone, extra)

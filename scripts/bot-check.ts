@@ -98,6 +98,19 @@ for (const t of ['J-711 se truck MH04AB1234 hata do', 'remove MH04AB1234 from J-
   if (r !== null) fail(`"${t}" was handled as a post: ${r.reply}`)
 }
 for (const t of ['J-711 MH04AB1234', 'J-711 PCM\nMH04AB1234\n1x40']) if (isCorrection(t)) fail(`a plain truck post "${t}" read as a correction`)
+// a question, a plan, the past or a request is never saved at once as a post (edge-case hunt 3 Nov 2026)
+for (const t of ['kal J-711 ka truck MH04AB1234 aayega', 'J-711 MH04AB1234 tomorrow', 'J-711 truck MH04AB1234 will load at 5 pm', 'J-711 MH04AB1234 kitne baje niklega',
+  'J-711 kal MH04AB1234 bhejenge', 'J-711 old truck MH04AB1234 tha', 'J-711 MH04AB1234 RTO details', 'J-711 BE 1234567 Gr. 2 RMS kya hai?',
+  'J-711 ka BE 1234567 dt 02.11.2026 Gr.5 RMS file karna hai', 'J-711\nBE 1234567/02.11.2026\nGr.5\nRMS\nnot yet filed']) {
+  const r = await handlePost({} as any, ME as any, t, DATA)
+  if (r !== null) fail(`"${t.replace(/\n/g, ' / ')}" was handled as a post: ${r.reply}`)
+}
+// the customs stage never goes back once the OOC is in (a late "duty paid" tap)
+{
+  const d = { jobs: [{ id: 'o', job_no: 'J-689', client: 'V', be_no: '4569416', stage: 7, field_meta: {} }], customsByJob: { o: { be_no: '4569416', ooc_date: '2026-11-02' } }, documents: [] }
+  const r: any = prepareChange({ action: 'set_be_stage', job: 'J-689', stage: 'duty_paid' }, d, ME as any)
+  if (r.ok) fail(`duty paid after the OOC was accepted: ${r.pending.summary}`)
+}
 // how a waiting change is answered (code check / probe 3 Nov 2026)
 const REPLIES: [string, string][] = [
   ['👍', 'yes'], ['👍🏽', 'yes'], ['✅', 'yes'], ['okk', 'yes'], ['kk', 'yes'], ['yup', 'yes'], ['fine', 'yes'], ['chalo', 'yes'], ['no problem', 'yes'], ['no issues go ahead', 'yes'],

@@ -277,6 +277,10 @@ function prepareOne(args: any, data: any, person: Person, extra: ChangeContext =
     const def = BE_STAGES.find((x: any) => x.id === String(args?.stage))
     if (!def) return { ok: false, error: `Say the stage: ${BE_STAGES.map((x: any) => x.short).join(', ')}.` }
     if (!/^\d{7}$/.test(String(job.be_no || '').trim())) return { ok: false, error: `${job.job_no} has no BE number yet. Record the BE first.` }
+    // never backwards: once the OOC is in, a late "duty paid" (an old button tapped, a stale
+    // message) doesn't move the customs stage back (edge-case hunt 3 Nov 2026)
+    const cs = data.customsByJob?.[job.id]
+    if ((cs?.ooc_date && String(cs.be_no || job.be_no) === String(job.be_no)) || Number(job.stage) >= 7) return { ok: false, error: `${job.job_no} already has its OOC, so its customs stage stays as it is.` }
     return p(`Set the customs stage of ${who} (BE ${job.be_no}) to *${def.label}*${args?.note ? `: ${String(args.note).slice(0, 120)}` : ''}`, { stage: def.id, note: args?.note ? String(args.note).slice(0, 300) : null })
   }
   if (action === 'set_priority') {

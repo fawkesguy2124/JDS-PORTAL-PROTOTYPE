@@ -51,6 +51,19 @@ export const isCorrection = (t: string) => {
     || (s.trim().split('\n').length <= 2 && /\b(nahi+n?|nhi|nai|not|mat)\b/i.test(s))
 }
 
+// not something that has happened: a question, a plan, the past or a request ("kal J-711 ka truck
+// MH04… aayega", "J-711 MH04… kitne baje niklega", "BE … file karna hai", "old truck … tha",
+// "MH04… RTO details"): never saved at once as a post, it goes through Yes / No (edge-case hunt,
+// 3 Nov 2026: all of these were saved straight onto the job). A short typed message is read
+// strictly; a real multi-line post card only for "not yet / to be done" (its own lines say "First
+// Check", "OLD" machine, … which are not questions)
+const NOT_DONE_SHORT = /\?|\b(kya|kaha|kahan|kab|kitne|kitna|kaun|kaunsa|where|when|what|which|how|why|status|details?|(?<!first\s)check\w*|kal|tomorrow|parso|aaye?ga|aaye?gi|ayega|ayegi|jaye?ga|jaye?gi|nikle?ga|niklegi|bhejenge|bhejna|bhejni|bhejo|will|going\s+to|karna\s+hai|karni\s+hai|hona\s+hai|hoga|hogi|plan\w*|tha|thi|old|purana|purani|pehle\s+wala|not\s+yet|abhi\s+(nahi|tak)|nahi\s+hua|pending\s+hai)\b/i
+const NOT_DONE_CARD = /\b(not\s+yet\s+(filed|loaded|out|left|dispatched)|karna\s+hai|karni\s+hai|hona\s+hai|file\s+nahi|tomorrow|will\s+(load|be|go|leave))\b/i
+export const notDoneYet = (t: string) => {
+  const s = String(t || '')
+  return s.trim().split('\n').filter((l) => l.trim()).length <= 2 ? NOT_DONE_SHORT.test(s) : NOT_DONE_CARD.test(s)
+}
+
 export { readPost }
 
 // the portal job for "J-583" (the newest one with that number: numbers start again each April)
@@ -171,7 +184,7 @@ export async function handlePost(admin: Admin, person: Person, text: string, dat
   // a correction or a removal is never a post ("J-711 se truck MH04AB1234 hata do", "truck
   // MH04… nahi, MH04… hai", "remove MH04… from J-711"): it goes to the assistant, which asks
   // Yes / No (code check 3 Nov 2026: these were saved straight on as a NEW truck)
-  if (isCorrection(text)) return null
+  if (isCorrection(text) || notDoneYet(text)) return null
   // a BE written in a sentence, with neither the group (Gr.) nor the RMS / APR / ACL line of a
   // real BE card, goes through "Shall I go ahead?" like any typed change (live test 2 Nov
   // 2026: "J-598 ka BE 1234567 dated 15.11.2026" was saved straight onto a real job)
