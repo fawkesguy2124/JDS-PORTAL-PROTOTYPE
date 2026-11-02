@@ -16,14 +16,14 @@
 // Switch: secret BOT_ASKING = on (send) · anything else = off. The test run works it all
 // out on the live data and sends nothing. Who is asked: BOT_ASK_TO (comma-separated
 // numbers), else Jose's first number, until each CFS has its own person.
-import { journeyFor, isDelivered, isExportJob, isAirJob, deliveryBy, truckNos } from '../_shared/portal/journeyCore.js'
+import { journeyFor, isDelivered, isExportJob, isAirJob, deliveryBy, truckNos, containerTrip } from '../_shared/portal/journeyCore.js'
 import { platesIn } from '../_shared/portal/postReader.js'
 import { handlePost } from './posts.ts'
 
 type Admin = any
 type Person = { phone: string; name: string; level?: string }
 type Button = { id: string; title: string }
-export type Question = { key: string; job_id: string; job_no: string; kind: 'move' | 'duty' | 'be' | 'truck' | 'delivered'; text: string; buttons: Button[] }
+export type Question = { key: string; job_id: string; job_no: string; kind: 'move' | 'duty' | 'be' | 'truck' | 'delivered' | 'deliver'; text: string; buttons: Button[] }
 
 const env = (k: string) => Deno.env.get(k) || ''
 export const askingOn = () => env('BOT_ASKING') === 'on'
@@ -88,6 +88,32 @@ export function questionsDue(data: any): Question[] {
   return out
 }
 
+// One question about a job the person is asking about right now (Jose, 2 Nov 2026: "if JDS
+// is inquiring about J-711, isn't that the right time to ask whatever is missing?"). Asked
+// after the answer, one tap, at most once a day per question (the caller checks that).
+//   deliver  who takes the cargo out. "Client collects" on a job that goes through the CFS
+//            (or that they ask about at the CFS) is asked again: client-collect jobs usually
+//            come straight from the port, so a CFS job is normally JDS delivering
+//   …else    the job's own due question (BE, duty, truck, delivered), if there is one
+export function followUpFor(job: any, data: any, text: string): Question | null {
+  if (!job || isDelivered(job) || isExportJob(job)) return null
+  const j: any = journeyFor(job, data)
+  if (j.phase === 'delivered') return null
+  const fm = job.field_meta || {}
+  const who = `*${job.job_no}*${job.client ? ` (${job.client})` : ''}`
+  const ask = (key: string, text: string): Question => ({ key, job_id: job.id, job_no: job.job_no, kind: 'deliver', text,
+    buttons: [tap(key, 'jds', '🚚 JDS delivers'), tap(key, 'client', '🏢 Client collects')] })
+  const viaCfs = /\bCFS\b/i.test(text) || (j.containers?.all || []).some((t: any) => (t.milestones || []).some((m: any) => /^(CFS|ICD)\s*IN/i.test(String(m.description || m.event || '')))) || (j.containers?.all || []).some((t: any) => containerTrip(t, job).toCfsSince)
+  // (its own key: a "client collects" answered earlier is asked again once the CFS shows up)
+  if (fm.delivery_by === 'client' && viaCfs) {
+    return ask(`${job.id}:deliver_cfs`, `${who} is set to *client collects*, but it's going through the CFS, and that's usually JDS delivering. Who takes the cargo out?`)
+  }
+  if (!fm.delivery_by && ['ooc', 'release', 'docs', 'arrival'].includes(j.phase)) {
+    return ask(`${job.id}:deliver`, `Quick one on ${who}: who takes the cargo out, JDS or the client?`)
+  }
+  return questionsDue({ ...data, jobs: [job] })[0] || null
+}
+
 const askTo = (team: Person[]): Person[] => {
   const nums = env('BOT_ASK_TO').split(',').map((s) => s.replace(/\D/g, '')).filter(Boolean)
   const list = nums.length ? team.filter((p) => nums.includes(p.phone)) : team.slice(0, 1)
@@ -144,6 +170,11 @@ const SKIP = new RegExp(`\\b(skip|don'?t know|dont know|no idea|not sure|(pata|m
 const LATER = new RegExp(`^\\s*(no|nope|(${NAHI})|not yet|abhi (${NAHI})|abhi tak (${NAHI})|(${NAHI}) hua|(${NAHI}) kiya|(${NAHI}) gaya|later|baad me|baad mein|kal|kal tak|tomorrow|pending|still pending|baaki hai|baki hai|ruko|wait)\\b`, 'i')
 const YES = /\b(yes|yas|yeah|yep|ok|oke|okay|haan|han|ha|haa|haanji|han ji|ji haan|ji han|ji|bilkul|done|paid|pay kar|pay ho|bhar diya|bhar di|bhara|bhar dia|jama kar|jama ho|de diya|de di|filed|file ho|file kar|delivered|deliver ho|ho gaya|ho gayi|hogaya|ho gya|ho gai|kar diya|kar di|kardiya|nikal gaya|nikal gayi|chala gaya|chali gayi|pahuch gaya|pahunch gaya|pohoch gaya|reached|mil gaya|aa gaya)\b/i
 const NEGATED = new RegExp(`\\b(not|no|never|(${NAHI})|mat)\\b`, 'i')
+// who takes the cargo out, as people say it ("hum le jayenge", "JDS", "party khud uthayegi")
+const DELIVER_WORDS: [RegExp, string][] = [
+  [/\b(client|klaint|party|parti|customer|importer)\b.*\b(collect|le jayega|le jayegi|le jaega|uthayega|uthayegi|pick|lega|legi|khud)|\bclient collects?\b|\bself pick/i, 'client'],
+  [/\b(jds|hum|hamara|hamari|we|our|us)\b/i, 'jds'],
+]
 const MOVE_WORDS: [RegExp, string][] = [
   [/\b(rail|rel|train|tren|rake|icd|malgadi)\b/i, 'rail'],
   [/\b(client|klaint|party|parti|customer|self|khud)\b.*\b(collect|le jayega|le jayegi|le jaega|uthayega|uthayegi|pick|lega|legi)|\bclient collects?\b|\bself pick/i, 'client'],
@@ -172,6 +203,7 @@ export async function answerQuestion(admin: Admin, person: Person, text: string,
     const fits = (x: any) => SKIP.test(s) || (x.kind === 'truck' ? platesIn(s.toUpperCase()).length > 0
       : x.kind === 'be' ? /\b\d{7}\b/.test(s) || YES.test(s) || LATER.test(s)
       : x.kind === 'move' ? MOVE_WORDS.some(([re]) => re.test(s))
+      : x.kind === 'deliver' ? DELIVER_WORDS.some(([re]) => re.test(s))
       : YES.test(s) || LATER.test(s))
     q = byJob || (open.filter(fits).length === 1 ? open.filter(fits)[0] : open.length === 1 && fits(open[0]) ? open[0] : null)
     if (!q) return null
@@ -180,6 +212,7 @@ export async function answerQuestion(admin: Admin, person: Person, text: string,
     if (SKIP.test(rest)) ans = 'skip'
     else if (LATER.test(rest)) ans = 'later'
     else if (q.kind === 'move') ans = MOVE_WORDS.find(([re]) => re.test(rest))?.[1] || null
+    else if (q.kind === 'deliver') ans = DELIVER_WORDS.find(([re]) => re.test(rest))?.[1] || null
     // "not delivered yet", "duty abhi bhara nahi", "file nahi hua": a no, even with the yes word in it
     else if (NEGATED.test(rest)) ans = 'later'
     else if (YES.test(rest)) ans = 'yes'
@@ -193,6 +226,13 @@ export async function answerQuestion(admin: Admin, person: Person, text: string,
   if (ans === 'later') {
     await admin.from('bot_questions').update({ answer: 'not yet', answered_at: new Date().toISOString() }).eq('key', q.key)
     return { reply: q.kind === 'delivered' ? `OK, ${job} stays open. I'll check again tomorrow.` : `OK, I'll ask again tomorrow.` }
+  }
+  if (q.kind === 'deliver') {
+    if (ans !== 'jds' && ans !== 'client') return null
+    const r = await deps.change({ action: 'set_delivery_by', job, by: ans })
+    if (String(r).startsWith('❌')) return { reply: r }
+    await close('answered', ans)
+    return { reply: ans === 'jds' ? `👍 Got it, JDS delivers ${job}.` : `👍 Got it, the client collects ${job}.` }
   }
   if (q.kind === 'move') {
     // a truck number said straight away is saved too

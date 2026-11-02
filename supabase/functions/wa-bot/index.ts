@@ -26,7 +26,7 @@ import { readDocFile, jobForDoc, docFill, fillArgs } from './docfill.ts'
 import { pushAlerts, pushTest } from './push.ts'
 import { botHealth, savedToday } from './safety.ts'
 import { handlePost, undoPost, isUndo, UNDO_MINUTES, knownClient } from './posts.ts'
-import { runQuestions, answerQuestion, questionsDue } from './questions.ts'
+import { runQuestions, answerQuestion, questionsDue, followUpFor } from './questions.ts'
 
 
 const GRAPH = 'https://graph.facebook.com/v21.0'
@@ -804,7 +804,8 @@ async function handleInbound(admin: Admin, payload: any) {
     if (!delivered.ok) await recordFailure(admin, person.phone, 'the reply was not delivered', delivered.error || 'WhatsApp refused it')
     for (const extra of after) await send(person.phone, extra)
     const note = checked.length ? `\n[checked: ${checked.join('; ').slice(0, 400)}]` : ''
-    const next = [...history, { role: 'user', text: String(text).slice(0, 500) }, { role: 'model', text: `${String(reply).slice(0, 1500)}${note}` }].slice(-10)
+    const followUp = await askFollowUp(admin, person, text, data, { asked: !!ask, answered: !!answered }).catch((e) => { console.warn(`[wa-bot] follow-up: ${(e as Error).message}`); return null })
+    const next = [...history, { role: 'user', text: String(text).slice(0, 500) }, { role: 'model', text: `${String(reply).slice(0, 1500)}${note}` }, ...(followUp ? [{ role: 'model', text: followUp }] : [])].slice(-10)
     await admin.from('bot_inbox').update({ history: next }).eq('phone', person.phone)
     // the window is open again: what was held for this person goes out now
     await sendHeld(admin, person).catch((e) => console.warn(`[wa-bot] held messages: ${(e as Error).message}`))
@@ -817,6 +818,26 @@ async function handleInbound(admin: Admin, payload: any) {
       await recordFailure(admin, person.phone, `message (${m.type})`, msg)
     }
   }
+}
+
+// After answering about one job: one tap question on what that job is missing (Jose, 2 Nov
+// 2026: "if JDS is inquiring about J-711, that's the right time to ask"). Not after a
+// "Shall I go ahead?" or an answer to the bot's own question; not for view-only access; the
+// same question at most once a day, and never again once answered. Returns the text asked.
+async function askFollowUp(admin: Admin, person: Person, text: string, data: any, was: { asked: boolean; answered: boolean }) {
+  if (was.asked || was.answered || !allowed(person, 'change') || !data?.jobs) return null
+  const jobNos = [...new Set([...String(text).matchAll(/\bJ[-. ]*0*(\d{1,5})\b/gi)].map((m) => m[1]))]
+  if (jobNos.length !== 1) return null // one job asked about, or it's not about a job
+  const job = jobFromText(`J-${jobNos[0]}`, data.jobs)
+  const q = job ? followUpFor(job, data, text) : null
+  if (!q) return null
+  const { data: row } = await admin.from('bot_questions').select('status, last_asked_at, asked_count').eq('key', q.key).maybeSingle()
+  if (row && (row.status !== 'open' || Date.now() - new Date(row.last_asked_at).getTime() < 24 * 36e5)) return null
+  const r = await send(person.phone, { text: q.text, buttons: q.buttons })
+  if (!r.ok) return null
+  const now = new Date().toISOString()
+  await admin.from('bot_questions').upsert({ key: q.key, job_id: q.job_id, job_no: q.job_no, kind: q.kind, phone: person.phone, question: q.text, msg_num: 1, asked_count: (row?.asked_count || 0) + 1, first_asked_at: now, last_asked_at: now, status: 'open' })
+  return q.text
 }
 
 // A failure the team may have noticed: kept in bot_sent (kind 'error') for the health alert

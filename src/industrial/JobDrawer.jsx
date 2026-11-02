@@ -291,6 +291,13 @@ export default function JobDrawer({ jobId, onClose, onOpenFull, onOpenTruck, cur
     if (error) { showToast?.(`Could not save: ${error.message}`, 'error'); return }
     patchJob(saved)
     showToast?.(done, 'success')
+    // who set it and when, in the job's history (Jose, 2 Nov 2026: J-711 was "client collects"
+    // and nobody knew how; these switches saved without a trace)
+    const what = key === 'delivery_by' ? (value === 'client' ? 'client collects the cargo' : 'JDS delivers the cargo') : `leaves by ${value}`
+    await supabase.from('activity_log').insert({
+      type: 'note', action: 'note', title: `${job.job_no} — ${what}`, note: `Set in the job panel by ${currentUserName || 'someone'}`,
+      job_id: job.id, job_no: job.job_no, done_by_name: currentUserName || null, meta: { job_id: job.id, job_no: job.job_no, [key]: value, via: 'job panel' },
+    })
   }
 
   // Check OOC right here (Jose, 1 Nov 2026: no jump to the BE & OOC page): the same

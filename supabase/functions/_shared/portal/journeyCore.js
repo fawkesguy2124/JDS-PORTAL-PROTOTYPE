@@ -158,7 +158,7 @@ function tripAnchor(job) {
 // Extra fields (added 31 Oct 2026; the four above keep their meaning):
 //   exitFrom   – 'CFS' | 'ICD' | 'port': where the cargo left from
 //   dpd        – the box is on direct port delivery this trip
-//   toCfsSince – left the port in the last 48 h with no CFS IN yet: on its way to the CFS
+//   toCfsSince – left the port with no CFS IN yet: on its way to the CFS
 export function containerTrip(row, job) {
   const ms = (Array.isArray(row?.milestones) ? row.milestones : [])
     .filter((m) => !isNaN(WHEN(m))).sort((x, y) => WHEN(x) - WHEN(y))

@@ -8,7 +8,7 @@
 // Nothing is saved anywhere and nothing is sent.
 //   npx deno@2 run --allow-read --allow-write --allow-net --allow-env scripts/bot-check.ts [--update] [folder]
 // --update: take the current readings as the new snapshot (after checking the changes by eye)
-import { answerQuestion } from '../supabase/functions/wa-bot/questions.ts'
+import { answerQuestion, followUpFor } from '../supabase/functions/wa-bot/questions.ts'
 import { isYes, isNo, isYesSaid, isNoSaid, prepareChange, saysNotDelivered } from '../supabase/functions/wa-bot/actions.ts'
 import { containerTrip } from '../supabase/functions/_shared/portal/journeyCore.js'
 import { happenedToday } from '../supabase/functions/_shared/portal/botMessages.js'
@@ -147,6 +147,24 @@ for (const [t, want] of NOTDEL) if (saysNotDelivered(t) !== want) fail(`"${t}" r
   const t2 = containerTrip(box(1), job({ dpd: true })); if (!t2.exitAt) fail('a job JDS marked DPD did not leave at Port Out')
   const old = { container_no: 'X', milestones: [{ description: 'PORT IN', date: day(40) }, { description: 'PORT OUT', date: day(30) }] }
   const t3 = containerTrip(old, { id: 'j', job_no: 'J-1', eta: day(42).slice(0, 10), stage: 7 }); if (!t3.exitAt) fail('a 30-day-old Port Out with nothing after it is still open')
+}
+// asking at the right moment: the follow-up after a question about one job (J-711, 2 Nov 2026)
+{
+  const day = (d: number) => new Date(Date.now() - d * 864e5).toISOString()
+  const row = { container_no: 'DFSU7478382', milestones: [{ description: 'PORT IN', date: day(3) }, { description: 'PORT OUT', date: day(1) }] }
+  const mk = (fm: any, stage = 4) => ({ id: 'j711', job_no: 'J-711', client: 'IAC', mode: 'Sea FCL', containers: 'DFSU7478382', be_no: '4818626', be_date: day(0).slice(0, 10), eta: day(4).slice(0, 10), stage, field_meta: fm, trucks: [] })
+  const data = (job: any) => ({ jobs: [job], customsByJob: {}, resultsByJob: {}, containersByNo: { DFSU7478382: row } })
+  const a = followUpFor(mk({ delivery_by: 'client' }), data(mk({ delivery_by: 'client' })), 'where is J-711 now?')
+  if (!a || a.key !== 'j711:deliver_cfs') fail(`J-711 "client collects" but going to the CFS → ${a?.key || 'no question'}`)
+  const b = followUpFor(mk({}), data(mk({})), 'J-711 status?')
+  if (!b || b.key !== 'j711:deliver') fail(`J-711 with nobody set → ${b?.key || 'no question'}`)
+  const c = followUpFor(mk({ delivery_by: 'jds' }, 10), data(mk({ delivery_by: 'jds' }, 10)), 'J-711?')
+  if (c) fail(`a delivered job got a follow-up: ${c.key}`)
+  const dq = { key: 'j711:deliver', job_id: 'j711', job_no: 'J-711', kind: 'deliver', phone: '91', status: 'open', last_asked_at: new Date().toISOString() }
+  for (const [t, want] of [['Q|j711:deliver|jds', /JDS delivers/], ['hum le jayenge', /JDS delivers/], ['party khud le jayegi', /client collects/]] as [string, RegExp][]) {
+    const r: any = await answerQuestion(fakeAdmin([dq]), { phone: '91', name: 'Test' }, t, {}, deps)
+    if (!r || !want.test(r.reply)) fail(`"${t}" to "who takes it out?" → ${r?.reply}`)
+  }
 }
 // WhatsApp alerts: only what happened today
 if (!happenedToday(new Date().toISOString()) || happenedToday(new Date(Date.now() - 2 * 864e5).toISOString()) || !happenedToday(null)) fail('happenedToday is wrong')
