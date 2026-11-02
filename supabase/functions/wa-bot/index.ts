@@ -286,21 +286,12 @@ async function runMorning(admin: Admin) {
   const [data, team] = await Promise.all([loadData(admin), loadTeam(admin)])
   const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' })
   const out = []
+  // one short message, nothing after it (Jose, 3 Nov 2026: "keep it short, it's very
+  // irritating"): no "reply ok" line, no separate list of missing details (the bot now asks
+  // about what a job is missing when someone asks about that job)
   for (const person of team) {
     const summary = morningSummary(data, person)
-    // free only: tomorrow's summary can reach them only if they write within 24 hours
-    const text = PAID_TEMPLATES ? summary.text : `${summary.text}\n\n_Reply "ok" to get tomorrow's summary._`
-    out.push(await sendOnce(admin, `morning:${today}`, person, 'morning', { ...summary, text }))
-  }
-  // then the details missing on their jobs, with a tap list (the list only goes
-  // inside WhatsApp's 24-hour window; outside it the alert template carries the text)
-  for (const person of team) {
-    if (!allowed(person, 'change')) continue // view only: nothing they could fill in
-    const miss = missingDetails(data, person)
-    if (!miss.text) continue
-    const r: any = await sendOnce(admin, `missing:${today}`, person, 'missing', { text: miss.text, template: { name: 'jds_alert', values: ['details', miss.text.replace(/\*/g, '').replace(/\n+/g, ' ').slice(0, 900), 'SUMMARY'] } })
-    out.push(r)
-    if (r?.as === 'text' && !r?.skipped && miss.rows.length) await send(person.phone, { text: 'Add a missing detail:', list: { button: 'Choose', rows: miss.rows } })
+    out.push(await sendOnce(admin, `morning:${today}`, person, 'morning', summary))
   }
   return out
 }

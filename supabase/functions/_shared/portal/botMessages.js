@@ -38,11 +38,6 @@ const dayText = (iso) => {
   const d = new Date(String(iso).length <= 10 ? `${iso}T12:00:00+05:30` : iso)
   return isNaN(d) ? String(iso) : d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', timeZone: TZ })
 }
-// by the time in India, so a summary asked for in the evening doesn't say "Good morning"
-const greeting = (now) => {
-  const h = Number(new Date(now).toLocaleString('en-US', { hour: 'numeric', hour12: false, timeZone: TZ }))
-  return h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening'
-}
 const todayText = (now) => new Date(now).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', timeZone: TZ })
 const daysBetween = (fromIso, toIso) => Math.round((new Date(`${toIso}T00:00:00Z`) - new Date(`${fromIso}T00:00:00Z`)) / DAY)
 const oneLine = (s) => String(s || '').replace(/\s+/g, ' ').trim()
@@ -80,42 +75,43 @@ export function jobsFor(person, jobs) {
 // Returns { text, template: { name, values } }
 // ─────────────────────────────────────────────────────────────────────────────
 export function morningSummary(allData, person, now = new Date()) {
+  // (Jose, 3 Nov 2026: "just say hi JDS … what is going to come up today … all the current
+  // jobs, that's it. No urgent, no to-do. Keep it short, it's very irritating")
   const data = { ...allData, jobs: jobsFor(person, allData.jobs) }
   const today = istDate(now)
-  // same count as the Today page: not delivered, and containers not all done
-  const journeys = data.jobs.filter((job) => !isDelivered(job))
+  const journeys = data.jobs.filter((job) => !isDelivered(job) && !isExportJob(job))
     .map((job) => ({ job, j: journeyFor(job, data) }))
     .filter(({ j }) => j.phase !== 'delivered')
-  const open = journeys.map(({ job }) => job)
 
-  const urgent = []
-  const todo = []
-  for (const { job, j } of journeys) {
-    for (const a of j.attention) {
-      if (a.level === 'red') urgent.push(`${jobTag(job)}: ${a.text}`)
-      else if (a.level === 'amber') todo.push(`${jobTag(job)}: ${a.text}`)
-    }
-  }
-  const soon = arrivingSoon(data, today, 2).map(({ job, j, inDays }) =>
-    `${jobTag(job)}: ${inDays === 0 ? 'arrives today' : inDays === 1 ? 'arrives tomorrow' : `arrives ${dayText(job.eta)}`}${j.beFiled ? '' : ', BE not filed'}`)
-
-  const count = (phase) => journeys.filter(({ j }) => j.phase === phase).length
-  const name = oneLine(person?.name) || 'team'
-  const dateText = todayText(now)
-
-  const parts = [
-    `${greeting(now)} ${name} 👋`,
-    `*JDS jobs — ${dateText}*`,
-    `${plural(open.length, 'open job')}: ${count('ooc')} waiting for OOC, ${count('release')} OOC done to move, ${count('truck')} on the road`,
-    section(`🔴 Urgent (${urgent.length})`, urgent),
-    section(`🟠 To do today (${todo.length})`, todo),
-    section(`🚢 Arriving in the next 2 days (${soon.length})`, soon),
+  // what happens today: a ship due, a last free day
+  const todayLines = [
+    ...arrivingSoon(data, today, 0).map(({ job, j }) => `⚓ ${jobTag(job)}: ship due today${j.beFiled ? '' : ', BE not filed yet'}`),
+    ...journeys.filter(({ j }) => j.freeDaysLeft === 0).map(({ job }) => `⏱ ${jobTag(job)}: last free day`),
   ]
-  if (!urgent.length && !todo.length) parts.push('✅ Nothing urgent today.')
 
+  // every current job, one line, in the order the work goes
+  const ORDER = ['arrival', 'docs', 'ooc', 'release', 'truck']
+  const state = ({ job, j }) => {
+    if (j.phase === 'arrival') { const eta = shipEta(job, data); return eta ? `ship due ${dayText(eta)}` : 'ship on the way' }
+    if (j.phase === 'docs') return 'BE to file'
+    if (j.phase === 'ooc') return j.beStage ? `waiting for OOC (${j.beStage.short.toLowerCase()})` : 'waiting for OOC'
+    if (j.phase === 'release') return j.freeDaysLeft !== null && j.freeDaysLeft !== undefined ? `OOC granted, ${plural(j.freeDaysLeft, 'free day')} left` : 'OOC granted, to move'
+    if (j.phase === 'truck') return 'on the road'
+    return j.phase
+  }
+  const sorted = [...journeys].sort((x, y) => ORDER.indexOf(x.j.phase) - ORDER.indexOf(y.j.phase))
+  const shown = sorted.slice(0, 15).map((r) => `• ${jobTag(r.job)}: ${state(r)}`)
+  if (sorted.length > 15) shown.push(`+${sorted.length - 15} more in the portal`)
+
+  const dateText = todayText(now)
+  const parts = [
+    `Hi JDS 👋 · ${dateText}`,
+    todayLines.length ? `*Today*\n${todayLines.join('\n')}` : null,
+    sorted.length ? `*Jobs now (${sorted.length})*\n${shown.join('\n')}` : 'No open jobs right now.',
+  ]
   return {
     text: parts.filter(Boolean).join('\n\n'),
-    template: { name: 'jds_morning_summary', values: [name, dateText, String(urgent.length), String(todo.length), String(soon.length)] },
+    template: { name: 'jds_morning_summary', values: ['JDS', dateText, '0', '0', String(todayLines.length)] },
   }
 }
 
