@@ -143,6 +143,7 @@ const NAHI = 'na?h?i+n?|nhi|nai'
 const SKIP = new RegExp(`\\b(skip|don'?t know|dont know|no idea|not sure|(pata|malum|maloom|maaloom|patta) (${NAHI})|(${NAHI}) pata|kya pata|kuch pata (${NAHI}))\\b`, 'i')
 const LATER = new RegExp(`^\\s*(no|nope|(${NAHI})|not yet|abhi (${NAHI})|abhi tak (${NAHI})|(${NAHI}) hua|(${NAHI}) kiya|(${NAHI}) gaya|later|baad me|baad mein|kal|kal tak|tomorrow|pending|still pending|baaki hai|baki hai|ruko|wait)\\b`, 'i')
 const YES = /\b(yes|yas|yeah|yep|ok|oke|okay|haan|han|ha|haa|haanji|han ji|ji haan|ji han|ji|bilkul|done|paid|pay kar|pay ho|bhar diya|bhar di|bhara|bhar dia|jama kar|jama ho|de diya|de di|filed|file ho|file kar|delivered|deliver ho|ho gaya|ho gayi|hogaya|ho gya|ho gai|kar diya|kar di|kardiya|nikal gaya|nikal gayi|chala gaya|chali gayi|pahuch gaya|pahunch gaya|pohoch gaya|reached|mil gaya|aa gaya)\b/i
+const NEGATED = new RegExp(`\\b(not|no|never|(${NAHI})|mat)\\b`, 'i')
 const MOVE_WORDS: [RegExp, string][] = [
   [/\b(rail|rel|train|tren|rake|icd|malgadi)\b/i, 'rail'],
   [/\b(client|klaint|party|parti|customer|self|khud)\b.*\b(collect|le jayega|le jayegi|le jaega|uthayega|uthayegi|pick|lega|legi)|\bclient collects?\b|\bself pick/i, 'client'],
@@ -179,6 +180,8 @@ export async function answerQuestion(admin: Admin, person: Person, text: string,
     if (SKIP.test(rest)) ans = 'skip'
     else if (LATER.test(rest)) ans = 'later'
     else if (q.kind === 'move') ans = MOVE_WORDS.find(([re]) => re.test(rest))?.[1] || null
+    // "not delivered yet", "duty abhi bhara nahi", "file nahi hua": a no, even with the yes word in it
+    else if (NEGATED.test(rest)) ans = 'later'
     else if (YES.test(rest)) ans = 'yes'
   }
   const job = q.job_no

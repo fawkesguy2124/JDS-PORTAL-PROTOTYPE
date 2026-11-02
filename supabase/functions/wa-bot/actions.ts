@@ -20,7 +20,7 @@ const norm = (s: unknown) => String(s || '').toUpperCase().replace(/[^A-Z0-9]/g,
 const todayIst = () => new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' })
 const nice = (iso: string) => new Date(`${iso}T12:00:00+05:30`).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
 
-export const ACTIONS = ['mark_delivered', 'add_truck', 'remove_truck', 'record_be', 'set_leaves_by', 'set_delivery_by', 'add_note',
+export const ACTIONS = ['mark_delivered', 'mark_not_delivered', 'add_truck', 'remove_truck', 'record_be', 'set_leaves_by', 'set_delivery_by', 'add_note',
   // added 24 Oct 2026
   'attach_document', 'set_eta', 'set_imo', 'set_vessel', 'set_shipping_line', 'set_cfs', 'set_free_days', 'set_priority', 'set_owner',
   'add_container', 'remove_container', 'record_ooc',
@@ -38,7 +38,7 @@ const DOC_TYPES = ['BE', 'BL', 'Invoice', 'Packing List', 'COO', 'Insurance', 'E
 
 export const CHANGE_TOOL = {
   name: 'propose_change',
-  description: 'Make a change in the portal for the person: mark_delivered, add_truck (truck_no, optional container), remove_truck (truck_no), record_be (be_no 7 digits, be_date YYYY-MM-DD), set_leaves_by (mode truck/rail), set_delivery_by (by jds/client), add_note (note), attach_document (the file the person just sent; doc_type), set_eta (date YYYY-MM-DD), set_imo (imo = the 7-digit IMO number of the ship), set_vessel (vessel = the SHIP\'s name, never the shipping line), set_shipping_line (line), set_cfs (cfs), set_free_days (days), set_priority (priority normal/high/urgent), set_owner (owner = staff name), add_container (container, size), remove_container (container), record_ooc (ooc_no, ooc_date YYYY-MM-DD; OOC seen in LiveImpex), set_be_stage (stage = where the BE is with Customs: rms / ao / query / ac / assessed / duty_paid / exam; note optional, e.g. the query text), create_job (job = the NEW job no; client, job_mode, port, bl_no, containers, size, vessel, eta, line, be_no, be_date, days), record_payment (amount in rupees = the CFS amount), assign_task (to = teammate name, task, due = YYYY-MM-DD HH:MM India time), set_access (admins only; gives, changes or removes WhatsApp bot access: phone = 10-digit mobile, to = the name of the person, level = view / staff / admin / remove), set_mode (job_mode = Sea FCL / Sea LCL / Air / BPT/MBPT: the mode of the job, e.g. "it is LCL"; port optional). The SAME change on several jobs: give them all in jobs (e.g. ["J-519","J-633"]) in ONE call. DIFFERENT changes in one message (e.g. ETA and shipping line): call it once for EACH change; the bot asks for all of them together. set_vessel: put the voyage after " / " when given (e.g. "MSC ANNA / 512W"). The bot then asks the person to confirm. Nothing changes until they do.',
+  description: 'Make a change in the portal for the person: mark_delivered, mark_not_delivered (the person says the job is NOT delivered / still open: never mark_delivered then), add_truck (truck_no, optional container), remove_truck (truck_no), record_be (be_no 7 digits, be_date YYYY-MM-DD), set_leaves_by (mode truck/rail), set_delivery_by (by jds/client), add_note (note), attach_document (the file the person just sent; doc_type), set_eta (date YYYY-MM-DD), set_imo (imo = the 7-digit IMO number of the ship), set_vessel (vessel = the SHIP\'s name, never the shipping line), set_shipping_line (line), set_cfs (cfs), set_free_days (days), set_priority (priority normal/high/urgent), set_owner (owner = staff name), add_container (container, size), remove_container (container), record_ooc (ooc_no, ooc_date YYYY-MM-DD; OOC seen in LiveImpex), set_be_stage (stage = where the BE is with Customs: rms / ao / query / ac / assessed / duty_paid / exam; note optional, e.g. the query text), create_job (job = the NEW job no; client, job_mode, port, bl_no, containers, size, vessel, eta, line, be_no, be_date, days), record_payment (amount in rupees = the CFS amount), assign_task (to = teammate name, task, due = YYYY-MM-DD HH:MM India time), set_access (admins only; gives, changes or removes WhatsApp bot access: phone = 10-digit mobile, to = the name of the person, level = view / staff / admin / remove), set_mode (job_mode = Sea FCL / Sea LCL / Air / BPT/MBPT: the mode of the job, e.g. "it is LCL"; port optional). The SAME change on several jobs: give them all in jobs (e.g. ["J-519","J-633"]) in ONE call. DIFFERENT changes in one message (e.g. ETA and shipping line): call it once for EACH change; the bot asks for all of them together. set_vessel: put the voyage after " / " when given (e.g. "MSC ANNA / 512W"). The bot then asks the person to confirm. Nothing changes until they do.',
   parameters: {
     type: 'OBJECT',
     properties: {
@@ -174,6 +174,13 @@ function prepareOne(args: any, data: any, person: Person, extra: ChangeContext =
   if (action === 'mark_delivered') {
     if (Number(job.stage) >= 10) return { ok: false, error: `${job.job_no} is already marked delivered.` }
     return p(`Mark ${who} as *delivered*`)
+  }
+  // "J-711 not delivered, change it": the job stays open (Jose, 2 Nov 2026: the bot offered
+  // "mark delivered" for exactly that). A delivered job goes back to "OOC granted", and the
+  // portal stops guessing "delivered" for it from the container moves.
+  if (action === 'mark_not_delivered') {
+    const was = Number(job.stage) >= 10
+    return p(`Mark ${who} as *not delivered*${was ? ' (back to OOC granted)' : ''}; it stays open until JDS mark it delivered`)
   }
   if (action === 'add_truck' || action === 'remove_truck') {
     const truck = plateNo(args?.truck_no)
@@ -435,9 +442,18 @@ They should send any message to the bot to start. While the bot uses Meta's test
   }
   if (pending.action === 'mark_delivered') {
     if (Number(job.stage) >= 10) return `${job.job_no} was already marked delivered.`
-    const err = await save({ stage: 10 }); if (err) return err
+    const { not_delivered: _gone, ...fm } = (job.field_meta && typeof job.field_meta === 'object' ? job.field_meta : {}) as any
+    const err = await save({ stage: 10, field_meta: fm }); if (err) return err
     await log('stage_update', `${job.job_no} — Stage 10: Delivered`, `Stage updated by ${by}`, { old_stage: job.stage, new_stage: 10 })
     return `✅ Done: ${job.job_no} is marked *delivered*.`
+  }
+  if (pending.action === 'mark_not_delivered') {
+    const fm = { ...(job.field_meta && typeof job.field_meta === 'object' ? job.field_meta : {}), not_delivered: { at: now, by } }
+    const update: Record<string, unknown> = { field_meta: fm }
+    if (Number(job.stage) >= 10) update.stage = 7
+    const err = await save(update); if (err) return err
+    await log('stage_update', `${job.job_no} — not delivered`, `Marked not delivered by ${by}`, { old_stage: job.stage, new_stage: update.stage ?? job.stage })
+    return `✅ Done: ${job.job_no} is marked *not delivered*; it stays open.`
   }
   if (pending.action === 'add_truck') {
     const list = jobTrucks(job)
@@ -593,3 +609,7 @@ export const isNoSaid = (t: string) => {
   const s = String(t || '').trim()
   return s.length <= 60 && /^(no|nope|nahi+n?|nhi|nai|na|cancel|stop|mat|mat karo|don'?t|leave it|rehne do|rahne do|chhodo|chodo|chhod do|wrong|galat|ruko|ruk jao)\b/i.test(s)
 }
+
+// "not delivered", "deliver nahi hua", "abhi deliver nahi", "still not delivered", "undelivered":
+// such a message is never turned into "mark delivered" (Jose, 2 Nov 2026)
+export const saysNotDelivered = (t: string) => /\b(not|nahi+n?|nhi|na)\s+(yet\s+|been\s+|abhi\s+)?deliver|\bdeliver\w*\s+(nahi+n?|nhi|not|na)\b|\bundeliver|\bnot\s+(yet\s+)?(been\s+)?received\b/i.test(String(t || ''))

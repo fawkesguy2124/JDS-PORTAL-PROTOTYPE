@@ -142,12 +142,12 @@ const LATER_TRIP_AFTER_DAYS = 60
 // CFS OUT then CFS/ICD IN this soon (or before OOC) = moved between CFSs, not delivered
 const TRANSFER_WITHIN_DAYS = 3
 const TRANSFER_BEFORE_OOC_DAYS = 15
-// A PORT OUT is the cargo leaving (not the move to the CFS) only for a DPD box, or
-// once this long has passed with no CFS / ICD IN after it (Jose, 31 Oct 2026: J-691's
-// PORT OUT at 12:47 am, an LCL box on its way to the CFS, said "container out")
+// A PORT OUT is the move to the CFS; it is the cargo leaving only for a job JDS mark as DPD
+// (Jose, 2 Nov 2026). PORT_OUT_SETTLE_MS: a marked DPD box that still reached a CFS within
+// this long went to the CFS after all (31 Oct 2026: J-691's PORT OUT said "container out")
 const PORT_OUT_SETTLE_MS = 48 * 3600e3
+const OLD_PORT_OUT_DAYS = 21
 const PORT_OUT = /^(PORT OUT|PORTOUT)$/
-const IS_DPD = /^DPD/
 
 // when this job's trip started: the ETA, or else the day the job was opened
 function tripAnchor(job) {
@@ -195,13 +195,18 @@ export function containerTrip(row, job) {
   if (!exit) {
     const portOut = after.find((m) => PORT_OUT.test(NAME(m)))
     if (portOut) {
-      dpd = ms.some((m) => IS_DPD.test(NAME(m)) && WHEN(m) >= WHEN(arrive) - 3 * DAY && WHEN(m) <= WHEN(portOut) + DAY)
+      // DPD only when JDS mark the job so (field_meta.dpd): the port's own "DPD" event is on
+      // most JDS boxes, which still go to a CFS (Jose, 2 Nov 2026: J-711 read as DPD, then
+      // OOC done and "delivered", with the OOC not even granted).
+      dpd = job?.field_meta?.dpd === true
       const cfsAfter = after.some((m) => (AT_CFS.test(NAME(m)) || LEFT_CFS.test(NAME(m))) && WHEN(m) > WHEN(portOut))
       // a DPD box that still reached a CFS within 48 h went to the CFS after all
       const cfsSoon = after.some((m) => AT_CFS.test(NAME(m)) && !/EMPTY/.test(NAME(m)) && WHEN(m) > WHEN(portOut) && WHEN(m) - WHEN(portOut) <= PORT_OUT_SETTLE_MS)
       if (dpd && !cfsSoon) exit = portOut
-      // (any CFS / ICD event after it, however late, still means it went to a CFS, as before)
-      else if (!cfsAfter && Date.now() - WHEN(portOut) >= PORT_OUT_SETTLE_MS) exit = portOut
+      // otherwise a PORT OUT is the move to the CFS: "Port out does not mean CFS gate out"
+      // (Jose, 2 Nov 2026; the 48-hour guess is gone). Only a PORT OUT weeks old with nothing
+      // after it is an old trip that finished without the CFS events reaching us.
+      else if (!cfsAfter && Date.now() - WHEN(portOut) >= OLD_PORT_OUT_DAYS * DAY) exit = portOut
       else if (!cfsAfter) toCfs = portOut
     }
   }
@@ -520,8 +525,9 @@ export function journeyFor(job, data) {
   const truckCovered = trucks.length > 0 && (c.all.length === 0 || trucks.length >= c.nos.length
     || c.nos.every((no) => trucks.some((t) => String(t.container || '').toUpperCase() === no)))
   const loadedAt = c.allOut ? c.lastExitAt : truckCovered ? truckAts.at(-1) || null : null
+  // (never guessed for a job JDS said is not delivered: field_meta.not_delivered, 2 Nov 2026)
   const cargoDelivered = !delivered && oocDone && mode !== 'rail' && !railMoving && !!loadedAt
-    && Date.now() - new Date(loadedAt).getTime() >= DAY
+    && Date.now() - new Date(loadedAt).getTime() >= DAY && !job?.field_meta?.not_delivered
 
   const steps = [
     arrived

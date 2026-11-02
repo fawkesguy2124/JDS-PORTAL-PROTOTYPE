@@ -16,9 +16,9 @@
 //   WHATSAPP_TEMPLATE_LANG optional, default "en"
 import { adminClient, json } from '../_shared/ulip.ts'
 import { buildJourneyData, buildSeaByJob } from '../_shared/portal/journeyCore.js'
-import { morningSummary, instantAlerts, answer, teamFromProfiles, BOT_NUMBERS, missingDetails, allowed, LEVELS, LEVEL_LABEL } from '../_shared/portal/botMessages.js'
+import { morningSummary, instantAlerts, happenedToday, answer, teamFromProfiles, BOT_NUMBERS, missingDetails, allowed, LEVELS, LEVEL_LABEL } from '../_shared/portal/botMessages.js'
 import { askAssistant, groqInfo, isHinglish, changeParts, mergeProposals } from './assistant.ts'
-import { applyChange, confirmText, isNo, isYes, isNoSaid, isYesSaid, PENDING_MINUTES, prepareChange, type Pending } from './actions.ts'
+import { applyChange, confirmText, isNo, isYes, isNoSaid, isYesSaid, saysNotDelivered, PENDING_MINUTES, prepareChange, type Pending } from './actions.ts'
 import { downloadMedia, transcribe, normalizeSpoken, docTypeFromName, jobFromText, jobNoFromText, safeName, toRoman, MAX_FILE_BYTES } from './media.ts'
 import { makeServerTools, sendDueReminders, checkWatches, checkTasks } from './servertools.ts'
 import { readBeFile, jobForBe, beLine } from './bereader.ts'
@@ -323,6 +323,9 @@ async function runAlerts(admin: Admin) {
   const pushed = await pushAlerts(admin, alerts).catch((e) => ({ error: (e as Error).message }))
   console.log(`[wa-bot] desktop alerts: ${JSON.stringify(pushed)}`)
   for (const alert of alerts) {
+    // WhatsApp only gets what happened today; an older event the systems report late stays
+    // in the portal (Jose, 2 Nov 2026: "on 2nd November, don't bring 1st November updates")
+    if (!happenedToday(alert.eventAt)) { out.push({ key: alert.key, skipped: `happened ${String(alert.eventAt).slice(0, 10)}, not today` }); continue }
     for (const person of team) out.push(await sendOnce(admin, alert.key, person, alert.kind, alert))
   }
   if (sendingOn()) await admin.from('bot_state').upsert({ id: 1, alerts_checked_at: now })
@@ -767,6 +770,17 @@ async function handleInbound(admin: Admin, payload: any) {
         if (more?.proposal && ask) ask = mergeProposals(ask, more.proposal)
       }
       if (parts.length) console.log(`[wa-bot] ${parts.length} changes in one message: ${ask?.args?.multi ? ask.args.items.length : 1} prepared`)
+      // a hard guard, whatever the AI chose: "not delivered" never becomes "mark delivered"
+      // (Jose, 2 Nov 2026: "J-711 not delivered" got "Mark J-711 as delivered. Shall I go ahead?")
+      if (ask && saysNotDelivered(text)) {
+        const flip = (x: Pending): Pending | null => {
+          if (x.action !== 'mark_delivered') return x
+          const r = prepareChange({ action: 'mark_not_delivered', job: x.job_no }, data, person)
+          return r.ok ? r.pending : null
+        }
+        const items = (ask.args?.multi ? ask.args.items : [ask]).map(flip).filter(Boolean) as Pending[]
+        ask = items.length === 0 ? null : items.length === 1 ? items[0] : { ...ask, args: { ...ask.args, items }, summary: items.map((x) => `• ${x.summary}`).join('\n') }
+      }
       // a proposed change: the bot itself asks for YES, in fixed words
       if (ask) reply = confirmText(ask)
       else if (ai.text && /reply\s*\*?yes/i.test(ai.text)) reply = "I couldn't prepare that change. Please send it again in one message with all the details, for example: record BE 1234567 dated 18 Oct on J-509."

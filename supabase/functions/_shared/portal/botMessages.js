@@ -198,16 +198,21 @@ function shipAlerts(data, today, now) {
   return out
 }
 
+// Did it happen today, India time? (an alert with no known time is treated as today's)
+export const happenedToday = (eventAt, now = new Date()) => !eventAt || istDate(new Date(String(eventAt).length === 10 ? `${eventAt}T12:00:00+05:30` : eventAt)) === istDate(now)
+
 export function instantAlerts(data, events = [], now = new Date()) {
   const today = istDate(now)
   const byId = Object.fromEntries(data.jobs.map((j) => [j.id, j]))
   const byNo = Object.fromEntries(data.jobs.map((j) => [j.job_no, j]))
   const out = []
-  const add = (kind, key, job, what) => {
+  // eventAt: when it really happened (not when we heard): WhatsApp only gets what happened
+  // today (Jose, 2 Nov 2026: a ship that arrived 29 Oct came on WhatsApp on 2 Nov)
+  const add = (kind, key, job, what, eventAt = null) => {
     if (!job || isDelivered(job)) return
     const who = `${job.job_no} (${shortClient(job.client)})`
     out.push({
-      key, kind, jobId: job.id, jobNo: job.job_no,
+      key, kind, jobId: job.id, jobNo: job.job_no, eventAt,
       // two lines, nothing else (Jose, 31 Oct 2026: replies were too text-heavy)
       text: `🔔 *${who}*\n${what}`,
       template: { name: 'jds_alert', values: [who, oneLine(what).replace(/[.\s]+$/, ''), job.job_no] },
@@ -220,13 +225,13 @@ export function instantAlerts(data, events = [], now = new Date()) {
     if (ev.action === 'ooc_granted') {
       const job = byId[ev.job_id] || byNo[ev.job_no] || byNo[String(ev.title || '').split('— ').pop()?.trim()]
       const ooc = meta.ooc_no ? `OOC ${meta.ooc_no}${meta.ooc_date ? ` dated ${dayText(meta.ooc_date)}` : ''}` : 'OOC granted'
-      add('ooc', `ooc:${job?.id}:${meta.ooc_no || ev.id}`, job, `✅ OOC granted: ${ooc}. Arrange truck or rail.`)
+      add('ooc', `ooc:${job?.id}:${meta.ooc_no || ev.id}`, job, `✅ OOC granted: ${ooc}. Arrange truck or rail.`, meta.ooc_date || null)
     }
     // the ship tracking saw the ship arrive (Jose, 25 Oct 2026)
     if (ev.action === 'ship_arrived') {
       const job = byId[ev.job_id] || byId[meta.job_id] || byNo[ev.job_no]
       add('ship_arrived', `ship_arrived:${job?.id}`, job,
-        `⚓ Ship arrived at ${meta.port || 'the port'}${ev.note ? ` (${String(ev.note).replace(/^Arrived /, '')})` : ''}. BE ${job?.be_no ? 'filed ✅' : 'not filed ❌'}.`)
+        `⚓ Ship arrived at ${meta.port || 'the port'}${ev.note ? ` (${String(ev.note).replace(/^Arrived /, '')})` : ''}. BE ${job?.be_no ? 'filed ✅' : 'not filed ❌'}.`, meta.arrived_at || null)
     }
     // the customs stage staff set (Jose, 25 Oct 2026): the ones that need someone to act
     if (ev.action === 'be_stage' && ['query', 'assessed', 'exam'].includes(meta.stage)) {
@@ -267,7 +272,8 @@ export function instantAlerts(data, events = [], now = new Date()) {
     const row = data.containersByNo?.[String(box).toUpperCase()]
     if (row && containerFinishedOn(row, job)) continue
     const k = `${job.id}|${what}`
-    const g = groups.get(k) || { job, what, boxes: [], ids: [], place: null, time: null }
+    const g = groups.get(k) || { job, what, boxes: [], ids: [], place: null, time: null, at: null }
+    if (meta.event_at && (!g.at || meta.event_at > g.at)) g.at = meta.event_at
     if (!g.boxes.includes(box)) g.boxes.push(box)
     g.ids.push(ev.id)
     const { place, time } = noteParts(ev.note)
@@ -281,7 +287,7 @@ export function instantAlerts(data, events = [], now = new Date()) {
     // the latest move and its time only (no "and 8 earlier updates"; Jose, 1 Nov 2026)
     const aside = g.time || ''
     add('container', `box:${g.ids.sort().join(',')}`, g.job,
-      `${boxIcon(g.what)} ${boxes}: ${event}${g.place ? ` at ${g.place}` : ''}${aside ? ` (${aside})` : ''}.`)
+      `${boxIcon(g.what)} ${boxes}: ${event}${g.place ? ` at ${g.place}` : ''}${aside ? ` (${aside})` : ''}.`, g.at)
   }
 
   // worked out from today's saved data (once per job per day)

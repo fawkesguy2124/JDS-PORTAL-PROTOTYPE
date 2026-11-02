@@ -9,7 +9,9 @@
 //   npx deno@2 run --allow-read --allow-write --allow-net --allow-env scripts/bot-check.ts [--update] [folder]
 // --update: take the current readings as the new snapshot (after checking the changes by eye)
 import { answerQuestion } from '../supabase/functions/wa-bot/questions.ts'
-import { isYes, isNo, isYesSaid, isNoSaid, prepareChange } from '../supabase/functions/wa-bot/actions.ts'
+import { isYes, isNo, isYesSaid, isNoSaid, prepareChange, saysNotDelivered } from '../supabase/functions/wa-bot/actions.ts'
+import { containerTrip } from '../supabase/functions/_shared/portal/journeyCore.js'
+import { happenedToday } from '../supabase/functions/_shared/portal/botMessages.js'
 import { toRoman, normalizeSpoken, jobNoFromText } from '../supabase/functions/wa-bot/media.ts'
 import { readDocFile } from '../supabase/functions/wa-bot/docfill.ts'
 import { readPost } from '../supabase/functions/_shared/portal/postReader.js'
@@ -123,6 +125,34 @@ for (const [t, rows, want] of ANSWERS) {
   const r = await answerQuestion(fakeAdmin(rows), { phone: '91', name: 'Test' }, toRoman(t), {}, deps)
   const got = r?.reply || null
   if (want ? !(got && want.test(got)) : got !== null) fail(`answer "${t}" → ${got ?? '(to the assistant)'}`)
+}
+// J-711 (2 Nov 2026): "not delivered" must never become "mark delivered"
+const NOTDEL: [string, boolean][] = [
+  ['J-711 not delivered. Please change it in portal', true], ['J-711 deliver nahi hua', true], ['abhi tak deliver nahi hua', true], ['still not delivered', true],
+  ['not yet delivered', true], ['J-711 delivered', false], ['deliver ho gaya', false], ['is J-711 delivered?', false],
+]
+for (const [t, want] of NOTDEL) if (saysNotDelivered(t) !== want) fail(`"${t}" read as ${saysNotDelivered(t) ? 'NOT delivered' : 'delivered'}`)
+{
+  const r: any = await answerQuestion(fakeAdmin([Q.delivered]), { phone: '91', name: 'Test' }, 'not delivered yet', {}, deps)
+  if (!r || /delivered J-583/.test(r.reply)) fail(`"not delivered yet" to "Is it delivered?" → ${r?.reply}`)
+}
+// Port Out is the way to the CFS: never "left with cargo" (so never OOC done or delivered) from
+// a port "DPD" event; only a job JDS mark DPD, or a Port Out weeks old with nothing after it
+{
+  const day = (d: number) => new Date(Date.now() - d * 864e5).toISOString()
+  const box = (outDaysAgo: number) => ({ container_no: 'DFSU7478382', milestones: [
+    { description: 'DPD', date: day(outDaysAgo + 3) }, { description: 'PORT IN', date: day(outDaysAgo + 2) }, { description: 'PORT OUT', date: day(outDaysAgo) }] })
+  const job = (fm = {}) => ({ id: 'j', job_no: 'J-711', eta: day(5).slice(0, 10), stage: 4, field_meta: fm })
+  const t1 = containerTrip(box(1), job()); if (t1.exitAt || t1.dpd || !t1.toCfsSince) fail(`a day-old Port Out with a port DPD event → ${JSON.stringify(t1)}`)
+  const t2 = containerTrip(box(1), job({ dpd: true })); if (!t2.exitAt) fail('a job JDS marked DPD did not leave at Port Out')
+  const old = { container_no: 'X', milestones: [{ description: 'PORT IN', date: day(40) }, { description: 'PORT OUT', date: day(30) }] }
+  const t3 = containerTrip(old, { id: 'j', job_no: 'J-1', eta: day(42).slice(0, 10), stage: 7 }); if (!t3.exitAt) fail('a 30-day-old Port Out with nothing after it is still open')
+}
+// WhatsApp alerts: only what happened today
+if (!happenedToday(new Date().toISOString()) || happenedToday(new Date(Date.now() - 2 * 864e5).toISOString()) || !happenedToday(null)) fail('happenedToday is wrong')
+{
+  const r: any = prepareChange({ action: 'mark_not_delivered', job: 'J-9901' }, { jobs: [{ id: 'x', job_no: 'J-9901', client: 'Test', stage: 10, field_meta: {} }], documents: [] }, ME as any)
+  if (!r.ok || !/not delivered/.test(r.pending.summary)) fail(`mark_not_delivered → ${r.ok ? r.pending.summary : r.error}`)
 }
 console.log(failed ? `  ${failed} wrong` : '  all right')
 
