@@ -20,6 +20,23 @@ export function fileProblem(file) {
   return null
 }
 
+// What a BL gives a job: only what it is missing. A ship's name and a BL number have no check digit,
+// so from a scan (OCR: 65-71% and 43-52% right on the BLs of the JD group chat) they are not saved when
+// a container proves itself by its check digit: tracking gives the real ship anyway. With no container
+// they are all there is to go on, so they are kept (Jose, 6 Nov 2026).
+export function blFill(job, bl) {
+  const updates = {}
+  if (!bl) return updates
+  const lineAsShip = !!job.vessel && isLineNotShip(String(job.vessel).split('/')[0], job.shipping_line)
+  const verifiedBox = bl.containers?.length || String(job.containers || '').trim()
+  const trustWords = !(bl.fromScan && verifiedBox)
+  if (bl.vessel && (!job.vessel || lineAsShip) && trustWords) updates.vessel = bl.vessel
+  if (bl.bl_no && !String(job.bl_no || '').trim() && trustWords) updates.bl_no = bl.bl_no
+  if (bl.containers?.length && !String(job.containers || '').trim()) updates.containers = bl.containers.join(' ')
+  if (bl.shipping_line && !String(job.shipping_line || '').trim()) updates.shipping_line = bl.shipping_line
+  return updates
+}
+
 // A BL uploaded to a job: the job gets what it is still missing from it (the ship, the
 // BL number, the containers, the shipping line; never overwritten, except a shipping
 // line saved as the ship, e.g. "EVERGREEN"), then ship tracking starts at once (Jose,
@@ -38,15 +55,7 @@ export async function applyBlToJob(job, file) {
   startTracking(job)
   let bl = null
   try { bl = await readBlFile(file) } catch (e) { console.warn('[jobDocuments] could not read the BL:', e?.message) }
-  const lineAsShip = !!job.vessel && isLineNotShip(String(job.vessel).split('/')[0], job.shipping_line)
-  const updates = {}
-  if (bl?.vessel && (!job.vessel || lineAsShip)) updates.vessel = bl.vessel
-  // a BL number has no check digit, so one read from a scan may be wrong: it is saved only when
-  // the job has no verified container to track with (a container number's check digit proves it)
-  const verifiedBox = bl?.containers?.length || String(job.containers || '').trim()
-  if (bl?.bl_no && !String(job.bl_no || '').trim() && !(bl.fromScan && verifiedBox)) updates.bl_no = bl.bl_no
-  if (bl?.containers?.length && !String(job.containers || '').trim()) updates.containers = bl.containers.join(' ')
-  if (bl?.shipping_line && !String(job.shipping_line || '').trim()) updates.shipping_line = bl.shipping_line
+  const updates = blFill(job, bl)
   let saved = job
   if (Object.keys(updates).length) {
     const { data, error } = await supabase.from('jobs').update({ ...updates, updated_at: new Date().toISOString() }).eq('id', job.id).select().maybeSingle()

@@ -299,7 +299,7 @@ for (const [raw, want] of [['TCNU7392038', 'TCNU7392038'], ['TCNU 739203 8', 'TC
   if (j644.fields.vessel_name !== 'ITAL USODIMARE' || j644.fields.voyage_no !== '191W' || !j644.fields.container_numbers?.includes('EGSU1074180') || !j644.fromScan) fail(`the scan of J-644 → ${JSON.stringify(j644.fields).slice(0, 160)}`)
   // how BLs in the JD group chat really print the ship and the container (Nov 2026)
   const SHIPS: [string, string, string | null][] = [
-    ['Ocean vessel\nX-PRESS CARINA/601W', 'X-PRESS CARINA', '601W'], ['Vessel\nEVER LUCENT /070W SHEKOU,CHINA', 'EVER LUCENT', '070W'], ['Vessel\nWAN HAI 621/W023 QINGDAO', 'WAN HAI 621', 'W023'],
+    ['Ocean vessel\nX-PRESS CARINA/601W', 'X-PRESS CARINA', '601W'], ['Vessel\nEVER LUCENT /070W SHEKOU,CHINA', 'EVER LUCENT', '070W'], ['Vessel\nWAN HAI 621/W023 QINGDAO', 'WAN HAI 621', 'W023'], ['Vessel\nWAN HAT 508 W219', 'WAN HAI 508', 'W219'], ['Vessel\nAN HAI 621 W023', 'WAN HAI 621', 'W023'],
     ['Vessel :EVER LIBRA Voyage :082E', 'EVER LIBRA', '082E'], ['VESSEL: OOCL TAIPEI VOYAGE: 26090W', 'OOCL TAIPEI', '26090W'], ['Vessel Port of loading\n400098 MUMBAI\nSHENG DA HENG QIANG (SEG0625E) ISTANBUL', 'SHENG DA HENG QIANG', 'SEG0625E'],
     ['Vessel Voyage Place of Receipt\nBREMEN EXPRESS 6201 CHICAGO, UNITED STATES', 'BREMEN EXPRESS', '6201'], ['Ocean Vessel Voy No. Port of loading\nINTERASIA ACCELERATE 013W SHEKOU, CHINA', 'INTERASIA ACCELERATE', '013W'],
     ['LADEN ON BOARD\nDATE Jan 13,2026 BY X-PRESS CASSIOPEIA 26002W', 'X-PRESS CASSIOPEIA', '26002W'], ['JIANGMEN,CHINA\nWAN HAI 507 W240', 'WAN HAI 507', 'W240'], ['6.Ocean Vessel Voy. No.\nONE THESEUS V.0100W TIANJINXINGANG', 'ONE THESEUS', '0100W'],
@@ -312,7 +312,7 @@ for (const [raw, want] of [['TCNU7392038', 'TCNU7392038'], ['TCNU 739203 8', 'TC
     const f: any = readScanText(`BILL OF LADING\n${text}\nTCNU7392038`).fields
     if (f.vessel_name) fail(`"${text.replace(/\n/g, ' / ')}" read as the ship ${f.vessel_name}`)
   }
-  for (const [raw, want] of [['Container:SEGU 473160-9(40 HC )', 'SEGU4731609'], ['TXGUS672171', 'TXGU6672171'], ['WHSUB186466', 'WHSU5186466'], ['1TSSU2164482', 'TSSU2164482'], ['TIU2295353', 'TIIU2295353']] as [string, string][]) {
+  for (const [raw, want] of [['Container:SEGU 473160-9(40 HC )', 'SEGU4731609'], ['TXGUS672171', 'TXGU6672171'], ['WHSUB186466', 'WHSU5186466'], ['1TSSU2164482', 'TSSU2164482'], ['EGEU1074180EMOCGVGTEI5A0HOMER4CARTONS', 'EGSU1074180'], ['TIU2295353', 'TIIU2295353']] as [string, string][]) {
     const got = readScanText(`BILL OF LADING\nVESSEL X\n${raw}`).fields?.container_numbers || []
     if (!got.includes(want)) fail(`container "${raw}" on a scan → ${got}, should be ${want}`)
   }

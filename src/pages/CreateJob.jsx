@@ -288,6 +288,9 @@ export default function CreateJob({ isModal = false, onCancel, onCreated, initia
       // no type picked: the reader's own answer (a BL is a BL; Jose, 1 Nov 2026: "just upload the BL")
       setStagedDocs(prev => prev.map(d => d.id === docId ? { ...d, foundInside: inside, docType: d.docType || inside[0] || 'Other' } : d))
       const f = result.fields
+      // from a scan with a container that proves itself, the ship and BL number aren't filled in: OCR
+      // misreads them too often, and tracking gives the real ship (see blFill in services/jobDocuments)
+      const scanWords = !(result.fromScan && f.container_numbers?.length)
       setExtractProgress(80)
       setExtractStatus('Applying fields...')
 
@@ -295,17 +298,18 @@ export default function CreateJob({ isModal = false, onCancel, onCreated, initia
         _source: 'pdf-text',
         _found: describeDocuments(result),
         _unreadable: result.unreadablePages,
+        _scan: result.fromScan ? (scanWords ? 'check' : 'typed') : null,
         copy_type: f.copy_type || null,
         rms_label: f.rms_label || null,
         client: f.client || f.consignee_name || null,
         iec: f.importer_iec || null,
-        bl_no: f.bl_number || null,
+        bl_no: scanWords ? f.bl_number || null : null,
         containers: (f.container_numbers || []).join(' '),
         container_size: f.container_size || null,
         container_load: f.container_load || null,
         shipping_line: f.shipping_line || null,
         // only a real ship: not an address or a line's name read off the BL (it would block saving)
-        vessel: shipText(f.vessel_name, f.voyage_no),
+        vessel: scanWords ? shipText(f.vessel_name, f.voyage_no) : null,
         goods: f.goods_description || null,
         eta: f.eta || null,
         hs_code: f.hs_code || null,
@@ -826,6 +830,12 @@ export default function CreateJob({ isModal = false, onCancel, onCreated, initia
                   Jose, 1 Nov 2026) only pages that could not be read are mentioned */}
               {filledKeys.length > 0 && !extractedFields?._irrelevant && unreadable.length > 0 && (
                 <p className="ix-cj-msg amber"><Icon name="alert-triangle" /><span>{picturePages(unreadable)}, so nothing was read from {unreadable.length === 1 ? 'it' : 'them'}.</span></p>
+              )}
+              {extractedFields?._scan === 'typed' && (
+                <p className="ix-cj-msg amber"><Icon name="alert-triangle" /><span>Read from a scan. The container is checked. Please type the BL number and the ship.</span></p>
+              )}
+              {extractedFields?._scan === 'check' && (
+                <p className="ix-cj-msg amber"><Icon name="alert-triangle" /><span>Read from a scan, with no container found. Please check the BL number and the ship, and type the container.</span></p>
               )}
             </div>
 

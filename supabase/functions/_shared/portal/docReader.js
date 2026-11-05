@@ -202,7 +202,9 @@ function boxFromRun(run, heavy) {
   return found.size === 1 ? [...found][0] : null
 }
 // each line, word by word: one word or up to three beside each other ("TCNU 739203 8", "TCNU-7392038")
-function repairLine(line, heavy) {
+function repairLine(raw, heavy) {
+  // a scan can glue the number to the next word ("EGEU1074180EMOCGVGTE", J-644): split it off
+  const line = raw.replace(/(?<![A-Z0-9])([A-Z]{3}[A-Z0-9]\d{7})(?=[A-Z])/g, '$1 ')
   const words = [...line.matchAll(/[A-Z0-9]+/g)].map((m) => ({ text: m[0], at: m.index, end: m.index + m[0].length }))
   const edits = []
   for (let i = 0; i < words.length; i++) {
@@ -255,6 +257,8 @@ const OCR_MAX_PAGES = 6
 // W921, 26001W, 6201. The line can go on with the ports.
 const SHIP_NAME_PART = String.raw`[A-Z][A-Z0-9.-]*(?: (?:[A-Z][A-Z.-]*|[IVX]+|\d{2,4}(?= )))*?`
 const SHIP_VOY_PART = String.raw`(?:\s*[/(]\s*|\s+)(?:[Vv]\.?\s?|[Vv][Oo][Yy][A-Za-z]*\.?\s*:?\s*)?([A-Z]{0,4}\d{2,6}[A-Z]{1,2}|[A-Z]{1,4}\d{2,6}|\d{2,4})\s?\)?`
+// (first, a voyage with its direction, so a number before it stays in the name: "WAN HAI 508 W219")
+const SCAN_SHIP_STRICT = new RegExp(`^(${SHIP_NAME_PART})\\s*[/ ]\\s*(?:[Vv]\\.?\\s?)?(\\d{2,6}[EWNS]|[EWNS]\\d{2,6})(?=[\\s,]|$)`)
 const SCAN_SHIP_LINE = new RegExp(`^(${SHIP_NAME_PART})${SHIP_VOY_PART}(?=[\\s,]|$)`)
 const SHIP_LADEN_BY = new RegExp(`\\bBY\\s+(${SHIP_NAME_PART})${SHIP_VOY_PART}\\s*$`)
 // no "vessel" label on the form: two words or more and a voyage with its direction, "WAN HAI 507 W240"
@@ -269,7 +273,7 @@ function shipFromLines(lines) {
     for (let k = i; k <= i + 5 && k < lines.length; k++) {
       // (on the label's own line, only what comes after the label)
       const text = k === i ? lines[i].replace(/^.*?\bVESSEL\b(?:\s*NAME)?\s*[:.]?\s*/i, '').trim() : lines[k].trim()
-      const m = text.match(SCAN_SHIP_LINE)
+      const m = text.match(SCAN_SHIP_STRICT) || text.match(SCAN_SHIP_LINE)
       if (m && okShip(m[1])) return { vessel_name: m[1].trim(), voyage_no: m[2] }
     }
   }
@@ -394,6 +398,8 @@ function readBl(lines, text, scan = false) {
   let vv = scan ? shipFromLines(lines) || vesselVoyage(lines, t) : vesselVoyage(lines, t)
   // (what the older reading found may be a sentence: "PARTICULARS FURNISHED BY SHIPPER")
   if (!vv.vessel_name || !okShip(vv.vessel_name)) vv = shipFromLines(lines) || { vessel_name: null, voyage_no: null }
+  // OCR's usual misreading of a ship JDS often uses ("WAN HAT", "AN HAI 621")
+  if (scan && vv.vessel_name) vv = { ...vv, vessel_name: vv.vessel_name.replace(/^W?AN HA[IT1L]\b/, 'WAN HAI') }
   const containers = scan ? scanContainers(t, scan) : findContainers(t)
   const seals = uniq([
     ...[...t.matchAll(/SEAL\s*(?:NO\.?|NUMBER|#)?\s*[:.]\s*([A-Z]{0,4}\d{5,10})\b(?![.,]\d)/gi)].map((m) => m[1]),
