@@ -17,6 +17,7 @@
 import { adminClient, corsHeaders, getCaller, json } from '../_shared/ulip.ts'
 import { lineName } from '../_shared/portal/shippingLines.js'
 import { containerTrip, isOldVoyage } from '../_shared/portal/journeyCore.js'
+import { findteuLookUp } from './findteu.ts'
 
 const API = 'https://api.sinay.ai/container-tracking/api/v2'
 const MONTH_CAP = 95                 // trial: 100 shipments; 5 kept spare
@@ -30,6 +31,13 @@ const month = () => new Date(Date.now() + 5.5 * 3600e3).toISOString().slice(0, 7
 const clean = (v: unknown) => String(v || '').toUpperCase().replace(/[^A-Z0-9]/g, '')
 const boxNos = (v: unknown) => String(v || '').toUpperCase().match(/[A-Z]{4}\d{7}/g) || []
 
+// Who answers: Safecube, or findTEU once both its secrets are set (see findteu.ts). findTEU's plan is
+// 50 shipments a month (5 kept spare), counted apart from Safecube's: its usage rows are 'ft-2026-11'.
+const usingFindteu = () => env('SEA_PROVIDER').toLowerCase() === 'findteu' && !!env('FINDTEU_API_KEY')
+const shipmentCap = () => (usingFindteu() ? 45 : MONTH_CAP)
+const usageMonth = () => (usingFindteu() ? `ft-${month()}` : month())
+const WALL_LIMIT_MS = 110_000 // findTEU's first answer for a box can take 25 seconds: the rest wait for the next run
+
 async function call(path: string, params: Record<string, string | boolean> = {}) {
   const q = new URLSearchParams(Object.entries(params).map(([k, v]) => [k, String(v)]))
   const res = await fetch(`${API}/${path}${q.size ? `?${q}` : ''}`, { headers: { API_KEY: env('SAFECUBE_API_KEY'), Accept: 'application/json' }, signal: AbortSignal.timeout(60_000) })
@@ -42,6 +50,7 @@ async function call(path: string, params: Record<string, string | boolean> = {})
 // Safecube's lines (cached while the function stays warm)
 let linesCache: any[] | null = null
 async function sealines() {
+  if (usingFindteu()) return [] // findTEU finds the line itself
   if (linesCache) return linesCache
   const r = await call('sealines')
   if (!r.ok) throw new Error(`sealines: ${r.status} ${r.body?.errorCode || r.body?.message || ''}`)
@@ -81,6 +90,8 @@ function pickNumber(job: any, lines: any[]) {
   }
   const box = boxNos(job.containers)[0]
   if (box) return { number: box, type: 'CT', scac: scacFor(job.shipping_line, lines) }
+  // (findTEU: no container yet, the number may work as a booking)
+  if (usingFindteu() && bl.length >= 8) return { number: bl, type: 'BL', scac: null }
   return null
 }
 
@@ -149,6 +160,7 @@ function summarize(d: any) {
 }
 
 async function lookUp(n: { number: string; type: string; scac: string | null }) {
+  if (usingFindteu()) return await findteuLookUp(n.number, env('FINDTEU_API_KEY'))
   const params: Record<string, string | boolean> = { shipmentNumber: n.number, shipmentType: n.type, route: true, ais: true }
   if (n.scac) params.sealine = n.scac
   let r = await call('shipment', params)
@@ -198,7 +210,8 @@ function arrived(row: any) {
 // the trial's shipments are for the whole trial, not per month (1 Nov 2026: October had used 8,
 // so a monthly count would have gone past the limit)
 async function usedInTrial(admin: any) {
-  const { count } = await admin.from('sea_track_usage').select('number', { count: 'exact', head: true })
+  const q = admin.from('sea_track_usage').select('number', { count: 'exact', head: true })
+  const { count } = await (usingFindteu() ? q.eq('month', usageMonth()) : q.not('month', 'like', 'ft-%'))
   return count || 0
 }
 
@@ -216,10 +229,10 @@ async function track(admin: any, job: any, lines: any[], opts: { start?: boolean
     : pickNumber(job, lines)
   if (!n) return { job: job.job_no, skipped: 'no BL or container number' }
   // a new number this month uses one of the trial's shipments
-  let { data: counted } = await admin.from('sea_track_usage').select('number').eq('month', month()).eq('number', n.number).maybeSingle()
+  let { data: counted } = await admin.from('sea_track_usage').select('number').eq('month', usageMonth()).eq('number', n.number).maybeSingle()
   if (!counted) {
     if (!prev && !saved && !opts.start && !opts.auto) return { job: job.job_no, skipped: 'not tracked yet' }
-    if (await usedInTrial(admin) >= MONTH_CAP) return { job: job.job_no, skipped: `trial limit (${MONTH_CAP} shipments) reached` }
+    if (await usedInTrial(admin) >= shipmentCap()) return { job: job.job_no, skipped: `limit (${shipmentCap()} shipments) reached` }
   }
   let answer = await lookUp(n)
   // the line doesn't know this BL (a number misread from a scan, a BL not published yet): the
@@ -231,11 +244,11 @@ async function track(admin: any, job: any, lines: any[], opts: { start?: boolean
     if (again.ok) {
       n = byBox
       answer = again
-      ;({ data: counted } = await admin.from('sea_track_usage').select('number').eq('month', month()).eq('number', n.number).maybeSingle())
+      ;({ data: counted } = await admin.from('sea_track_usage').select('number').eq('month', usageMonth()).eq('number', n.number).maybeSingle())
     }
   }
   const r = answer
-  if (!counted && (r.ok || r.billed)) await admin.from('sea_track_usage').insert({ month: month(), number: n.number, job_no: job.job_no })
+  if (!counted && (r.ok || r.billed)) await admin.from('sea_track_usage').insert({ month: usageMonth(), number: n.number, job_no: job.job_no })
   const now = new Date().toISOString()
   const base = { job_id: job.id, job_no: job.job_no, number: n.number, number_type: n.type, sealine: n.scac, fetched_at: now, ...(saved ? {} : { started_by: opts.by || 'auto' }) }
   // the line still answers with this container's PREVIOUS trip (J-673, 1 Nov 2026: the box
@@ -369,7 +382,7 @@ Deno.serve(async (req) => {
   }
 
   try {
-    if (body.usage) return json({ success: true, month: month(), used: await usedInTrial(admin), cap: MONTH_CAP })
+    if (body.usage) return json({ success: true, provider: usingFindteu() ? 'findteu' : 'safecube', month: month(), used: await usedInTrial(admin), cap: shipmentCap() })
     if (body.sealines) {
       const lines = await sealines()
       return json({ success: true, count: lines.length, lines: lines.map((s: any) => ({ name: s.name, scac: s.scacCodes, prefixes: s.prefixes, types: s.activeTypes, maintenance: s.maintenance })) })
@@ -398,7 +411,7 @@ Deno.serve(async (req) => {
       const landed = await retireLanded(admin, [job.id])
       if (landed.length) return json({ success: true, skipped: 'container already in port (LDB)', landed })
       const out = await track(admin, job, lines, { start: !!body.start, by })
-      return json({ success: !out.error, ...out, used: await usedInTrial(admin), cap: MONTH_CAP })
+      return json({ success: !out.error, ...out, used: await usedInTrial(admin), cap: shipmentCap() })
     }
 
     // scheduler: close rows LDB says have landed, refresh tracked jobs, add new ones
@@ -408,7 +421,9 @@ Deno.serve(async (req) => {
     const { data: rows } = await admin.from('sea_tracking').select('job_id, done, fetched_at').in('job_id', open.map((j: any) => j.id))
     const state = new Map((rows || []).map((r: any) => [r.job_id, r]))
     const results = []
+    const wallStart = Date.now()
     for (const job of open) {
+      if (usingFindteu() && Date.now() - wallStart > WALL_LIMIT_MS) break
       const s: any = state.get(job.id)
       if (s?.done) continue
       if (s?.fetched_at && Date.now() - new Date(s.fetched_at).getTime() < (REFRESH_HOURS - 0.5) * 3600e3) continue
@@ -417,7 +432,7 @@ Deno.serve(async (req) => {
       results.push(await track(admin, job, lines, { auto: true }))
       await sleep(1500)
     }
-    return json({ success: true, checked: results.length, results, landed, used: await usedInTrial(admin), cap: MONTH_CAP })
+    return json({ success: true, checked: results.length, results, landed, used: await usedInTrial(admin), cap: shipmentCap() })
   } catch (e) {
     return json({ success: false, error: (e as Error).message }, 500)
   }

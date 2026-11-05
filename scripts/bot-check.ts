@@ -15,6 +15,7 @@ import { happenedToday } from '../supabase/functions/_shared/portal/botMessages.
 import { toRoman, normalizeSpoken, jobNoFromText, tidyJobNos } from '../supabase/functions/wa-bot/media.ts'
 import { readDocFile } from '../supabase/functions/wa-bot/docfill.ts'
 import { repairOcrContainers, readScanText } from '../supabase/functions/_shared/portal/docReader.js'
+import { findteuRow, findteuAnswer } from '../supabase/functions/sea-track/findteu.ts'
 import { readPost } from '../supabase/functions/_shared/portal/postReader.js'
 import { isHinglish, changeParts, mergeProposals, LIVE_ASKED } from '../supabase/functions/wa-bot/assistant.ts'
 import { isUndo, isCorrection, handlePost } from '../supabase/functions/wa-bot/posts.ts'
@@ -323,6 +324,33 @@ for (const [raw, want] of [['TCNU7392038', 'TCNU7392038'], ['TCNU 739203 8', 'TC
   if (junk.documents[0].type === 'bl' || junk.fields.container_numbers?.length) fail('a paper that is not a BL was read as one')
   const fake: any = readScanText('BILL OF LADING\nCONTAINER TCNU7392039\nOCEAN VESSEL X')
   if (fake.fields.container_numbers?.length) fail(`a container with a wrong check digit was accepted: ${fake.fields.container_numbers}`)
+}
+// findTEU's answer becomes the same row as Safecube's (the shape of its live demo answer, 6 Nov 2026)
+{
+  const loc = (port: string, iso: string) => ({ terminal: 'T', port, country: 'X', iso_code: iso })
+  const ship = (vessel_name: string, voyage_nr: string) => ({ transport_mode: 'Vessel', vessel: { vessel_name, imo: vessel_name ? '9727625' : '', mmsi: vessel_name ? 248089000 : '', voyage_nr } })
+  const truck = { transport_mode: 'Truck', vessel: { vessel_name: '', imo: '', mmsi: '', voyage_nr: '' } }
+  const e = (event_date: string, l: any, action_name: string, mode: any, event_type: string) => ({ event_date, location: l, action: { action_name }, mode, event_type })
+  const sh = loc('Shanghai', 'CNSHA'), bu = loc('Busan', 'KRPUS'), ns = loc('Nhava Sheva', 'INNSA')
+  const data = (events: any[], completed = false) => ({ timestamp: '2026-11-01 10:00:00', scac: 'ONEY', pol: { ...sh, etd_date: '2026-10-20' }, pod: { ...ns, eta_date: '2026-11-20' }, container: { number: 'TCNU7392038', type: "40'HQ", completed }, events })
+  const atSea = findteuRow(data([e('2026-10-15', sh, 'Gate in full by', truck, 'actual'), e('2026-10-19', sh, 'Loaded on', ship('SHIP A', '01W'), 'actual'), e('2026-10-20', sh, 'Departed by', ship('SHIP A', '01W'), 'actual'),
+    e('2026-11-01', bu, 'Discharged from', ship('SHIP A', '01W'), 'expected'), e('2026-11-03', bu, 'Loaded on', ship('SHIP B', '02W'), 'expected'), e('2026-11-22', ns, 'Arrived by', ship('SHIP B', '02W'), 'expected')]))
+  if (atSea.status !== 'IN_TRANSIT' || atSea.vessel_name !== 'SHIP A' || atSea.vessel_imo !== '9727625' || atSea.pod_actual || !String(atSea.pod_date).startsWith('2026-11-22') || !String(atSea.pol_date).startsWith('2026-10-20')) fail(`findTEU at sea → ${JSON.stringify(atSea).slice(0, 220)}`)
+  if (atSea.last_event?.code !== 'DEPA' || atSea.next_event?.code !== 'DISC' || !atSea.route.via[0]?.change || atSea.route.via[0]?.name !== 'Busan, KR') fail(`findTEU moves and change of ship → ${JSON.stringify(atSea.route.via)}`)
+  const waiting = findteuRow(data([e('2026-10-15', sh, 'Gate in full by', truck, 'actual'), e('2026-10-25', sh, 'Loaded on', ship('SHIP A', '01W'), 'expected')]))
+  if (waiting.status !== 'PLANNED' || waiting.vessel_name !== 'SHIP A') fail(`findTEU not sailed → ${waiting.status} ${waiting.vessel_name}`)
+  const landed = findteuRow(data([e('2026-10-19', sh, 'Loaded on', ship('SHIP A', '01W'), 'actual'), e('2026-11-21', ns, 'Discharged from', ship('SHIP A', '01W'), 'actual')]))
+  if (!landed.pod_actual || !String(landed.pod_date).startsWith('2026-11-21')) fail(`findTEU arrived → ${landed.pod_actual} ${landed.pod_date}`)
+  if (findteuRow(data([], true)).status !== 'DELIVERED') fail('findTEU completed box is not delivered')
+  // answers: no shipment used on a failure; temporary ones retried; the demo key's data never saved
+  const a3: any = findteuAnswer(200, { success: false, error: { code: 3, text: 'Container/booking not found.' }, data: {} })
+  if (a3.ok || a3.billed || a3.retry || !/^NO_DATA/.test(a3.error)) fail(`findTEU not found → ${JSON.stringify(a3)}`)
+  const a2: any = findteuAnswer(200, { success: false, error: { code: 2, text: 'Carrier not responding' }, data: {} })
+  if (a2.ok || !a2.retry) fail(`findTEU carrier down should be retried → ${JSON.stringify(a2)}`)
+  const demo: any = findteuAnswer(200, { success: true, error: { code: 0 }, data: { NOTICE: 'THIS DATA IS NOT REAL', container: { number: 'X' }, events: [] } })
+  if (demo.ok) fail('findTEU demo data was accepted as real')
+  const real: any = findteuAnswer(200, { success: true, error: { code: 0, text: '' }, data: data([]) })
+  if (!real.ok || real.row.containers[0]?.no !== 'TCNU7392038') fail(`findTEU a real answer → ${JSON.stringify(real).slice(0, 120)}`)
 }
 console.log(failed ? `  ${failed} wrong` : '  all right')
 
