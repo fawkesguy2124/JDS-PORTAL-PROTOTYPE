@@ -570,7 +570,7 @@ export async function readPdf(pdfjs, data, opts = {}) {
   // hand": a misread BE or amount would be worse than none.
   if (opts.ocrPage && !typed.some((p) => p.type === 'bl' && findContainers(p.text).length)) {
     let tried = 0
-    for (const p of typed) {
+    for (const [i, p] of typed.entries()) {
       if (tried >= OCR_MAX_PAGES) break
       const short = p.type === 'other' && p.text.replace(/\s/g, '').length < 150
       if (p.type !== 'unreadable' && !short && p.type !== 'bl' && !(opts.isBl && p.type === 'other')) continue
@@ -588,7 +588,9 @@ export async function readPdf(pdfjs, data, opts = {}) {
       // (what the page's own text says is exact: kept after the scan's reading, for the containers)
       const merged = p.type === 'unreadable' ? lines : [...lines, ...p.lines]
       const text = merged.join('\n')
-      if (!scanIsBl(lines.join('\n')) && p.type !== 'bl' && !(opts.isBl && findContainers(text).length)) continue
+      // (a page after a BL with a real container on it is its attachment list: "J.00039-PCM-15X40")
+      const attachment = i > 0 && typed[i - 1].type === 'bl' && findContainers(text).some((c) => c[3] === 'U')
+      if (!scanIsBl(lines.join('\n')) && p.type !== 'bl' && !attachment && !(opts.isBl && findContainers(text).length)) continue
       Object.assign(p, { lines: merged, text, idx: [], type: 'bl', scan: `${raw}\n${p.text}` })
       if (findContainers(text).length) break
     }

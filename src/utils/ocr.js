@@ -47,6 +47,10 @@ async function readOnce(source, sparse = false) {
     return { text: data?.text || '', confidence: data?.confidence || 0 }
   } catch (e) {
     console.warn('[ocr] could not read the page:', e?.message)
+    // the engine may be stuck on that page: the next one gets a fresh engine
+    const stuck = worker
+    worker = null
+    stuck?.then((x) => x.terminate()).catch(() => {})
     return { text: '', confidence: 0 }
   } finally {
     clearTimeout(timer)
@@ -84,20 +88,18 @@ function enlarged(source) {
 // read gives '', never an error, so an unclear scan can't stop the upload.
 // opts.hard: the second reading, larger and as scattered text.
 export async function ocrImage(source, opts = {}) {
+  // a damaged image is known at once, before the engine is asked (one in the JD group chat's photos
+  // stopped the engine dead)
+  let drawable = source
+  if (!(source instanceof HTMLCanvasElement)) {
+    try { drawable = await createImageBitmap(source) } catch { return '' }
+  }
   if (opts.hard) {
-    let drawable = source
-    if (!(source instanceof HTMLCanvasElement)) {
-      try { drawable = await createImageBitmap(source) } catch { return '' }
-    }
     const big = source instanceof HTMLCanvasElement ? drawable : enlarged(drawable)
     return (await readOnce(big, true)).text
   }
   let best = await readOnce(source)
   if (best.confidence >= SURE) return best.text
-  let drawable = source
-  if (!(source instanceof HTMLCanvasElement)) {
-    try { drawable = await createImageBitmap(source) } catch { return best.text }
-  }
   for (const degrees of [90, 270, 180]) {
     const next = await readOnce(turned(drawable, degrees))
     if (next.confidence > best.confidence) best = next
