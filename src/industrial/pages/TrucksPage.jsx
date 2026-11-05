@@ -111,7 +111,6 @@ export default function TrucksPage({ currentUserName, onOpenJob, showToast, canU
   const [fixing, setFixing] = useState(null)        // { key, truckNo, container, error }: a truck being corrected
   const [busyId, setBusyId] = useState(null)        // one save / look-up at a time
   const lock = useRef(false)
-  const readyRef = useRef(null)
   const anyBusy = busyId !== null
 
   // ── the shared lists (journeyCore), on the rows with this page's fresh answers ──
@@ -470,10 +469,7 @@ export default function TrucksPage({ currentUserName, onOpenJob, showToast, canU
                 <TruckMap trucks={pins} selectedId={sel?.id || null} onSelect={setSelectedId} message={mapMessage} />
               </Suspense>
             ) : (
-              <EmptyState line icon="truck" title="No truck on the road ·"
-                action={ready.length
-                  ? <button type="button" className="ix-link" onClick={() => readyRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>{plural(ready.length, 'job')} ready for a truck →</button>
-                  : <span className="t2">no job waiting for a truck</span>} />
+              <EmptyState line icon="truck" title="No truck on the road" />
             )}
             {anyTruckRows ? (
               <div className="ix-tbl-wrap">
@@ -495,7 +491,7 @@ export default function TrucksPage({ currentUserName, onOpenJob, showToast, canU
             ) : q && road.length + waiting.length > 0 ? <EmptyState line icon="search" title="No truck matches your search." /> : null}
           </section>
 
-          <section className="ix-card ix-trk-panel" ref={readyRef}>
+          <section className="ix-card ix-trk-panel">
             <div className="ix-card-head">
               <Icon name="truck-loading" />
               <h2>Ready for a truck</h2><span className={`n${ready.length ? ' amber' : ''}`}>{ready.length}</span>
