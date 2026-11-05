@@ -1,4 +1,4 @@
-import { readPdf, readScanText, shipText } from '../utils/docReader'
+import { readPdf, readScanText, scanNeedsSecondLook, shipText } from '../utils/docReader'
 
 // (shipText now lives with the shared PDF reader; still exported here for older callers)
 export { shipText }
@@ -19,7 +19,12 @@ export async function readBlFile(file) {
     const pdfjs = await import('pdfjs-dist')
     pdfjs.GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.mjs', import.meta.url).href
     result = await readPdf(pdfjs, new Uint8Array(await file.arrayBuffer()), { ocrPage: ocrPdfPage, isBl: true, docOptions: pdfOptions(pdfjs) })
-  } else result = readScanText(await ocrImage(file))
+  } else {
+    const first = await ocrImage(file)
+    result = readScanText(first, { isBl: true })
+    // no container read, or only by repairing one: once more, harder
+    if (scanNeedsSecondLook(first)) result = readScanText(`${first}\n${await ocrImage(file, { hard: true })}`, { isBl: true })
+  }
   const f = result?.fields || {}
   return {
     vessel: shipText(f.vessel_name, f.voyage_no),

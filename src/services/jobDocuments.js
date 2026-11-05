@@ -1,6 +1,6 @@
 import { supabase } from '../supabase'
 import { readBlFile } from './blVessel'
-import { startShipTracking } from './shipTracking'
+import { startShipTracking, startContainerTracking, shouldTrackShip } from './shipTracking'
 import { isLineNotShip } from '../../supabase/functions/_shared/portal/shippingLines.js'
 
 // Upload one paper for a job: the file to storage, a documents row, what a BL says (never
@@ -26,6 +26,16 @@ export function fileProblem(file) {
 // 1 Nov 2026: "once the BL is uploaded, tracking should start"; before, a job created
 // without a BL or container number never started). Returns { vessel, filled, job }.
 export async function applyBlToJob(job, file) {
+  // ship and container tracking, in the background
+  const startTracking = (j) => {
+    if (!shouldTrackShip(j, { fromBl: true })) return
+    startShipTracking(j, { fromBl: true })
+    startContainerTracking(j)
+  }
+  const numbers = (j) => `${String(j.bl_no || '').trim()}|${String(j.containers || '').trim()}`
+  // numbers already on the job: tracking starts now, not after the paper is read (a scan takes
+  // seconds); a number the BL adds starts it again below (Jose, 5 Nov 2026: "instant")
+  startTracking(job)
   let bl = null
   try { bl = await readBlFile(file) } catch (e) { console.warn('[jobDocuments] could not read the BL:', e?.message) }
   const lineAsShip = !!job.vessel && isLineNotShip(String(job.vessel).split('/')[0], job.shipping_line)
@@ -43,8 +53,7 @@ export async function applyBlToJob(job, file) {
     if (error) console.warn('[jobDocuments] could not save what the BL says:', error.message)
     else if (data) saved = data
   }
-  // ship tracking starts now (runs on in the background)
-  startShipTracking(saved)
+  if (numbers(saved) !== numbers(job)) startTracking(saved)
   // no BL or container number anywhere: nothing to track with, and the person is told
   const noNumber = !String(saved.bl_no || '').trim() && !String(saved.containers || '').trim()
   return { vessel: saved !== job && updates.vessel ? updates.vessel : null, filled: saved !== job ? Object.keys(updates) : [], job: saved, noNumber }

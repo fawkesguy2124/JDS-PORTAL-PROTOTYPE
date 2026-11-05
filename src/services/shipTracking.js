@@ -10,15 +10,30 @@ import { supabase } from '../supabase'
 const TRACKING_FROM = '2026-10-24'
 export const SHIP_TRACKED = 'jds:ship-tracked'
 
-export function shouldTrackShip(job) {
+// opts.fromBl: someone just uploaded this job's BL, so an older open job is tracked too
+export function shouldTrackShip(job, opts = {}) {
   // sea jobs only (Air, Courier and Land have no ship; a job with no mode yet may be sea)
   if (!job?.id || (job.mode && !/^sea/i.test(job.mode)) || job.job_type === 'export') return false
   if (!job.bl_no && !job.containers) return false
+  if (opts.fromBl) return !(Number(job.stage) >= 10)
   return String(job.created_at || new Date().toISOString()).slice(0, 10) >= TRACKING_FROM
 }
 
-export async function startShipTracking(job) {
-  if (!shouldTrackShip(job)) return null
+// The container's own tracking (LDB) at once too, not at the next scheduled run, up to 30 minutes
+// later (Jose, 5 Nov 2026: "instant container tracking, vessel tracking"). Runs on in the background.
+export async function startContainerTracking(job) {
+  if (!job?.containers) return
+  try {
+    const { refreshJobContainers } = await import('./tracking/ldbProvider')
+    await refreshJobContainers(job)
+    window.dispatchEvent(new Event(SHIP_TRACKED))
+  } catch (e) {
+    console.warn('[shipTracking] container tracking could not start:', e?.message)
+  }
+}
+
+export async function startShipTracking(job, opts = {}) {
+  if (!shouldTrackShip(job, opts)) return null
   try {
     const { data, error } = await supabase.functions.invoke('sea-track', { body: { jobId: job.id, start: true } })
     if (error) { console.warn('[shipTracking] could not start:', error.message); return null }

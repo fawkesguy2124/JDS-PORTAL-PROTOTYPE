@@ -6,12 +6,12 @@ import { STAGE_NAMES } from '../utils/jobHelpers'
 import { linkContainer } from '../api/trackingApi'
 import { PORTS } from '../utils/ports'
 import { CLIENT_NAMES, matchClient } from '../utils/clients'
-import { readPdf, readScanText, describeDocuments } from '../utils/docReader'
+import { readPdf, readScanText, scanNeedsSecondLook, describeDocuments } from '../utils/docReader'
 import { boxOwnerHint } from '../../supabase/functions/_shared/portal/shippingLines.js'
 import { availableTypes, typesFoundInside, docTypeLabel } from '../utils/docTypes'
 import { isLineNotShip } from '../../supabase/functions/_shared/portal/shippingLines.js'
 import { Button, Chip, Icon } from '../industrial/ui'
-import { startShipTracking } from '../services/shipTracking'
+import { startShipTracking, startContainerTracking } from '../services/shipTracking'
 import { findSameShipment } from '../services/jobActions'
 import { shipText } from '../services/blVessel'
 // tokens live on .ix: the employee screen and the full-page route do not load them otherwise
@@ -278,7 +278,12 @@ export default function CreateJob({ isModal = false, onCancel, onCreated, initia
           ocrPage: (pdf, n) => { setExtractStatus('Reading the scan (up to a minute)...'); return ocrPdfPage(pdf, n) },
           docOptions: pdfOptions(pdfjs),
         })
-      } else result = readScanText(await ocrImage(file))
+      } else {
+        const first = await ocrImage(file)
+        result = readScanText(first)
+        // no container read on what looks like a BL, or only by repairing one: once more, harder
+        if (result.documents[0].type === 'bl' && scanNeedsSecondLook(first)) result = readScanText(`${first}\n${await ocrImage(file, { hard: true })}`)
+      }
       const inside = typesFoundInside(result.documents)
       // no type picked: the reader's own answer (a BL is a BL; Jose, 1 Nov 2026: "just upload the BL")
       setStagedDocs(prev => prev.map(d => d.id === docId ? { ...d, foundInside: inside, docType: d.docType || inside[0] || 'Other' } : d))
@@ -627,6 +632,7 @@ export default function CreateJob({ isModal = false, onCancel, onCreated, initia
     }
     // ship tracking starts now, not at the next hourly run (runs on in the background)
     startShipTracking(insertedJob)
+    startContainerTracking(insertedJob)
     setSaving(false)
 
     if (onCreated) {

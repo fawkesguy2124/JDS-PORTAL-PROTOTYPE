@@ -367,6 +367,22 @@ export const confirmText = (pending: Pending) =>
 export type ApplyDeps = { tell?: (phone: string, text: string, jobNo: string | null) => Promise<unknown> }
 
 // Makes the confirmed change. Returns the reply to send.
+// A BL or a new job on WhatsApp: ship tracking starts now, not at the next hourly run (Jose, 5 Nov
+// 2026: "instant"). Runs on after the reply; a failure only waits for that hourly run.
+function startSeaTracking(admin: Admin, jobId: string) {
+  const work = (async () => {
+    const { data: st } = await admin.from('bot_state').select('cron_token').eq('id', 1).maybeSingle()
+    const anon = (Deno.env.get('SUPABASE_ANON_KEY') || '').trim()
+    await fetch(`${(Deno.env.get('SUPABASE_URL') || '').trim()}/functions/v1/sea-track`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${anon}`, apikey: anon, 'x-bot-secret': String(st?.cron_token || '') },
+      body: JSON.stringify({ jobId, start: true }),
+      signal: AbortSignal.timeout(60_000),
+    })
+  })().catch((e) => console.warn(`[wa-bot] ship tracking did not start: ${(e as Error).message}`))
+  try { (globalThis as any).EdgeRuntime?.waitUntil?.(work) } catch { /* it still runs */ }
+}
+
 export async function applyChange(admin: Admin, pending: Pending, person: Person, deps: ApplyDeps = {}): Promise<string> {
   // several jobs: each change made on its own, one line per job
   if (pending.action === 'batch') {
@@ -428,6 +444,7 @@ They should send any message to the bot to start. While the bot uses Meta's test
       const att = await applyChange(admin, { action: 'attach_document', job_id: made.id, job_no: a.job_no, args: a.file, summary: '', at: now }, person, deps)
       if (!att.startsWith('✅')) return `✅ ${a.job_no} is made. ${att}`
     }
+    startSeaTracking(admin, made.id)
     return `✅ Done. ${a.job_no} is made in the portal.`
   }
   // a new job typed on WhatsApp
@@ -446,6 +463,7 @@ They should send any message to the bot to start. While the bot uses Meta's test
       note: `${f.client} · ${f.mode} · ${String(f.containers || '').split(' ').filter(Boolean).length} containers (via WhatsApp)`,
       job_id: made.id, job_no: made.job_no, done_by_name: `${person.name} via WhatsApp`, meta: { job_id: made.id, job_no: made.job_no, via: 'whatsapp' },
     })
+    startSeaTracking(admin, made.id)
     return `✅ Done: *${made.job_no}* created for ${f.client}. Upload its BE / BL in the portal or send them here.`
   }
   const { data: job, error: readErr } = await admin.from('jobs').select('*').eq('id', pending.job_id).maybeSingle()
@@ -605,6 +623,7 @@ They should send any message to the bot to start. While the bot uses Meta's test
     if (!Object.keys(fields).length) return `${job.job_no} already had everything this paper gives, so nothing more was filled.`
     const err = await save(fields); if (err) return err
     await log('note', `${job.job_no} — filled from a paper`, `${said.join(' · ')} (from the paper sent on WhatsApp by ${by})`, { filled: Object.keys(fields) })
+    if ('bl_no' in fields || 'containers' in fields || 'shipping_line' in fields) startSeaTracking(admin, job.id)
     return `✅ Done: filled ${job.job_no}: ${said.join(' · ')}.`
   }
   if (pending.action === 'record_ooc') {

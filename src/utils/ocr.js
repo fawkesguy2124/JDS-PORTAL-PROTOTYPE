@@ -12,6 +12,7 @@ export const pdfOptions = (pdfjs) => ({
 const PAGE_LIMIT_MS = 120_000
 const IDLE_MS = 120_000
 const MAX_WIDTH = 2800
+const HARD_WIDTH = 3600
 
 let worker = null
 let idleTimer = null
@@ -35,10 +36,12 @@ function releaseLater() {
   }, IDLE_MS)
 }
 
-async function readOnce(source) {
+async function readOnce(source, sparse = false) {
   let timer
   try {
     const w = await getWorker()
+    // (sparse: scattered text such as a number in a table cell, for the second, harder reading)
+    await w.setParameters({ tessedit_pageseg_mode: sparse ? '11' : '3' })
     const limit = new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('took too long')), PAGE_LIMIT_MS) })
     const { data } = await Promise.race([w.recognize(source), limit])
     return { text: data?.text || '', confidence: data?.confidence || 0 }
@@ -67,10 +70,28 @@ function turned(source, degrees) {
   return c
 }
 
+// twice the size, for the harder reading of a low-resolution photo
+function enlarged(source) {
+  const c = document.createElement('canvas')
+  c.width = source.width * 2
+  c.height = source.height * 2
+  c.getContext('2d').drawImage(source, 0, 0, c.width, c.height)
+  return c
+}
+
 // A canvas or an image file → its text. Scans are often sideways or upside down: a reading the
 // engine isn't sure of is tried with the page turned, and the surest one kept. A page that can't be
 // read gives '', never an error, so an unclear scan can't stop the upload.
-export async function ocrImage(source) {
+// opts.hard: the second reading, larger and as scattered text.
+export async function ocrImage(source, opts = {}) {
+  if (opts.hard) {
+    let drawable = source
+    if (!(source instanceof HTMLCanvasElement)) {
+      try { drawable = await createImageBitmap(source) } catch { return '' }
+    }
+    const big = source instanceof HTMLCanvasElement ? drawable : enlarged(drawable)
+    return (await readOnce(big, true)).text
+  }
   let best = await readOnce(source)
   if (best.confidence >= SURE) return best.text
   let drawable = source
@@ -86,10 +107,10 @@ export async function ocrImage(source) {
 }
 
 // One page of an open PDF (pdf.js) → its text
-export async function ocrPdfPage(pdf, pageNo) {
+export async function ocrPdfPage(pdf, pageNo, opts = {}) {
   const page = await pdf.getPage(pageNo)
   const plain = page.getViewport({ scale: 1 })
-  const viewport = page.getViewport({ scale: Math.min(3, MAX_WIDTH / plain.width) })
+  const viewport = page.getViewport({ scale: opts.hard ? Math.min(300 / 72, HARD_WIDTH / plain.width) : Math.min(3, MAX_WIDTH / plain.width) })
   const canvas = document.createElement('canvas')
   canvas.width = Math.ceil(viewport.width)
   canvas.height = Math.ceil(viewport.height)
@@ -105,7 +126,7 @@ export async function ocrPdfPage(pdf, pageNo) {
   } finally {
     clearTimeout(timer)
   }
-  const text = await ocrImage(canvas)
+  const text = await ocrImage(canvas, opts)
   canvas.width = 0
   return text
 }

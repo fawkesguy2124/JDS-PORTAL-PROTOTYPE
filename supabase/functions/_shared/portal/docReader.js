@@ -35,7 +35,7 @@ const num = (s) => {
 const uniq = (a) => [...new Set(a.filter(Boolean))]
 
 // ISO 6346 container number with its check digit
-const CONTAINER_RE = /\b([A-Z]{3}[UJZ])\s?(\d{6})\s?(\d)\b/g
+const CONTAINER_RE = /\b([A-Z]{3}[UJZ])[\s-]?(\d{6})[\s-]?(\d)\b/g
 function containerOk(no) {
   const letters = {}
   let v = 10
@@ -147,29 +147,83 @@ function pageType(text) {
 }
 
 // ── a scan read by OCR (Jose, 5 Nov 2026: a scanned BL starts tracking like a soft copy) ──
-// OCR mixes up O/0, I/1, S/5… in container numbers. The number's own check digit says whether a
-// repair is right, so a wrong reading is dropped, never guessed: a paper with no real container
-// number starts no tracking from its containers.
-const AS_DIGIT = { O: '0', Q: '0', D: '0', I: '1', L: '1', Z: '2', S: '5', G: '6', B: '8', T: '7' }
-const AS_LETTER = { 0: 'O', 1: 'I', 2: 'Z', 5: 'S', 6: 'G', 8: 'B' }
-const LOOSE_BOX = /(?<![A-Z0-9])([A-Z0-9])?([A-Z0-9]{3})([A-Z0-9])[\s-]{0,2}([A-Z0-9]{3})[\s-]?([A-Z0-9]{3})[\s-]{0,2}([A-Z0-9])(?![A-Z0-9])/g
-// owners seen at JDS and the big lines and lessors: one misread letter is corrected only when
-// exactly one of these then passes the check digit (J-644: "EGEU1074180" on the scan is EGSU1074180)
-const BOX_OWNERS = ['MSCU', 'MSDU', 'MSMU', 'MSNU', 'MEDU', 'MSKU', 'MRKU', 'MAEU', 'MRSU', 'ONEU', 'HLXU', 'HLBU', 'HAMU', 'CMAU', 'EGSU', 'EGHU', 'EMCU', 'EISU', 'OOLU', 'OOCU', 'CSNU', 'CBHU', 'CCLU', 'HDMU', 'HMMU', 'ZIMU', 'ZCSU', 'YMLU', 'YMMU', 'WHLU', 'WHSU', 'IAAU', 'TCNU', 'TCLU', 'TGBU', 'TGHU', 'TRHU', 'TEMU', 'TTNU', 'TLLU', 'CAIU', 'SEGU', 'SEKU', 'FCIU', 'FFAU', 'GESU', 'GLDU', 'BEAU', 'BMOU', 'UETU', 'MAGU', 'DFSU', 'DRYU', 'DPWU', 'CSYU', 'MSGU', 'NYKU', 'APLU', 'KKFU', 'PONU', 'CSGU', 'CSLU', 'EGLU', 'IRNU', 'CXDU', 'XINU', 'AMFU', 'INKU', 'TXGU', 'TIIU', 'PCIU', 'RCLU', 'SITU', 'SKLU', 'KMTU', 'WFHU', 'NSAU', 'TEXU']
-const oneLetterOff = (a, b) => [...a].filter((c, i) => c !== b[i]).length === 1
+// OCR mixes up O/0, I/1, S/5/8, B/8/5… in container numbers, drops or adds a letter. The number's
+// own check digit says whether a repair is right, so a wrong reading is dropped, never guessed: a
+// paper with no real container number starts no tracking from its containers. Tested on the BLs of
+// the JD group chat, made into poor scans (Nov 2026). Only ordinary containers (fourth letter U).
+const DIGIT_LOOKS = { O: '0', Q: '0', D: '0', U: '0', I: '1', L: '1', J: '1', T: '17', Z: '2', A: '4', S: '586', B: '85', G: '60', E: '8', R: '8' }
+const LETTER_LOOKS = { 0: 'O', 1: 'I', 2: 'Z', 4: 'A', 5: 'S', 6: 'G', 8: 'B' }
+// owners seen at JDS, the big lines and the lessors: a misread or missing letter is corrected only
+// when exactly one of these then passes the check digit (J-644: "EGEU1074180" on the scan is EGSU1074180)
+const BOX_OWNERS = ['MSCU', 'MSDU', 'MSMU', 'MSNU', 'MEDU', 'MSKU', 'MRKU', 'MAEU', 'MRSU', 'ONEU', 'HLXU', 'HLBU', 'HAMU', 'HALU', 'CMAU', 'EGSU', 'EGHU', 'EMCU', 'EISU', 'EGLU', 'OOLU', 'OOCU', 'CSNU', 'CBHU', 'CCLU', 'HDMU', 'HMMU', 'ZIMU', 'ZCSU', 'YMLU', 'YMMU', 'WHLU', 'WHSU', 'IAAU', 'TCNU', 'TCLU', 'TGBU', 'TGHU', 'TRHU', 'TRIU', 'TEMU', 'TTNU', 'TLLU', 'TIIU', 'TSSU', 'TWCU', 'TXGU', 'CAIU', 'SEGU', 'SEKU', 'SNBU', 'FCIU', 'FFAU', 'GESU', 'GLDU', 'GAOU', 'BEAU', 'BMOU', 'UETU', 'MAGU', 'DFSU', 'DRYU', 'DPWU', 'CSYU', 'MSGU', 'MSBU', 'NYKU', 'APLU', 'KKFU', 'PONU', 'CSGU', 'CSLU', 'IRNU', 'CXDU', 'XINU', 'AMFU', 'INKU', 'PCIU', 'RCLU', 'REGU', 'SITU', 'SKLU', 'KMTU', 'WFHU', 'TEXU']
+const editOff = (a, b) => {
+  if (a.length === b.length) return [...a].filter((c, i) => c !== b[i]).length
+  const [long, short] = a.length > b.length ? [a, b] : [b, a]
+  if (long.length - short.length !== 1) return 9
+  for (let i = 0; i < long.length; i++) if (long.slice(0, i) + long.slice(i + 1) === short) return 1
+  return 9
+}
+// the seven digits, with every look-alike tried. Few guesses only: the more combinations, the likelier
+// a wrong one passes the check digit by chance (a real scan gave WHSU5928436 for WHSU5186466). At
+// most two letters read for digits, and only one that could be several digits.
+function digitReadings(chars) {
+  let out = ['']
+  let unsure = 0
+  let several = 0
+  for (const c of chars) {
+    const opts = /\d/.test(c) ? c : DIGIT_LOOKS[c]
+    if (!opts) return []
+    if (!/\d/.test(c)) {
+      if (++unsure > 2) return []
+      if (opts.length > 1 && ++several > 1) return []
+    }
+    out = out.flatMap((x) => [...opts].map((d) => x + d))
+  }
+  return out
+}
+// a run of letters and digits → the one real container in it, or null. Light: the owner's four
+// letters as printed, look-alikes in the digits. Heavy: a known owner one letter away or inside the
+// run ("1T1SSU2164482" is TSSU2164482), and only with clean digits.
+function boxFromRun(run, heavy) {
+  if (run.length < 10 || run.length > 14) return null
+  const found = new Set()
+  const digits = run.slice(-7)
+  const head = run.slice(0, -7)
+  const named = head.replace(/\d/g, (c) => LETTER_LOOKS[c] || c)
+  if (!heavy) {
+    if (head.length !== 4 || !/^[A-Z]{3}[UVOD0]$/.test(named)) return null
+    for (const d of digitReadings(digits)) {
+      const box = `${named.slice(0, 3)}U${d}`
+      if (containerOk(box) && (named === head || BOX_OWNERS.includes(`${named.slice(0, 3)}U`))) found.add(box)
+    }
+  } else if (/^\d{7}$/.test(digits)) {
+    for (const o of BOX_OWNERS) if ((editOff(o, named) === 1 || named.endsWith(o)) && containerOk(`${o}${digits}`)) found.add(`${o}${digits}`)
+  }
+  return found.size === 1 ? [...found][0] : null
+}
+// each line, word by word: one word or up to three beside each other ("TCNU 739203 8", "TCNU-7392038")
+function repairLine(line, heavy) {
+  const words = [...line.matchAll(/[A-Z0-9]+/g)].map((m) => ({ text: m[0], at: m.index, end: m.index + m[0].length }))
+  const edits = []
+  for (let i = 0; i < words.length; i++) {
+    for (let n = 1; n <= 3 && i + n <= words.length; n++) {
+      const part = words.slice(i, i + n)
+      if (part.some((w, k) => k > 0 && !/^[\s-]{1,2}$/.test(line.slice(part[k - 1].end, w.at)))) break
+      const run = part.map((w) => w.text).join('')
+      if (run.length > 14) break
+      if (run.length < 10 || (run.match(/\d/g) || []).length < 4) continue
+      const box = /^[A-Z]{4}\d{7}$/.test(run) && containerOk(run) ? run : boxFromRun(run, heavy)
+      if (box) { edits.push({ at: part[0].at, end: part[n - 1].end, box }); i += n - 1; break }
+    }
+  }
+  return edits.reduceRight((out, e) => out.slice(0, e.at) + e.box + out.slice(e.end), line)
+}
+const repairPass = (text, heavy) => String(text || '').split('\n').map((l) => repairLine(l, heavy)).join('\n')
+// (the heavy repair only when the paper shows no real container otherwise: on a test of 91 BLs it
+// invented a second number beside a true one)
 export function repairOcrContainers(text) {
-  return String(text || '').replace(LOOSE_BOX, (all, stray, owner, kind, a, b, check) => {
-    const name = owner.replace(/\d/g, (c) => AS_LETTER[c] || c)
-    const digits = `${a}${b}${check}`.replace(/[A-Z]/g, (c) => AS_DIGIT[c] || c)
-    if (!/^[A-Z]{3}$/.test(name) || !/^\d{7}$/.test(digits)) return all
-    // the fourth letter is U, J or Z; U is often read as V, O or D
-    const kinds = /[UJZ]/.test(kind) ? [kind] : /[VOD0]/.test(kind) ? ['U'] : kind === '2' ? ['Z'] : []
-    const good = kinds.map((k) => `${name}${k}${digits}`).find(containerOk)
-    if (good) return good
-    if (stray) return all
-    const near = BOX_OWNERS.filter((o) => oneLetterOff(o, `${name}${kinds[0] || kind}`) && containerOk(`${o}${digits}`))
-    return near.length === 1 ? `${near[0]}${digits}` : all
-  })
+  const light = repairPass(text, false)
+  return findContainers(light).some((c) => c[3] === 'U') ? light : repairPass(light, true)
 }
 const ocrLines = (raw) => repairOcrContainers(raw).split('\n').map((l) => l.replace(/^[\s|!_~]+|[\s|_~]+$/g, '').replace(/\s+/g, ' ')).filter(Boolean)
 // is this scanned page a BL? (its words can be misread, so a real container number beside the BL's
@@ -178,25 +232,61 @@ function scanIsBl(text) {
   const type = pageType(text)
   return type === 'bl' || (type === 'other' && findContainers(text).length > 0 && /VESSEL|PORT OF (LOADING|DISCHARGE)|SHIPPER|CONSIGNEE|NOTIFY/i.test(text))
 }
+// A scan's containers: ordinary ones only. The same box read twice can come out two ways: a repaired
+// number nearly the same as one read exactly is that misreading (WHSU6515078 beside WHSU5515978,
+// TRHU2295358 beside TIIU2295353).
+function scanContainers(text, raw) {
+  const boxes = findContainers(text).filter((c) => c[3] === 'U')
+  const exact = new Set(findContainers(String(raw)))
+  const near = (a, b) => [...a].filter((c, i) => c !== b[i]).length <= 3
+  return boxes.filter((b) => exact.has(b) || !boxes.some((o) => o !== b && exact.has(o) && near(o, b)))
+}
+// A second, harder reading is needed when no container was read, or one only by repairing it: a
+// repair can pass the check digit by chance, and a second reading shows the true number
+export function scanNeedsSecondLook(raw) {
+  const exact = findContainers(String(raw)).filter((c) => c[3] === 'U')
+  const read = findContainers(repairOcrContainers(raw)).filter((c) => c[3] === 'U')
+  return !read.length || read.some((c) => !exact.includes(c))
+}
 const OCR_MAX_PAGES = 6
-// the ship on a scan: small print can sit between the label and the value ("Ocean vessel" / "to be
-// void." / "ITAL USODIMARE V.191W NANSHA CHINA"; J-644): the first capitals-only line with a voyage
-const SCAN_SHIP = /^([A-Z][A-Z0-9.-]*(?: [A-Z0-9][A-Z0-9.-]*){0,4}?)\s+(?:V\.?\s?|VOY\.?\s?)?([A-Z]?\d{2,4}[A-Z]?)(?=\s|$)/
-function scanShip(lines) {
-  const at = lines.findIndex((l) => /OCEAN\s*VESSEL|VESSEL\s*(?:&|AND|\/)\s*VOY/i.test(l))
-  for (let k = at + 1; at >= 0 && k <= at + 5 && k < lines.length; k++) {
-    const m = lines[k].match(SCAN_SHIP)
-    if (m && !/^(PORT|PLACE|NHAVA|INDIA|NO\.?)\b/.test(m[1])) return { vessel_name: m[1], voyage_no: m[2] }
+// The ship, from the line a BL prints it on (tested on the 1,034 PDFs of the JD group chat, Nov 2026).
+// Small print can sit between the label and the value ("Ocean vessel" / "to be void." / "ITAL
+// USODIMARE V.191W NANSHA CHINA"; J-644). The voyage has many forms: 191W, V.QS604A, (SEG0625E),
+// W921, 26001W, 6201. The line can go on with the ports.
+const SHIP_NAME_PART = String.raw`[A-Z][A-Z0-9.-]*(?: (?:[A-Z][A-Z.-]*|[IVX]+|\d{2,4}(?= )))*?`
+const SHIP_VOY_PART = String.raw`(?:\s*[/(]\s*|\s+)(?:[Vv]\.?\s?|[Vv][Oo][Yy][A-Za-z]*\.?\s*:?\s*)?([A-Z]{0,4}\d{2,6}[A-Z]{1,2}|[A-Z]{1,4}\d{2,6}|\d{2,4})\s?\)?`
+const SCAN_SHIP_LINE = new RegExp(`^(${SHIP_NAME_PART})${SHIP_VOY_PART}(?=[\\s,]|$)`)
+const SHIP_LADEN_BY = new RegExp(`\\bBY\\s+(${SHIP_NAME_PART})${SHIP_VOY_PART}\\s*$`)
+// no "vessel" label on the form: two words or more and a voyage with its direction, "WAN HAI 507 W240"
+const SHIP_NO_LABEL = new RegExp(`^(${SHIP_NAME_PART} ${SHIP_NAME_PART})\\s*[/ ]\\s*(\\d{2,4}[EWNS]|[EWNS]\\d{2,4})(?=[\\s,]|$)`)
+const NOT_SHIP_START = /^(VOY|VOYAGE|IGM|BE|PORT|PLACE|NHAVA|INDIA|CHINA|NO|TOTAL|SAY|FREIGHT|GROSS|DATE|ROOM|PLOT|HOUSE|UNIT|TEL|FAX|GST|PAN|IEC|CIN|BLDG|BUILDING|FLOOR|ROAD|SHOP|BOX|ZIP|CODE|HS|OM|BL|BILL|SEAL|CY|CFS|FCL|LCL|TWO|THREE)\b/
+const NOT_A_SHIP = /PARTICULAR|FURNISHED|SHIPPER|CONSIGNEE|CONTAINER|S\.A\.C|TOTAL|LADING|CARRIER|BALANCE|STATEMENT|^Sr\b|PACKAGE|KGS\b|\bCODE\b|\bOF\b|\bBILL\b|\bSAME\b|\bAS\b|LOADING|DISCHARGE|DELIVERY|NOTIFY|MERCHANT|COLLECT|PREPAID|PRINTED|\b(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)\b[.\d]/i
+// (a ship's name has a real word in it, and isn't a container or a number misread: "CSNU79552", "W0")
+const okShip = (name) => !!name && !NOT_SHIP_START.test(name) && !NOT_A_SHIP.test(name) && !isNotShipName(name) && /[A-Z]{3}/.test(name) && !/[A-Z]{2}\d{3}/.test(name)
+function shipFromLines(lines) {
+  for (let i = 0; i < lines.length; i++) {
+    if (!/OCEAN\s*VESSEL|\bVESSEL\b/i.test(lines[i])) continue
+    for (let k = i; k <= i + 5 && k < lines.length; k++) {
+      // (on the label's own line, only what comes after the label)
+      const text = k === i ? lines[i].replace(/^.*?\bVESSEL\b(?:\s*NAME)?\s*[:.]?\s*/i, '').trim() : lines[k].trim()
+      const m = text.match(SCAN_SHIP_LINE)
+      if (m && okShip(m[1])) return { vessel_name: m[1].trim(), voyage_no: m[2] }
+    }
+  }
+  for (const l of lines) {
+    const m = l.trim().match(SHIP_LADEN_BY) || l.trim().match(SHIP_NO_LABEL)
+    if (m && okShip(m[1])) return { vessel_name: m[1].trim(), voyage_no: m[2] }
   }
   return null
 }
 
 // A photo of a paper, read by OCR: the same answer as readPdf
-export function readScanText(raw) {
+export function readScanText(raw, opts = {}) {
   const lines = ocrLines(raw)
   const text = lines.join('\n')
-  const type = scanIsBl(text) ? 'bl' : 'unreadable'
-  const fields = type === 'bl' ? readBl(lines, text, true) : {}
+  // (the person said it is a BL: a real container number on it is enough)
+  const type = scanIsBl(text) || (opts.isBl && findContainers(text).length) ? 'bl' : 'unreadable'
+  const fields = type === 'bl' ? readBl(lines, text, String(raw || ' ')) : {}
   return { pages: [{ page: 1, type }], documents: [{ type, label: DOC_LABELS[type] || type, pages: [1], fields }], fields, unreadablePages: type === 'bl' ? [] : [1], be: null, fromScan: type === 'bl' }
 }
 
@@ -301,8 +391,10 @@ function readBl(lines, text, scan = false) {
     const top = lines.slice(0, 6).map((l) => l.trim())
     bl = top.find((l) => /^[A-Z]{2,6}\d{6,14}$/.test(l) || /^\d{3}[A-Z]\d{6}$/.test(l)) || null
   }
-  const vv = (scan && scanShip(lines)) || vesselVoyage(lines, t)
-  const containers = findContainers(t)
+  let vv = scan ? shipFromLines(lines) || vesselVoyage(lines, t) : vesselVoyage(lines, t)
+  // (what the older reading found may be a sentence: "PARTICULARS FURNISHED BY SHIPPER")
+  if (!vv.vessel_name || !okShip(vv.vessel_name)) vv = shipFromLines(lines) || { vessel_name: null, voyage_no: null }
+  const containers = scan ? scanContainers(t, scan) : findContainers(t)
   const seals = uniq([
     ...[...t.matchAll(/SEAL\s*(?:NO\.?|NUMBER|#)?\s*[:.]\s*([A-Z]{0,4}\d{5,10})\b(?![.,]\d)/gi)].map((m) => m[1]),
     ...[...t.matchAll(/Seal Number:[\s\S]{0,40}?\b([A-Z]{1,4}\d{5,10})\b/gi)].map((m) => m[1]),
@@ -483,12 +575,21 @@ export async function readPdf(pdfjs, data, opts = {}) {
       const short = p.type === 'other' && p.text.replace(/\s/g, '').length < 150
       if (p.type !== 'unreadable' && !short && p.type !== 'bl' && !(opts.isBl && p.type === 'other')) continue
       tried++
-      const lines = ocrLines(await opts.ocrPage(pdf, p.page))
+      let raw = await opts.ocrPage(pdf, p.page)
+      let lines = ocrLines(raw)
+      const asBl = scanIsBl(lines.join('\n')) || p.type === 'bl' || opts.isBl
+      // a BL with no container read: once more, harder (sparse text, larger), as tables and faint
+      // print can hide the number from the first reading
+      if (asBl && scanNeedsSecondLook(`${raw}\n${p.text}`)) {
+        const again = await opts.ocrPage(pdf, p.page, { hard: true })
+        raw = `${raw}\n${again}`
+        lines = [...lines, ...ocrLines(again)]
+      }
       // (what the page's own text says is exact: kept after the scan's reading, for the containers)
       const merged = p.type === 'unreadable' ? lines : [...lines, ...p.lines]
       const text = merged.join('\n')
-      if (!scanIsBl(lines.join('\n')) && p.type !== 'bl') continue
-      Object.assign(p, { lines: merged, text, idx: [], type: 'bl', scan: true })
+      if (!scanIsBl(lines.join('\n')) && p.type !== 'bl' && !(opts.isBl && findContainers(text).length)) continue
+      Object.assign(p, { lines: merged, text, idx: [], type: 'bl', scan: `${raw}\n${p.text}` })
       if (findContainers(text).length) break
     }
   }
@@ -504,8 +605,8 @@ export async function readPdf(pdfjs, data, opts = {}) {
   const docs = []
   for (const p of typed) {
     const last = docs[docs.length - 1]
-    if (last && last.type === p.type && p.type !== 'unreadable') { last.pages.push(p.page); last.text += '\n' + p.text; last.lines.push(...p.lines); last.idx.push(...p.idx); last.scan ||= !!p.scan }
-    else docs.push({ type: p.type, pages: [p.page], text: p.text, lines: [...p.lines], idx: [...p.idx], scan: !!p.scan })
+    if (last && last.type === p.type && p.type !== 'unreadable') { last.pages.push(p.page); last.text += '\n' + p.text; last.lines.push(...p.lines); last.idx.push(...p.idx); last.scan = `${last.scan}${p.scan || ''}` }
+    else docs.push({ type: p.type, pages: [p.page], text: p.text, lines: [...p.lines], idx: [...p.idx], scan: p.scan || '' })
   }
 
   let be = null
@@ -547,7 +648,7 @@ export async function readPdf(pdfjs, data, opts = {}) {
     fields,
     unreadablePages: typed.filter((p) => p.type === 'unreadable').map((p) => p.page),
     be,
-    fromScan: docs.some((d) => d.scan),
+    fromScan: docs.some((d) => !!d.scan),
   }
 }
 
