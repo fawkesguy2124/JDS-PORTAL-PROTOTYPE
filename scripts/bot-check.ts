@@ -277,6 +277,14 @@ if (!happenedToday(new Date().toISOString()) || happenedToday(new Date(Date.now(
   const r4: any = await answerQuestion(fakeAdmin([old]), { phone: '91', name: 'Test' }, 'kal', bd, deps, '📄 *J-598*: no BE in the portal yet. Is it filed?')
   if (r4) fail(`"kal" 8 hours after the question was taken as its answer: ${r4.reply}`)
 }
+// a new job with a BL or container already on an open job says so in its question (5 Nov 2026)
+{
+  const d = { jobs: [{ id: 'a', job_no: 'J-741', client: 'L', stage: 2, bl_no: 'MIAO261000085', containers: 'OOCU9074031', field_meta: {} }, { id: 'b', job_no: 'J-100', client: 'L', stage: 10, bl_no: 'XYZA1234567', containers: 'CCLU7885874', field_meta: {} }], documents: [] }
+  const make = (a: any) => prepareChange({ action: 'create_job', job: 'J-1236', client: 'L', job_mode: 'Sea FCL', ...a }, d, ME as any) as any
+  if (!/already on J-741/.test(make({ containers: 'OOCU9074031' }).pending?.summary)) fail('a repeated container on a new job was not said')
+  if (!/already on J-741/.test(make({ containers: 'CCLU7885874', bl_no: 'MIAO261000085' }).pending?.summary)) fail('a repeated BL on a new job was not said')
+  if (/already on/.test(make({ containers: 'CCLU7885874' }).pending?.summary)) fail('a container on a delivered job (a later trip) was called a repeat')
+}
 console.log(failed ? `  ${failed} wrong` : '  all right')
 
 // ── 2. the snapshot of real papers and posts ──

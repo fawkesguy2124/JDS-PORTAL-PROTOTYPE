@@ -12,6 +12,7 @@ import { availableTypes, typesFoundInside, docTypeLabel } from '../utils/docType
 import { isLineNotShip } from '../../supabase/functions/_shared/portal/shippingLines.js'
 import { Button, Chip, Icon } from '../industrial/ui'
 import { startShipTracking } from '../services/shipTracking'
+import { findSameShipment } from '../services/jobActions'
 import { shipText } from '../services/blVessel'
 // tokens live on .ix: the employee screen and the full-page route do not load them otherwise
 import '../industrial/industrial.css'
@@ -152,6 +153,8 @@ function Field({ id, label, required, error, hint, wide, children }) {
   )
 }
 
+const shipmentKey = (f) => `${String(f.bl_no || '').toUpperCase().replace(/[^A-Z0-9]/g, '')}|${HAS_BOXES(f.mode) ? f.containers.map((c) => String(c.no || '').trim().toUpperCase()).filter(Boolean).sort().join(' ') : ''}`
+
 export default function CreateJob({ isModal = false, onCancel, onCreated, initialFilePath = null }) {
   const navigate = useNavigate()
   const { user, profile } = useAuth()
@@ -160,6 +163,7 @@ export default function CreateJob({ isModal = false, onCancel, onCreated, initia
   const [error, setError] = useState('')
   // which field the error belongs to ('' = a general error shown in the footer)
   const [errorField, setErrorField] = useState('')
+  const [sameShipment, setSameShipment] = useState(null) // { key, hits }: warned once for this BL and these containers
   const [stagedDocs, setStagedDocs] = useState([])
   const [addDocType, setAddDocType] = useState('')
   const [addDocError, setAddDocError] = useState('')
@@ -524,6 +528,14 @@ export default function CreateJob({ isModal = false, onCancel, onCreated, initia
     // Validate before DB insert
     if (containersString && !form.carrier) return fail('carrier', 'Shipping line is required when containers are given.')
 
+    // already on an open job: asked once, a second press creates it anyway
+    const shipKey = shipmentKey(form)
+    if (sameShipment?.key !== shipKey) {
+      const hits = await findSameShipment(payload.bl_no, containersString)
+      if (hits.length) { setSameShipment({ key: shipKey, hits }); setSaving(false); return }
+      setSameShipment(null)
+    }
+
     const { data: insertedJob, error: insertError } = await supabase
       .from('jobs')
       .insert(payload)
@@ -616,6 +628,7 @@ export default function CreateJob({ isModal = false, onCancel, onCreated, initia
     navigate(profile?.role === 'field_ops' ? '/field' : '/admin')
   }
 
+  const sameNow = sameShipment?.key === shipmentKey(form) ? sameShipment.hits : null
   const lastRow = form.containers[form.containers.length - 1]
   const canAddRow = !lastRow || (lastRow.no.trim().length >= 4 && (form.mode !== 'Sea FCL' || lastRow.size !== ''))
   // the warning disappears by itself once the last row is complete (no effect needed)
@@ -1094,11 +1107,17 @@ export default function CreateJob({ isModal = false, onCancel, onCreated, initia
           {/* sticky footer: outside the scrolling body, so Create job is always in reach */}
           <footer className="ix-cj-foot">
             {error && !errorField && <p className="ix-cj-foot-err" role="alert"><Icon name="alert-circle" />{error}</p>}
+            {sameNow && (
+              <p className="ix-cj-foot-err ix-cj-foot-warn" role="alert">
+                <Icon name="alert-triangle" />
+                <span>Already open: {sameNow.map((h) => `${h.job_no} (${h.client}) has ${h.what}`).join('; ')}. Is this the same shipment? Create it only if it's a different one.</span>
+              </p>
+            )}
             <div className="ix-cj-actions">
               <Button onClick={handleCancel} disabled={busy}>Cancel</Button>
               <Button type="submit" variant="primary" disabled={busy}>
                 {busy && <Icon name="loader-2" className="ix-cj-spin" />}
-                {uploadingDocs ? 'Uploading documents…' : saving ? 'Saving…' : 'Create job'}
+                {uploadingDocs ? 'Uploading documents…' : saving ? 'Saving…' : sameNow ? 'Create anyway' : 'Create job'}
               </Button>
             </div>
           </footer>

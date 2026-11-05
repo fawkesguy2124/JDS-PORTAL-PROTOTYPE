@@ -20,6 +20,7 @@
 .ix-cj-foot { flex-shrink: 0; display: flex; align-items: center; flex-wrap: wrap; gap: var(--s2) var(--s3); padding: 10px var(--s5); border-top: 1px solid var(--line); background: var(--surface-2) }
 .ix-cj-foot-err { flex: 1 1 240px; min-width: 0; margin: 0; display: flex; align-items: flex-start; gap: 6px; font-size: var(--fs-sm); color: var(--red); line-height: 1.35 }
 .ix-cj-foot-err > i { font-size: 14px; margin-top: 1px; flex-shrink: 0 }
+.ix-cj-foot-warn { color: var(--amber) }
 .ix-cj-actions { margin-left: auto; display: flex; gap: var(--s2) }
 .ix-cj-spin { animation: ixSpin .8s linear infinite }
 

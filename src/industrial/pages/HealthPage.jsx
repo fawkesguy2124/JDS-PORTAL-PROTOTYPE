@@ -99,7 +99,7 @@ export default function HealthPage() {
     {
       id: 'ships', name: 'Ship tracking', tone: t.ships, last: s.last_update,
       status: s.tracked ? `${plural(s.tracked, 'ship', 'ships')} on the way` : 'No ships being tracked',
-      details: [`${h.safecube_used || 0} of 45 tracked shipments used this month`,
+      details: [`${h.safecube_used || 0} tracked shipments used this month (stops at 95 for the whole trial)`,
         s.refresh_errors ? `last refresh failed (${s.refresh_errors}), showing the last good data` : null,
         s.errors ? `could not track ${s.errors}` : null],
     },

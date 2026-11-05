@@ -10,7 +10,7 @@ import { askConfirm } from './confirm'
 // Ship tracking on the job (Jose, 24 Oct 2026): what JDS used to look up on each
 // shipping line's website by container number: ETA, the ship (IMO), where it is
 // and the latest move. The sea-track function fills it every 3 hours for new sea
-// jobs; older jobs start with "Track this ship". The trial has 50 shipments, so
+// jobs; older jobs start with "Track this ship". The trial has 100 shipments, so
 // starting one asks first. (No vendor name on screen; Jose's rule.)
 const SHIP_STATUS = { PLANNED: 'Not sailed yet', IN_TRANSIT: 'At sea', DELIVERED: 'Arrived', UNKNOWN: 'Status not given' }
 
@@ -20,7 +20,8 @@ const SHIP_STATUS = { PLANNED: 'Not sailed yet', IN_TRANSIT: 'At sea', DELIVERED
 // are already plain and stay as they are.
 const seaWhy = (err) => {
   const e = String(err || '')
-  if (!/^(?:[A-Z][A-Z0-9_]{3,}|HTTP \d+|save:)/.test(e)) return e
+  // (the code can come after its number: "400: SEALINE_HASNT_PROVIDE_INFO")
+  if (!/^(?:\d{3}:\s*)?(?:[A-Z][A-Z0-9_]{3,}|HTTP \d+|save:)/.test(e)) return e
   if (/SEALINE_HASNT_PROVIDE_INFO|NO_EVENTS|NO_DATA/.test(e)) return 'the shipping line has not shared data for it yet'
   if (/NO_RESPONSE|TEMPORARY|MAINTENANCE|TIMEOUT|HTTP 5\d\d/.test(e)) return 'the tracking service did not answer; it tries again later'
   if (/WRONG|INVALID|NOT_FOUND|NOT_SUPPORTED|CANT_DETECT/.test(e)) return 'the tracking service could not find this number at the shipping line'

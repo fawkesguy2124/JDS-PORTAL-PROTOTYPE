@@ -6,6 +6,7 @@ import { daysAgo, deliveryBy, displayLine, effectiveStage } from '../services/jo
 import { seaOf, shipIdOf, vesselOf } from '../../supabase/functions/_shared/portal/ships.js'
 import { isLineNotShip } from '../../supabase/functions/_shared/portal/shippingLines.js'
 import { startShipTracking } from '../services/shipTracking'
+import { logJobRenumbered } from '../services/jobActions'
 import { Button, Chip, Dash, Icon, JobNo, Panel, PhaseStatus, Status, Tabs, fmtDate, fmtDateTime, fmtINR, timeAgo } from '../industrial/ui'
 import CustomsStatusCard from './CustomsStatusCard'
 import { PORTS, portLabel } from '../utils/ports'
@@ -347,6 +348,7 @@ function JobDetailView({ job, profiles = {}, currentUserName, isAdmin, canUpdate
       updates.updated_at = new Date().toISOString()
       const { error } = await supabase.from('jobs').update(updates).eq('id', job.id)
       if (error) throw error
+      if ('job_no' in updates) await logJobRenumbered(job, updates.job_no, currentUserName)
       notify('Saved successfully.', 'success')
       // a BL / container number or line added or corrected: ship tracking (re)starts now with it
       if (['bl_no', 'containers', 'shipping_line', 'mode', 'job_type'].some((k) => k in updates)) startShipTracking({ ...job, ...updates })

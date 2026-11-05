@@ -2,7 +2,7 @@
 // each container on every shipping line's website to see the ETA, the ship and
 // where it is. This looks up each new sea job's carrier BL (or, for a house BL,
 // one of its containers) on Safecube and keeps the answer in sea_tracking.
-// NOT ULIP. Safecube's free trial allows 50 shipments, so:
+// NOT ULIP. Safecube's free trial allows 100 shipments (Jose, 5 Nov 2026), so:
 //  • a BL counts once however many containers it has, so a carrier BL is used first
 //  • only sea imports whose containers are not in port yet are looked up
 //  • jobs opened before the trial are only tracked when staff ask (start: true)
@@ -19,7 +19,7 @@ import { lineName } from '../_shared/portal/shippingLines.js'
 import { containerTrip, isOldVoyage } from '../_shared/portal/journeyCore.js'
 
 const API = 'https://api.sinay.ai/container-tracking/api/v2'
-const MONTH_CAP = 45                 // trial: 50 shipments; 5 kept spare
+const MONTH_CAP = 95                 // trial: 100 shipments; 5 kept spare
 const AUTO_FROM = '2026-10-24'       // jobs opened from the trial's first day are added by themselves
 // every hour now (Jose, 25 Oct 2026: alerts within 1.5 hours)
 const REFRESH_HOURS = 1
@@ -195,8 +195,8 @@ function arrived(row: any) {
   return !!(row?.pod_actual && row?.pod_date && Date.now() - new Date(row.pod_date).getTime() > 86400e3)
 }
 
-// the trial's 50 shipments are for the whole trial, not per month (1 Nov 2026: October
-// had used 8, so 45 more in November would have gone past 50)
+// the trial's shipments are for the whole trial, not per month (1 Nov 2026: October had used 8,
+// so a monthly count would have gone past the limit)
 async function usedInTrial(admin: any) {
   const { count } = await admin.from('sea_track_usage').select('number', { count: 'exact', head: true })
   return count || 0

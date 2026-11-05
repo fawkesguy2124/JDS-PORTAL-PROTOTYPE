@@ -405,10 +405,13 @@ export default function JobDrawer({ jobId, onClose, onOpenFull, onOpenTruck, cur
 
   // ── timeline: saved events, this trip's container moves, upcoming dates ──
   const events = []
+  // a saved title keeps the number the job had then ("J-1001 — Job created"): on this job's own
+  // timeline it reads with the number it has now (J-741, 5 Nov 2026)
+  const nowNo = (title) => String(title || '').replace(/^J-\d+(?=\s+—)/, job.job_no)
   for (const r of log) {
     if (r.type === 'note') continue
     const src = sourceOf(r)
-    events.push({ at: r.created_at, t: plain(r.title || String(r.type || r.action || '').replace(/_/g, ' ')), src, by: r.done_by_name, bad: BAD.test(`${r.type} ${r.title || ''}`) })
+    events.push({ at: r.created_at, t: plain(nowNo(r.title) || String(r.type || r.action || '').replace(/_/g, ' ')), src, by: r.done_by_name, bad: BAD.test(`${r.type} ${r.title || ''}`) })
   }
   for (const b of boxes) {
     if (b.milestones.length) {
@@ -420,7 +423,7 @@ export default function JobDrawer({ jobId, onClose, onOpenFull, onOpenTruck, cur
     }
   }
   if (j.oocDate && !log.some((r) => r.type === 'ooc_granted')) events.push({ at: j.oocDate, t: `OOC granted${j.customs?.ooc_no ? ` (${j.customs.ooc_no})` : ''}`, src: 'customs' })
-  if (job.created_at) events.push({ at: job.created_at, t: 'Job created', src: 'staff' })
+  if (job.created_at && !log.some((r) => r.type === 'job_created')) events.push({ at: job.created_at, t: 'Job created', src: 'staff' })
   const byTime = (a, b) => new Date(b.at) - new Date(a.at)
   events.sort(byTime)
   // (every event shown, nothing folded or cut short: the card scrolls; Jose, 1 Nov 2026)

@@ -156,11 +156,15 @@ function prepareCreate(args: any, data: any, person: Person): Prepared {
     vessel: vessel || null, eta: eta || null, shipping_line: lineName(args?.line) || null,
     be_no: be || null, be_date: be ? String(args?.be_date || '').slice(0, 10) || null : null, free_days: days,
   }
+  // the same shipment on an open job (J-741 and J-1236, 3 Nov 2026): said in the question
+  const blKey = norm(fields.bl_no)
+  const sameOn = (data.jobs || []).filter((j: any) => Number(j.stage) < 10 && ((blKey.length >= 6 && norm(j.bl_no) === blKey) || parseContainerNos(j.containers).some((c: string) => boxes.includes(c))))
   const lines = [
     `Create *${jobNo}* for *${client}*${known.includes(client) ? '' : ' (new client name)'}`,
     `${mode} · ${port}${boxes.length ? ` · ${boxes.length} container${boxes.length > 1 ? 's' : ''}: ${boxes.join(', ')}${size ? ` (${size})` : ''}` : ''}`,
     [fields.bl_no && `BL ${fields.bl_no}`, fields.vessel && `ship ${fields.vessel}`, fields.shipping_line && `line ${fields.shipping_line}`, fields.eta && `ETA ${nice(fields.eta)}`, be && `BE ${be}`, `${days} free days`].filter(Boolean).join(' · '),
   ]
+  if (sameOn.length) lines.push(`⚠️ Same BL or container is already on ${sameOn.map((j: any) => j.job_no).join(', ')}. Say yes only if this is a different shipment.`)
   return { ok: true, pending: { action: 'create_job', job_id: '', job_no: jobNo, args: fields, summary: lines.join('\n'), at: new Date().toISOString() } }
 }
 

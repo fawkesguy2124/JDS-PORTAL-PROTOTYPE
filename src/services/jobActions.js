@@ -1,4 +1,36 @@
 import { supabase } from '../supabase'
+
+// The same shipment made twice (J-741 and J-1236, one BL and one container, 3 Nov 2026): open jobs
+// of the last 6 months holding this BL or a container. A container comes back on later trips,
+// so older or finished jobs don't count. A failed check never stops a job being created.
+const cleanNo = (v) => String(v || '').toUpperCase().replace(/[^A-Z0-9]/g, '')
+const boxNosIn = (v) => String(v || '').toUpperCase().match(/[A-Z]{4}\d{7}/g) || []
+export async function findSameShipment(blNo, containers) {
+  const bl = cleanNo(blNo)
+  const boxes = boxNosIn(containers)
+  if (bl.length < 6 && !boxes.length) return []
+  const since = new Date(Date.now() - 180 * 864e5).toISOString()
+  const { data, error } = await supabase.from('jobs').select('job_no, client, bl_no, containers').lt('stage', 10).gte('created_at', since)
+  if (error) { console.warn('[jobActions] duplicate check failed:', error.message); return [] }
+  return (data || []).map((j) => {
+    const sameBl = bl.length >= 6 && cleanNo(j.bl_no) === bl
+    const sameBoxes = boxNosIn(j.containers).filter((b) => boxes.includes(b))
+    if (!sameBl && !sameBoxes.length) return null
+    return { job_no: j.job_no, client: j.client, what: sameBl ? `BL ${j.bl_no}` : `container ${sameBoxes.join(', ')}` }
+  }).filter(Boolean)
+}
+
+// A job's number was changed: said on its timeline (J-1001 became J-741 with no trace, 5 Nov 2026).
+// The save has already happened, so a failed log line only warns.
+export async function logJobRenumbered(job, newNo, name) {
+  const { error } = await supabase.from('activity_log').insert({
+    type: 'job_update', action: 'job_renumbered',
+    title: `${newNo} — Job number changed from ${job.job_no} to ${newNo}`,
+    note: `Was ${job.job_no}`, job_id: job.id, job_no: newNo, done_by_name: name || 'Unknown',
+    meta: { job_id: job.id, job_no: newNo, from: job.job_no },
+  })
+  if (error) console.warn('[jobActions] rename log failed:', error.message)
+}
 import { jobTrucks, plateNo } from './journey'
 
 // The few things staff record in the portal after doing them elsewhere.
