@@ -6,7 +6,7 @@ import { STAGE_NAMES } from '../utils/jobHelpers'
 import { linkContainer } from '../api/trackingApi'
 import { PORTS } from '../utils/ports'
 import { CLIENT_NAMES, matchClient } from '../utils/clients'
-import { readPdf, describeDocuments } from '../utils/docReader'
+import { readPdf, readScanText, describeDocuments } from '../utils/docReader'
 import { boxOwnerHint } from '../../supabase/functions/_shared/portal/shippingLines.js'
 import { availableTypes, typesFoundInside, docTypeLabel } from '../utils/docTypes'
 import { isLineNotShip } from '../../supabase/functions/_shared/portal/shippingLines.js'
@@ -259,18 +259,26 @@ export default function CreateJob({ isModal = false, onCancel, onCreated, initia
     setExtractStatus('Reading document...')
 
     try {
-      // Documents are read from the text inside the PDF, on this computer.
-      // No AI and nothing is sent anywhere.
-      if (!file.name.toLowerCase().endsWith('.pdf')) {
-        setExtractedFields({ _error: true, _message: 'Only PDF soft copies can be read automatically. Please fill the fields by hand.' })
+      // Documents are read on this computer: the text inside the PDF, and a scanned BL or a photo
+      // of one by OCR. No AI and the paper is not sent anywhere.
+      const isPdf = file.name.toLowerCase().endsWith('.pdf')
+      if (!isPdf && !/\.(jpe?g|png)$/i.test(file.name)) {
+        setExtractedFields({ _error: true, _message: 'Only PDF, JPG and PNG can be read automatically. Please fill the fields by hand.' })
         return
       }
-      const pdfjs = await import('pdfjs-dist')
-      const workerUrl = new URL('pdfjs-dist/build/pdf.worker.mjs', import.meta.url)
-      pdfjs.GlobalWorkerOptions.workerSrc = workerUrl.href
+      const { ocrImage, ocrPdfPage, pdfOptions } = await import('../utils/ocr')
       setExtractProgress(40)
-      setExtractStatus('Reading pages...')
-      const result = await readPdf(pdfjs, new Uint8Array(await file.arrayBuffer()))
+      setExtractStatus(isPdf ? 'Reading pages...' : 'Reading the photo (up to a minute)...')
+      let result
+      if (isPdf) {
+        const pdfjs = await import('pdfjs-dist')
+        const workerUrl = new URL('pdfjs-dist/build/pdf.worker.mjs', import.meta.url)
+        pdfjs.GlobalWorkerOptions.workerSrc = workerUrl.href
+        result = await readPdf(pdfjs, new Uint8Array(await file.arrayBuffer()), {
+          ocrPage: (pdf, n) => { setExtractStatus('Reading the scan (up to a minute)...'); return ocrPdfPage(pdf, n) },
+          docOptions: pdfOptions(pdfjs),
+        })
+      } else result = readScanText(await ocrImage(file))
       const inside = typesFoundInside(result.documents)
       // no type picked: the reader's own answer (a BL is a BL; Jose, 1 Nov 2026: "just upload the BL")
       setStagedDocs(prev => prev.map(d => d.id === docId ? { ...d, foundInside: inside, docType: d.docType || inside[0] || 'Other' } : d))

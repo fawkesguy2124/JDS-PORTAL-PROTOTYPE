@@ -211,17 +211,30 @@ async function track(admin: any, job: any, lines: any[], opts: { start?: boolean
   const prev = saved && onJob(saved.number) ? saved : null
   // a container is asked of the job's line as it is worked out today (an older row may
   // carry a wrong line code: J-1001 had Cleve & Zonen's for ONE)
-  const n = prev
+  let n = prev
     ? { number: prev.number, type: prev.number_type, scac: prev.number_type === 'CT' ? scacFor(job.shipping_line, lines) || prev.sealine : prev.sealine }
     : pickNumber(job, lines)
   if (!n) return { job: job.job_no, skipped: 'no BL or container number' }
   // a new number this month uses one of the trial's shipments
-  const { data: counted } = await admin.from('sea_track_usage').select('number').eq('month', month()).eq('number', n.number).maybeSingle()
+  let { data: counted } = await admin.from('sea_track_usage').select('number').eq('month', month()).eq('number', n.number).maybeSingle()
   if (!counted) {
     if (!prev && !saved && !opts.start && !opts.auto) return { job: job.job_no, skipped: 'not tracked yet' }
     if (await usedInTrial(admin) >= MONTH_CAP) return { job: job.job_no, skipped: `trial limit (${MONTH_CAP} shipments) reached` }
   }
-  const r = await lookUp(n)
+  let answer = await lookUp(n)
+  // the line doesn't know this BL (a number misread from a scan, a BL not published yet): the
+  // container may still be known, and a failed lookup isn't billed (Jose, 5 Nov 2026)
+  const box = n?.type === 'BL' ? boxNos(job.containers)[0] : null
+  if (box && !answer.ok && !answer.retry) {
+    const byBox = { number: box, type: 'CT', scac: scacFor(job.shipping_line, lines) }
+    const again = await lookUp(byBox)
+    if (again.ok) {
+      n = byBox
+      answer = again
+      ;({ data: counted } = await admin.from('sea_track_usage').select('number').eq('month', month()).eq('number', n.number).maybeSingle())
+    }
+  }
+  const r = answer
   if (!counted && (r.ok || r.billed)) await admin.from('sea_track_usage').insert({ month: month(), number: n.number, job_no: job.job_no })
   const now = new Date().toISOString()
   const base = { job_id: job.id, job_no: job.job_no, number: n.number, number_type: n.type, sealine: n.scac, fetched_at: now, ...(saved ? {} : { started_by: opts.by || 'auto' }) }

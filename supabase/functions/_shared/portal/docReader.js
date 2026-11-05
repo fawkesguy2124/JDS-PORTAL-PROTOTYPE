@@ -3,7 +3,8 @@
 // OOC, bills of lading, air waybills, invoices, packing lists, stamp duty
 // challans, airport terminal charges, insurance policies), including bundles
 // with several documents in one PDF. Pages that are pictures, or whose text is
-// scrambled by the font, are reported as unreadable instead of guessed.
+// scrambled by the font, are reported as unreadable instead of guessed, unless the
+// caller can read them (opts.ocrPage, in the browser): then a scanned BL is read too.
 
 import { pdfToLines, parseBeLines } from './beParser.js'
 import { matchClient } from './clients.js'
@@ -145,6 +146,60 @@ function pageType(text) {
   return TYPES.find(([, test]) => test(text))?.[0] || 'other'
 }
 
+// ── a scan read by OCR (Jose, 5 Nov 2026: a scanned BL starts tracking like a soft copy) ──
+// OCR mixes up O/0, I/1, S/5… in container numbers. The number's own check digit says whether a
+// repair is right, so a wrong reading is dropped, never guessed: a paper with no real container
+// number starts no tracking from its containers.
+const AS_DIGIT = { O: '0', Q: '0', D: '0', I: '1', L: '1', Z: '2', S: '5', G: '6', B: '8', T: '7' }
+const AS_LETTER = { 0: 'O', 1: 'I', 2: 'Z', 5: 'S', 6: 'G', 8: 'B' }
+const LOOSE_BOX = /(?<![A-Z0-9])([A-Z0-9])?([A-Z0-9]{3})([A-Z0-9])[\s-]{0,2}([A-Z0-9]{3})[\s-]?([A-Z0-9]{3})[\s-]{0,2}([A-Z0-9])(?![A-Z0-9])/g
+// owners seen at JDS and the big lines and lessors: one misread letter is corrected only when
+// exactly one of these then passes the check digit (J-644: "EGEU1074180" on the scan is EGSU1074180)
+const BOX_OWNERS = ['MSCU', 'MSDU', 'MSMU', 'MSNU', 'MEDU', 'MSKU', 'MRKU', 'MAEU', 'MRSU', 'ONEU', 'HLXU', 'HLBU', 'HAMU', 'CMAU', 'EGSU', 'EGHU', 'EMCU', 'EISU', 'OOLU', 'OOCU', 'CSNU', 'CBHU', 'CCLU', 'HDMU', 'HMMU', 'ZIMU', 'ZCSU', 'YMLU', 'YMMU', 'WHLU', 'WHSU', 'IAAU', 'TCNU', 'TCLU', 'TGBU', 'TGHU', 'TRHU', 'TEMU', 'TTNU', 'TLLU', 'CAIU', 'SEGU', 'SEKU', 'FCIU', 'FFAU', 'GESU', 'GLDU', 'BEAU', 'BMOU', 'UETU', 'MAGU', 'DFSU', 'DRYU', 'DPWU', 'CSYU', 'MSGU', 'NYKU', 'APLU', 'KKFU', 'PONU', 'CSGU', 'CSLU', 'EGLU', 'IRNU', 'CXDU', 'XINU', 'AMFU', 'INKU', 'TXGU', 'TIIU', 'PCIU', 'RCLU', 'SITU', 'SKLU', 'KMTU', 'WFHU', 'NSAU', 'TEXU']
+const oneLetterOff = (a, b) => [...a].filter((c, i) => c !== b[i]).length === 1
+export function repairOcrContainers(text) {
+  return String(text || '').replace(LOOSE_BOX, (all, stray, owner, kind, a, b, check) => {
+    const name = owner.replace(/\d/g, (c) => AS_LETTER[c] || c)
+    const digits = `${a}${b}${check}`.replace(/[A-Z]/g, (c) => AS_DIGIT[c] || c)
+    if (!/^[A-Z]{3}$/.test(name) || !/^\d{7}$/.test(digits)) return all
+    // the fourth letter is U, J or Z; U is often read as V, O or D
+    const kinds = /[UJZ]/.test(kind) ? [kind] : /[VOD0]/.test(kind) ? ['U'] : kind === '2' ? ['Z'] : []
+    const good = kinds.map((k) => `${name}${k}${digits}`).find(containerOk)
+    if (good) return good
+    if (stray) return all
+    const near = BOX_OWNERS.filter((o) => oneLetterOff(o, `${name}${kinds[0] || kind}`) && containerOk(`${o}${digits}`))
+    return near.length === 1 ? `${near[0]}${digits}` : all
+  })
+}
+const ocrLines = (raw) => repairOcrContainers(raw).split('\n').map((l) => l.replace(/^[\s|!_~]+|[\s|_~]+$/g, '').replace(/\s+/g, ' ')).filter(Boolean)
+// is this scanned page a BL? (its words can be misread, so a real container number beside the BL's
+// usual words counts too)
+function scanIsBl(text) {
+  const type = pageType(text)
+  return type === 'bl' || (type === 'other' && findContainers(text).length > 0 && /VESSEL|PORT OF (LOADING|DISCHARGE)|SHIPPER|CONSIGNEE|NOTIFY/i.test(text))
+}
+const OCR_MAX_PAGES = 6
+// the ship on a scan: small print can sit between the label and the value ("Ocean vessel" / "to be
+// void." / "ITAL USODIMARE V.191W NANSHA CHINA"; J-644): the first capitals-only line with a voyage
+const SCAN_SHIP = /^([A-Z][A-Z0-9.-]*(?: [A-Z0-9][A-Z0-9.-]*){0,4}?)\s+(?:V\.?\s?|VOY\.?\s?)?([A-Z]?\d{2,4}[A-Z]?)(?=\s|$)/
+function scanShip(lines) {
+  const at = lines.findIndex((l) => /OCEAN\s*VESSEL|VESSEL\s*(?:&|AND|\/)\s*VOY/i.test(l))
+  for (let k = at + 1; at >= 0 && k <= at + 5 && k < lines.length; k++) {
+    const m = lines[k].match(SCAN_SHIP)
+    if (m && !/^(PORT|PLACE|NHAVA|INDIA|NO\.?)\b/.test(m[1])) return { vessel_name: m[1], voyage_no: m[2] }
+  }
+  return null
+}
+
+// A photo of a paper, read by OCR: the same answer as readPdf
+export function readScanText(raw) {
+  const lines = ocrLines(raw)
+  const text = lines.join('\n')
+  const type = scanIsBl(text) ? 'bl' : 'unreadable'
+  const fields = type === 'bl' ? readBl(lines, text, true) : {}
+  return { pages: [{ page: 1, type }], documents: [{ type, label: DOC_LABELS[type] || type, pages: [1], fields }], fields, unreadablePages: type === 'bl' ? [] : [1], be: null, fromScan: type === 'bl' }
+}
+
 // ── readers for each document type ──────────────────────────────────────────
 function clientFrom(text) {
   const iecs = [...String(text).matchAll(IEC_RE)].map((m) => m[1].toUpperCase())
@@ -214,9 +269,12 @@ function vesselVoyage(lines, text) {
     vessel = (after ? after[1] : vessel.replace(/\s+(NHAVA SHEVA|JNPT|MUNDRA|CHENNAI|MUMBAI|KOLKATA|PIPAVAV|HAZIRA|INDIA).*$/i, ''))
       .replace(/\s{2,}.*/, '').trim() || null
   }
+  // stray letters or small print are not a ship ("i i i i i", "to be void."; J-673, J-644)
+  if (vessel && (/^[a-z]/.test(vessel) || !/[A-Za-z]{3}/.test(vessel))) { vessel = null; voyage = null }
   return { vessel_name: vessel, voyage_no: voyage }
 }
-const SHIP_VOYAGE_LINE = /^([A-Z]{2,}(?: [A-Z][A-Z0-9.]*){0,4}?) (\d{2,4}[EWNS]|[EWNS]\d{2,4})(?: [A-Z][A-Z ]{2,30})?$/
+// (the loading port beside it can have a comma: "SM INCHEON W921 SHEKOU,SHENZHEN"; J-673)
+const SHIP_VOYAGE_LINE = /^([A-Z]{2,}(?: [A-Z][A-Z0-9.]*){0,4}?) (\d{2,4}[EWNS]|[EWNS]\d{2,4})(?: [A-Z][A-Z ,]{2,30})?$/
 const SHIP_AFTER_PORT =/\b(?:NHAVA\s*SHEVA|JNPT|MUNDRA|CHENNAI|MUMBAI|KOLKATA|PIPAVAV|HAZIRA)\s+(?!.*\b(?:NHAVA\s*SHEVA|JNPT|MUNDRA|CHENNAI|MUMBAI|KOLKATA|PIPAVAV|HAZIRA)\b)([A-Z][A-Z0-9 .]{2,40})$/i
 
 const INDIAN_PORTS = /\b(NHAVA\s*SHEVA|JNPT|MUMBAI|MUNDRA|PIPAVAV|HAZIRA|KANDLA|CHENNAI|KATTUPALLI|ENNORE|KOLKATA|HALDIA|VISAKHAPATNAM|VIZAG|COCHIN|KOCHI|TUTICORIN|MANGALORE)\b/i
@@ -232,7 +290,7 @@ function port(lines, labelRe, loading = false) {
   return v.replace(/\s{2,}.*/, '').replace(/[,:]\s*$/, '').trim()
 }
 
-function readBl(lines, text) {
+function readBl(lines, text, scan = false) {
   const t = text
   let bl = afterLabel(lines, /(?:B\/L\s*No\.?|BILL\s*No\.?|BILL OF LADING\s*(?:NUMBER|NO\.?)|BL\s*NO\.?|B\/L\s*NUMBER|SEA WAYBILL NO\.?)\s*:?/i, /^(?=[A-Z0-9-]*\d)[A-Z0-9][A-Z0-9-]{6,20}(?:\s|$)/i)
   if (bl) bl = bl.split(/\s+/)[0]
@@ -243,7 +301,7 @@ function readBl(lines, text) {
     const top = lines.slice(0, 6).map((l) => l.trim())
     bl = top.find((l) => /^[A-Z]{2,6}\d{6,14}$/.test(l) || /^\d{3}[A-Z]\d{6}$/.test(l)) || null
   }
-  const vv = vesselVoyage(lines, t)
+  const vv = (scan && scanShip(lines)) || vesselVoyage(lines, t)
   const containers = findContainers(t)
   const seals = uniq([
     ...[...t.matchAll(/SEAL\s*(?:NO\.?|NUMBER|#)?\s*[:.]\s*([A-Z]{0,4}\d{5,10})\b(?![.,]\d)/gi)].map((m) => m[1]),
@@ -402,8 +460,8 @@ function fromBe(be) {
 
 // ── the whole PDF ───────────────────────────────────────────────────────────
 // Returns { pages, documents, fields, unreadablePages, be }
-export async function readPdf(pdfjs, data) {
-  const pdf = await pdfjs.getDocument({ data }).promise
+export async function readPdf(pdfjs, data, opts = {}) {
+  const pdf = await pdfjs.getDocument({ data, ...(opts.docOptions || {}) }).promise
   const all = await pdfToLines(pdf)
   // split the flat line list back into pages (keeping word positions for the BE reader)
   const pages = []
@@ -413,6 +471,27 @@ export async function readPdf(pdfjs, data) {
     pages[pages.length - 1]?.idx.push(idx)
   })
   const typed = pages.map((p, i) => ({ page: i + 1, text: p.lines.join('\n'), lines: p.lines, idx: p.idx, type: pageType(p.lines.join('\n')) }))
+
+  // a picture page, one with only a scanner's footer on it, or a BL whose containers aren't in its
+  // text (opts.isBl: the person said it is a BL): read by OCR when the caller can, and kept only
+  // if it is a BL, until a BL with its containers has been found. Other papers stay "type by
+  // hand": a misread BE or amount would be worse than none.
+  if (opts.ocrPage && !typed.some((p) => p.type === 'bl' && findContainers(p.text).length)) {
+    let tried = 0
+    for (const p of typed) {
+      if (tried >= OCR_MAX_PAGES) break
+      const short = p.type === 'other' && p.text.replace(/\s/g, '').length < 150
+      if (p.type !== 'unreadable' && !short && p.type !== 'bl' && !(opts.isBl && p.type === 'other')) continue
+      tried++
+      const lines = ocrLines(await opts.ocrPage(pdf, p.page))
+      // (what the page's own text says is exact: kept after the scan's reading, for the containers)
+      const merged = p.type === 'unreadable' ? lines : [...lines, ...p.lines]
+      const text = merged.join('\n')
+      if (!scanIsBl(lines.join('\n')) && p.type !== 'bl') continue
+      Object.assign(p, { lines: merged, text, idx: [], type: 'bl', scan: true })
+      if (findContainers(text).length) break
+    }
+  }
 
   // rider / continuation pages belong to the document before them
   for (let i = 1; i < typed.length; i++) {
@@ -425,8 +504,8 @@ export async function readPdf(pdfjs, data) {
   const docs = []
   for (const p of typed) {
     const last = docs[docs.length - 1]
-    if (last && last.type === p.type && p.type !== 'unreadable') { last.pages.push(p.page); last.text += '\n' + p.text; last.lines.push(...p.lines); last.idx.push(...p.idx) }
-    else docs.push({ type: p.type, pages: [p.page], text: p.text, lines: [...p.lines], idx: [...p.idx] })
+    if (last && last.type === p.type && p.type !== 'unreadable') { last.pages.push(p.page); last.text += '\n' + p.text; last.lines.push(...p.lines); last.idx.push(...p.idx); last.scan ||= !!p.scan }
+    else docs.push({ type: p.type, pages: [p.page], text: p.text, lines: [...p.lines], idx: [...p.idx], scan: !!p.scan })
   }
 
   let be = null
@@ -438,7 +517,7 @@ export async function readPdf(pdfjs, data) {
       be = parseBeLines(lines)
       d.fields = fromBe(be)
       if (be?.copy_type === 'OOC') d.type = 'ooc'
-    } else if (d.type === 'bl') d.fields = readBl(d.lines, d.text)
+    } else if (d.type === 'bl') d.fields = readBl(d.lines, d.text, d.scan)
     else if (d.type === 'awb') d.fields = readAwb(d.lines, d.text)
     else if (d.type === 'invoice') d.fields = readInvoice(d.lines, d.text)
     else if (d.type === 'packing_list') d.fields = { ...cargoTotals(d.text), container_numbers: findContainers(d.text), hs_codes: hsCodes(d.text) }
@@ -468,6 +547,7 @@ export async function readPdf(pdfjs, data) {
     fields,
     unreadablePages: typed.filter((p) => p.type === 'unreadable').map((p) => p.page),
     be,
+    fromScan: docs.some((d) => d.scan),
   }
 }
 

@@ -215,7 +215,8 @@ function DocumentsSection({ jobs, currentUserName, showToast, initialExpandJobId
       // a BL: the job gets what it is still missing from it (ship, BL number, containers,
       // line; never overwritten) and ship tracking starts at once (services/jobDocuments)
       if (docType === 'BL') {
-        const { vessel, filled } = await applyBlToJob(job, uploadFile)
+        const { vessel, filled, noNumber } = await applyBlToJob(job, uploadFile)
+        if (noNumber) showToast('Could not find a BL or container number on this paper, so ship tracking has not started. Type the container number on the job.', 'error')
         if (vessel) showToast(`Ship name saved from the BL: ${vessel}`, 'success')
         if (filled.some((k) => k !== 'vessel')) showToast(`From the BL: ${filled.filter((k) => k !== 'vessel').map((k) => ({ bl_no: 'BL number', containers: 'containers', shipping_line: 'shipping line' }[k])).join(', ')} saved`, 'success')
       }

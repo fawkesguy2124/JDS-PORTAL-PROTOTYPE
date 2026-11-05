@@ -31,7 +31,10 @@ export async function applyBlToJob(job, file) {
   const lineAsShip = !!job.vessel && isLineNotShip(String(job.vessel).split('/')[0], job.shipping_line)
   const updates = {}
   if (bl?.vessel && (!job.vessel || lineAsShip)) updates.vessel = bl.vessel
-  if (bl?.bl_no && !String(job.bl_no || '').trim()) updates.bl_no = bl.bl_no
+  // a BL number has no check digit, so one read from a scan may be wrong: it is saved only when
+  // the job has no verified container to track with (a container number's check digit proves it)
+  const verifiedBox = bl?.containers?.length || String(job.containers || '').trim()
+  if (bl?.bl_no && !String(job.bl_no || '').trim() && !(bl.fromScan && verifiedBox)) updates.bl_no = bl.bl_no
   if (bl?.containers?.length && !String(job.containers || '').trim()) updates.containers = bl.containers.join(' ')
   if (bl?.shipping_line && !String(job.shipping_line || '').trim()) updates.shipping_line = bl.shipping_line
   let saved = job
@@ -42,7 +45,9 @@ export async function applyBlToJob(job, file) {
   }
   // ship tracking starts now (runs on in the background)
   startShipTracking(saved)
-  return { vessel: saved !== job && updates.vessel ? updates.vessel : null, filled: saved !== job ? Object.keys(updates) : [], job: saved }
+  // no BL or container number anywhere: nothing to track with, and the person is told
+  const noNumber = !String(saved.bl_no || '').trim() && !String(saved.containers || '').trim()
+  return { vessel: saved !== job && updates.vessel ? updates.vessel : null, filled: saved !== job ? Object.keys(updates) : [], job: saved, noNumber }
 }
 
 export async function uploadJobDocument({ job, file, docType, userName }) {
@@ -68,7 +73,8 @@ export async function uploadJobDocument({ job, file, docType, userName }) {
       created_at: new Date().toISOString(),
     })
     if (insErr) throw insErr
-    const vessel = docType === 'BL' ? (await applyBlToJob(job, file)).vessel : null
+    const fromBl = docType === 'BL' ? await applyBlToJob(job, file) : null
+    const vessel = fromBl?.vessel || null
     try {
       await supabase.from('activity_log').insert({
         type: 'document_upload', action: 'document_upload',
@@ -80,7 +86,7 @@ export async function uploadJobDocument({ job, file, docType, userName }) {
         created_at: new Date().toISOString(),
       })
     } catch (e) { console.warn('[jobDocuments] activity_log insert failed:', e?.message) }
-    return { ok: true, vessel }
+    return { ok: true, vessel, noNumber: !!fromBl?.noNumber }
   } catch (e) {
     return { ok: false, error: e?.message || 'Upload failed.' }
   }

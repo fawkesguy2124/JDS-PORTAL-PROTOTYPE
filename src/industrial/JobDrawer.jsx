@@ -189,12 +189,13 @@ function UploadMenu({ job, docs, userName, showToast, onDone, label = 'Upload' }
     if (!r.ok) { showToast?.(r.error, 'error'); return }
     showToast?.(`${typeRef.current} uploaded`, 'success')
     if (r.vessel) showToast?.(`Ship name saved from the BL: ${r.vessel}`, 'success')
+    if (r.noNumber) showToast?.('Could not find a BL or container number on this paper, so ship tracking has not started. Type the container number on the job.', 'error')
     onDone?.()
   }
   return (
     <div className="ix-jp-up" ref={boxRef}>
       <Button size="sm" icon={busy ? 'loader-2' : 'upload'} onClick={() => setOpen((v) => !v)} disabled={!!busy} aria-haspopup="menu" aria-expanded={open}>
-        {busy ? `Uploading ${busy}…` : label}<Icon name="chevron-down" />
+        {busy === 'BL' ? 'Uploading and reading BL…' : busy ? `Uploading ${busy}…` : label}<Icon name="chevron-down" />
       </Button>
       {open && (
         <div className="ix-menu" role="menu">

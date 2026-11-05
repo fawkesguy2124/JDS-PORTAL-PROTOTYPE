@@ -14,6 +14,7 @@ import { containerTrip } from '../supabase/functions/_shared/portal/journeyCore.
 import { happenedToday } from '../supabase/functions/_shared/portal/botMessages.js'
 import { toRoman, normalizeSpoken, jobNoFromText, tidyJobNos } from '../supabase/functions/wa-bot/media.ts'
 import { readDocFile } from '../supabase/functions/wa-bot/docfill.ts'
+import { repairOcrContainers, readScanText } from '../supabase/functions/_shared/portal/docReader.js'
 import { readPost } from '../supabase/functions/_shared/portal/postReader.js'
 import { isHinglish, changeParts, mergeProposals, LIVE_ASKED } from '../supabase/functions/wa-bot/assistant.ts'
 import { isUndo, isCorrection, handlePost } from '../supabase/functions/wa-bot/posts.ts'
@@ -284,6 +285,22 @@ if (!happenedToday(new Date().toISOString()) || happenedToday(new Date(Date.now(
   if (!/already on J-741/.test(make({ containers: 'OOCU9074031' }).pending?.summary)) fail('a repeated container on a new job was not said')
   if (!/already on J-741/.test(make({ containers: 'CCLU7885874', bl_no: 'MIAO261000085' }).pending?.summary)) fail('a repeated BL on a new job was not said')
   if (/already on/.test(make({ containers: 'CCLU7885874' }).pending?.summary)) fail('a container on a delivered job (a later trip) was called a repeat')
+}
+// a scanned BL read by OCR (5 Nov 2026): misread container numbers are repaired only when the
+// check digit proves it; a paper with no real number gives no container
+for (const [raw, want] of [['TCNU7392038', 'TCNU7392038'], ['TCNU 739203 8', 'TCNU7392038'], ['TCNU739203B', 'TCNU7392038'], ['TCNU7392O38', 'TCNU7392038'], ['TCNV7392038', 'TCNU7392038'], ['TCNU7392039', 'TCNU7392039'], ['INVOICE 12345', 'INVOICE 12345'], ['EGEU1074180', 'EGSU1074180'], ['ITAAU1814407', 'ITAAU1814407']] as [string, string][])
+  if (repairOcrContainers(raw) !== want) fail(`OCR container "${raw}" → "${repairOcrContainers(raw)}", should be "${want}"`)
+{
+  const scan = 'BILL OF LADING\nB/L No: ZIMUABC1234567\nOCEAN VESSEL SYNERGY OAKLAND\nVOY 27W\nTCNU739203B\nPORT OF DISCHARGE NHAVA SHEVA'
+  const r: any = readScanText(scan)
+  if (r.documents[0].type !== 'bl' || !r.fields.container_numbers?.includes('TCNU7392038')) fail(`a scanned BL was not read: ${JSON.stringify(r.fields).slice(0, 120)}`)
+  // the real scan of J-644: small print between the label and the ship, a misread container
+  const j644: any = readScanText('Ocean vessel Port of loading below have been signed, one of which\nto be void.\nITAL USODIMARE V.191W NANSHA CHINA\nPort of discharge Place of delivery\nNHAVA SHEVA INDIA\nCNTR NO.\nEGEU1074180/EMCGYGTE35\nBILL OF LADING')
+  if (j644.fields.vessel_name !== 'ITAL USODIMARE' || j644.fields.voyage_no !== '191W' || !j644.fields.container_numbers?.includes('EGSU1074180') || !j644.fromScan) fail(`the scan of J-644 → ${JSON.stringify(j644.fields).slice(0, 160)}`)
+  const junk: any = readScanText('holiday photo with some words on it and nothing else at all here')
+  if (junk.documents[0].type === 'bl' || junk.fields.container_numbers?.length) fail('a paper that is not a BL was read as one')
+  const fake: any = readScanText('BILL OF LADING\nCONTAINER TCNU7392039\nOCEAN VESSEL X')
+  if (fake.fields.container_numbers?.length) fail(`a container with a wrong check digit was accepted: ${fake.fields.container_numbers}`)
 }
 console.log(failed ? `  ${failed} wrong` : '  all right')
 
