@@ -15,7 +15,7 @@ const LINES = [
   [/ORIENT OVERSEAS|^OOCL/, 'OOCL'], [/HYUNDAI|^HMM/, 'HMM'], [/YANG ?MING|^YML/, 'Yang Ming'], [/WAN ?HAI/, 'Wan Hai'],
   [/^ZIM/, 'ZIM'], [/^RCL|REGIONAL CONTAINER/, 'RCL'], [/INTERASIA/, 'Interasia'], [/EMIRATES/, 'Emirates'],
   [/^TS LINE|^T\.?S\.? LINES?/, 'TS Line'], [/UNIFEEDER/, 'Unifeeder'], [/^PIL|PACIFIC INTERNATIONAL/, 'PIL'],
-  [/KMTC|KOREA MARINE/, 'KMTC'], [/^SITC/, 'SITC'], [/GOLD ?STAR/, 'Gold Star'], [/SHREYAS|^SNL\b/, 'SNL'],
+  [/KMTC|KOREA MARINE/, 'KMTC'], [/^SITC/, 'SITC'], [/GOLD ?STAR/, 'Gold Star'], [/HEUNG[ -]?A|HUNGA[ -]?A/, 'Heung-A'], [/SHREYAS|^SNL\b/, 'SNL'],
 ]
 
 // "MSC AGENCY(INDIA)PVT.LTD" → "MSC"; unknown names are tidied, not guessed
