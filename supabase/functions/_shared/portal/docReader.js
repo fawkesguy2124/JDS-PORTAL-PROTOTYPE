@@ -65,6 +65,7 @@ const CARRIERS = [
   ['ONE', /OCEAN NETWORK EXPRESS|\bONEY\b/],
   ['OOCL', /\bOOCL|ORIENT OVERSEAS/],
   ['COSCO', /COSCO|\bCOSU/],
+  ['Gold Star', /GOLD ?STAR LINE|\bGOSU[A-Z0-9]{6}/],
   ['ZIM', /\bZIM\b|\bZIMU/],
   ['HMM', /\bHMM\b|HYUNDAI MERCHANT/],
   ['Yang Ming', /YANG MING|\bYMLU/],

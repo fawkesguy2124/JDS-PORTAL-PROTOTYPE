@@ -27,7 +27,7 @@ export function lineName(raw) {
   return String(raw).replace(/\s*[-–(].*$/, '').replace(/\b(PVT|PRIVATE|LTD|LIMITED|LLP|P L|AGENC(Y|IES)|INDIA|SHIPPING AGENCY)\b\.?/gi, '').replace(/\s+/g, ' ').trim() || null
 }
 
-const BL_PREFIX = { MEDU: 'MSC', MSCU: 'MSC', MAEU: 'Maersk', ONEY: 'ONE', HLCU: 'Hapag-Lloyd', CMDU: 'CMA CGM', COSU: 'COSCO', EGLV: 'Evergreen', OOLU: 'OOCL', HDMU: 'HMM', ZIMU: 'ZIM', YMLU: 'Yang Ming', WHLC: 'Wan Hai' }
+const BL_PREFIX = { MEDU: 'MSC', MSCU: 'MSC', MAEU: 'Maersk', ONEY: 'ONE', HLCU: 'Hapag-Lloyd', CMDU: 'CMA CGM', COSU: 'COSCO', EGLV: 'Evergreen', OOLU: 'OOCL', HDMU: 'HMM', ZIMU: 'ZIM', YMLU: 'Yang Ming', WHLC: 'Wan Hai', GOSU: 'Gold Star', GSLU: 'Gold Star' }
 
 // The line from a carrier BL number, or null (house BLs give nothing)
 export const lineFromBl = (bl) => BL_PREFIX[String(bl || '').toUpperCase().replace(/\s+/g, '').slice(0, 4)] || null

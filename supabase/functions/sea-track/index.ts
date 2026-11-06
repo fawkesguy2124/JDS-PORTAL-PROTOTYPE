@@ -15,9 +15,10 @@
 //  • { sandbox: 'ZZZZ0000000' } Safecube's free test numbers (nothing saved)
 //  • { sealines: true } the lines Safecube covers; { usage: true } this month's count
 import { adminClient, corsHeaders, getCaller, json } from '../_shared/ulip.ts'
-import { lineName } from '../_shared/portal/shippingLines.js'
+import { lineName, lineFromBl } from '../_shared/portal/shippingLines.js'
 import { containerTrip, isOldVoyage } from '../_shared/portal/journeyCore.js'
 import { findteuLookUp } from './findteu.ts'
+import { findLine, fitsJob, linesToAsk } from './lineFinder.ts'
 
 const API = 'https://api.sinay.ai/container-tracking/api/v2'
 const MONTH_CAP = 95                 // trial: 100 shipments; 5 kept spare
@@ -38,9 +39,9 @@ const shipmentCap = () => (usingFindteu() ? 45 : MONTH_CAP)
 const usageMonth = () => (usingFindteu() ? `ft-${month()}` : month())
 const WALL_LIMIT_MS = 110_000 // findTEU's first answer for a box can take 25 seconds: the rest wait for the next run
 
-async function call(path: string, params: Record<string, string | boolean> = {}) {
+async function call(path: string, params: Record<string, string | boolean> = {}, waitMs = 60_000) {
   const q = new URLSearchParams(Object.entries(params).map(([k, v]) => [k, String(v)]))
-  const res = await fetch(`${API}/${path}${q.size ? `?${q}` : ''}`, { headers: { API_KEY: env('SAFECUBE_API_KEY'), Accept: 'application/json' }, signal: AbortSignal.timeout(60_000) })
+  const res = await fetch(`${API}/${path}${q.size ? `?${q}` : ''}`, { headers: { API_KEY: env('SAFECUBE_API_KEY'), Accept: 'application/json' }, signal: AbortSignal.timeout(waitMs) })
   const text = await res.text()
   let body: any = null
   try { body = JSON.parse(text) } catch { body = { message: text.slice(0, 200) } }
@@ -159,21 +160,38 @@ function summarize(d: any) {
   }
 }
 
-async function lookUp(n: { number: string; type: string; scac: string | null }) {
+async function lookUp(n: { number: string; type: string; scac: string | null }, waitMs = 60_000) {
   if (usingFindteu()) return await findteuLookUp(n.number, env('FINDTEU_API_KEY'))
   const params: Record<string, string | boolean> = { shipmentNumber: n.number, shipmentType: n.type, route: true, ais: true }
   if (n.scac) params.sealine = n.scac
-  let r = await call('shipment', params)
+  let r = await call('shipment', params, waitMs)
   // the line refused the type or the line code (J-644, 25 Oct 2026: WRONG_TYPE for an
   // Evergreen box): ask again letting Safecube work them out (400s are not billed)
   // (Safecube puts the code in errorCode or, as for J-644, in message with errorCode 400)
   const refused = (x: any) => /WRONG_TYPE|TYPE_NOT_SUPPORTED|WRONG_SEALINE|SEALINE_NOT_SUPPORTED|AUTO_CANT_DETECT_TYPE/.test(`${x.body?.errorCode || ''} ${x.body?.message || ''}`)
-  if (refused(r)) { delete params.shipmentType; r = await call('shipment', params) }
-  if (refused(r) && params.sealine) { delete params.sealine; r = await call('shipment', params) }
+  if (refused(r)) { delete params.shipmentType; r = await call('shipment', params, waitMs) }
+  if (refused(r) && params.sealine) { delete params.sealine; r = await call('shipment', params, waitMs) }
   if (r.ok && !r.body?.errorCode) return { ok: true, row: summarize(r.body) }
   const code = r.body?.errorCode || `HTTP ${r.status}`
   // 400 / 500 answers are not billed by Safecube
-  return { ok: false, billed: r.ok, error: `${code}${r.body?.message ? `: ${String(r.body.message).slice(0, 160)}` : ''}`, retry: /NO_RESPONSE|TEMPORARY|MAINTENANCE/.test(code) || r.status >= 500 }
+  return { ok: false, billed: r.ok, error: `${code}${r.body?.message ? `: ${String(r.body.message).slice(0, 160)}` : ''}`, retry: /NO_RESPONSE|TEMPORARY|MAINTENANCE/.test(code) || r.status >= 500, stop: [401, 402, 403, 429].includes(r.status) }
+}
+
+// The carrier's own answer corrects the job's line (the BL's was only a first guess). One line in
+// the job's history, so people can see it happened; nobody has to do anything.
+async function correctLine(admin: any, job: any, row: any, lines: any[]) {
+  const proved = lineFromBl(row.sealine) || lineName(row.sealine_name)
+  if (!proved || lineName(job.shipping_line) === proved) return
+  // (the same line under another spelling: "HUNGA A LINE" is Safecube's Heung-A)
+  if (row.sealine && scacFor(job.shipping_line, lines) === row.sealine) return
+  const { error } = await admin.from('jobs').update({ shipping_line: proved }).eq('id', job.id)
+  if (error) return
+  await admin.from('activity_log').insert({
+    type: 'line_corrected', action: 'line_corrected', title: `${job.job_no} — Shipping line set to ${proved}`,
+    note: `${job.shipping_line ? `Was ${job.shipping_line}. ` : ''}${proved}'s own tracking has this container.`, job_id: job.id, job_no: job.job_no, done_by_name: 'Ship tracking',
+    meta: { job_id: job.id, job_no: job.job_no, from: job.shipping_line || null, to: proved },
+  })
+  job.shipping_line = proved
 }
 
 // "J-689 — Ship arrived": once per job (a second arrival entry is never written)
@@ -222,10 +240,12 @@ async function track(admin: any, job: any, lines: any[], opts: { start?: boolean
   // container number since (the old row would otherwise ask about the wrong number for ever)
   const onJob = (no: string) => clean(job.bl_no) === no || boxNos(job.containers).includes(no)
   const prev = saved && onJob(saved.number) ? saved : null
-  // a container is asked of the job's line as it is worked out today (an older row may
-  // carry a wrong line code: J-1001 had Cleve & Zonen's for ONE)
+  // a container is asked of the line that last answered for it; with no answer yet, of the job's
+  // line as it is worked out today (an older row may carry a wrong line code: J-1001 had Cleve &
+  // Zonen's for ONE)
+  const followed = !!prev && !prev.error && !!(prev.pod_date || typeof prev.lat === 'number')
   let n = prev
-    ? { number: prev.number, type: prev.number_type, scac: prev.number_type === 'CT' ? scacFor(job.shipping_line, lines) || prev.sealine : prev.sealine }
+    ? { number: prev.number, type: prev.number_type, scac: prev.number_type === 'CT' && !followed ? scacFor(job.shipping_line, lines) || prev.sealine : prev.sealine }
     : pickNumber(job, lines)
   if (!n) return { job: job.job_no, skipped: 'no BL or container number' }
   // a new number this month uses one of the trial's shipments
@@ -234,7 +254,7 @@ async function track(admin: any, job: any, lines: any[], opts: { start?: boolean
     if (!prev && !saved && !opts.start && !opts.auto) return { job: job.job_no, skipped: 'not tracked yet' }
     if (await usedInTrial(admin) >= shipmentCap()) return { job: job.job_no, skipped: `limit (${shipmentCap()} shipments) reached` }
   }
-  let answer = await lookUp(n)
+  let answer: any = await lookUp(n)
   // the line doesn't know this BL (a number misread from a scan, a BL not published yet): the
   // container may still be known, and a failed lookup isn't billed (Jose, 5 Nov 2026)
   const box = n?.type === 'BL' ? boxNos(job.containers)[0] : null
@@ -245,6 +265,29 @@ async function track(admin: any, job: any, lines: any[], opts: { start?: boolean
       n = byBox
       answer = again
       ;({ data: counted } = await admin.from('sea_track_usage').select('number').eq('month', usageMonth()).eq('number', n.number).maybeSingle())
+    }
+  }
+  // Still nothing about this trip: the BL's line may simply be wrong, so the other lines are asked
+  // (J-741: ZIM on the BL, Gold Star in fact). At once when someone starts or refreshes it, and
+  // every 6 hours by itself for a job's first two weeks. Not for a ship already being followed.
+  let triedLines = 0
+  const youngJob = Date.now() - new Date(job.created_at || 0).getTime() < 14 * 864e5
+  const lineBox = n.type === 'CT' ? n.number : boxNos(job.containers)[0]
+  if (!usingFindteu() && !followed && lineBox && (!answer.ok || !fitsJob(answer.row, job)) && (!opts.auto || (youngJob && new Date().getUTCHours() % 6 === 0))) {
+    const asked = n.type === 'CT' ? n.scac : scacFor(job.shipping_line, lines)
+    const walk = await findLine({
+      job, until: Date.now() + 40_000,
+      scacs: linesToAsk(lineName(job.shipping_line), asked, (name) => scacFor(name, lines)),
+      ask: async (scac) => { await sleep(300); return await lookUp({ number: lineBox, type: 'CT', scac }, 15_000).catch((e: Error) => ({ ok: false, retry: true, error: e.message })) },
+    })
+    triedLines = walk.tried
+    const hit = walk.found ? walk : !answer.ok && walk.previous && isOldVoyage(walk.previous.answer.row, job) ? walk.previous : null
+    if (hit) {
+      n = { number: lineBox, type: 'CT', scac: hit.scac }
+      answer = hit.answer
+      ;({ data: counted } = await admin.from('sea_track_usage').select('number').eq('month', usageMonth()).eq('number', n.number).maybeSingle())
+    } else if (!answer.ok && !answer.retry && !walk.down) {
+      answer = { ...answer, error: `none of the ${triedLines + 1} shipping lines asked has this container yet${youngJob ? "; asked again every 6 hours" : ""}` }
     }
   }
   const r = answer
@@ -303,6 +346,7 @@ async function track(admin: any, job: any, lines: any[], opts: { start?: boolean
   delete (row as any).next_event
   const { error } = await admin.from('sea_tracking').upsert({ ...row, last_event: { ...(r.row.last_event || {}), next: r.row.next_event } }, { onConflict: 'job_id' })
   if (error) return { job: job.job_no, error: `save: ${error.message}` }
+  if (fitsJob(r.row, job)) await correctLine(admin, job, r.row, lines)
   // the ship has just arrived: one "Ship arrived" entry, which the bell, WhatsApp and
   // desktop alerts all show (Jose, 25 Oct 2026: J-689 arrived with no notification)
   if (r.row.pod_actual && !prevTrip?.pod_actual) await logArrival(admin, job, r.row)
@@ -423,7 +467,7 @@ Deno.serve(async (req) => {
     const results = []
     const wallStart = Date.now()
     for (const job of open) {
-      if (usingFindteu() && Date.now() - wallStart > WALL_LIMIT_MS) break
+      if (Date.now() - wallStart > WALL_LIMIT_MS) break
       const s: any = state.get(job.id)
       if (s?.done) continue
       if (s?.fetched_at && Date.now() - new Date(s.fetched_at).getTime() < (REFRESH_HOURS - 0.5) * 3600e3) continue

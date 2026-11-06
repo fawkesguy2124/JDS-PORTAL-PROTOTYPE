@@ -16,6 +16,7 @@ import { toRoman, normalizeSpoken, jobNoFromText, tidyJobNos } from '../supabase
 import { readDocFile } from '../supabase/functions/wa-bot/docfill.ts'
 import { repairOcrContainers, readScanText } from '../supabase/functions/_shared/portal/docReader.js'
 import { findteuRow, findteuAnswer } from '../supabase/functions/sea-track/findteu.ts'
+import { findLine, fitsJob, linesToAsk } from '../supabase/functions/sea-track/lineFinder.ts'
 import { readPost } from '../supabase/functions/_shared/portal/postReader.js'
 import { isHinglish, changeParts, mergeProposals, LIVE_ASKED } from '../supabase/functions/wa-bot/assistant.ts'
 import { isUndo, isCorrection, handlePost } from '../supabase/functions/wa-bot/posts.ts'
@@ -351,6 +352,38 @@ for (const [raw, want] of [['TCNU7392038', 'TCNU7392038'], ['TCNU 739203 8', 'TC
   if (demo.ok) fail('findTEU demo data was accepted as real')
   const real: any = findteuAnswer(200, { success: true, error: { code: 0, text: '' }, data: data([]) })
   if (!real.ok || real.row.containers[0]?.no !== 'TCNU7392038') fail(`findTEU a real answer → ${JSON.stringify(real).slice(0, 120)}`)
+}
+// The BL's line is wrong: tracking finds the real one by itself (J-741, 6 Nov 2026)
+{
+  const job = { created_at: '2026-11-01T10:00:00Z' }
+  const now = { pod: 'Nhava Sheva, IN', pod_date: '2026-11-15T00:00:00Z', pod_actual: false, vessel_name: 'SPARROW', sealine: 'GSLU' }
+  const scacOf = (name: string) => ({ ZIM: 'ZIMU', 'Gold Star': 'GSLU', MSC: 'MSCU', COSCO: 'COSU', OOCL: 'OOLU', ONE: 'ONEY' } as Record<string, string>)[name] || null
+  const order = linesToAsk('ZIM', 'ZIMU', scacOf)
+  if (order[0] !== null || order[1] !== 'GSLU' || order.includes('ZIMU') || new Set(order).size !== order.length) fail(`lines to ask for a ZIM BL → ${JSON.stringify(order)}`)
+  const asked: (string | null)[] = []
+  const no = { ok: false, retry: false, error: 'SEALINE_HASNT_PROVIDE_INFO' }
+  const j741: any = await findLine({ job, scacs: order, ask: async (s) => { asked.push(s); return s === 'GSLU' ? { ok: true, row: now } : no } })
+  if (!j741.found || j741.scac !== 'GSLU' || j741.tried !== 2) fail(`J-741 should find Gold Star on the 2nd ask → ${JSON.stringify(j741)}, asked ${asked}`)
+  // a leased box: another line knows its PREVIOUS trip. That line must not be taken for this job's
+  const before = { pod: 'Nhava Sheva, IN', pod_date: '2026-10-20T00:00:00Z', pod_actual: true, vessel_name: 'OLD SHIP', sealine: 'MSCU' }
+  if (fitsJob(before, job)) fail('a trip that landed before the job was opened fits the job')
+  if (fitsJob({ ...now, pod: 'Busan, KR' }, job)) fail('a box going to Korea fits an India job')
+  if (!fitsJob(now, job)) fail('this job\'s real trip does not fit')
+  const leased: any = await findLine({ job, scacs: ['MSCU', 'GSLU'], ask: async (s) => (s === 'MSCU' ? { ok: true, row: before } : { ok: true, row: now }) })
+  if (!leased.found || leased.scac !== 'GSLU') fail(`previous trip on another line → ${JSON.stringify(leased)}`)
+  // it stops rather than hammering: other-trip answers (may be billed), the service down, the key refused
+  let calls = 0
+  await findLine({ job, scacs: ['A', 'B', 'C', 'D'], ask: async () => { calls++; return { ok: true, row: before } } })
+  if (calls !== 2) fail(`other-trip answers: ${calls} asks, should stop at 2`)
+  calls = 0
+  const down: any = await findLine({ job, scacs: ['A', 'B', 'C', 'D', 'E'], ask: async () => { calls++; return { ok: false, retry: true } } })
+  if (calls !== 3 || !down.down) fail(`service down: ${calls} asks, should stop at 3`)
+  calls = 0
+  await findLine({ job, scacs: ['A', 'B'], ask: async () => { calls++; return { ok: false, stop: true } } })
+  if (calls !== 1) fail(`key refused: ${calls} asks, should stop at 1`)
+  calls = 0
+  const none: any = await findLine({ job, scacs: Array(30).fill('X'), ask: async () => { calls++; return no } })
+  if (calls !== 12 || none.found) fail(`nobody knows it: ${calls} asks, should stop at 12`)
 }
 console.log(failed ? `  ${failed} wrong` : '  all right')
 
