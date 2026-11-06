@@ -766,7 +766,8 @@ function JobDetailView({ job, profiles = {}, currentUserName, isAdmin, canUpdate
               </Panel>
             )}
 
-            {isAdmin && !editMode && (
+            {/* (also while editing: ⋯ > Edit opens the job in edit mode, which hid this; Jose, 6 Nov 2026) */}
+            {isAdmin && (
               <div className="ix-fj-danger">
                 <Button variant="danger" size="sm" icon="trash" onClick={() => onDelete && onDelete()}>Delete job</Button>
               </div>
