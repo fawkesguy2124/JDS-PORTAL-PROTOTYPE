@@ -234,7 +234,8 @@ async function usedInTrial(admin: any) {
 }
 
 // One job: look up, save. `start` allows a number not yet counted this month.
-async function track(admin: any, job: any, lines: any[], opts: { start?: boolean; by?: string; auto?: boolean }) {
+async function track(admin: any, job: any, lines: any[], opts: { start?: boolean; by?: string; auto?: boolean; deadline?: number }) {
+  const trackStart = Date.now()
   const { data: saved } = await admin.from('sea_tracking').select('*').eq('job_id', job.id).maybeSingle()
   // the number tracked must still be on the job: staff may have corrected the BL or
   // container number since (the old row would otherwise ask about the wrong number for ever)
@@ -276,9 +277,9 @@ async function track(admin: any, job: any, lines: any[], opts: { start?: boolean
   if (!usingFindteu() && !followed && lineBox && (!answer.ok || !fitsJob(answer.row, job)) && (!opts.auto || (youngJob && new Date().getUTCHours() % 6 === 0))) {
     const asked = n.type === 'CT' ? n.scac : scacFor(job.shipping_line, lines)
     const walk = await findLine({
-      job, until: Date.now() + 40_000,
+      job, until: Math.min(trackStart + 90_000, opts.deadline ?? Infinity),
       scacs: linesToAsk(lineName(job.shipping_line), asked, (name) => scacFor(name, lines)),
-      ask: async (scac) => { await sleep(300); return await lookUp({ number: lineBox, type: 'CT', scac }, 15_000).catch((e: Error) => ({ ok: false, retry: true, error: e.message })) },
+      ask: async (scac) => { await sleep(300); return await lookUp({ number: lineBox, type: 'CT', scac }, 40_000).catch((e: Error) => ({ ok: false, retry: true, error: e.message })) },
     })
     triedLines = walk.tried
     const hit = walk.found ? walk : !answer.ok && walk.previous && isOldVoyage(walk.previous.answer.row, job) ? walk.previous : null
@@ -473,7 +474,7 @@ Deno.serve(async (req) => {
       if (s?.fetched_at && Date.now() - new Date(s.fetched_at).getTime() < (REFRESH_HOURS - 0.5) * 3600e3) continue
       const isNew = !s && String(job.created_at).slice(0, 10) >= AUTO_FROM
       if (!s && !isNew) continue
-      results.push(await track(admin, job, lines, { auto: true }))
+      results.push(await track(admin, job, lines, { auto: true, deadline: wallStart + 100_000 }))
       await sleep(1500)
     }
     return json({ success: true, checked: results.length, results, landed, used: await usedInTrial(admin), cap: shipmentCap() })
