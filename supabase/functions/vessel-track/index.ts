@@ -116,6 +116,16 @@ Deno.serve(async (req) => {
   const arrivedLongAgo = (iso: string | null) => !!iso && Date.now() - new Date(iso).getTime() > 3 * 864e5
   for (const b of boxes || []) if (b.vessel && !arrivedLongAgo(b.port_in)) want(b.vessel, (open.get(b.job_id) as any)?.job_no)
   for (const j of jobs || []) if ((j as any).vessel) want((j as any).vessel, (j as any).job_no)
+  // the ship ship tracking says the cargo is on (Jose, 7 Nov 2026: J-741's job still said SYNERGY
+  // OAKLAND while its box was on SPARROW, so SPARROW was never looked for). Its IMO makes the
+  // match sure: there are two ships called SPARROW, and only the one with that IMO is ours.
+  const { data: seaRows } = await admin.from('sea_tracking').select('job_no, vessel_name, vessel_imo, error, pod_actual').in('job_id', [...open.keys()])
+  const imoOf = new Map<string, string>() // ship key → IMO
+  for (const r of seaRows || []) {
+    if (!r.vessel_name || r.error || r.pod_actual) continue
+    want(r.vessel_name, r.job_no)
+    if (/^\d{7}$/.test(String(r.vessel_imo || ''))) imoOf.set(shipKey(r.vessel_name), String(r.vessel_imo))
+  }
   // watch list (a fair test of the finder over days): extra ship names from the
   // VESSEL_WATCH setting, saved like job ships but under "watch"
   for (const n of String(Deno.env.get('VESSEL_WATCH') || '').split(',').map((x) => x.trim()).filter(Boolean).slice(0, 40)) want(n, 'watch')
@@ -125,8 +135,14 @@ Deno.serve(async (req) => {
   // (no early stop when no job ship is wanted: the directory keeps learning)
 
   // ships found before: follow their MMSI everywhere
-  const { data: known } = await admin.from('vessel_positions').select('name, mmsi').in('name', [...wanted.keys()])
+  const { data: known } = await admin.from('vessel_positions').select('name, mmsi, seen_at').in('name', [...wanted.keys()])
   const mmsiOf = new Map((known || []).filter((k: any) => k.mmsi).map((k: any) => [k.name, String(k.mmsi)]))
+  const lastSeen = new Map((known || []).filter((k: any) => k.seen_at).map((k: any) => [k.name, String(k.seen_at)]))
+  // a ship whose IMO tracking gave: its radio number from the directory, by IMO (beats a name match)
+  if (imoOf.size) {
+    const { data: byImo } = await admin.from('ship_directory').select('mmsi, imo, last_heard').in('imo', [...new Set(imoOf.values())]).order('last_heard', { ascending: false, nullsFirst: false })
+    for (const [name, imo] of imoOf) { const d = (byImo || []).find((r: any) => r.imo === imo); if (d) mmsiOf.set(name, String(d.mmsi)) }
+  }
 
   const seen = new Map<string, Seen>() // mmsi → latest
   let messages = 0
@@ -202,9 +218,11 @@ Deno.serve(async (req) => {
   // job ships not heard this time: look them up in the directory
   const missing = [...wanted.keys()].filter((n) => ![...seen.values()].some((s) => s.name === n))
   if (missing.length) {
-    const { data: known2 } = await admin.from('ship_directory').select('mmsi, name_key, imo, ship_type, destination').in('name_key', missing)
+    const { data: known2 } = await admin.from('ship_directory').select('mmsi, name_key, imo, ship_type, destination, last_lat, last_lon, last_heard').in('name_key', missing)
     for (const k of known2 || []) {
-      if (!seen.has(k.mmsi)) seen.set(k.mmsi, { mmsi: k.mmsi, name: k.name_key, imo: k.imo || undefined, type: k.ship_type ?? undefined, destination: k.destination || undefined })
+      // (with where it was last heard: shown on the map as an old position)
+      if (!seen.has(k.mmsi)) seen.set(k.mmsi, { mmsi: k.mmsi, name: k.name_key, imo: k.imo || undefined, type: k.ship_type ?? undefined, destination: k.destination || undefined,
+        ...(typeof k.last_lat === 'number' && typeof k.last_lon === 'number' && k.last_heard ? { lat: k.last_lat, lon: k.last_lon, at: new Date(k.last_heard).toISOString() } : {}) })
     }
   }
 
@@ -218,10 +236,14 @@ Deno.serve(async (req) => {
   const cargo = (s: Seen) => s.type === undefined || (s.type >= 70 && s.type <= 79)
   const india = (s: Seen) => INDIA_DEST.test(String(s.destination || '').toUpperCase())
   for (const [name, jobNos] of wanted) {
-    const found = [...seen.values()].filter((s) => s.name === name && cargo(s))
-    const kept = found.find((s) => s.mmsi === mmsiOf.get(name))
+    // with the IMO from ship tracking only that ship counts, never another of the same name
+    const imo = imoOf.get(name)
+    const found = [...seen.values()].filter((s) => s.name === name && cargo(s) && (!imo || !s.imo || s.imo === imo))
+    const kept = found.find((s) => s.mmsi === mmsiOf.get(name) || (!!imo && s.imo === imo))
     const indian = found.filter(india)
-    const pick = kept || (found.length === 1 ? found[0] : indian.length === 1 ? indian[0] : null)
+    const pick = imo ? kept || null : kept || (found.length === 1 ? found[0] : indian.length === 1 ? indian[0] : null)
+    // a position older than the one saved already is not saved over it
+    if (pick?.at && lastSeen.get(name) && pick.at < (lastSeen.get(name) as string)) { delete pick.lat; delete pick.lon }
     const row: Record<string, unknown> = { name, jobs: [...jobNos].filter(Boolean), checked_at: now }
     if (pick) {
       Object.assign(row, {
