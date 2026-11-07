@@ -166,9 +166,9 @@ const fakeAdmin = (rows: any[]) => ({
 })
 const deps = { markDelivered: async (_: string, j: string) => `✅ delivered ${j}`, change: async (a: any) => `✅ ${a.action}:${a.mode || a.by || a.stage}` }
 const ANSWERS: [string, any[], RegExp | null][] = [
-  ['Q|a:duty|yes', ALL, /duty is paid/], ['Q|a:duty|later', ALL, /ask again tomorrow/], ['Q|b:move|rail', ALL, /Rail it is/], ['Q|b:move|client', ALL, /client collects/],
+  ['Q|a:duty|yes', ALL, /duty is paid/], ['Q|a:duty|later', ALL, /ask again tomorrow/], ['Q|b:move|rail', ALL, /by truck, not rail/], ['Q|b:move|client', ALL, /client collects/],
   ['Q|c:delivered|yes', ALL, /delivered J-583/], ['haan J-689 ka duty bhar diya', ALL, /duty is paid/], ['हाँ, J-689 की ड्यूटी भर दी', ALL, /duty is paid/],
-  ['J-599 ट्रक से जाएगा', ALL, /Truck it is/], ['599 rail se jayega', ALL, /Rail it is/], ['J-599 party khud le jayegi', ALL, /client collects/],
+  ['J-599 ट्रक से जाएगा', ALL, /Truck it is/], ['599 rail se jayega', ALL, /by truck, not rail/], ['J-599 rail se nahi, truck se', ALL, /Truck it is/], ['J-599 party khud le jayegi', ALL, /client collects/],
   ['पता नहीं', [Q.duty], /won't ask/], ['अभी नहीं', [Q.duty], /ask again tomorrow/], ['abhi tak nahi hua', [Q.duty], /ask again tomorrow/],
   ['डिलीवर हो गया', [Q.delivered], /delivered J-583/], ['what is the ETA of J-674?', ALL, null], ['ok thanks', ALL, null],
 ]

@@ -59,7 +59,7 @@ function actionOf(item, j) {
   if (!item) return { label: 'Review', icon: 'eye', tab: 'overview' }
   // free time running out while the boxes wait for a truck: the fix is the truck
   if (item.action === 'truck' || (item.action === 'containers' && j.readyForTruck)) {
-    if (j.readyForTruck) return { label: j.onwardMode === 'truck' ? 'Assign truck' : 'Arrange truck', icon: 'truck', tab: 'truck' }
+    if (j.readyForTruck) return { label: 'Assign truck', icon: 'truck', tab: 'truck' }
     if (item.action === 'truck' && /add the truck number/i.test(item.text)) return { label: 'Add truck no.', icon: 'truck', tab: 'truck' }
     return { label: 'Check truck', icon: 'truck', tab: 'truck' }
   }

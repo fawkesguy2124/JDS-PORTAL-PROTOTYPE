@@ -75,7 +75,6 @@ function Card({ r, lane, selected, onPick }) {
       {lane === 'customs' && (
         <span className="st">{stage ? <Status tone={stage.tone}>{stage.short}</Status> : <span className="unset">Stage not set</span>}</span>
       )}
-      {lane === 'ooc' && j.onwardMode === 'rail' && <span className="st"><Chip>Rail</Chip></span>}
     </button>
   )
 }

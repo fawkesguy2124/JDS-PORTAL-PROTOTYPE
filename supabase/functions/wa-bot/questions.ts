@@ -2,7 +2,8 @@
 // minutes"), and since 2 Nov one message per event with tap buttons, so the team answers
 // in one tap, or in their own words, typed or by voice (Jose: "very conversational"). It
 // asks ONLY what the portal can't find out by itself, at the moment it matters:
-//   move       OOC granted and nobody said how the cargo goes: truck, rail or the client
+//   move       OOC granted and nobody said who takes the cargo out: a truck or the client
+//              (to the client it always goes by truck, never rail; Jose, 7 Nov 2026)
 //   duty       the BE is assessed: is the duty paid?
 //   be         the ship has arrived and no BE is in the portal: is it filed?
 //   truck      a container left the CFS / port loaded and no truck is known: which truck?
@@ -53,7 +54,7 @@ export function questionsDue(data: any): Question[] {
     // 1. OOC granted in the last 3 days, and nobody has said how the cargo goes
     if (j.phase === 'release' && !fm.onward_mode && !fm.delivery_by && !truckNos(job).length && (hoursSince(j.oocDate) ?? 0) <= 72) {
       ask('move', `🎉 ${who}: OOC granted${j.oocDate ? ` on ${istDay(j.oocDate)}` : ''}. How is the cargo going?`,
-        [['truck', '🚚 Truck'], ['rail', '🚆 Rail'], ['client', 'Client collects']])
+        [['truck', '🚚 Truck'], ['client', 'Client collects']])
       continue
     }
     // 2. assessed half a day ago or more: is the duty paid?
@@ -178,9 +179,10 @@ const DELIVER_WORDS: [RegExp, string][] = [
   [/\b(jds|hum|hamara|hamari|we|our|us)\b/i, 'jds'],
 ]
 const MOVE_WORDS: [RegExp, string][] = [
-  [/\b(rail|rel|train|tren|rake|icd|malgadi)\b/i, 'rail'],
   [/\b(client|klaint|party|parti|customer|self|khud)\b.*\b(collect|le jayega|le jayegi|le jaega|uthayega|uthayegi|pick|lega|legi)|\bclient collects?\b|\bself pick/i, 'client'],
   [/\b(truck|trak|trek|trailer|treler|gaadi|gadi|gari|gaari|lorry|tempo)\b/i, 'truck'],
+  // (last, so "rail se nahi, truck se" is a truck; the bot then says it goes by truck)
+  [/\b(rail|rel|train|tren|rake|malgadi)\b/i, 'rail'],
 ]
 
 // A reply to the bot's questions? (a tapped button, or words about a question asked to this
@@ -268,12 +270,9 @@ export async function answerQuestion(admin: Admin, person: Person, text: string,
       await close('answered', 'truck')
       return { reply: `👍 Truck it is for ${job}. Send me the truck number once it's loaded.` }
     }
-    if (ans === 'rail') {
-      const r = await deps.change({ action: 'set_leaves_by', job, mode: 'rail' })
-      if (failed(r)) return { reply: r }
-      await close('answered', 'rail')
-      return { reply: `🚆 Rail it is for ${job}. I'll follow the container on the train.` }
-    }
+    // rail only takes a box from the port to an inland ICD, before customs: after OOC the
+    // cargo goes to the client by truck. The question stays open.
+    if (ans === 'rail') return { reply: `🚚 After OOC the cargo goes to the client by truck, not rail. For ${job}: JDS's truck, or does the client collect?` }
     if (ans === 'client') {
       const r = await deps.change({ action: 'set_delivery_by', job, by: 'client' })
       if (failed(r)) return { reply: r }

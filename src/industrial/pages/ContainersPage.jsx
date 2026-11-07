@@ -46,7 +46,7 @@ function WhereNow({ c, j }) {
   // (the row hides this 'since' while Last event shows the same day: see sameDay)
   return (
     <Status tone={tone} sub={c.whereSince ? `since ${fmtDate(c.whereSince)}` : null}
-      title={tone === 'amber' ? 'OOC done, no truck or rail arranged yet' : undefined}>
+      title={tone === 'amber' ? 'OOC done, no truck assigned yet' : undefined}>
       {/* its own span so a long place name is cut with '…' in the table */}
       <span className="ix-cn-wt">{c.whereText}</span>
     </Status>

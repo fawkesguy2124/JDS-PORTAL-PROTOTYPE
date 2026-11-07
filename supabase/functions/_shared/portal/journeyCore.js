@@ -96,7 +96,7 @@ export const PHASES = [
   { id: 'docs', label: 'Docs & BE filing', hint: 'Preparing / filing in LiveImpex' },
   { id: 'ooc', label: 'Waiting for OOC', hint: 'BE filed, OOC not yet' },
   { id: 'release', label: 'OOC — to be moved', hint: 'OOC granted, cargo still at port/CFS' },
-  { id: 'truck', label: 'On the move', hint: 'Out of port by truck or rail' },
+  { id: 'truck', label: 'On the move', hint: 'Out of the CFS / ICD by truck' },
   { id: 'delivered', label: 'Delivered', hint: 'Job complete' },
 ]
 export const EXPORT_PHASES = [
@@ -304,18 +304,18 @@ export function jobTrucks(job) {
 }
 export const truckNos = (job) => jobTrucks(job).map((t) => t.no)
 
-// How the cargo leaves the port / CFS / ICD on this trip, read from LDB (Jose, 31 Oct
-// 2026). Checked against every box JDS has tracked:
-//   • STATION CROSSED (a railway station or division) = rail, whatever LDB's
-//     transport label says (it says TRUCK on most of them)
-//   • TOLL PLAZA CROSSED / GATE CROSSED = road
-//   • ICD IN / ICD OUT is NOT rail: JDS's ICD is mostly Dronagiri Rail Terminal, used
-//     like a CFS, and the box then leaves by road through the toll plazas
-// Each departure (PORT OUT, CFS OUT, ICD OUT, GATE OUT, TERMINAL OUT) starts a leg; the
-// leg's first movement says rail or road, until the box reaches its next stop.
-// The leg that counts is the one that took the cargo out (exitAt); before that, a leg
-// by rail straight from the port (to an inland ICD) also counts.
-// Returns { mode: 'rail' | 'truck', at, place } of the newest movement, or null.
+// The cargo on its way to the client, read from LDB (Jose, 31 Oct 2026).
+// How JDS works (Jose, 7 Nov 2026): ship → port → CFS / ICD (by road, or by rail to an
+// inland ICD) → customs inspect and give OOC → loaded on a truck → client. To the client
+// it ALWAYS goes by truck, never by rail. So:
+//   • STATION CROSSED (a railway station) = the rail move from the port to an inland ICD,
+//     before customs; shown where the box is ("On rail to the ICD"), never as the move
+//     to the client (all 3 boxes with rail events, 7 Nov 2026: Mundra → Dadri / Ludhiana ICD)
+//   • TOLL PLAZA CROSSED / GATE CROSSED after the box left the CFS / ICD with cargo = the
+//     truck on the road to the client
+// Each departure (PORT OUT, CFS OUT, ICD OUT, GATE OUT, TERMINAL OUT) starts a leg, until
+// the box reaches its next stop; only the leg that took the cargo out (exitAt) counts.
+// Returns { mode: 'truck', at, place } of the newest road movement, or null.
 const DEPART = /^(PORT OUT|PORTOUT|CFS OUT|CFS GATE OUT|ICD OUT|ICD GATE OUT|GATE OUT|TERMINAL OUT)$/
 const STOP = /^(PORT IN|PORTIN|CFS IN|CFS GATE IN|ICD IN|ICD GATE IN|GATE IN|TERMINAL IN)$|EMPTY/
 const ON_RAIL = /^STATION CROSSED$/
@@ -334,27 +334,22 @@ export function onwardMove(row, job) {
     if (!DEPART.test(NAME(ms[k]))) continue
     const leg = []
     for (const m of ms.slice(k + 1)) { if (STOP.test(NAME(m))) break; leg.push(m) }
-    const moves = leg.filter((m) => ON_RAIL.test(NAME(m)) || ON_ROAD.test(NAME(m)))
+    const moves = leg.filter((m) => ON_ROAD.test(NAME(m)))
     if (!moves.length) continue
-    const mode = ON_RAIL.test(NAME(moves[0])) ? 'rail' : 'truck'
-    const isExitLeg = exitAt !== null && WHEN(ms[k]) >= exitAt
-    if (!isExitLeg && mode !== 'rail') continue
+    if (exitAt === null || WHEN(ms[k]) < exitAt) continue
     const last = moves.at(-1)
-    found = { mode, at: new Date(WHEN(last)).toISOString(), place: String(last.location || '').split(',')[0].replace(/^[^/]*\//, '').trim() || null }
+    found = { mode: 'truck', at: new Date(WHEN(last)).toISOString(), place: String(last.location || '').split(',')[0].replace(/^[^/]*\//, '').trim() || null }
   }
   return found
 }
 
-// How the cargo leaves after OOC: not always a truck. Staff can set it on the job
-// (field_meta.onward_mode = 'truck' | 'rail'); otherwise this trip's LDB movement
-// (onwardMove) says it, and a truck number means truck. null = not decided yet.
+// How the cargo goes to the client after OOC: always a truck (Jose, 7 Nov 2026; the
+// "truck or rail" choice of 19 Oct is gone, and no job ever had rail saved).
+// 'truck' once it is known (saved on the job, a truck number, or the truck seen on the
+// road), null before that.
 export function onwardMode(job, rows = []) {
-  const set = job?.field_meta?.onward_mode
-  if (set === 'truck' || set === 'rail') return set
-  const moves = rows.map((t) => onwardMove(t, job)).filter(Boolean)
-  if (moves.some((m) => m.mode === 'rail') || rows.some((t) => t?.status === 'on_rail')) return 'rail'
-  if (moves.length || truckNos(job).length) return 'truck'
-  return null
+  if (job?.field_meta?.onward_mode || truckNos(job).length) return 'truck'
+  return rows.some((t) => onwardMove(t, job)) ? 'truck' : null
 }
 
 // Container facts for a job (containers still in play only)
@@ -497,13 +492,12 @@ export function journeyFor(job, data) {
   const ata = vessel?.parsed?.extra?.ata || seaAt || null
   const arrived = !!(ata || c.portIn || airIgm || stage >= 3)
   const mode = onwardMode(job, c.all)
-  // LDB already shows the cargo moving (newest movement of any box on this trip): no
-  // "arrange a truck" while it is on the road or on rail (Jose, 31 Oct 2026: J-644 was
-  // past the Khalapur toll and still said "assign a truck")
+  // LDB already shows the cargo on the road (newest movement of any box on this trip): no
+  // "arrange a truck" while it is moving (Jose, 31 Oct 2026: J-644 was past the Khalapur
+  // toll and still said "assign a truck")
   const moved = c.all.map((t) => onwardMove(t, job)).filter(Boolean).sort((a, b) => String(b.at).localeCompare(String(a.at)))[0] || null
-  const railMoving = mode === 'rail' && (c.anyOut || moved?.mode === 'rail')
-  const roadMoving = !railMoving && moved?.mode === 'truck'
-  const movedText = moved ? `${moved.mode === 'rail' ? 'On rail' : 'On the road'}${moved.place ? ` · ${moved.place}` : ''}` : null
+  const roadMoving = !!moved
+  const movedText = moved ? `On the road${moved.place ? ` · ${moved.place}` : ''}` : null
   // every box left the CFS / ICD / port loaded on this trip: the onward move happened
   const allLeft = oocDone && c.allOut
   const leftText = c.lastExitAt ? `Left ${c.exitFrom || 'CFS'}` : null
@@ -518,7 +512,7 @@ export function journeyFor(job, data) {
   // 24 hours after the cargo was loaded for the client the job shows as delivered, also
   // when nobody added a truck number. Loaded = every box left the CFS / ICD / port with
   // cargo on this trip (container tracking), or trucks were put on the job for all its
-  // boxes (or the job has no tracked box). Rail moves take days: not counted. Once the
+  // boxes (or the job has no tracked box). Once the
   // cargo is loaded, the empty's return is JDS's own business (Jose, 31 Oct 2026): the
   // job is then simply finished, with no free days or detention to watch.
   const truckAts = trucks.map((t) => t.at).filter(Boolean).sort()
@@ -526,7 +520,7 @@ export function journeyFor(job, data) {
     || c.nos.every((no) => trucks.some((t) => String(t.container || '').toUpperCase() === no)))
   const loadedAt = c.allOut ? c.lastExitAt : truckCovered ? truckAts.at(-1) || null : null
   // (never guessed for a job JDS said is not delivered: field_meta.not_delivered, 2 Nov 2026)
-  const cargoDelivered = !delivered && oocDone && mode !== 'rail' && !railMoving && !!loadedAt
+  const cargoDelivered = !delivered && oocDone && !!loadedAt
     && Date.now() - new Date(loadedAt).getTime() >= DAY && !job?.field_meta?.not_delivered
 
   const steps = [
@@ -541,8 +535,8 @@ export function journeyFor(job, data) {
     // done only when the boxes left the CFS / port WITH cargo, not on the port-to-CFS
     // move (audit 31 Oct 2026: J-652 ticked "Container out" while still at the CFS)
     { id: 'out', label: isAirJob(job) ? 'Cargo out' : 'Container out', done: c.allOut || stage >= 9, when: c.allOut ? dayLabel(c.lastExitAt) : null, sub: outSub || c.tracked[0]?.status_text || null },
-    { id: 'truck', label: mode === 'rail' ? 'Rail' : mode === 'truck' ? 'Truck' : 'Truck / rail', done: oocDone && (!!truck || railMoving || roadMoving || allLeft), when: moved ? dayLabel(moved.at) : allLeft ? dayLabel(c.lastExitAt) : null,
-      sub: truck ? (trucks.length > 1 ? `${trucks.length} trucks` : truck) : movedText || (allLeft ? leftText : mode === 'rail' ? 'Going by rail' : oocDone ? 'Not arranged yet' : null) },
+    { id: 'truck', label: 'Truck', done: oocDone && (!!truck || roadMoving || allLeft), when: moved ? dayLabel(moved.at) : allLeft ? dayLabel(c.lastExitAt) : null,
+      sub: truck ? (trucks.length > 1 ? `${trucks.length} trucks` : truck) : movedText || (allLeft ? leftText : oocDone ? 'Not arranged yet' : null) },
     { id: 'delivered', label: 'Delivered', done: delivered || cargoDelivered,
       when: !isDelivered(job) && c.finishedOn ? dayLabel(c.finishedOn) : cargoDelivered ? dayLabel(loadedAt) : null,
       sub: !isDelivered(job) && c.allDelivered ? (deliveryBy(job) === 'client' ? 'Collected by client' : 'Empty container back')
@@ -553,7 +547,7 @@ export function journeyFor(job, data) {
   if (delivered || cargoDelivered) for (const s of steps) { if (!s.done) { s.done = true; s.sub = null } }
   markCurrent(steps)
   const moveStep = steps.find((s) => s.id === 'truck')
-  const moveText = mode === 'rail' ? 'Next: send the container by rail' : mode === 'truck' ? 'Next: assign a truck' : 'Next: arrange truck or rail'
+  const moveText = 'Next: assign a truck'
   if (moveStep?.current) moveStep.nextText = moveText
   // boxes still at the CFS after OOC with no truck yet: getting them out IS arranging the move
   const outStep = steps.find((s) => s.id === 'out')
@@ -566,7 +560,7 @@ export function journeyFor(job, data) {
 
   let phase = 'arrival'
   if (delivered || cargoDelivered) phase = 'delivered'
-  else if ((truck && oocDone) || ((railMoving || roadMoving || allLeft) && oocDone) || stage >= 9) phase = 'truck'
+  else if ((truck && oocDone) || ((roadMoving || allLeft) && oocDone) || stage >= 9) phase = 'truck'
   else if (oocDone) phase = 'release'
   // a BE filed before the ship came in waits for the ship first, not for OOC.
   // LCL boxes are often not tracked, so a BE filed 10+ days ago counts as arrived.
@@ -574,9 +568,9 @@ export function journeyFor(job, data) {
   else if (beFiled) phase = 'arrival'
   else if (arrived || stage >= 1) phase = 'docs'
 
-  // OOC done and the onward move not arranged yet (rail jobs don't wait for a truck)
-  // (nor jobs whose boxes have all left the CFS loaded: the move has happened)
-  const readyForTruck = !delivered && !cargoDelivered && oocDone && !truck && mode !== 'rail' && !roadMoving && !allLeft
+  // OOC done and no truck yet (not for jobs whose boxes have all left the CFS loaded,
+  // or are on the road: the move has happened)
+  const readyForTruck = !delivered && !cargoDelivered && oocDone && !truck && !roadMoving && !allLeft
 
   // ── Saved job details that container tracking (LDB) contradicts ──
   const mismatches = []
@@ -594,11 +588,11 @@ export function journeyFor(job, data) {
     else if (c.minFree !== null && c.minFree <= 2) add('red', c.minFree === 0 ? 'Last free day today' : `Only ${c.minFree} free day${c.minFree === 1 ? '' : 's'} left`, 'containers')
     else if (c.minFree !== null && c.minFree <= 5) add('amber', `${c.minFree} free days left`, 'containers')
     // (no "move the job to the OOC stage" reminder: the customs check moves it by itself)
-    if (readyForTruck) add('amber', mode === 'truck' ? 'OOC done — no truck assigned yet' : 'OOC done — arrange truck or rail', 'truck')
+    if (readyForTruck) add('amber', 'OOC done — no truck assigned yet', 'truck')
     // on the road by LDB, but the portal has no truck number (for live truck tracking)
     if (roadMoving && !truck) add('info', `${movedText}${moved.at ? ` (${dayLabel(moved.at)})` : ''} — add the truck number to follow it live`, 'truck')
     // left the CFS loaded in the last few days, no truck number and no toll seen yet
-    else if (allLeft && !truck && !moved && mode !== 'rail' && deliveryBy(job) === 'jds' && daysSince(c.lastExitAt) !== null && daysSince(c.lastExitAt) <= TRUCK_WATCH_DAYS) {
+    else if (allLeft && !truck && !moved && deliveryBy(job) === 'jds' && daysSince(c.lastExitAt) !== null && daysSince(c.lastExitAt) <= TRUCK_WATCH_DAYS) {
       add('info', `${leftText} ${dayLabel(c.lastExitAt)} — add the truck number to follow it live`, 'truck')
     }
     if (beFiled && !oocDone && phase === 'ooc') {
@@ -791,7 +785,7 @@ export function containerWhere(row, job) {
   if (trip.exitAt) {
     if (deliveryBy(job) === 'client') return { code: 'collected', label: 'Collected by client', since: trip.exitAt, place: null }
     const mv = onwardMove(row, job)
-    if (mv && mv.at >= trip.exitAt) return { code: mv.mode === 'rail' ? 'rail' : 'road', label: `${mv.mode === 'rail' ? 'On rail' : 'On the road'}${mv.place ? ` · ${mv.place}` : ''}`, since: mv.at, place: mv.place }
+    if (mv && mv.at >= trip.exitAt) return { code: 'road', label: `On the road${mv.place ? ` · ${mv.place}` : ''}`, since: mv.at, place: mv.place }
     return { code: 'out', label: `Left ${trip.exitFrom || 'CFS'} with cargo`, since: trip.exitAt, place: null }
   }
   // (after 12 hours a Port Out has usually reached the CFS and only the gate-in is missing from
@@ -800,9 +794,10 @@ export function containerWhere(row, job) {
   if (trip.toCfsSince) return { code: 'to_cfs', label: Date.now() - new Date(trip.toCfsSince).getTime() > 12 * 3600e3 ? 'Left the port for the CFS (gate-in not recorded)' : 'On the way to the CFS', since: trip.toCfsSince, place: null }
   const ms = tripEvents(row, job, trip)
   const last = ms.at(-1)
+  // (rail only ever takes the box from the port to an inland ICD, before customs; Jose, 7 Nov 2026)
   if (last && ON_RAIL.test(NAME(last))) {
     const p = shortPlace(last.location)
-    return { code: 'rail', label: `On rail${p ? ` · ${p}` : ''}`, since: isoOf(last), place: p }
+    return { code: 'rail', label: `On rail to the ICD${p ? ` · ${p}` : ''}`, since: isoOf(last), place: p }
   }
   const stop = [...ms].reverse().find((m) => AT_CFS.test(NAME(m)) || LEFT_CFS.test(NAME(m)) || PORT_OUT.test(NAME(m)))
   if (stop && AT_CFS.test(NAME(stop))) return { code: 'cfs', label: /^ICD/.test(NAME(stop)) ? 'At ICD' : 'At CFS', since: isoOf(stop), place: shortPlace(stop.location) }
@@ -899,7 +894,7 @@ export function onTheRoad(rows = [], now = Date.now()) {
     if (seen.length || !j.oocDone) continue
     const mv = j.onwardMove
     if (mv && recent(mv.at)) out.push({ ...base, key: `${job.id}:moving`, kind: 'moving', truckNo: j.truck || null, mode: mv.mode, place: mv.place || null, at: mv.at })
-    else if (!mv && j.allLeft && recent(j.leftAt)) out.push({ ...base, key: `${job.id}:left`, kind: 'left', truckNo: j.truck || null, mode: j.onwardMode === 'rail' ? 'rail' : 'truck', place: null, at: j.leftAt })
+    else if (!mv && j.allLeft && recent(j.leftAt)) out.push({ ...base, key: `${job.id}:left`, kind: 'left', truckNo: j.truck || null, mode: 'truck', place: null, at: j.leftAt })
   }
   return out.sort((a, b) => String(b.at || '').localeCompare(String(a.at || '')))
 }

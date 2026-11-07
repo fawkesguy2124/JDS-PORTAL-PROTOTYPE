@@ -49,7 +49,7 @@ export function boxesText(job, data) {
   return [...by].map(([k, n]) => (k ? `${n}×${k}` : `${n} box${n === 1 ? '' : 'es'}`)).join(' + ')
 }
 
-// The next thing to do, as a verb ('Arrange truck or rail'), without the 'Next:' prefix
+// The next thing to do, as a verb ('Assign a truck'), without the 'Next:' prefix
 export function nextStepText(j) {
   if (!j || j.phase === 'delivered') return null
   const t = String(j.steps?.find((s) => s.current)?.nextText || '').replace(/^Next:\s*/i, '')
@@ -334,12 +334,11 @@ export default function JobDrawer({ jobId, onClose, onOpenFull, onOpenTruck, cur
   let alt = null
   if (!isExport && j.readyForTruck) {
     cta = { key: 'truck', step: 'truck', label: 'Assign truck', icon: 'truck', run: () => onOpenTruck(job.id) }
-    if (!j.onwardMode) alt = { label: 'Goes by rail', icon: 'train', run: () => setMeta('onward_mode', 'rail', 'Saved: goes by rail') }
   } else if (!isExport && j.phase === 'ooc') cta = { key: 'customs', step: 'ooc', label: 'Check OOC', icon: 'file-certificate', run: () => checkOoc() }
   else if (!isExport && (j.phase === 'docs' || j.phase === 'arrival') && !job.be_no) cta = { key: 'customs', step: 'be', label: 'Record BE no', icon: 'file-plus', run: () => onOpenFull(job.id, 'customs') }
   else if (isExport && !j.sbNo) cta = { key: 'export', step: 'sb', label: 'Record SB no', icon: 'file-plus', run: () => onOpenFull(job.id, isAir ? 'air' : 'export') }
-  else if (!isExport && j.phase === 'truck' && !j.truck && j.onwardMode !== 'rail' && deliveryBy(job) === 'jds') cta = { key: 'truck', step: 'truck', label: 'Add truck number', icon: 'truck', run: () => onOpenTruck(job.id), onDone: true }
-  // left the port by road with no truck number yet: the button sits under Truck / rail even
+  else if (!isExport && j.phase === 'truck' && !j.truck && deliveryBy(job) === 'jds') cta = { key: 'truck', step: 'truck', label: 'Add truck number', icon: 'truck', run: () => onOpenTruck(job.id), onDone: true }
+  // left the port by road with no truck number yet: the button sits under Truck even
   // though that step is done, instead of a "Left port … add the truck number" banner that
   // repeats the step bar (Jose, 31 Oct 2026)
   const askTruck = !isExport && j.attention.some((a) => a.action === 'truck' && /add the truck number/.test(a.text))
@@ -518,7 +517,7 @@ export default function JobDrawer({ jobId, onClose, onOpenFull, onOpenTruck, cur
     ['Goods', job.goods],
   ].filter(([, v]) => v !== null && v !== undefined && v !== '')
   const trucks = j.trucks || []
-  const canTruck = !isExport && j.oocDone && j.onwardMode !== 'rail'
+  const canTruck = !isExport && j.oocDone
 
   // ── ship card ──
   // the ship card only while the ship is still on its way: once it has arrived the step
@@ -705,12 +704,6 @@ export default function JobDrawer({ jobId, onClose, onOpenFull, onOpenTruck, cur
                   {!isExport && (
                     <Section title={<><Icon name="route" />Arrangements</>}>
                       <div className="ix-jp-arr">
-                        <div>Move by</div>
-                        <div>
-                          <Segmented label="Leaves the port or CFS by" value={j.onwardMode || ''} options={[{ value: 'truck', label: 'Truck' }, { value: 'rail', label: 'Rail' }]}
-                            onChange={(v) => job.field_meta?.onward_mode !== v && setMeta('onward_mode', v, v === 'rail' ? 'Saved: goes by rail' : 'Saved: goes by truck')} />
-                          {!job.field_meta?.onward_mode && j.onwardMode && <small>(from tracking)</small>}
-                        </div>
                         <div>Delivery</div>
                         <div>
                           <Segmented label="Delivery to the warehouse" value={deliveryBy(job)} options={[{ value: 'jds', label: 'JDS delivers' }, { value: 'client', label: 'Client collects' }]}

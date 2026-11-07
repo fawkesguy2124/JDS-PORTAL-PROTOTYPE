@@ -374,7 +374,7 @@ export function makeServerTools(d: Deps) {
       }
       for (const { job, j } of rows) {
         if (j.phase === 'ooc') { todo.push(`${job.job_no}: BE ${job.be_no} waiting for OOC`); addMenu(`check customs ${job.job_no}`, `Check OOC ${job.job_no}`, `BE ${job.be_no} · ${job.client || ''}`) }
-        else if (j.readyForTruck) { todo.push(`${job.job_no}: OOC done, ${j.onwardMode === 'truck' ? 'assign a truck' : 'arrange truck or rail'}`); addMenu(`add truck to ${job.job_no}`, `Truck for ${job.job_no}`, `OOC done · ${job.client || ''}`) }
+        else if (j.readyForTruck) { todo.push(`${job.job_no}: OOC done, assign a truck`); addMenu(`add truck to ${job.job_no}`, `Truck for ${job.job_no}`, `OOC done · ${job.client || ''}`) }
         else if ((j.phase === 'docs' || j.phase === 'arrival') && !job.be_no && j.steps?.[0]?.done) { todo.push(`${job.job_no}: ship in, BE not filed`); addMenu(`show ${job.job_no}`, `${job.job_no} file BE`, `Ship arrived · ${job.client || ''}`) }
       }
       const { data: tasks } = await admin.from('bot_tasks').select('id, job_no, text, from_name, due_at').eq('to_phone', person.phone).eq('status', 'open').order('created_at').limit(10)
