@@ -425,7 +425,7 @@ export default function ShipMap({ ships = [], selectedKey, onSelect, height = 42
         {!placed.length && (
           <div className="ix-realmap-msg">
             <Icon name="ship" /> {ships.length ? 'No ship position yet.' : 'No ship is carrying our cargo right now.'}
-            {ships.length > 0 && <div className="s">Positions come with ship tracking (open the job → Track this ship).</div>}
+            {ships.length > 0 && <div className="s">The ships and their ETAs are in the list; a pin appears when a ship's position is known.</div>}
           </div>
         )}
         {sel && (

@@ -86,7 +86,11 @@ export default function VesselsPage({ onOpenJob }) {
   }
   // a ship is on the map once its position is known (ship tracking, else the finder)
   const positionOf = (s) => shipPosition(seaOfShip(s), s.name ? data?.shipIds?.[s.name] : null)
-  const shown = (s) => !!positionOf(s)
+  // listed once ship tracking has its ETA, with or without a position: findTEU (since 7 Nov 2026)
+  // gives the ship and the ETA but no position, and the list went empty (Jose: "I can't see any
+  // vessel tracking now"). The map shows a pin only where a position is known.
+  const tracked = (s) => { const sea = seaOfShip(s); return !!(sea && !sea.error && sea.pod_date) }
+  const shown = (s) => !!positionOf(s) || tracked(s)
   // the shipping line of a ship's jobs: with the IMO that is all JDS needs; the
   // ship's own name is not asked for (Jose, 24 Oct 2026)
   const lineOf = (s) => { const j = s.jobs.find((x) => x.job.shipping_line)?.job; return j ? displayLine(j.shipping_line) || j.shipping_line : null }
@@ -184,7 +188,8 @@ export default function VesselsPage({ onOpenJob }) {
                         {kmLeft != null ? <span>{kmLeft.toLocaleString('en-IN')} km to go</span>
                           // (the status already says At port: no second 'At the port' here)
                           : m.atPod && !m.arrived ? (label === 'At port' ? null : <span>At the port</span>)
-                            : m.waiting ? <span>Not sailed yet</span> : null}
+                            : m.waiting ? <span>Not sailed yet</span>
+                              : !m.pos && !m.arrived ? <span className="m">No position on the map</span> : null}
                         {m.delay && !m.arrived && (
                           <span className={`ix-delay ${m.delay.tone}`} title="How far the line moved the ETA since tracking started">{m.delay.text}</span>
                         )}
@@ -201,8 +206,8 @@ export default function VesselsPage({ onOpenJob }) {
             </div>
           </section>
 
-          {/* (no 'Ships without a position yet' list: not for JDS; a job shows here once its
-              ship has a position; Jose, 1 Nov 2026) */}
+          {/* (no separate 'Ships without a position yet' list: not for JDS (Jose, 1 Nov 2026); a
+              ship with tracking but no position sits in the same list, without a pin) */}
         </>
       )}
     </>
