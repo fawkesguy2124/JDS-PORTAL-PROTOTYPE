@@ -5,6 +5,7 @@
 import { journeyFor, isDelivered, isExportJob, effectiveStage, PHASES, EXPORT_PHASES, parseContainerNos, containerTrip, containerFinishedOn, deliveryBy, truckNos } from './journeyCore.js'
 import { jobsFor } from './botMessages.js'
 import { lineName } from './shippingLines.js'
+import { berthingOf, berthingText } from './jnpaBerthing.js'
 import { vesselsOf, shipIdOf, seaArea, cargoOnShip, shipCardText } from './ships.js'
 
 const TZ = 'Asia/Kolkata'
@@ -93,6 +94,8 @@ function jobFacts(job, data, detail = false) {
     free_days_left: j.freeDaysLeft, problems: j.attention.map((a) => `${a.level === 'red' ? 'URGENT' : a.level === 'amber' ? 'TO DO' : 'NOTE'}: ${a.text}`),
     leaves_by: j.onwardMode || 'not decided',
     // the newest road / rail movement LDB shows on this trip (toll plaza or railway station)
+    // JNPA's own daily berthing report (free; Jose, 7 Nov 2026)
+    port_berthing: berthingText(berthingOf(job, data)),
     moving: j.onwardMove ? `${j.onwardMove.mode === 'rail' ? 'by rail' : 'by road'}${j.onwardMove.place ? `, last at ${j.onwardMove.place}` : ''} on ${day(j.onwardMove.at)}` : null,
     trucks: (j.trucks || []).map((t) => `${t.no}${t.container ? ` (${t.container})` : ''}`),
     ...customsCheck(job, data, j),

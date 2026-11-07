@@ -33,7 +33,7 @@ async function readAll(build) {
 // error is a plain message (or null); pages must show it instead of "all clear".
 export async function loadJourneyData() {
   const since = new Date(Date.now() - 180 * DAY).toISOString()
-  const [jobsRes, csRes, resultsRes, ctRes, ships, sea] = await Promise.all([
+  const [jobsRes, csRes, resultsRes, ctRes, ships, sea, berth] = await Promise.all([
     readAll(() => supabase.from('jobs').select('*').order('job_no', { ascending: false })),
     readAll(() => supabase.from('customs_status').select('*').order('job_id')),
     readAll(() => supabase.from('ulip_results')
@@ -48,6 +48,8 @@ export async function loadJourneyData() {
     supabase.from('vessel_positions').select('name, mmsi, imo, candidates, seen_at, destination, lat, lon'),
     // ETA, ship and position from Safecube (sea-track function); optional
     supabase.from('sea_tracking').select('*'),
+    // when each ship berths at Nhava Sheva, from JNPA's daily reports (port-berthing function); optional
+    supabase.from('port_berthing').select('*'),
   ])
   const firstError = [jobsRes, csRes, resultsRes, ctRes].find((r) => r.error)?.error
   if (firstError) console.warn('[journey] load problem:', firstError.message)
@@ -59,5 +61,6 @@ export async function loadJourneyData() {
   built.shipIds = Object.fromEntries((ships.data || []).map((r) => [r.name, r]))
   // (a tracking row about an older voyage is left out, so no screen shows its arrival)
   built.seaByJob = buildSeaByJob(sea.data || [], built.jobs)
+  built.berthByJob = Object.fromEntries((berth?.data || []).map((r) => [r.job_id, r]))
   return built
 }

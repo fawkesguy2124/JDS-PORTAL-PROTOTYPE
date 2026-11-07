@@ -10,6 +10,7 @@ import {
   displayLine, freeTimeFor, tripMilestones, STALE_AFTER_DAYS,
 } from '../services/journey'
 import { seaOf } from '../../supabase/functions/_shared/portal/ships.js'
+import { berthingOf, berthingText } from '../../supabase/functions/_shared/portal/jnpaBerthing.js'
 import { Button, Chip, Dash, EmptyState, FreeDays, Icon, JobNo, Section, Segmented, Status, fmtDate, fmtDateTime, fmtTime, jobOwnerName, worst } from './ui'
 import { vesselOf, shipIdOf } from './ShipMap'
 import { openDoc, downloadDoc } from '../services/docFiles'
@@ -702,6 +703,23 @@ export default function JobDrawer({ jobId, onClose, onOpenFull, onOpenTruck, cur
                       </div>
                     </Section>
                   )}
+
+                  {/* JNPA's own daily berthing report (free, read three times a day; Jose, 7 Nov 2026) */}
+                  {!isExport && j.phase !== 'delivered' && berthingOf(job, data) && (() => {
+                    const b = berthingOf(job, data)
+                    return (
+                      <Section title={<><Icon name="anchor" />Berthing at Nhava Sheva</>}>
+                        <div className="ix-jp-ship">
+                          <span className="ic"><Icon name={b.status === 'expected' ? 'ship' : 'anchor'} /></span>
+                          <div style={{ minWidth: 0 }}>
+                            <b>{berthingText(b)}</b>
+                            <small>{b.vessel}{b.via ? <> · <span className="mono">{b.via}</span></> : null} · JNPA berthing report{b.seen_at ? `, ${fmtDate(b.seen_at)}` : ''}</small>
+                          </div>
+                          {b.report_url && <a className="ix-link" href={b.report_url} target="_blank" rel="noreferrer">Report <Icon name="external-link" /></a>}
+                        </div>
+                      </Section>
+                    )
+                  })()}
 
                   {!isExport && (
                     <Section title={<><Icon name="route" />Arrangements</>}>

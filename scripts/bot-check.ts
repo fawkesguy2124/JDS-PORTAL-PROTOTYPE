@@ -18,6 +18,8 @@ import { repairOcrContainers, readScanText } from '../supabase/functions/_shared
 import { findteuRow, findteuAnswer } from '../supabase/functions/sea-track/findteu.ts'
 import { findLine, fitsJob, linesToAsk } from '../supabase/functions/sea-track/lineFinder.ts'
 import { readPost } from '../supabase/functions/_shared/portal/postReader.js'
+import { CONTAINER_TERMINALS, readBerthingPage, shipAtJnpa, shipKey, berthingText } from '../supabase/functions/_shared/portal/jnpaBerthing.js'
+import { pdfToLines } from '../supabase/functions/_shared/portal/beParser.js'
 import { isHinglish, changeParts, mergeProposals, LIVE_ASKED } from '../supabase/functions/wa-bot/assistant.ts'
 import { isUndo, isCorrection, handlePost } from '../supabase/functions/wa-bot/posts.ts'
 
@@ -433,6 +435,43 @@ if (!exists) {
     if (diffs.length > 15) console.log(`  …and ${diffs.length - 15} more`)
     if (!diffs.length && Object.keys(before).length) console.log('  all read exactly as before')
     failed += diffs.length > 15 ? diffs.length - 15 : 0
+  }
+
+  // JNPA berthing reports of 7 Nov 2026 (berthing/2026-11-07): each terminal's layout read right
+  const BD = `${FOLDER}/berthing/2026-11-07`
+  let haveBerth = true
+  try { Deno.statSync(BD) } catch { haveBerth = false }
+  if (haveBerth) {
+    const { getDocumentProxy }: any = await import('https://esm.sh/unpdf@0.12.1')
+    const page = readBerthingPage(Deno.readTextFileSync(`${BD}/page.html`))
+    if (page.atBerth.length !== 14 || Object.keys(page.reports).length !== 8) fail(`berthing page: ${page.atBerth.length} at berth, ${Object.keys(page.reports).length} reports`)
+    const pages: any[] = []
+    for (const t of CONTAINER_TERMINALS) {
+      const f = `${BD}/${String(page.reports[t] || '').split('/').pop()}`
+      pages.push({ terminal: t, lines: await pdfToLines(await getDocumentProxy(new Uint8Array(await Deno.readFile(f)))) })
+    }
+    const WANT: [string, string | null, string][] = [
+      ['APL BARCELONA', 'berthed', '2026-11-06T10:48'], ['CMA CGM CEBU', 'sailed', '2026-11-06T12:30'], ['CMA CGM TITAN', 'expected', '2026-11-08T21:00'],
+      ['WAN HAI 512', 'berthed', '2026-11-06T18:24'], ['KR TASMAN', 'sailed', '2026-11-07T05:05'], ['MAERSK KENSINGTON', 'expected', '2026-11-08T03:00'],
+      ['INTERASIA TRIUMPH', 'expected', '2026-11-08T04:00'], ['OAKLAND EXPRESS', 'berthed', '2026-11-05T22:30'], ['PORT KELANG EXPRESS', 'expected', '2026-11-07T11:00'],
+      ['XIN SHANGHAI', 'berthed', '2026-11-06T10:42'], ['ZHONG KUN 611', 'sailed', '2026-11-06T08:48'], ['KOTA NIPAH', 'expected', '2026-11-09T03:00'],
+      ['X-PRESS PYXIS', 'expected', '2026-11-08T13:00'], ['M.V. MSC TINA', 'expected', '2026-11-08T07:00'], ['ZHONG GU NAN NING', 'expected', '2026-11-09T22:00'],
+      ['NAGOYA EXPRESS / 012E', 'berthed', '2026-11-06T23:00'], ['ONE HONOLULU', 'expected', '2026-11-07T08:00'], ['MSC VIRGINIA', 'berthed', '2026-11-06T01:30'],
+      ['EVER EXCEL', 'expected', '2026-11-15T02:00'], ['WAN HAI 627', 'expected', '2026-11-17T08:00'],
+      ['SPARROW', null, ''], ['WAN HAI 5', null, ''], ['MSC ANNA / 512W', null, ''], ['EVER', null, ''], ['MSC BRASILIA', null, ''], ['MSC BRASILIA VII', 'expected', '2026-11-13T10:00'], ['GFS GENESIS', 'expected', '2026-11-07T13:00'],
+    ]
+    for (const [name, status, at] of WANT) {
+      const r: any = shipAtJnpa(name, pages, page.atBerth, new Date('2026-11-07T06:00:00Z'))
+      const ok = status === null ? r === null : r && r.status === status && String(r.at).startsWith(at)
+      if (!ok) fail(`berthing: ${name} → ${r ? `${r.status} ${r.at}` : 'not listed'}, want ${status ? `${status} ${at}` : 'not listed'}`)
+    }
+    // a ship whose known ETA is far from the report's date is another call of that name
+    if (shipAtJnpa('WAN HAI 627', pages, page.atBerth, new Date('2026-11-07T06:00:00Z'), '2026-12-20T00:00:00Z')) fail('berthing: a far-off ETA should not match')
+    if (!shipAtJnpa('WAN HAI 627', pages, page.atBerth, new Date('2026-11-07T06:00:00Z'), '2026-11-15T00:00:00Z')) fail('berthing: a near ETA should match')
+    if (shipKey('M.V. X-Press Phoenix / 012W') !== 'XPRESS PHOENIX') fail(`shipKey → ${shipKey('M.V. X-Press Phoenix / 012W')}`)
+    const said = berthingText({ status: 'expected', terminal: 'NSICT', eta: '2026-11-08T03:00:00+05:30' })
+    if (!/Expected at NSICT \(DP World\) on Sun 8 Nov, 3:00 am/.test(String(said))) fail(`berthing text → ${said}`)
+    console.log(`  ${WANT.length} ships checked in 5 JNPA berthing reports`)
   }
 }
 

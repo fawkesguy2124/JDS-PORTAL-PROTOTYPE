@@ -88,6 +88,9 @@ async function loadData(admin: Admin) {
   const sea = await readAll(() => admin.from('sea_tracking').select('*').order('job_id')).catch(() => [])
   // shared rule, as in the portal: rows about an older voyage of the ship are left out
   data.seaByJob = buildSeaByJob(sea, jobs)
+  // when each ship berths at Nhava Sheva, from JNPA's daily reports (port-berthing function)
+  const berth = await readAll(() => admin.from('port_berthing').select('*').order('job_id')).catch(() => [])
+  data.berthByJob = Object.fromEntries((berth || []).map((r: any) => [r.job_id, r]))
   data.activity = activity
   data.documents = documents
   data.people = Object.fromEntries(people.map((p: any) => [p.id, p.name]))
