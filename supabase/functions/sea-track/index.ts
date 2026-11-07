@@ -301,6 +301,12 @@ async function track(admin: any, job: any, lines: any[], opts: { start?: boolean
   // hourly run keeps asking until the line shows the new trip (once the box is loaded).
   if (r.ok && isOldVoyage(r.row, job)) {
     const was = r.row.pod_date ? String(r.row.pod_date).slice(0, 10) : null
+    // a ship we already follow stays: another service answering with the box's previous trip
+    // does not wipe it (7 Nov 2026: findTEU gave J-1235's box its September trip; SPARROW vanished)
+    if (followed) {
+      await admin.from('sea_tracking').update({ refresh_error: `the answer was this container's previous trip${was ? ` (arrived ${was})` : ''}; last good data kept`, refresh_error_at: now }).eq('job_id', job.id)
+      return { job: job.job_no, number: n.number, kept: 'last good data kept (answer was the previous trip)' }
+    }
     await admin.from('sea_tracking').upsert({
       ...base, done: false, refresh_error: null,
       error: `the line still shows this container's previous trip${was ? ` (arrived ${was})` : ''}. The new trip shows once the box is loaded; checked every hour.`,
