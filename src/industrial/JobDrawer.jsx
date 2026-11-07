@@ -105,7 +105,8 @@ function jobBoxes(job, data) {
     const ms = t ? tripMilestones(t, job) : []
     return {
       no, size: boxSize(job, no, data), tracked: !!t, raw: t,
-      where: where.code, whereText: where.label, whereSince: where.since,
+      // at a CFS: which one ("At CFS · Speedy Multimode CFS"; Jose, 7 Nov 2026)
+      where: where.code, whereText: where.code === 'cfs' && where.place ? `${where.label} · ${where.place.replace(/\b[a-z]/g, (ch) => ch.toUpperCase())}` : where.label, whereSince: where.since,
       leftAt: trip?.exitAt || null, leftFrom: trip?.exitFrom || null,
       freeLeft: ft ? ft.left : null, freeTill: ft?.till || null,
       finishedOn: t ? containerFinishedOn(t, job) : null,
@@ -511,7 +512,8 @@ export default function JobDrawer({ jobId, onClose, onOpenFull, onOpenTruck, cur
     ['IMO', !isAir && imo ? <span className="mono">{imo}</span> : null],
     ['IGM', igm ? <><span className="mono">{igm}</span>{job.ulip_refs?.igm_date ? <span className="muted"> · {fmtDate(job.ulip_refs.igm_date)}</span> : null}</> : null],
     ['Assessment', rmsText(job.rms_status)],
-    ['CFS', job.cfs_name],
+    // typed by staff, or where container tracking saw the boxes gate in (Jose, 7 Nov 2026)
+    ['CFS', j.cfs ? <>{j.cfs.name}{j.cfs.from === 'tracking' && <span className="muted"> · from tracking</span>}</> : null],
     ['Free days', job.free_days ? `${job.free_days} days from arrival` : null],
     ['Deliver to', job.destination],
     ['Goods', job.goods],

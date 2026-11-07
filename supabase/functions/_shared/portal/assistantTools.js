@@ -104,7 +104,7 @@ function jobFacts(job, data, detail = false) {
     ...facts,
     priority: job.priority || null, created: `${day(job.created_at)}${data.people?.[job.created_by] ? ` by ${data.people[job.created_by]}` : ''}`, last_updated: day(job.updated_at),
     contract_free_days: job.free_days ?? null, hs_code: job.hs_code || null, notes: job.notes ? String(job.notes).slice(0, 300) : null,
-    bl_no: job.bl_no || null, shipping_line: job.shipping_line || null, vessel: job.vessel || null, cfs: job.cfs_name || null,
+    bl_no: job.bl_no || null, shipping_line: job.shipping_line || null, vessel: job.vessel || null, cfs: j.cfs?.name || null,
     goods: job.goods ? String(job.goods).slice(0, 120) : null, rms: job.rms_status || null,
     container_sizes: job.container_sizes && Object.keys(job.container_sizes).length ? job.container_sizes : job.container_size || null,
     documents_uploaded: docs.length ? docs.map((d) => `${d.doc_type || 'Other'}: ${d.file_name || ''} (${day(d.created_at)}${d.uploaded_by_name ? `, ${d.uploaded_by_name}` : ''})`) : 'none',
@@ -363,7 +363,7 @@ function runToolRaw(name, args, data, person) {
     for (const r of rows) {
       const job = r.job
       if (!test(r)) continue
-      if (!has(job.client, a.client) || !has(job.vessel, a.vessel) || !has(job.cfs_name, a.cfs) || !has(job.rms_status, a.rms) || !has(job.priority, a.priority)) continue
+      if (!has(job.client, a.client) || !has(job.vessel, a.vessel) || !has(r.j.cfs?.name || job.cfs_name, a.cfs) || !has(job.rms_status, a.rms) || !has(job.priority, a.priority)) continue
       if (a.shipping_line && !has(`${job.shipping_line || ''} ${lineName(job.shipping_line) || ''}`, a.shipping_line)) continue
       if (wantMode) {
         const m = norm(job.mode)
@@ -392,7 +392,7 @@ function runToolRaw(name, args, data, person) {
     if (a.group_by) {
       const keyOf = {
         client: (h) => h.job.client || 'No client', shipping_line: (h) => lineName(h.job.shipping_line) || h.job.shipping_line || 'Not set', mode: (h) => h.job.mode || 'Not set',
-        status: (h) => h.full.phase, port: (h) => h.job.port_code || 'Not set', cfs: (h) => h.job.cfs_name || 'Not set', rms: (h) => h.job.rms_status || 'Not set',
+        status: (h) => h.full.phase, port: (h) => h.job.port_code || 'Not set', cfs: (h) => h.full.cfs?.name || 'Not set', rms: (h) => h.job.rms_status || 'Not set',
         created_month: (h) => (ymd(h.job.created_at) || 'unknown').slice(0, 7), leaves_by: (h) => h.full.onwardMode || 'not decided',
       }[a.group_by] || ((h) => h.job.client || 'No client')
       const groups = {}
@@ -402,7 +402,7 @@ function runToolRaw(name, args, data, person) {
     const limit = Math.min(Math.max(Number(a.limit) || 12, 1), 40)
     return {
       filters, ...stats, shown: Math.min(limit, hits.length),
-      jobs: hits.slice(0, limit).map((h) => ({ ...jobFacts(h.job, data), ...(h.full.phase === 'delivered' ? { next_step: 'Finished', problems: [] } : {}), status: phaseLabel(h.full.phase), created: day(h.job.created_at), arrived: day(h.full.arrivedAt), shipping_line: lineName(h.job.shipping_line) || h.job.shipping_line || null, cfs: h.job.cfs_name || null, rms: h.job.rms_status || null })),
+      jobs: hits.slice(0, limit).map((h) => ({ ...jobFacts(h.job, data), ...(h.full.phase === 'delivered' ? { next_step: 'Finished', problems: [] } : {}), status: phaseLabel(h.full.phase), created: day(h.job.created_at), arrived: day(h.full.arrivedAt), shipping_line: lineName(h.job.shipping_line) || h.job.shipping_line || null, cfs: h.full.cfs?.name || null, rms: h.job.rms_status || null })),
     }
   }
   if (name === 'container_history') {

@@ -627,6 +627,7 @@ export function journeyFor(job, data) {
     // every box left the CFS / port loaded on this trip, and when the last one did
     allLeft, leftAt: c.lastExitAt,
     containers: c,
+    cfs: jobCfs(job, c.all),
     truckLocation: seen[0] ? { ...seen[0].location, truck: seen[0].no } : null,
     truckPapers: trucks[0]?.papers || null,
     customs: cs,
@@ -672,7 +673,7 @@ function exportJourney(job, results) {
   return {
     steps, phase, attention, sbNo, leoDate, egmNo, truck, trucks,
     readyForTruck: false, oocDone: false, freeDaysLeft: null, freeTill: null, freeBox: null, allLeft: false, leftAt: null,
-    customs: null, containers: { nos: [], tracked: [] },
+    customs: null, containers: { nos: [], tracked: [] }, cfs: null,
     truckLocation: null, truckPapers: null,
   }
 }
@@ -755,6 +756,27 @@ export function eventLabel(raw) {
 }
 // "KHALAPUR TOLL PLAZA, MAHARASHTRA" → "KHALAPUR TOLL PLAZA" (as onwardMove does)
 const shortPlace = (loc) => String(loc || '').split(',')[0].replace(/^[^/]*\//, '').trim() || null
+
+// The job's CFS / ICD (Jose, 7 Nov 2026: "the location of CFS we know right for each job").
+// What staff typed wins; otherwise where container tracking saw the boxes gate in on this
+// trip (each box's newest CFS / ICD IN, so a box moved between CFSs counts at the last one).
+// The port's "DPD @ <CFS>" note is not used (not trusted; Jose, 2 Nov 2026).
+// Returns { name, from: 'typed' | 'tracking' } or null.
+const cfsLabel = (loc) => { const p = shortPlace(loc); return p ? p.replace(/\b[a-z]/g, (ch) => ch.toUpperCase()) : null }
+export function jobCfs(job, rows = []) {
+  const typed = String(job?.cfs_name || '').trim()
+  if (typed) return { name: typed, from: 'typed' }
+  const seen = []
+  for (const t of rows) {
+    if (!t) continue
+    const trip = containerTrip(t, job)
+    if (trip.laterTrip) continue
+    const last = [...tripEvents(t, job, trip)].reverse().find((m) => AT_CFS.test(NAME(m)))
+    const name = last ? cfsLabel(last.location) : null
+    if (name && !seen.includes(name)) seen.push(name)
+  }
+  return seen.length ? { name: seen.join(' / '), from: 'tracking' } : null
+}
 
 // This trip's raw events of one container, oldest first: from its port arrival to
 // the empty coming back

@@ -406,7 +406,7 @@ export function makeServerTools(d: Deps) {
         'Job': job.job_no, 'Client': job.client || '', 'Mode': job.mode || '', 'Import/Export': job.job_type === 'export' ? 'Export' : 'Import',
         'Status': label(j.phase), 'BE / SB no': job.be_no || j.sbNo || '', 'BE date': day(job.be_date), 'OOC date': day(j.oocDate),
         'Containers': parseContainerNos(job.containers).join(', '), 'Free days left': j.freeDaysLeft ?? '', 'Truck': (j.trucks || []).map((t: any) => t.no).join(', '),
-        'Shipping line': job.shipping_line || '', 'CFS': job.cfs_name || '', 'Opened': day(job.created_at),
+        'Shipping line': job.shipping_line || '', 'CFS': j.cfs?.name || job.cfs_name || '', 'Opened': day(job.created_at),
       }))
       const count = (p: string) => rows.filter((r: any) => r.j.phase === p).length
       const summary = [
