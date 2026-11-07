@@ -221,7 +221,7 @@ export function instantAlerts(data, events = [], now = new Date()) {
     if (ev.action === 'ooc_granted') {
       const job = byId[ev.job_id] || byNo[ev.job_no] || byNo[String(ev.title || '').split('— ').pop()?.trim()]
       const ooc = meta.ooc_no ? `OOC ${meta.ooc_no}${meta.ooc_date ? ` dated ${dayText(meta.ooc_date)}` : ''}` : 'OOC granted'
-      add('ooc', `ooc:${job?.id}:${meta.ooc_no || ev.id}`, job, `✅ OOC granted: ${ooc}. Arrange truck or rail.`, meta.ooc_date || null)
+      add('ooc', `ooc:${job?.id}:${meta.ooc_no || ev.id}`, job, `✅ OOC granted: ${ooc}. Assign a truck.`, meta.ooc_date || null)
     }
     // the ship tracking saw the ship arrive (Jose, 25 Oct 2026)
     if (ev.action === 'ship_arrived') {

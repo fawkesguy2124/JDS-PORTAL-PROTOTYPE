@@ -140,9 +140,9 @@ export default function ControlTowerSection({ onOpenJob, onGo, onStageFilter }) 
         <Kpi label={st.ooc.label} value={n(st.ooc.jobs.length)}
           sub={!dash && (oocDays.length ? `oldest ${Math.max(...oocDays)} d since BE` : st.ooc.jobs.length ? null : 'none waiting')} title="BE filed, OOC not yet" />
         <Kpi label={st.release.label} tone={st.release.jobs.length ? 'amber' : undefined} value={n(st.release.jobs.length)}
-          sub={!dash && (needInMove ? `${needInMove} need a truck` : st.release.jobs.length ? 'truck or rail arranged' : null)} title="OOC granted, cargo still at the port or CFS" />
+          sub={!dash && (needInMove ? `${needInMove} need a truck` : st.release.jobs.length ? 'truck arranged' : null)} title="OOC granted, cargo still at the port or CFS" />
         <Kpi label={st.truck.label} value={n(st.truck.jobs.length)}
-          sub={!dash && (seenOnRoad ? `${seenOnRoad} seen on the road` : null)} title="Out of the port or CFS by truck or rail" />
+          sub={!dash && (seenOnRoad ? `${seenOnRoad} seen on the road` : null)} title="Out of the CFS by truck" />
       </KpiStrip>
 
       <div className="ix-grid-2 tm-grid">

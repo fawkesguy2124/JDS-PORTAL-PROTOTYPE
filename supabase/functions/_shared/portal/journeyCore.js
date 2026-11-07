@@ -422,7 +422,7 @@ const NEXT_TEXT = {
   be: 'Next: file the BE in LiveImpex',
   ooc: 'Waiting for OOC',
   out: 'Next: get the container out',
-  truck: 'Next: arrange truck or rail',
+  truck: 'Next: assign a truck',
   delivered: 'Next: deliver and close the job',
   sb: 'Next: file the shipping bill in LiveImpex',
   leo: 'Waiting for LEO',
