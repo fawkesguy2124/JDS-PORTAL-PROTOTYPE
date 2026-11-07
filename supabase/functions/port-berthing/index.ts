@@ -5,8 +5,12 @@
 // berths or sails, so what was seen is kept. NOT ULIP; only jnport.gov.in is asked.
 //
 // Calls:
-//  • scheduler (x-bot-secret), a few times a day
-//  • signed-in staff: {} (same as the scheduler), or { dry: true } to see the answer without saving
+//  • scheduler (x-bot-secret), every hour 8 am – 10 pm India time (Jose, 7 Nov 2026). JNPA
+//    uploads the reports once a day (7 Nov: ~12:10 pm), so each hour only asks when each PDF
+//    was last changed and downloads it only when it is new (or a job got a new ship); the
+//    page's at-berth table is read every time
+//  • signed-in staff: {} (same as the scheduler), { force: true } to read every PDF again, or
+//    { dry: true } to see the answer without saving
 import { adminClient, corsHeaders, getCaller, json } from '../_shared/ulip.ts'
 import { CONTAINER_TERMINALS, readBerthingPage, shipAtJnpa, shipKey } from '../_shared/portal/jnpaBerthing.js'
 import { pdfToLines } from '../_shared/portal/beParser.js'
@@ -22,6 +26,13 @@ async function fetchText(url: string) {
   const r = await fetch(url, { headers: UA, signal: AbortSignal.timeout(30_000) })
   if (!r.ok) throw new Error(`${r.status} from jnport.gov.in`)
   return await r.text()
+}
+// when JNPA last uploaded a report (one small request, no download)
+async function lastModified(url: string) {
+  try {
+    const r = await fetch(url, { method: 'HEAD', headers: UA, signal: AbortSignal.timeout(20_000) })
+    return r.ok ? r.headers.get('last-modified') : null
+  } catch { return null }
 }
 async function reportLines(url: string) {
   const r = await fetch(url, { headers: UA, signal: AbortSignal.timeout(45_000) })
@@ -65,9 +76,19 @@ Deno.serve(async (req) => {
     const page: any = readBerthingPage(await fetchText(PAGE))
     const pages: any[] = []
     const failed: string[] = []
+    const skipped: string[] = []
+    // the reports read last time ({ NSICT: { url, modified } }), and whether a job has a ship not looked for yet
+    const seenBefore: any = (before || []).find((r: any) => r.reports_seen)?.reports_seen || {}
+    const newShip = wanted.some((w: any) => !prevBy[w.job.id] || shipKey(prevBy[w.job.id].vessel) !== shipKey(w.ship))
+    const reportsSeen: any = {}
     for (const t of CONTAINER_TERMINALS) {
-      if (!page.reports[t]) { failed.push(`${t}: no report link`); continue }
-      try { pages.push({ terminal: t, url: page.reports[t], lines: await reportLines(page.reports[t]) }) } catch (e) { failed.push(`${t}: ${(e as Error).message}`) }
+      const url = page.reports[t]
+      if (!url) { failed.push(`${t}: no report link`); continue }
+      const modified = await lastModified(url)
+      if (!body.force && !newShip && modified && seenBefore[t]?.url === url && seenBefore[t]?.modified === modified) {
+        skipped.push(t); reportsSeen[t] = seenBefore[t]; continue
+      }
+      try { pages.push({ terminal: t, url, lines: await reportLines(url) }); reportsSeen[t] = { url, modified } } catch (e) { failed.push(`${t}: ${(e as Error).message}`); if (seenBefore[t]) reportsSeen[t] = seenBefore[t] }
     }
 
     // 3. each ship; what was seen before is kept (a ship drops out of the report a day after)
@@ -92,6 +113,7 @@ Deno.serve(async (req) => {
         first_seen_at: prev?.first_seen_at || (hit ? now.toISOString() : null),
         // each ETA the port gave, when it changed: [{ eta, seen }]
         eta_history: [...(prev?.eta_history || []), ...(hit?.eta && hit.eta !== prev?.eta ? [{ eta: hit.eta, seen: now.toISOString() }] : [])],
+        reports_seen: reportsSeen,
       }
       out.push(row)
     }
@@ -99,7 +121,7 @@ Deno.serve(async (req) => {
       const { error } = await admin.from('port_berthing').upsert(out, { onConflict: 'job_id' })
       if (error) return json({ success: false, error: `save: ${error.message}` }, 500)
     }
-    return json({ success: true, checked: out.length, found: out.filter((r) => r.seen_at === now.toISOString()).length, failed, reports: pages.map((p) => p.terminal), rows: body.dry ? out : undefined })
+    return json({ success: true, checked: out.length, found: out.filter((r) => r.seen_at === now.toISOString()).length, failed, reports: pages.map((p) => p.terminal), unchanged: skipped, rows: body.dry ? out : undefined })
   } catch (e) {
     return json({ success: false, error: (e as Error).message }, 500)
   }
