@@ -310,6 +310,12 @@ async function track(admin: any, job: any, lines: any[], opts: { start?: boolean
     }, { onConflict: 'job_id' })
     return { job: job.job_no, number: n.number, old_trip: was }
   }
+  // an answer that says nothing about this job's trip (no ship, no Indian port) never
+  // replaces a ship we already follow (7 Nov 2026: findTEU wiped J-741's SPARROW)
+  if (r.ok && followed && !fitsJob(r.row, job)) {
+    await admin.from('sea_tracking').update({ refresh_error: 'the answer had nothing about this trip; last good data kept', refresh_error_at: now }).eq('job_id', job.id)
+    return { job: job.job_no, number: n.number, kept: 'last good data kept (answer had no trip)' }
+  }
   if (!r.ok) {
     // a failed update of a ship we already follow: keep its last good position, ETA and
     // route on screen and try again next hour; only note the failure (Jose, 25 Oct

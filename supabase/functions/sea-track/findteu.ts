@@ -70,7 +70,15 @@ export function findteuAnswer(status: number, body: any, opts: { allowDemo?: boo
   const code = Number(body?.error?.code ?? body?.data?.error ?? 0)
   // the demo key's made-up data must never reach a real job
   if (/NOT REAL/i.test(String(body?.data?.NOTICE || '')) && !opts.allowDemo) return { ok: false as const, billed: false, error: 'API_KEY: this is the demo key, not a real one', retry: false }
-  if (body?.success && !code && body?.data?.container) return { ok: true as const, row: findteuRow(body.data) }
+  // an answer with no trip in it is not an answer (7 Nov 2026: J-741's leased box came back
+  // "DELIVERED" with no events, no ship and Maersk as the line, while it was on SPARROW)
+  if (body?.success && !code && body?.data?.container) {
+    const events = Array.isArray(body.data.events) ? body.data.events : []
+    if (!events.length || (!body.data.pod?.port && !events.some((e: any) => e?.mode?.vessel?.vessel_name))) {
+      return { ok: false as const, billed: true, error: 'NO_TRIP: findTEU has no trip for this container (yet)', retry: false }
+    }
+    return { ok: true as const, row: findteuRow(body.data) }
+  }
   const [name, retry] = ERRORS[code] || (status >= 500 ? ['TEMPORARY', true] : ['HTTP_ERROR', false]) as [string, boolean]
   return { ok: false as const, billed: false, error: `${name}: ${String(body?.error?.text || `HTTP ${status}`).slice(0, 160)}`, retry }
 }

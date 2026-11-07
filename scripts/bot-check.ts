@@ -352,8 +352,13 @@ for (const [raw, want] of [['TCNU7392038', 'TCNU7392038'], ['TCNU 739203 8', 'TC
   if (a2.ok || !a2.retry) fail(`findTEU carrier down should be retried → ${JSON.stringify(a2)}`)
   const demo: any = findteuAnswer(200, { success: true, error: { code: 0 }, data: { NOTICE: 'THIS DATA IS NOT REAL', container: { number: 'X' }, events: [] } })
   if (demo.ok) fail('findTEU demo data was accepted as real')
-  const real: any = findteuAnswer(200, { success: true, error: { code: 0, text: '' }, data: data([]) })
+  const real: any = findteuAnswer(200, { success: true, error: { code: 0, text: '' }, data: data([e('2026-10-19', sh, 'Loaded on', ship('SHIP A', '01W'), 'actual')]) })
   if (!real.ok || real.row.containers[0]?.no !== 'TCNU7392038') fail(`findTEU a real answer → ${JSON.stringify(real).slice(0, 120)}`)
+  // an answer with no trip in it (J-741, 7 Nov 2026: "DELIVERED", no events, no ship, Maersk) is no answer
+  const empty: any = findteuAnswer(200, { success: true, error: { code: 0, text: '' }, data: { scac: 'MAEU', container: { number: 'TCNU7392038', completed: true }, events: [] } })
+  if (empty.ok || !/^NO_TRIP/.test(empty.error) || empty.retry) fail(`findTEU empty answer was taken as real → ${JSON.stringify(empty).slice(0, 160)}`)
+  const noShip: any = findteuAnswer(200, { success: true, error: { code: 0, text: '' }, data: { container: { number: 'X' }, events: [e('2026-10-15', sh, 'Gate in full by', truck, 'actual')] } })
+  if (noShip.ok) fail('findTEU answer with no ship and no discharge port was taken as real')
 }
 // The BL's line is wrong: tracking finds the real one by itself (J-741, 6 Nov 2026)
 {
