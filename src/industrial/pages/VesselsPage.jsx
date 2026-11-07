@@ -133,7 +133,9 @@ export default function VesselsPage({ onOpenJob }) {
   }).sort((a, b) => (TONE_ORDER[a.tone] - TONE_ORDER[b.tone]) || String(a.podAt || '9').localeCompare(String(b.podAt || '9')))
   const listed = rows
   // the next ship due (the line's port time; Nhava Sheva is India time)
-  const next = rows.filter((r) => r.podAt && r.tone === 'sea' && realMs(r.podAt, r.sea?.pod) > openedAt)
+  // (by ETA, whatever the position: an old or missing position doesn't make the ETA wrong;
+  // 7 Nov 2026: SPARROW, due 15 Nov, was skipped for J-674 due 23 Nov)
+  const next = rows.filter((r) => r.podAt && !r.m.arrived && !r.m.atPod && realMs(r.podAt, r.sea?.pod) > openedAt)
     .sort((a, b) => String(a.podAt).localeCompare(String(b.podAt)))[0]
   const nextEta = next ? etaParts(next.podAt) : null
   const mapH = typeof window !== 'undefined' ? (window.innerWidth < 900 ? 420 : Math.max(520, window.innerHeight - 250)) : 560
