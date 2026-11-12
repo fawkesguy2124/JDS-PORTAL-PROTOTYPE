@@ -343,16 +343,33 @@ function JobDetailView({ job, profiles = {}, currentUserName, isAdmin, canUpdate
       const prevSizes = JSON.stringify(job.container_sizes || {})
       const nextSizes = JSON.stringify(form.container_sizes || {})
       if (prevSizes !== nextSizes) { updates.container_sizes = form.container_sizes || {} }
+      // the stage picked in the form (only when it is not the stage the job already shows)
+      const pickedStage = canUpdateStage && form._stage !== undefined && Number(form._stage) !== stage ? Number(form._stage) : null
+      if (pickedStage !== null) { updates.stage = pickedStage; newMeta.stage = { by: currentUserName, ts: Date.now() } }
       if (Object.keys(updates).length === 0) { notify('No changes to save.', 'info'); setEditMode(false); return }
       updates.field_meta = newMeta
       updates.updated_at = new Date().toISOString()
       const { error } = await supabase.from('jobs').update(updates).eq('id', job.id)
       if (error) throw error
       if ('job_no' in updates) await logJobRenumbered(job, updates.job_no, currentUserName)
+      if (pickedStage !== null) {
+        await supabase.from('activity_log').insert({
+          type: 'job_update',
+          action: 'stage_update',
+          title: `${job.job_no} — Stage ${pickedStage}: ${getStageName(pickedStage)}`,
+          note: `Stage updated by ${currentUserName}: ${getStageName(job.stage)} → ${getStageName(pickedStage)}`,
+          job_no: job.job_no,
+          job_id: job.id,
+          done_by_name: currentUserName,
+          meta: { job_id: job.id, job_no: job.job_no, old_stage: job.stage, new_stage: pickedStage },
+          created_at: new Date().toISOString(),
+        })
+      }
       notify('Saved successfully.', 'success')
       // a BL / container number or line added or corrected: ship tracking (re)starts now with it
       if (['bl_no', 'containers', 'shipping_line', 'mode', 'job_type'].some((k) => k in updates)) startShipTracking({ ...job, ...updates })
       setEditMode(false)
+      setForm((p) => ({ ...p, _stage: undefined }))
       await reload()
     } catch (e) {
       notify(e?.message || 'Save failed.', 'error')
@@ -718,7 +735,18 @@ function JobDetailView({ job, profiles = {}, currentUserName, isAdmin, canUpdate
                 <div className="ix-fj-kv">
                   {s.keys.map(field)}
                   {s.id === 'job' && [
-                    readOnlyRow('Stage', `${stage} · ${stageName}`),
+                    // editing: the stage is a choice here too, saved with Save changes
+                    // (⋯ > Edit opened straight into the form with no way to mark a job delivered; Jose, 13 Nov 2026)
+                    editMode && canUpdateStage ? (
+                      <div key="Stage" className="ix-fj-f edit">
+                        <div className="k">Stage</div>
+                        <div className="v">
+                          <select className="ix-fj-in" value={form._stage ?? stage} onChange={(e) => setField('_stage', Number(e.target.value))} aria-label="Stage">
+                            {STAGE_LIST.map((s) => <option key={s.value} value={s.value}>{s.value} · {s.label}</option>)}
+                          </select>
+                        </div>
+                      </div>
+                    ) : readOnlyRow('Stage', `${stage} · ${stageName}`),
                     readOnlyRow('Created by', job.created_by ? profiles[job.created_by] ?? job.created_by : null),
                     readOnlyRow('Created', job.created_at ? fmtDateTime(job.created_at) : null, job.created_at ? timeAgo(job.created_at) : undefined),
                     readOnlyRow('Last updated', job.updated_at ? fmtDateTime(job.updated_at) : null, job.updated_at ? timeAgo(job.updated_at) : undefined),
